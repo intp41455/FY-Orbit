@@ -1,0 +1,10 @@
+# Find Yourself 开发监控（monitoring profile）
+# 仅抓取内部 /metrics；指标标签不含原文/任务全文。
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: find-yourself-api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:8000"]
