@@ -39,27 +39,27 @@ function makeProposal(over: Partial<Proposal>): Proposal {
 
 describe('ApprovalsPage semantics (BUG-04)', () => {
   it('shows "not yet merged/released" for a pending merge proposal', async () => {
-    vi.mocked(proposalsApi.list).mockResolvedValue({
-      proposals: [makeProposal({ status: 'pending' })],
-    });
+    vi.mocked(proposalsApi.list).mockResolvedValue([
+      makeProposal({ status: 'pending' }),
+    ]);
     render(<ApprovalsPage />);
     await waitFor(() => expect(screen.getByText(/尚未合并\/发布/)).toBeInTheDocument());
     expect(screen.getByText(/待审批/)).toBeInTheDocument();
   });
 
   it('does NOT show "merged/released" wording once executed', async () => {
-    vi.mocked(proposalsApi.list).mockResolvedValue({
-      proposals: [makeProposal({ status: 'executed' })],
-    });
+    vi.mocked(proposalsApi.list).mockResolvedValue([
+      makeProposal({ status: 'executed' }),
+    ]);
     render(<ApprovalsPage />);
     await waitFor(() => expect(screen.getByText(/外部操作已执行/)).toBeInTheDocument());
     expect(screen.queryByText(/尚未合并\/发布/)).not.toBeInTheDocument();
   });
 
   it('renders digest and expected version', async () => {
-    vi.mocked(proposalsApi.list).mockResolvedValue({
-      proposals: [makeProposal({ digest: 'deadbeef' })],
-    });
+    vi.mocked(proposalsApi.list).mockResolvedValue([
+      makeProposal({ digest: 'deadbeef' }),
+    ]);
     render(<ApprovalsPage />);
     await waitFor(() => expect(screen.getByText('deadbeef')).toBeInTheDocument());
     expect(screen.getByText('branch-x')).toBeInTheDocument();

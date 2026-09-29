@@ -53,8 +53,8 @@ function PrettyPayload({ p }: { p: Proposal }) {
         </div>
         <div className="card">
           <div className="muted">测试证据 / Artifact</div>
-          <div>evidence: {p.evidence_ids.join(', ') || '无'}</div>
-          <div>artifacts: {p.artifact_ids.join(', ') || '无'}</div>
+          <div>evidence: {(p.evidence_ids ?? []).join(', ') || '无'}</div>
+          <div>artifacts: {(p.artifact_ids ?? []).join(', ') || '无'}</div>
         </div>
         <div className="card">
           <div className="muted">外传 / 费用 / 环境</div>
@@ -102,9 +102,9 @@ export function ApprovalsPage() {
       {loading && <Spinner />}
       {error && <div className="notice danger" role="alert">{error}</div>}
       {localError && <div className="error-text" role="alert">{localError}</div>}
-      {data && data.proposals.length === 0 && <div className="muted">暂无提案。</div>}
+      {data && data.length === 0 && <div className="muted">暂无提案。</div>}
       {data &&
-        data.proposals.map((p) => (
+        data.map((p) => (
           <div className="card" key={p.id}>
             <div className="row spread">
               <div>

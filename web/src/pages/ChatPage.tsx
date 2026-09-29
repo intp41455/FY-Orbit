@@ -20,13 +20,28 @@ export function ChatPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const [online, setOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true,
+  );
+
+  useEffect(() => {
+    const on = () => setOnline(true);
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => {
+      window.removeEventListener('online', on);
+      window.removeEventListener('offline', off);
+    };
+  }, []);
 
   async function loadList() {
     setLoadingList(true);
     try {
       const res = await conversationsApi.list();
-      setConversations(res.conversations);
-      if (!activeId && res.conversations.length > 0) setActiveId(res.conversations[0].id);
+      const list = Array.isArray(res) ? res : [];
+      setConversations(list);
+      if (!activeId && list.length > 0) setActiveId(list[0].id);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -47,7 +62,7 @@ export function ChatPage() {
     setLoadingMsgs(true);
     conversationsApi
       .messages(activeId)
-      .then((res) => setMessages(res.messages))
+      .then((res) => setMessages(Array.isArray(res) ? res : []))
       .catch((e) => setError(errorMessage(e)))
       .finally(() => setLoadingMsgs(false));
   }, [activeId]);
@@ -55,7 +70,7 @@ export function ChatPage() {
   async function send() {
     const content = text.trim();
     if (!content) return;
-    if (navigator.onLine === false) {
+    if (!online) {
       setError('离线状态下不能发送消息。');
       return;
     }
@@ -76,7 +91,7 @@ export function ChatPage() {
       });
       setText('');
       const res = await conversationsApi.messages(convId);
-      setMessages(res.messages);
+      setMessages(Array.isArray(res) ? res : []);
     } catch (e) {
       if (e instanceof NetworkError && e.kind === 'offline') setError('离线：消息未发送。');
       else setError(errorMessage(e));
@@ -153,10 +168,10 @@ export function ChatPage() {
               aria-label="消息内容"
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={navigator.onLine ? '说点什么…' : '离线：无法发送'}
-              disabled={!navigator.onLine}
+              placeholder={online ? '说点什么…' : '离线：无法发送'}
+              disabled={!online}
             />
-            <button className="primary" onClick={() => void send()} disabled={submitting || !text.trim() || !navigator.onLine}>
+            <button className="primary" onClick={() => void send()} disabled={submitting || !text.trim() || !online}>
               {submitting ? '发送中…' : '发送'}
             </button>
           </div>

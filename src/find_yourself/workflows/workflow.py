@@ -52,6 +52,11 @@ def _now() -> datetime:
     return workflow.now()
 
 
+def _await_pred(pred) -> Any:
+    """Wait on a predicate. The SDK exposes this as ``wait_condition``."""
+    return workflow.wait_condition(pred)
+
+
 @workflow.defn(name="fy-task-workflow", sandboxed=True)
 class TaskWorkflow:
     def __init__(self) -> None:
@@ -103,9 +108,9 @@ class TaskWorkflow:
     async def _act(self, name: str, *args: Any) -> Any:
         return await workflow.execute_activity(
             name,
-            args,
+            args=list(args),
             start_to_close_timeout=_ACT_TASK_TIMEOUT,
-            retry_policy=RetryPolicy(max_attempts=1),  # lifecycle writes are idempotent; no blind retry
+            retry_policy=RetryPolicy(maximum_attempts=1),  # lifecycle writes are idempotent; no blind retry
         )
 
     # ------------------------------------------------------------------
@@ -160,7 +165,7 @@ class TaskWorkflow:
                     "plan_next_step",
                     args=[task_id, attempt, stage, history],
                     start_to_close_timeout=_ACT_PLAN_TIMEOUT,
-                    retry_policy=RetryPolicy(max_attempts=limits.max_retries + 1),
+                    retry_policy=RetryPolicy(maximum_attempts=limits.max_retries + 1),
                 )
                 proposal = StepProposal.model_validate(proposal_dict)
 
@@ -257,7 +262,7 @@ class TaskWorkflow:
             args=[task_id, attempt, proposal.tool, proposal.payload, idem, ck],
             start_to_close_timeout=_ACT_TOOL_TIMEOUT,
             retry_policy=RetryPolicy(
-                max_attempts=inp.limits.max_retries + 1,
+                maximum_attempts=inp.limits.max_retries + 1,
                 non_retryable_error_types=["BusinessError", "ValidationError"],
             ),
         ))
@@ -308,7 +313,7 @@ class TaskWorkflow:
             "verify_approval_permission",
             args=[proposal.proposal_id, proposal.expected_digest, proposal.expected_version],
             start_to_close_timeout=_ACT_APPROVAL_TIMEOUT,
-            retry_policy=RetryPolicy(max_attempts=1),
+            retry_policy=RetryPolicy(maximum_attempts=1),
         ))
         if not verdict.allowed:
             await self._act("record_outbox_result", proposal.proposal_id, verdict.code,
@@ -330,7 +335,7 @@ class TaskWorkflow:
             "execute_external_effect",
             args=[task_id, attempt, proposal.proposal_id, claim.operation_id],
             start_to_close_timeout=_ACT_TOOL_TIMEOUT,
-            retry_policy=RetryPolicy(max_attempts=1),  # never blind-retry irreversible effects
+            retry_policy=RetryPolicy(maximum_attempts=1),  # never blind-retry irreversible effects
         ))
         self._approval_processed = True
         if res.status == "unknown":
@@ -346,17 +351,19 @@ class TaskWorkflow:
         stage = Stage.awaiting_input.value
         ck = checkpoint_key(task_id, attempt, stage)
         await self._act("task_update_stage", task_id, attempt, stage, ck)
+        self._set_status(stage=stage, last_checkpoint_key=ck, state="awaiting_input")
         self._input_seen = False
         self._pending_input = {}
         remaining = (deadline - _now()).total_seconds()
         if remaining <= 0:
             return None
-        timer = asyncio.create_task(workflow.create_timer(timedelta(seconds=remaining)))
-        waiter = asyncio.create_task(
-            workflow.await(lambda: self._input_seen or self._cancel_requested))
-        done, _ = await asyncio.wait({timer, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        timer_task = asyncio.create_task(workflow.sleep(timedelta(seconds=remaining)))
+        waiter_task = asyncio.create_task(_await_pred(lambda: self._input_seen or self._cancel_requested))
+        done, pending = await workflow.wait([timer_task, waiter_task], return_when=asyncio.FIRST_COMPLETED)
         for t in done:
             t.result()
+        for t in pending:  # never leave a half-run timer/signal task blocking the workflow
+            t.cancel()
         if self._cancel_requested or not self._input_seen:
             return None
         return dict(self._pending_input)
@@ -365,12 +372,13 @@ class TaskWorkflow:
         remaining = (expires_at - _now()).total_seconds()
         if remaining <= 0:
             return False
-        timer = asyncio.create_task(workflow.create_timer(timedelta(seconds=remaining)))
-        waiter = asyncio.create_task(
-            workflow.await(lambda: self._approval_seen or self._cancel_requested))
-        done, _ = await asyncio.wait({timer, waiter}, return_when=asyncio.FIRST_COMPLETED)
+        timer_task = asyncio.create_task(workflow.sleep(timedelta(seconds=remaining)))
+        waiter_task = asyncio.create_task(_await_pred(lambda: self._approval_seen or self._cancel_requested))
+        done, pending = await workflow.wait([timer_task, waiter_task], return_when=asyncio.FIRST_COMPLETED)
         for t in done:
             t.result()
+        for t in pending:
+            t.cancel()
         return self._approval_seen and self._pending_approval is not None
 
     # ------------------------------------------------------------------

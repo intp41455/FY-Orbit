@@ -1,0 +1,38 @@
+# Find Yourself - 降级本地联调 override（MinIO/对象存储不可用时）
+#
+# 用法（在 infra/compose.dev.yml 之上叠加；8000/8001 均被占用，本次选 8005）：
+#   $env:FY_API_PUBLISH_PORT="8005"
+#   docker compose -f infra/compose.dev.yml -f infra/compose.no-minio.override.yml up -d --build api worker web
+#
+# 目的：
+#   - 不让 api/worker 依赖不可用的 MinIO（依赖标记为 optional，不自动启动/拉取）。
+#   - FY_S3_ENDPOINT 置空，避免 API/Worker 误判对象存储可用而冒充成功。
+#   - API 对外端口改到 127.0.0.1:8005（8000/8001 被占用），容器内仍 8000。
+#   - 所有端口仍只绑回环，安全选项保持不变。
+#
+# 注意：Compose 对 depends_on(map)/ports(list) 是合并而非整体替换，因此这里：
+#   - 用 required:false 把 minio 依赖改为可选；pull_policy:never 禁止拉取其镜像。
+#   - API 发布端口通过 FY_API_PUBLISH_PORT=8005 注入（见上方用法）。
+# 对象存储在该模式下恒为 BLOCKED_EXTERNAL，不得据此宣称全栈就绪。
+
+services:
+  api:
+    depends_on:
+      minio:
+        condition: service_started
+        required: false
+    environment:
+      # 显式置空：无 MinIO 时不得冒充对象存储可用。
+      FY_S3_ENDPOINT: ""
+      # 降级联调走 8005，CSRF Origin 校验须与对外地址一致。
+      FY_PUBLIC_URL: http://127.0.0.1:8005
+  worker:
+    depends_on:
+      minio:
+        condition: service_started
+        required: false
+    environment:
+      FY_S3_ENDPOINT: ""
+  minio:
+    # 降级模式不拉取/不启动 MinIO。
+    pull_policy: never

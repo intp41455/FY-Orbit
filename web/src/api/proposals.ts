@@ -2,7 +2,8 @@ import { request } from './client';
 import type { Proposal, ProposalDecisionInput, ProposalDigestInput } from './types';
 
 export const proposalsApi = {
-  list: () => request<{ proposals: Proposal[] }>('/api/proposals'),
+  // Real backend returns a bare JSON array, not { proposals: [...] }.
+  list: () => request<Proposal[]>('/api/proposals'),
   get: (id: string) => request<Proposal>(`/api/proposals/${id}`),
   create: (body: ProposalDigestInput) =>
     request<Proposal>('/api/proposals', { method: 'POST', body }),

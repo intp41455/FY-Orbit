@@ -15,12 +15,13 @@ export function SkillsPage() {
       <h3>Agents</h3>
       {agents.loading && <Spinner />}
       {agents.error && <div className="notice danger">{agents.error}</div>}
-      {agents.data && (
+      {agents.data && agents.data.length === 0 && <div className="muted">暂无 Agent。</div>}
+      {agents.data && agents.data.length > 0 && (
         <div className="card">
           <table>
             <thead><tr><th>名称</th><th>版本</th><th>域</th><th>状态</th><th>健康</th><th>能力</th></tr></thead>
             <tbody>
-              {agents.data.agents.map((a) => (
+              {agents.data.map((a) => (
                 <tr key={a.name + a.version}>
                   <td>{a.name}</td>
                   <td>{a.version}</td>
@@ -38,12 +39,13 @@ export function SkillsPage() {
       <h3>技能</h3>
       {skills.loading && <Spinner />}
       {skills.error && <div className="notice danger">{skills.error}</div>}
-      {skills.data && (
+      {skills.data && skills.data.length === 0 && <div className="muted">暂无技能。</div>}
+      {skills.data && skills.data.length > 0 && (
         <div className="card">
           <table>
             <thead><tr><th>名称</th><th>版本</th><th>状态</th><th>来源/许可</th><th>隔离</th></tr></thead>
             <tbody>
-              {skills.data.skills.map((s) => (
+              {skills.data.map((s) => (
                 <tr key={s.name + s.version}>
                   <td>{s.name}</td>
                   <td>{s.version}</td>

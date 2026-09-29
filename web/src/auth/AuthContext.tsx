@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { authApi } from '../api/auth';
-import { onUnauthorized } from '../api/client';
+import { onUnauthorized, setCsrfToken } from '../api/client';
 import type { OwnerIdentity } from '../api/types';
 
 interface AuthState {
@@ -51,7 +51,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setError(null);
     try {
       const res = await authApi.me();
-      setOwner(res.owner);
+      if (res.csrf_token) setCsrfToken(res.csrf_token);
+      // Authenticated owner session only when subject_type === 'owner'.
+      if (res.subject_type === 'owner') {
+        setOwner({ sub: res.owner_id, authenticated: true });
+      } else {
+        setOwner(null);
+      }
     } catch (e) {
       // 401/403 means simply not logged in; other errors (offline/5xx) are surfaced.
       const status = (e as { status?: number }).status;

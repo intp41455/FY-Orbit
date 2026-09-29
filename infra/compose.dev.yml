@@ -70,7 +70,8 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DB: postgres
+      DB: postgres12
+      DB_PORT: "5432"
       POSTGRES_SEEDS: postgres
       DBNAME: temporal
       VISIBILITY_DBNAME: temporal_visibility
@@ -86,7 +87,8 @@ services:
       - fynet
     healthcheck:
       # auto-setup 镜像含 bash；用 TCP 探活 7233，避免引入额外探针二进制。
-      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/7233' || exit 1"]
+      # temporal-server 绑定容器 eth0($$HOSTNAME) 而非 127.0.0.1，探活须用 $$HOSTNAME（双$ 避免 compose 插值）。
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/$$HOSTNAME/7233' || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 18
@@ -185,7 +187,8 @@ services:
       FY_SESSION_SECRET: ${FY_SESSION_SECRET:-replace-me-with-at-least-32-random-chars}
     command: ["uvicorn", "find_yourself.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
-      - "127.0.0.1:8000:8000"
+      # 发布端口可用 FY_API_PUBLISH_PORT 覆盖（默认 8000；降级联调用 8001 避让占用）。
+      - "127.0.0.1:${FY_API_PUBLISH_PORT:-8000}:8000"
     networks:
       - fynet
     healthcheck:
@@ -226,9 +229,13 @@ services:
       FY_S3_BUCKET: ${FY_S3_BUCKET:-find-yourself}
       FY_S3_REGION: ${FY_S3_REGION:-us-east-1}
       FY_SESSION_SECRET: ${FY_SESSION_SECRET:-replace-me-with-at-least-32-random-chars}
-    # Worker 入口由 Workflow 分片提供；当前为占位命令，仅保证 compose config 可校验。
-    # TODO(Workflow): 待 Workflow 分片冻结正式 worker 模块路径后对齐此 command，不要自行猜测。
-    command: ["python", "-m", "find_yourself.worker"]
+    # Worker 正式入口（Workflow 分片已冻结模块路径）。
+    command: ["python", "-m", "find_yourself.workflows.worker",
+              "--namespace", "${FY_TEMPORAL_NAMESPACE:-default}",
+              "--queue", "${FY_TEMPORAL_QUEUE:-find-yourself}"]
+    healthcheck:
+      # Worker 无 HTTP 端点；共用镜像的 /health/live 探针不适用，禁用以免误报 unhealthy。
+      disable: true
     networks:
       - fynet
     deploy:
@@ -252,6 +259,8 @@ services:
     environment:
       # 前端通过浏览器访问 API，仍走回环；容器内不直连后端。
       VITE_API_BASE_URL: http://127.0.0.1:8000
+      # Vite dev server 端的同源代理目标（容器网络内直连 api:8000）。
+      VITE_DEV_API_TARGET: http://api:8000
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
     ports:
       - "127.0.0.1:5173:5173"

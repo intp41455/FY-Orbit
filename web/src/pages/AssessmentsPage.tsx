@@ -1,37 +1,43 @@
 import { useEffect, useState } from 'react';
-import { assessmentsApi } from '../api/assessments';
-import type { AssessmentCatalogEntry, AssessmentSession } from '../api/types';
+import {
+  assessmentsApi,
+  type QuestionnaireInfo,
+  type RealAssessmentSession,
+} from '../api/assessments';
 import { Spinner, errorMessage } from '../components/ui';
 
+// Likert scale used by the synthetic template; scoring/reverse-scoring is always
+// done server-side and bound to questionnaire_version. The UI never computes
+// scores and never defaults a blank answer.
+const SCALE = [1, 2, 3, 4, 5];
+
 export function AssessmentsPage() {
-  const [catalog, setCatalog] = useState<AssessmentCatalogEntry[] | null>(null);
+  const [catalog, setCatalog] = useState<QuestionnaireInfo[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [session, setSession] = useState<AssessmentSession | null>(null);
+  const [session, setSession] = useState<RealAssessmentSession | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState(false);
 
-  async function loadCatalog() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await assessmentsApi.catalog();
-      setCatalog(res.assessments);
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
   useEffect(() => {
-    void loadCatalog();
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await assessmentsApi.catalog();
+        setCatalog(Array.isArray(res.questionnaires) ? res.questionnaires : []);
+      } catch (e) {
+        setError(errorMessage(e));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  async function start(entry: AssessmentCatalogEntry) {
+  async function start(q: QuestionnaireInfo) {
     setError(null);
     try {
-      const s = await assessmentsApi.startSession(entry.assessment_id);
+      const s = await assessmentsApi.startSession(q.id);
       setSession(s);
       setAnswers({});
     } catch (e) {
@@ -39,23 +45,20 @@ export function AssessmentsPage() {
     }
   }
 
-  function answeredCount(): number {
-    return Object.keys(answers).length;
-  }
-
-  async function submit(entry: AssessmentCatalogEntry) {
+  async function submit() {
     if (!session) return;
-    if (answeredCount() < entry.items.length) {
-      // Never fabricate a result for missing answers.
+    // Missing answers are authoritative from the server (`missing`). If any item
+    // is still unanswered, refuse to submit — never fabricate a result client-side.
+    if (session.missing.length > 0) {
       setError(
-        `还有 ${entry.items.length - answeredCount()} 题未作答。漏答/空答不会生成默认人格结果；请补全后再提交。`,
+        `还有 ${session.missing.length} 题未作答。漏答/空答不会生成人格结果；请补全后再提交。`,
       );
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const s = await assessmentsApi.submit(session.id, { answers });
+      const s = await assessmentsApi.submit(session.session_id, answers);
       setSession(s);
     } catch (e) {
       setError(errorMessage(e));
@@ -76,16 +79,15 @@ export function AssessmentsPage() {
 
       {!session && catalog && (
         <div className="grid cols-3">
-          {catalog.map((a) => (
-            <div className="card" key={a.assessment_id}>
+          {catalog.map((q) => (
+            <div className="card" key={q.id}>
               <div className="row spread">
-                <strong>{a.title}</strong>
-                <span className="badge accent">v{a.version}</span>
+                <strong>{q.title}</strong>
+                <span className="badge accent">v{q.version}</span>
               </div>
-              <p className="muted">{a.description}</p>
-              <p className="muted" style={{ fontStyle: 'italic' }}>{a.compliance_notice}</p>
-              <div className="muted">题目数：{a.items.length}</div>
-              <button className="primary" style={{ marginTop: '0.6rem' }} onClick={() => void start(a)}>
+              <p className="muted" style={{ fontStyle: 'italic' }}>{q.source_note}</p>
+              <div className="muted">题目数：{q.item_count}</div>
+              <button className="primary" style={{ marginTop: '0.6rem' }} onClick={() => void start(q)}>
                 开始测评
               </button>
             </div>
@@ -93,73 +95,73 @@ export function AssessmentsPage() {
         </div>
       )}
 
-      {session && catalog && (() => {
-        const entry = catalog.find((c) => c.assessment_id === session.assessment_id)!;
+      {session && (() => {
+        const done = Object.keys(answers).length;
+        const remaining = session.missing.filter((id) => answers[id] === undefined);
         return (
           <div className="card">
             <div className="row spread">
-              <h3 style={{ margin: 0 }}>{entry.title}</h3>
-              <span className="badge accent">问卷版本 v{entry.version}</span>
+              <h3 style={{ margin: 0 }}>问卷 v{session.questionnaire_version}</h3>
+              <span className="badge accent">item_set {session.item_set_hash.slice(0, 12)}</span>
             </div>
-            <p className="muted" style={{ fontStyle: 'italic' }}>{entry.compliance_notice}</p>
+            <div className="muted" style={{ marginBottom: '0.8rem' }}>
+              计分由服务端完成，结果绑定问卷版本 v{session.questionnaire_version}。
+              反向题与合成分由服务端按版本处理；留空不会被默认填答。
+            </div>
 
             {session.result ? (
               <div>
                 <div className="notice info">
                   计分由服务端完成；以下结果绑定问卷版本 v{session.questionnaire_version}。
                 </div>
-                {session.result.type_label && (
-                  <h3>结果：{session.result.type_label}</h3>
-                )}
+                {session.result.type_label && <h3>结果：{session.result.type_label}</h3>}
                 <div className="grid cols-2">
-                  {Object.entries(session.result.scales).map(([k, v]) => (
+                  {Object.entries(session.result.scales ?? {}).map(([k, v]) => (
                     <div className="card" key={k}>
                       <div className="muted">{k}</div>
                       <strong>{v}</strong>
                     </div>
                   ))}
                 </div>
-                <p>{session.result.interpretation}</p>
-                <p className="notice warn">{session.result.caveat}</p>
-                <p className="muted">{session.result.norm_note}</p>
+                {session.result.interpretation && <p>{session.result.interpretation}</p>}
+                {session.result.caveat && <p className="notice warn">{session.result.caveat}</p>}
+                {session.result.norm_note && <p className="muted">{session.result.norm_note}</p>}
               </div>
             ) : (
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void submit(entry);
+                  void submit();
                 }}
               >
                 <div className="muted" style={{ marginBottom: '0.8rem' }}>
-                  已答 {answeredCount()} / {entry.items.length}。带「反向计分」标记的题由服务端按问卷版本处理；
-                  留空不会被默认填答。
+                  已答 {done} / {session.missing.length}。题目标题为合成模板占位，不计入结论。
                 </div>
-                {entry.items.map((item, idx) => (
-                  <fieldset key={item.id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: '0.7rem', padding: '0.6rem' }}>
-                    <legend className="muted">第 {idx + 1} 题{item.reverse_scored ? ' · 反向计分' : ''}</legend>
-                    <label htmlFor={item.id} style={{ color: 'var(--text)', fontSize: '0.95rem' }}>{item.text}</label>
+                {session.missing.map((id) => (
+                  <fieldset key={id} style={{ border: '1px solid var(--border)', borderRadius: 8, marginBottom: '0.7rem', padding: '0.6rem' }}>
+                    <legend className="muted">题目 {id}</legend>
+                    <label htmlFor={id} style={{ color: 'var(--text)', fontSize: '0.95rem' }}>
+                      请评分（1=非常不同意 … 5=非常同意）
+                    </label>
                     <select
-                      id={item.id}
-                      value={answers[item.id] ?? ''}
+                      id={id}
+                      value={answers[id] ?? ''}
                       onChange={(e) =>
-                        setAnswers((a) => ({
-                          ...a,
-                          [item.id]: e.target.value === '' ? 0 : Number(e.target.value),
-                        }))
+                        setAnswers((a) => ({ ...a, [id]: e.target.value === '' ? 0 : Number(e.target.value) }))
                       }
                       style={{ marginTop: '0.4rem' }}
                     >
                       <option value="">未作答</option>
-                      {Array.from({ length: entry.scale_max - entry.scale_min + 1 }, (_, i) => entry.scale_min + i).map((v) => (
+                      {SCALE.map((v) => (
                         <option key={v} value={v}>{v}</option>
                       ))}
                     </select>
                   </fieldset>
                 ))}
-                <button className="primary" type="submit" disabled={submitting || answeredCount() === 0}>
+                <button className="primary" type="submit" disabled={submitting}>
                   {submitting ? '提交计分中…' : '提交（服务端计分）'}
                 </button>
-                {answeredCount() < entry.items.length && (
+                {remaining.length > 0 && (
                   <div className="muted" style={{ marginTop: '0.5rem' }}>
                     提示：仍有漏答；提交会被拒绝并要求补全，不会产生默认结果。
                   </div>

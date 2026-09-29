@@ -38,7 +38,15 @@ export class ApiError extends Error {
   }
 }
 
+// CSRF token issued by the backend (in /auth/me and dev-token responses).
+// Writes echo it back via X-CSRF-Token. HttpOnly session cookie is never read.
+let csrfToken: string | null = null;
+export function setCsrfToken(t: string | null): void {
+  csrfToken = t;
+}
+
 function readCsrfToken(): string | null {
+  if (csrfToken) return csrfToken;
   if (typeof document === 'undefined') return null;
   const el = document.querySelector('meta[name="csrf-token"]');
   return el?.getAttribute('content') || null;

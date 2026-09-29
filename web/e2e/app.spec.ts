@@ -1,42 +1,164 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
-// These E2E specs are implemented against the real backend API contract.
-// They are expected to FAIL / BE BLOCKED until the Runtime slice (FastAPI + DB)
-// is available; do not report them as passing before then.
+// E2E against the REAL backend via the vite preview proxy.
+//
+// AUTH MODEL (important): production OIDC/SSO is NOT exercised here and MUST NOT
+// be claimed as verified. This environment has no OIDC; we use the loopback-only
+// POST /auth/local/dev-token. That endpoint must be disabled outside 127.0.0.1
+// (FROZEN_CONTRACT §5.1). The shared local secret is read from E2E_LOCAL_TOKEN.
+//
+// Required env:
+//   E2E_API_TARGET     backend origin, e.g. http://127.0.0.1:8030 (proxied by preview)
+//   E2E_LOCAL_TOKEN     shared secret accepted by /auth/local/dev-token
+//   E2E_OWNER_SUB       owner sub to bind (optional, default "e2e-owner")
 
-test.describe('U01/U11: login, responsive shell, logout cleanup', () => {
-  test('unauthenticated user is redirected to /login and sees no private data', async ({ page }) => {
+const LOCAL_TOKEN = process.env.E2E_LOCAL_TOKEN ?? '';
+
+// Extract a cookie name=value pair from a raw Set-Cookie header string.
+function extractCookie(setCookie: string | undefined, name: string): string | null {
+  if (!setCookie) return null;
+  for (const part of setCookie.split(/,(?=[^;]+=)/)) {
+    const seg = part.trim();
+    if (seg.startsWith(`${name}=`)) {
+      return seg.slice(name.length + 1).split(';')[0];
+    }
+  }
+  return null;
+}
+
+async function loginViaDevToken(page: Page): Promise<void> {
+  // Backend LocalDevTokenRequest is a strict schema: only the `token` field.
+  // We POST directly (same-origin via preview proxy), then explicitly lift the
+  // HttpOnly session cookie into the browser context. The app reads the CSRF
+  // token from its own /auth/me response and echoes it on writes (X-CSRF-Token).
+  const res = await page.request.post('/auth/local/dev-token', {
+    data: { token: LOCAL_TOKEN },
+  });
+  if (!res.ok()) {
+    throw new Error(
+      `dev-token login failed: HTTP ${res.status()} — set E2E_LOCAL_TOKEN and ensure the local dev-token endpoint is up on loopback`,
+    );
+  }
+  const setCookie = res.headers()['set-cookie'];
+  const session = extractCookie(setCookie, 'fy_session');
+  if (session) {
+    await page.context().addCookies([
+      { name: 'fy_session', value: session, domain: '127.0.0.1', path: '/', httpOnly: true, sameSite: 'Lax' },
+    ]);
+  }
+}
+
+test.describe('anonymous access', () => {
+  test('private route redirects to login and leaks no private data', async ({ page }) => {
     await page.goto('/chat');
     await expect(page).toHaveURL(/\/login/);
-    await expect(page.getByRole('heading', { name: /Find Yourself/ })).toBeVisible();
-  });
-
-  test('shell is usable at mobile viewport', async ({ page }) => {
-    await page.goto('/login');
+    // No conversation/message bubble should be present while unauthenticated.
+    await expect(page.locator('.chat-scroll')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /OIDC/ })).toBeVisible();
   });
 });
 
-test.describe('U03: offline cannot submit', () => {
-  test('composer is disabled and an offline notice shows when network is off', async ({ page, context }) => {
+test.describe('authenticated flows', () => {
+  test.skip(!LOCAL_TOKEN, 'E2E_LOCAL_TOKEN not set; skipping real-session tests');
+
+  test('dev-token login shows shell, navigation works, logout clears session+storage', async ({ page }) => {
+    await loginViaDevToken(page);
     await page.goto('/chat');
+
+    // Authenticated shell: sidebar navigation present.
+    await expect(page.getByRole('link', { name: '审批中心' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '设置与数据' })).toBeVisible();
+
+    // Navigate across pages without a hard crash.
+    await page.getByRole('link', { name: '历史' }).click();
+    await expect(page).toHaveURL(/\/history/);
+    await page.getByRole('link', { name: '设置与数据' }).click();
+    await expect(page).toHaveURL(/\/settings/);
+
+    // Logout: button in sidebar. The backend must actually invalidate the session.
+    const logoutP = page.waitForResponse((r) => r.url().includes('/auth/logout'));
+    await page.getByRole('button', { name: '登出' }).click();
+    await expect((await logoutP).status()).toBe(200);
+    await expect(page).toHaveURL(/\/login/);
+
+    // Session cookie is gone / /auth/me rejects.
+    const me = await page.request.get('/auth/me');
+    expect([401, 403]).toContain(me.status());
+
+    // Sensitive client storage was purged on logout.
+    const ls = await page.evaluate(() => window.localStorage.length);
+    expect(ls).toBe(0);
+  });
+
+  test('mobile viewport: shell and nav usable', async ({ page }, testInfo) => {
+    testInfo.skip(testInfo.project.name !== 'mobile', 'mobile viewport only');
+    await loginViaDevToken(page);
+    await page.goto('/chat');
+    // Primary nav (wrapped row on mobile) is reachable.
+    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+    await expect(page.getByRole('button', { name: /发送/ })).toBeAttached();
+  });
+
+  test('offline: composer disabled and offline notice shown', async ({ page, context }) => {
+    await loginViaDevToken(page);
+    await page.goto('/chat');
+    await expect(page.getByRole('link', { name: '审批中心' })).toBeVisible();
     await context.setOffline(true);
-    await expect(page.getByText(/offline|离线/i)).toBeVisible();
+    // OfflineBadge reacts to the browser 'offline' event; no reload (which would
+    // itself fail with ERR_INTERNET_DISCONNECTED).
+    await expect(page.getByText(/offline|离线/i).first()).toBeVisible();
+    const sendBtn = page.getByRole('button', { name: /发送/ });
+    await expect(sendBtn).toBeDisabled();
     await context.setOffline(false);
   });
-});
 
-test.describe('U04: approval center semantics', () => {
-  test('pending merge proposal shows not-yet-merged wording', async ({ page }) => {
-    // Requires authenticated session + seeded proposal; will block without backend.
-    await page.goto('/approvals');
-    await expect(page.getByText(/审批中心/)).toBeVisible();
-  });
-});
-
-test.describe('U05/U06: assessment empty/reverse handling', () => {
-  test('submitting with missing answers does not produce a result', async ({ page }) => {
+  test('assessment with missing answers does not produce a result', async ({ page }) => {
+    await loginViaDevToken(page);
     await page.goto('/assessments');
-    await expect(page.getByText(/测评/)).toBeVisible();
+
+    const startBtn = page.getByRole('button', { name: /开始测评/ });
+    try {
+      await startBtn.first().waitFor({ timeout: 8000 });
+    } catch {
+      test.skip(true, 'no assessment catalog seeded on backend');
+    }
+    await startBtn.first().click();
+
+    // Session page renders the missing-item form. Leave all items unanswered,
+    // then attempt submit.
+    const submit = page.getByRole('button', { name: /提交/ });
+    await submit.click();
+
+    // Either a client-side warning about missing answers, or the server rejected;
+    // never a rendered result block.
+    const hasWarning = await page.getByText(/漏答|未答|missing/i).count();
+    expect(hasWarning).toBeGreaterThan(0);
+    await expect(page.locator('.notice.warn').filter({ hasText: /caveat|注意/i })).toHaveCount(0);
+  });
+
+  test('seeded pending merge/release proposal shows not-yet-merged wording', async ({ page }) => {
+    await loginViaDevToken(page);
+    await page.goto('/approvals');
+
+    const pendingMerge = page.locator('.card', { hasText: '尚未合并/发布' });
+    const executedDone = page.locator('.card', { hasText: '外部操作已执行' });
+
+    // Wait for the proposal list to load before deciding whether to skip.
+    await page.waitForLoadState('networkidle').catch(() => undefined);
+    try {
+      await page.locator('.card').first().waitFor({ timeout: 8000 });
+    } catch {
+      test.skip(true, 'no merge/release proposals seeded on backend');
+    }
+    if ((await pendingMerge.count()) === 0 && (await executedDone.count()) === 0) {
+      test.skip(true, 'no merge/release proposals seeded on backend');
+    }
+    // A merge/release proposal must NEVER read as already merged/released before
+    // the external side effect has executed. The page's intro copy intentionally
+    // quotes the forbidden wording, so check only per-proposal status badges.
+    const falselyDone = page.locator('.card .badge', { hasText: /已合并|已发布/ });
+    await expect(falselyDone).toHaveCount(0);
+    // The pending merge/release wording must actually be present.
+    await expect(pendingMerge.first()).toBeVisible();
   });
 });

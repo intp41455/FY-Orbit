@@ -16,6 +16,9 @@ RUN if [ -f package-lock.json ]; then npm ci; else echo "[warn] web/package-lock
 
 COPY web/ ./
 
+# vite dev server 需要在 node_modules/.vite-temp 写临时配置文件；切非 root 前先 chown。
+RUN chown -R node:node /app
+
 # 切回非 root。
 USER node
 

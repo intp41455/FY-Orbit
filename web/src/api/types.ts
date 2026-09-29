@@ -29,19 +29,26 @@ export interface OwnerIdentity {
   name?: string;
   authenticated: true;
 }
+// Real backend /auth/me shape (observed on loopback): subject_type=owner when
+// authenticated; csrf_token must be echoed back on same-origin writes.
 export interface MeResponse {
-  owner: OwnerIdentity;
+  subject_type: 'owner' | 'service' | '';
+  owner_id: string;
+  service_id: string;
+  service_kind: string;
+  csrf_token: string;
 }
 export interface LoginRedirectResponse {
   redirect_url: string;
 }
 export interface DevTokenRequest {
-  // Only accepted on local/test bind 127.0.0.1. Never used in production.
-  owner_sub?: string;
+  // Strict schema: only `token`. Owner defaults server-side.
+  token: string;
 }
 export interface DevTokenResponse {
-  ok: boolean;
-  note: string;
+  status: string;
+  owner_id: string;
+  csrf_token: string;
 }
 
 // ---- Conversations & messages (§5.2) ----

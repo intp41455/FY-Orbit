@@ -1,0 +1,96 @@
+"""FastAPI application factory (FROZEN_CONTRACT §5).
+
+Builds the application with:
+
+* unified error envelope (no stack/secret leakage),
+* server-resolved identity and CSRF/Origin enforcement (see ``deps``),
+* no wide-open CORS — the API is same-origin by default; CORS is only added for
+  explicitly configured origins, never ``*``.
+
+The factory accepts an injectable ``session_maker`` and ``settings`` so tests can
+run on an isolated in-memory SQLite database without touching env/network.
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from ..config import Settings, settings as load_settings
+from ..db.session import engine_from_url, session_factory
+from .errors import register_exception_handlers
+from .oidc import OIDCClient
+from .routes import api_router
+from ..runtime.temporal import TemporalRuntime
+
+
+def build_oidc(settings: Settings) -> OIDCClient | None:
+    """Construct the production OIDC client only when fully configured.
+
+    In local/test without OIDC settings, returns None; the local dev-token path
+    (loopback only) is used instead. Production settings validation already
+    forces OIDC presence, so None here never means an insecure production.
+    """
+    if not (settings.oidc_issuer and settings.oidc_client_id and settings.oidc_owner_sub):
+        return None
+    return OIDCClient(
+        issuer=settings.oidc_issuer,
+        client_id=settings.oidc_client_id,
+        owner_sub=settings.oidc_owner_sub,
+        client_secret=settings.oidc_client_secret,
+    )
+
+
+def create_app(*, session_maker=None, settings: Settings | None = None,
+               oidc: OIDCClient | None = None,
+               temporal: TemporalRuntime | None = None) -> FastAPI:
+    settings = settings or load_settings()
+
+    if session_maker is None:
+        engine = engine_from_url(settings.database_url)
+        session_maker = session_factory(engine)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        tr = temporal if temporal is not None else TemporalRuntime.disabled()
+        app.state.temporal = tr
+        if settings.temporal_address:
+            try:
+                await tr.connect(settings)
+            except Exception:
+                # Never block boot on a flaky Temporal; ready reports it down.
+                app.state.temporal = TemporalRuntime.disabled()
+        yield
+        try:
+            await app.state.temporal.close()
+        except Exception:
+            pass
+
+    app = FastAPI(
+        title="Find Yourself API",
+        version="0.1.0",
+        docs_url="/docs",
+        openapi_url="/openapi.json",
+        lifespan=lifespan,
+    )
+
+    app.state.settings = settings
+    app.state.session_maker = session_maker
+    app.state.oidc = oidc if oidc is not None else build_oidc(settings)
+    app.state.temporal = temporal if temporal is not None else TemporalRuntime.disabled()
+
+    # CORS: same-origin default. Only add restrictive CORS for explicitly allowed
+    # origins; never allow_credentials=True with allow_origins=["*"].
+    allowed = getattr(settings, "cors_allow_origins", None)
+    if allowed:
+        app.add_middleware(
+            CORSMiddleware, allow_origins=list(allowed), allow_credentials=True,
+            allow_methods=["GET", "POST", "OPTIONS"],
+            allow_headers=["content-type", "x-csrf-token", "authorization"],
+        )
+
+    register_exception_handlers(app)
+    app.include_router(api_router)
+    return app

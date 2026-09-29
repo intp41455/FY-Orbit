@@ -39,8 +39,14 @@ _WORKER = Actor.service("temporal-worker", "executor")
 def _default_planner(task_id: str, attempt: int, stage: str, history: list[dict]) -> dict:
     """Deterministic local planner: never calls a paid model.
 
-    Defaults to finishing the task unless the caller injects a richer planner.
+    Defaults to finishing the task unless ``FY_PLANNER_MODE`` selects a scripted
+    branch. ``wait_input`` parks the task in awaiting_input so the HTTP cancel
+    path can be exercised end-to-end. This is a local, deterministic, model-free
+    planner; it never contacts a paid provider.
     """
+    mode = os.environ.get("FY_PLANNER_MODE", "finish")
+    if mode == "wait_input":
+        return {"kind": "wait_input", "reason": "scripted wait_input"}
     return {"kind": "finish", "reason": "local deterministic planner"}
 
 
