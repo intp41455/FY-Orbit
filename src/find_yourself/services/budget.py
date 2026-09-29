@@ -13,7 +13,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ..db.models import BudgetLedger, BudgetReservation, Task
@@ -41,14 +41,43 @@ class BudgetService:
     def month_key(when: datetime) -> str:
         return when.strftime("%Y-%m")
 
-    def _reserved_sum(self, task_id: str | None, period: str) -> Decimal:
+    def _is_postgres(self) -> bool:
+        return self.s.bind.dialect.name == "postgresql"
+
+    @staticmethod
+    def _root_id(task: Task) -> str:
+        return task.root_task_id or task.id
+
+    def _lock_budget(self, root_id: str) -> None:
+        """Serialise reservation checks for one tree and the global month.
+
+        Postgres: transaction-scoped advisory locks keyed by the tree root and a
+        global month key, so concurrent children cannot interleave their
+        sum-check + insert. SQLite runs tests serially and has no advisory locks;
+        skip it there.
+        """
+        if not self._is_postgres():
+            return
+        self.s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"tree:{root_id}"})
+        self.s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": "budget:month"})
+
+    def _tree_task_ids(self, root_id: str) -> list[str]:
+        """Root + all descendants (root_task_id groups the tree)."""
+        rows = self.s.execute(
+            select(Task.id).where(
+                (Task.root_task_id == root_id) | (Task.id == root_id)
+            )
+        ).scalars().all()
+        return list(rows)
+
+    def _reserved_sum(self, task_ids, period: str) -> Decimal:
         expr = func.coalesce(func.sum(BudgetReservation.amount), 0)
         q = select(expr).where(
             BudgetReservation.state.in_(["reserved", "unknown"]),
             BudgetReservation.period == period,
         )
-        if task_id:
-            q = q.where(BudgetReservation.task_id == task_id)
+        if task_ids is not None:
+            q = q.where(BudgetReservation.task_id.in_(task_ids))
         return Decimal(str(self.s.execute(q).scalar() or 0))
 
     def reserve(
@@ -73,10 +102,17 @@ class BudgetService:
         now = utcnow()
         month = self.month_key(now)
 
-        # Enforce per-task and monthly caps atomically.
-        task_used = self._reserved_sum(task_id, "task")
+        # Serialise: cap check + insert must be atomic w.r.t. other concurrent
+        # reservations in this tree and across the rolling month (T07).
+        root = self._root_id(task)
+        self._lock_budget(root)
+        tree_ids = self._tree_task_ids(root)
+
+        # Per-task cap is aggregated over the WHOLE tree (root + descendants),
+        # not per child. Monthly cap is global.
+        task_used = self._reserved_sum(tree_ids, "task")
         if task_used + amt > self.limits.per_task_usd:
-            raise Conflict("task_budget_exceeded", f"Task budget exceeded ({task_used}+{amt})")
+            raise Conflict("task_budget_exceeded", f"Tree budget exceeded ({task_used}+{amt})")
         month_used = self._reserved_sum(None, f"month:{month}")
         if month_used + amt > self.limits.per_month_usd:
             raise Conflict("monthly_budget_exceeded", "Monthly budget exceeded")
