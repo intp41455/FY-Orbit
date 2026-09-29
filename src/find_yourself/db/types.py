@@ -36,6 +36,17 @@ class TZDateTime(TypeDecorator):
             return value.replace(tzinfo=timezone.utc)
         return value.astimezone(timezone.utc)
 
+    def process_result_value(self, value: Any, dialect: Any) -> Any:
+        # On SQLite (no TIMESTAMPTZ) the driver returns naive datetimes; on
+        # PostgreSQL the driver returns aware UTC. In both cases normalise to
+        # timezone-aware UTC so comparisons against ``datetime.now(timezone.utc)``
+        # never raise ``TypeError: can't compare offset-naive and offset-aware``.
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
 
 class Money(TypeDecorator):
     """Fixed-precision money, ``NUMERIC(12,6)``; coerces floats/strings to Decimal."""
