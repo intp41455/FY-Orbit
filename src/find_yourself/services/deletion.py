@@ -55,6 +55,8 @@ class DeletionService:
         plan = self.plan(target_id)
         now = utcnow()
 
+        all_memory_ids = [target_id] + plan["derived_memory_ids"]
+
         # Soft-delete primary memory if it is one.
         mem = self.s.get(Memory, target_id)
         if mem is not None:
@@ -63,7 +65,7 @@ class DeletionService:
             mem.content = ""
             mem.content_hash = ""
 
-        # Cascade to derived memories and redact their revisions.
+        # Cascade to derived memories.
         for did in plan["derived_memory_ids"]:
             d = self.s.get(Memory, did)
             if d is not None:
@@ -71,7 +73,13 @@ class DeletionService:
                 d.active = False
                 d.content = ""
                 d.content_hash = ""
-            for rev in self.s.execute(select(MemoryRevision).where(MemoryRevision.memory_id == did)).scalars():
+
+        # Redact revisions of BOTH the primary and every derived memory
+        # (BUG-02: previously only derived revisions were redacted).
+        for mid in all_memory_ids:
+            for rev in self.s.execute(
+                select(MemoryRevision).where(MemoryRevision.memory_id == mid)
+            ).scalars():
                 rev.redacted = True
                 rev.content_hash = ""
 
@@ -80,6 +88,14 @@ class DeletionService:
             sd = self.s.get(SearchDocument, sid)
             if sd is not None:
                 sd.tombstoned_at = now
+
+        # Soft-delete artifacts of this target (BUG-02: planned but previously
+        # left untouched).
+        for aid in plan["artifact_ids"]:
+            art = self.s.get(Artifact, aid)
+            if art is not None:
+                art.deleted_at = now
+                art.verified = False
 
         graph_hash = digest(plan)
         tomb = Tombstone(
@@ -97,3 +113,55 @@ class DeletionService:
         """On restore: re-assert tombstones before opening service traffic."""
         rows = list(self.s.execute(select(Tombstone)).scalars())
         return [r.target_id for r in rows]
+
+    def verify_replay(self) -> dict:
+        """Machine-readable post-restore audit of every tombstone.
+
+        Returns ``{"ok": bool, "checked": n, "tombstones": [...]}``. Each entry
+        lists the target, its recorded dep_graph_hash and any rows that are
+        missing or still violate the deletion (e.g. a restored backup revived a
+        primary/derived memory, a revision not redacted, a search doc or
+        artifact not tombstoned/deleted).
+        """
+        rows = list(self.s.execute(select(Tombstone)).scalars())
+        results: list[dict] = []
+        all_ok = True
+        for t in rows:
+            plan = self.plan(t.target_id)
+            violations: list[str] = []
+
+            mem = self.s.get(Memory, t.target_id)
+            if mem is not None and (mem.active or mem.deleted_at is None):
+                violations.append(f"primary {t.target_id} not soft-deleted")
+
+            for did in plan["derived_memory_ids"]:
+                d = self.s.get(Memory, did)
+                if d is not None and (d.active or d.deleted_at is None):
+                    violations.append(f"derived memory {did} not soft-deleted")
+
+            for rid in plan["revision_ids"]:
+                r = self.s.get(MemoryRevision, rid)
+                if r is not None and not r.redacted:
+                    violations.append(f"revision {rid} not redacted")
+
+            for sid in plan["search_doc_ids"]:
+                sd = self.s.get(SearchDocument, sid)
+                if sd is not None and sd.tombstoned_at is None:
+                    violations.append(f"search document {sid} not tombstoned")
+
+            for aid in plan["artifact_ids"]:
+                a = self.s.get(Artifact, aid)
+                if a is not None and a.deleted_at is None:
+                    violations.append(f"artifact {aid} not deleted")
+
+            ok = not violations
+            all_ok = all_ok and ok
+            results.append({
+                "tombstone_id": t.id,
+                "target_id": t.target_id,
+                "target_kind": t.target_kind,
+                "dep_graph_hash": t.dep_graph_hash,
+                "ok": ok,
+                "violations": violations,
+            })
+        return {"ok": all_ok, "checked": len(rows), "tombstones": results}
