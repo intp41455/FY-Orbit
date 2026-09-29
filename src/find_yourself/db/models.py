@@ -108,8 +108,8 @@ class ServiceIdentity(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("kind", SERVICE_KINDS), name="kind"),
-        CheckConstraint(_in("state", IDENTITY_STATES), name="state"),
+        CheckConstraint(_in("kind", SERVICE_KINDS), name="ck_svcident_kind"),
+        CheckConstraint(_in("state", IDENTITY_STATES), name="ck_svcident_state"),
     )
 
 
@@ -130,8 +130,8 @@ class Conversation(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("domain", DOMAINS), name="domain"),
-        CheckConstraint(_in("mode", MODES), name="mode"),
+        CheckConstraint(_in("domain", DOMAINS), name="ck_conv_domain"),
+        CheckConstraint(_in("mode", MODES), name="ck_conv_mode"),
     )
 
 
@@ -150,8 +150,8 @@ class Message(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("role", MSG_ROLES), name="role"),
-        UniqueConstraint("conversation_id", "client_message_id", name="conv_client_msg"),
+        CheckConstraint(_in("role", MSG_ROLES), name="ck_msg_role"),
+        UniqueConstraint("conversation_id", "client_message_id", name="uq_msg_conv_clientmsg"),
     )
 
 
@@ -184,11 +184,11 @@ class Task(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("domain", DOMAINS), name="domain"),
-        CheckConstraint(_in("mode", MODES), name="mode"),
-        CheckConstraint(_in("strategy", STRATEGIES), name="strategy"),
-        CheckConstraint(_in("status", TASK_STATUSES), name="status"),
-        UniqueConstraint("owner_id", "idempotency_key", name="owner_idem"),
+        CheckConstraint(_in("domain", DOMAINS), name="ck_task_domain"),
+        CheckConstraint(_in("mode", MODES), name="ck_task_mode"),
+        CheckConstraint(_in("strategy", STRATEGIES), name="ck_task_strategy"),
+        CheckConstraint(_in("status", TASK_STATUSES), name="ck_task_status"),
+        UniqueConstraint("owner_id", "idempotency_key", name="uq_task_owner_idem"),
     )
 
 
@@ -205,8 +205,8 @@ class TaskAttempt(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("status", ATTEMPT_STATUSES), name="status"),
-        UniqueConstraint("task_id", "attempt_no", name="task_attempt_no"),
+        CheckConstraint(_in("status", ATTEMPT_STATUSES), name="ck_attempt_status"),
+        UniqueConstraint("task_id", "attempt_no", name="uq_attempt_task_no"),
     )
 
 
@@ -232,9 +232,9 @@ class Proposal(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("operation", PROPOSAL_OPS), name="operation"),
-        CheckConstraint(_in("status", PROPOSAL_STATUSES), name="status"),
-        UniqueConstraint("digest", name="digest"),
+        CheckConstraint(_in("operation", PROPOSAL_OPS), name="ck_prop_operation"),
+        CheckConstraint(_in("status", PROPOSAL_STATUSES), name="ck_prop_status"),
+        UniqueConstraint("digest", name="uq_prop_digest"),
     )
 
 
@@ -253,11 +253,11 @@ class Grant(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("source_domain", DOMAINS), name="source_domain"),
-        CheckConstraint(_in("consumer_domain", DOMAINS), name="consumer_domain"),
-        CheckConstraint(_in("state", GRANT_STATES), name="state"),
+        CheckConstraint(_in("source_domain", DOMAINS), name="ck_grant_srccol"),
+        CheckConstraint(_in("consumer_domain", DOMAINS), name="ck_grant_consumcol"),
+        CheckConstraint(_in("state", GRANT_STATES), name="ck_grant_state"),
         # No wildcard / empty grants: record_ids must be a non-empty list.
-        CheckConstraint("json_array_length(record_ids) > 0", name="nonempty_records"),
+        CheckConstraint("json_array_length(record_ids) > 0", name="ck_grant_nonempty_records"),
     )
 
 
@@ -281,9 +281,9 @@ class Operation(Base):
     updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow, onupdate=utcnow)
 
     __table_args__ = (
-        CheckConstraint(_in("state", OP_STATES), name="state"),
-        UniqueConstraint("proposal_id", name="one_op_per_proposal"),
-        UniqueConstraint("idempotency_key", name="op_idem"),
+        CheckConstraint(_in("state", OP_STATES), name="ck_op_state"),
+        UniqueConstraint("proposal_id", name="uq_op_one_per_proposal"),
+        UniqueConstraint("idempotency_key", name="uq_op_idem"),
     )
 
 
@@ -307,8 +307,8 @@ class Memory(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("domain", DOMAINS), name="domain"),
-        CheckConstraint(_in("hypothesis_status", HYPOTHESIS_STATES), name="hypothesis_status"),
+        CheckConstraint(_in("domain", DOMAINS), name="ck_mem_domain"),
+        CheckConstraint(_in("hypothesis_status", HYPOTHESIS_STATES), name="ck_mem_hyp_status"),
     )
 
 
@@ -336,8 +336,8 @@ class SourceRelation(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("relation_type", RELATION_TYPES), name="relation_type"),
-        UniqueConstraint("source_id", "derived_id", "relation_type", name="src_derived_rel"),
+        CheckConstraint(_in("relation_type", RELATION_TYPES), name="ck_src_rel_type"),
+        UniqueConstraint("source_id", "derived_id", "relation_type", name="uq_src_derived_rel"),
     )
 
 
@@ -356,7 +356,7 @@ class Artifact(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
 
-    __table_args__ = (CheckConstraint(_in("domain", DOMAINS), name="domain"),)
+    __table_args__ = (CheckConstraint(_in("domain", DOMAINS), name="ck_art_domain"),)
 
 
 # ---------------------------------------------------------------------------
@@ -379,8 +379,8 @@ class Agent(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("state", AGENT_STATES), name="state"),
-        UniqueConstraint("name", "semantic_version", name="name_version"),
+        CheckConstraint(_in("state", AGENT_STATES), name="ck_agent_state"),
+        UniqueConstraint("name", "semantic_version", name="uq_agent_name_version"),
     )
 
 
@@ -395,7 +395,7 @@ class AgentLease(Base):
     state: Mapped[str] = mapped_column(String(16), default="active")
     version: Mapped[int] = mapped_column(Integer, default=1)
 
-    __table_args__ = (CheckConstraint(_in("state", LEASE_STATES), name="state"),)
+    __table_args__ = (CheckConstraint(_in("state", LEASE_STATES), name="ck_lease_state"),)
 
 
 class Skill(Base):
@@ -413,10 +413,10 @@ class Skill(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("domain", DOMAINS), name="domain"),
-        CheckConstraint(_in("state", SKILL_STATES), name="state"),
-        UniqueConstraint("name", "semantic_version", name="name_version"),
-        UniqueConstraint("package_hash", name="package_hash_immutable"),
+        CheckConstraint(_in("domain", DOMAINS), name="ck_skill_domain"),
+        CheckConstraint(_in("state", SKILL_STATES), name="ck_skill_state"),
+        UniqueConstraint("name", "semantic_version", name="uq_skill_name_version"),
+        UniqueConstraint("package_hash", name="uq_skill_pkg_hash_immutable"),
     )
 
 
@@ -455,8 +455,8 @@ class BudgetReservation(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
-        CheckConstraint(_in("state", RESERVATION_STATES), name="state"),
-        UniqueConstraint("idempotency_key", name="reservation_idem"),
+        CheckConstraint(_in("state", RESERVATION_STATES), name="ck_res_state"),
+        UniqueConstraint("idempotency_key", name="uq_res_idem"),
     )
 
 
@@ -529,5 +529,5 @@ class SearchDocument(Base):
 
     __table_args__ = (
         Index("ix_search_rec", "record_id", "record_kind", unique=True),
-        CheckConstraint(_in("domain", DOMAINS), name="domain"),
+        CheckConstraint(_in("domain", DOMAINS), name="ck_sdoc_domain"),
     )

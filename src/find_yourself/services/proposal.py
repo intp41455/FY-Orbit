@@ -43,9 +43,13 @@ def new_id() -> str:
 
 
 class ProposalService:
-    def __init__(self, session: Session, audit: AuditService):
+    def __init__(self, session: Session, audit: AuditService, target_version_lookup=None):
         self.s = session
         self.audit = audit
+        # Optional callable(target_id) -> current_version of the target row.
+        # When supplied and expected_version != 0, an approval whose target has
+        # moved on is rejected (S07). Runtime wires this to the real repositories.
+        self.target_version_lookup = target_version_lookup
 
     # -- digest -----------------------------------------------------------
     @staticmethod
@@ -106,6 +110,22 @@ class ProposalService:
         recomputed = self.compute_digest(p)
         if p.digest != recomputed or client_digest != recomputed:
             raise Conflict("digest_mismatch", "Approval does not match exact proposal content")
+
+        # S07: if the proposal pins an expected target version, the target must
+        # still be at that version at decision time. A moved-on target rejects
+        # the approval even though the payload/digest itself is unchanged.
+        if (
+            approve
+            and p.expected_version
+            and p.target_id
+            and self.target_version_lookup is not None
+        ):
+            current = self.target_version_lookup(p.target_id)
+            if current is None or current != p.expected_version:
+                raise Conflict(
+                    "target_version_changed",
+                    f"Target {p.target_id} is at version {current}, expected {p.expected_version}",
+                )
 
         # Determine the legal target state BEFORE the claim, so the conditional
         # UPDATE only ever writes a CHECK-allowed status (no transient states).
