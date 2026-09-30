@@ -13,6 +13,8 @@ import { ApprovalsPage } from './pages/ApprovalsPage';
 import { SkillsPage } from './pages/SkillsPage';
 import { PrivateSpacePage } from './pages/PrivateSpacePage';
 import { SettingsPage } from './pages/SettingsPage';
+import { CanvasPage } from './pages/CanvasPage';
+import { ProfilesPage } from './pages/ProfilesPage';
 
 export default function App() {
   return (
@@ -33,6 +35,8 @@ export default function App() {
               <Route path="/growth" element={<GrowthPage />} />
               <Route path="/assessments" element={<AssessmentsPage />} />
               <Route path="/workbench" element={<WorkbenchPage />} />
+              <Route path="/canvas" element={<CanvasPage />} />
+              <Route path="/profiles" element={<ProfilesPage />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
               <Route path="/skills" element={<SkillsPage />} />
               <Route path="/private" element={<PrivateSpacePage />} />

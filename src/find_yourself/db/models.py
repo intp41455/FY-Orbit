@@ -531,3 +531,16 @@ class SearchDocument(Base):
         Index("ix_search_rec", "record_id", "record_kind", unique=True),
         CheckConstraint(_in("domain", DOMAINS), name="ck_sdoc_domain"),
     )
+
+
+# ---------------------------------------------------------------------------
+# Re-export 04 Profile and 05 Canvas models
+# ---------------------------------------------------------------------------
+from find_yourself.db.profile_models import (  # noqa: E402
+    ProfileSubject, ProfileImport, SourceSegment, ProfileEvidence,
+    ProfileRun, ProfileRevision, ProfileFeedback,
+)
+from find_yourself.db.canvas_models import (  # noqa: E402
+    CanvasInstance, DispatchRecord, HandoffPacket, CanvasEvent,
+)
+

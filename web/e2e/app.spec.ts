@@ -161,4 +161,13 @@ test.describe('authenticated flows', () => {
     // The pending merge/release wording must actually be present.
     await expect(pendingMerge.first()).toBeVisible();
   });
+
+  test('navigation to canvas and profiles works without errors', async ({ page }) => {
+    await loginViaDevToken(page);
+    await page.goto('/canvas');
+    await expect(page.getByText('多 Agent 协作可视化画布')).toBeVisible();
+
+    await page.goto('/profiles');
+    await expect(page.getByText('个人与对象多维画像')).toBeVisible();
+  });
 });

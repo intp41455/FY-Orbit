@@ -138,6 +138,20 @@ table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 th { color: var(--text-dim); font-weight: 600; }
 
+/* Read-only collaboration canvas */
+.canvas-layout { display: flex; align-items: center; flex-direction: column; padding: 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.canvas-user { border: 1px solid var(--accent); border-radius: var(--radius); padding: 0.5rem 0.9rem; text-align: center; }
+.canvas-user .muted { margin-left: 0.5rem; }
+.canvas-line { width: 2px; height: 1.4rem; background: var(--border); }
+.canvas-node { display: flex; flex-direction: column; align-items: center; gap: 0.3rem; min-width: 11rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-elev); text-align: center; }
+.canvas-node small { color: var(--text-dim); }
+.canvas-center { border-color: var(--accent); background: var(--bg-elev-2); }
+.canvas-workers { display: flex; justify-content: center; flex-wrap: wrap; gap: 1rem; width: 100%; }
+.canvas-task { margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.canvas-events { padding-left: 1.4rem; }
+.canvas-events li { margin-bottom: 0.4rem; }
+.canvas-events time { color: var(--text-dim); }
+
 /* Mobile */
 @media (max-width: 760px) {
   .app { grid-template-columns: 1fr; }

@@ -31,6 +31,8 @@ from ..services.memory import MemoryService
 from ..services.outbox import OutboxService
 from ..services.proposal import ProposalService
 from ..services.skill import SkillService
+from ..services.profile import ProfileService
+from ..services.canvas import CanvasService
 
 SESSION_COOKIE = "fy_session"
 CSRF_HEADER = "x-csrf-token"
@@ -50,6 +52,8 @@ class Services:
     outbox: OutboxService
     skills: SkillService
     agents: AgentService
+    profiles: ProfileService
+    canvas: CanvasService
 
 
 def get_settings(request: Request) -> Settings:
@@ -79,7 +83,10 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         outbox=OutboxService(db, audit),
         skills=SkillService(db, audit),
         agents=AgentService(db, audit),
+        profiles=ProfileService(db, audit),
+        canvas=CanvasService(db, audit),
     )
+
 
 
 def _bearer_token(request: Request) -> str | None:

@@ -8,6 +8,8 @@ const NAV = [
   { to: '/growth', label: '成长记录' },
   { to: '/assessments', label: '测评' },
   { to: '/workbench', label: '任务工作台' },
+  { to: '/canvas', label: '协作画布' },
+  { to: '/profiles', label: '多维画像' },
   { to: '/approvals', label: '审批中心' },
   { to: '/skills', label: '能力目录' },
   { to: '/private', label: '私人空间' },
