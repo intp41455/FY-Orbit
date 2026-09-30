@@ -258,7 +258,10 @@ services:
       - api
     environment:
       # 前端通过浏览器访问 API，仍走回环；容器内不直连后端。
-      VITE_API_BASE_URL: http://127.0.0.1:8000
+      # Browser requests must stay same-origin and use Vite's /api, /auth,
+      # /health proxy. 127.0.0.1:8000 is a container-internal target, not a
+      # host-published API address (local dev publishes API on 8005).
+      VITE_API_BASE_URL: ""
       # Vite dev server 端的同源代理目标（容器网络内直连 api:8000）。
       VITE_DEV_API_TARGET: http://api:8000
     command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]

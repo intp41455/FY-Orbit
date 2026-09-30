@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import Conversation, Grant, Memory, Message
+from ..db.profile_models import ProfileRevision, ProfileSubject
 from ..db.types import utcnow
 from .actor import Actor
 from .audit import AuditService
@@ -114,11 +115,58 @@ class ExportService:
             ],
             "contains_secrets": False,
         }
+
+        # Profiles export (strictly excludes invalidated revisions and deleted sources)
+        subj_query = select(ProfileSubject).where(ProfileSubject.owner_id == actor.owner_id)
+        subjects = list(self.s.execute(subj_query).scalars().all())
+        subject_list = []
+        for s in subjects:
+            rev_query = (
+                select(ProfileRevision)
+                .where(
+                    ProfileRevision.subject_id == s.id,
+                    ProfileRevision.user_review_state != "invalidated",
+                )
+                .order_by(ProfileRevision.revision.desc())
+            )
+            revisions = list(self.s.execute(rev_query).scalars().all())
+            rev_list = []
+            for r in revisions:
+                clean_clusters = []
+                for cl in (r.clusters or []):
+                    clean_nodes = [
+                        nd for nd in cl.get("nodes", [])
+                        if nd.get("review_status") != "invalidated"
+                    ]
+                    if clean_nodes:
+                        clean_cl = dict(cl)
+                        clean_cl["nodes"] = clean_nodes
+                        clean_clusters.append(clean_cl)
+                rev_list.append({
+                    "id": r.id,
+                    "revision": r.revision,
+                    "core_summary": r.core_summary,
+                    "clusters": clean_clusters,
+                    "metrics": r.metrics,
+                    "limitations": r.limitations,
+                    "user_review_state": r.user_review_state,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                })
+            subject_list.append({
+                "id": s.id,
+                "label": s.label,
+                "kind": s.kind,
+                "description": s.description,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "revisions": rev_list,
+            })
+        bundle["profiles"] = subject_list
+
         self.audit.append(
             actor,
             "export.created",
             actor.owner_id,
-            {"conversations": len(conv_list), "memories": len(memories)},
+            {"conversations": len(conv_list), "memories": len(memories), "profiles": len(subject_list)},
         )
         return bundle
 

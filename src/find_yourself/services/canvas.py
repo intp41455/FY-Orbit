@@ -113,10 +113,16 @@ class CanvasService:
                     timeout=5,
                     check=False,
                 )
-                if c_res.returncode == 0:
+                v_out = (c_res.stdout.strip().splitlines() or [""])[0]
+                codex_version = v_out
+                # Honest inspection: check if this is the npm static site renderer rather than Codex AI Agent
+                if "0.2." in v_out or "site" in c_res.stdout.lower():
+                    codex_healthy = False
+                    codex_stage = "仅设计"
+                    codex_blocking = f"本机 PATH 的 codex ({v_out}) 系 npm 静态文档渲染器，非可调度的 Codex AI 智能体；会话操纵需外部接口"
+                elif c_res.returncode == 0:
                     codex_healthy = True
                     codex_stage = "本机握手通过"
-                    codex_version = (c_res.stdout.strip().splitlines() or [""])[0]
                     codex_blocking = None
                 else:
                     codex_stage = "发现接口"
@@ -350,10 +356,10 @@ class CanvasService:
                 f"Root task {root_task_id} not found or not owned by caller"
             )
 
-        # 3. Enforce domain boundary and strict data grant authorization
+        # 3. Enforce domain boundary and strict authoritative data grant authorization
         input_ref_dict = dict(input_ref or {})
         grant_id = input_ref_dict.get("grant_id")
-        input_domain = (
+        client_domain = (
             input_ref_dict.get("domain")
             or input_ref_dict.get("privacy_domain")
             or input_ref_dict.get("source_domain")
@@ -367,24 +373,56 @@ class CanvasService:
         if "ref" in input_ref_dict and str(input_ref_dict["ref"]) not in target_records:
             target_records.append(str(input_ref_dict["ref"]))
 
-        # Cross-reference with underlying Memory table if record exists to prevent client spoofing
+        # Check all target records against authoritative Memory table
+        record_domains = set()
         for rid in target_records:
             mem = self.session.get(Memory, rid)
-            if mem is not None and mem.domain != inst.domain:
-                input_domain = mem.domain
+            if mem is None:
+                raise ValidationFailed(
+                    f"Referenced record '{rid}' not found in authoritative storage"
+                )
+            if mem.deleted_at is not None or not mem.active:
+                raise ValidationFailed(
+                    f"Referenced record '{rid}' has been deleted or deactivated"
+                )
+            if mem.owner_id != actor.owner_id:
+                raise ValidationFailed(
+                    f"Referenced record '{rid}' is not owned by actor '{actor.owner_id}'"
+                )
+            if client_domain and mem.domain != client_domain:
+                raise ValidationFailed(
+                    f"Client reported domain '{client_domain}' conflicts with authoritative domain '{mem.domain}' for record '{rid}'"
+                )
+            record_domains.add(mem.domain)
 
-        is_cross_domain = bool(input_domain and input_domain != inst.domain)
+        if len(record_domains) > 1:
+            raise ValidationFailed(
+                f"Referenced records span multiple conflicting domains: {sorted(list(record_domains))}; mixed-domain input references are rejected"
+            )
+
+        if record_domains:
+            authoritative_domain = next(iter(record_domains))
+        elif client_domain:
+            authoritative_domain = client_domain
+        else:
+            authoritative_domain = inst.domain
+
+        is_cross_domain = authoritative_domain != inst.domain
 
         if is_cross_domain or grant_id:
             if not grant_id:
                 raise ValidationFailed(
-                    f"Canvas in '{inst.domain}' domain cannot ingest '{input_domain}' domain data without explicit grant authorization"
+                    f"Canvas in '{inst.domain}' domain cannot ingest '{authoritative_domain}' domain data without explicit grant authorization"
+                )
+            if not target_records:
+                raise ValidationFailed(
+                    "Cross-domain subtask dispatch requires specific authoritative record references"
                 )
 
             grant = self.session.get(Grant, grant_id)
             if grant is None:
                 raise ValidationFailed(f"Grant {grant_id} not found")
-            if grant.state != "active":
+            if grant.state != "active" or grant.revoked_at is not None:
                 raise ValidationFailed(f"Grant {grant_id} is not active (state: {grant.state})")
             if grant.expires_at <= utcnow():
                 raise ValidationFailed(f"Grant {grant_id} has expired at {grant.expires_at.isoformat()}")
@@ -392,18 +430,34 @@ class CanvasService:
                 raise ValidationFailed(
                     f"Grant {grant_id} consumer domain '{grant.consumer_domain}' does not match canvas domain '{inst.domain}'"
                 )
-            if input_domain and grant.source_domain != input_domain:
+            if grant.source_domain != authoritative_domain:
                 raise ValidationFailed(
-                    f"Grant {grant_id} source domain '{grant.source_domain}' does not match input domain '{input_domain}'"
+                    f"Grant {grant_id} source domain '{grant.source_domain}' does not match authoritative input domain '{authoritative_domain}'"
                 )
 
             # Check coverage of all target records
-            if target_records:
-                for rid in target_records:
-                    if rid not in (grant.record_ids or []):
-                        raise ValidationFailed(
-                            f"Grant {grant_id} does not authorize record '{rid}' (authorized: {grant.record_ids})"
-                        )
+            for rid in target_records:
+                if rid not in (grant.record_ids or []):
+                    raise ValidationFailed(
+                        f"Grant {grant_id} does not authorize record '{rid}' (authorized: {grant.record_ids})"
+                    )
+
+        # 3.1 Goal inspection: Ensure raw sensitive text from unauthorized other-domain memories is not smuggled in goal
+        unauthorized_memories = self.session.execute(
+            select(Memory).where(
+                Memory.owner_id == actor.owner_id,
+                Memory.domain != inst.domain,
+                Memory.deleted_at.is_(None),
+                Memory.active.is_(True),
+            )
+        ).scalars().all()
+        for um in unauthorized_memories:
+            if grant_id and um.id in target_records:
+                continue
+            if um.content and len(um.content.strip()) >= 10 and um.content.strip() in goal:
+                raise ValidationFailed(
+                    f"Task goal contains ungranted raw text from {um.domain} record '{um.id}'; raw cross-domain text in goal is rejected"
+                )
 
         # Idempotency check to prevent duplicate dispatches
         assigned_subtask_id = subtask_id or f"sub-{uuid4().hex[:12]}"
@@ -475,6 +529,14 @@ class CanvasService:
 
         # 6. Dispatch and run if external connected adapter (Hermes)
         if worker_id.lower() == "hermes":
+            # Re-verify grant before launching external process to mitigate revocation race condition
+            if grant_id:
+                rechecked_grant = self.session.get(Grant, grant_id)
+                if not rechecked_grant or rechecked_grant.state != "active" or rechecked_grant.revoked_at is not None or rechecked_grant.expires_at <= utcnow():
+                    if self.budget and res:
+                        self.budget.release(actor, res.id)
+                    raise ValidationFailed(f"Grant {grant_id} is no longer active prior to execution")
+
             self._emit_event(
                 instance_id,
                 "task.dispatched",
@@ -488,26 +550,45 @@ class CanvasService:
                 },
             )
 
-            exec_res = self.hermes_adapter.dispatch_and_run(subtask_id=assigned_subtask_id, goal=goal)
-            receipt_id = exec_res.get("receipt_id")
-            updated_input_ref["receipt_id"] = receipt_id
+            # Build acceptance criteria dict if string or dict
+            crit_dict = None
+            if acceptance_criteria and acceptance_criteria.strip():
+                crit_dict = {"contains": [acceptance_criteria.strip()]}
+
+            exec_res = self.hermes_adapter.dispatch_and_run(
+                subtask_id=assigned_subtask_id,
+                goal=goal,
+                acceptance_criteria=crit_dict,
+            )
+            local_exec_id = exec_res.get("local_execution_id")
+            ext_sess_id = exec_res.get("external_session_id")
+            val_passed = bool(exec_res.get("validation_passed"))
+            duration_ms = exec_res.get("duration_ms")
+            est_cost = exec_res.get("estimated_cost_usd", 0.0)
+            cost_status = exec_res.get("cost_status", "unknown")
+
+            updated_input_ref["local_execution_id"] = local_exec_id
+            updated_input_ref["external_session_id"] = ext_sess_id
             updated_input_ref["execution_trace"] = exec_res
+            updated_input_ref["tokens"] = exec_res.get("tokens")
+            updated_input_ref["model"] = exec_res.get("model")
+            updated_input_ref["cost_status"] = cost_status
+            updated_input_ref["duration_ms"] = duration_ms
+            updated_input_ref["validation_passed"] = val_passed
             if exec_res.get("output"):
                 updated_input_ref["output"] = exec_res["output"]
             if exec_res.get("error"):
                 updated_input_ref["error"] = exec_res["error"]
-            if exec_res.get("duration_ms") is not None:
-                updated_input_ref["duration_ms"] = exec_res["duration_ms"]
 
-            if exec_res.get("state") == "completed":
+            if exec_res.get("state") == "completed" and val_passed:
                 dispatch_state = "completed"
                 completed_at = utcnow()
                 self._emit_event(
                     instance_id,
-                    "agent.task_accepted",
+                    "agent.task_submitted",
                     task_id=assigned_subtask_id,
                     agent_id=worker_id,
-                    details={"receipt_id": receipt_id},
+                    details={"local_execution_id": local_exec_id},
                 )
                 self._emit_event(
                     instance_id,
@@ -515,24 +596,30 @@ class CanvasService:
                     task_id=assigned_subtask_id,
                     agent_id=worker_id,
                     details={
-                        "receipt_id": receipt_id,
+                        "local_execution_id": local_exec_id,
+                        "external_session_id": ext_sess_id,
                         "output_preview": (exec_res.get("output") or "")[:200],
-                        "duration_ms": exec_res.get("duration_ms"),
+                        "duration_ms": duration_ms,
+                        "model": exec_res.get("model"),
+                        "tokens": exec_res.get("tokens"),
                     },
                 )
                 if self.budget and res:
-                    self.budget.settle(actor, res.id, settled_amount=Decimal(str(budget_slice)))
+                    settle_amt = Decimal(str(est_cost)) if est_cost > 0.0 else Decimal(str(budget_slice))
+                    self.budget.settle(actor, res.id, settled_amount=settle_amt)
             else:
                 dispatch_state = exec_res.get("state") or "failed"
                 completed_at = utcnow()
                 self._emit_event(
                     instance_id,
-                    f"agent.task_{dispatch_state}",
+                    "agent.task_failed",
                     task_id=assigned_subtask_id,
                     agent_id=worker_id,
                     details={
+                        "local_execution_id": local_exec_id,
+                        "external_session_id": ext_sess_id,
                         "error": exec_res.get("error"),
-                        "duration_ms": exec_res.get("duration_ms"),
+                        "duration_ms": duration_ms,
                     },
                 )
                 if self.budget and res:

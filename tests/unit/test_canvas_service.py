@@ -243,12 +243,25 @@ def test_root_task_validation(
 def test_cross_domain_violation_enforcement(
     canvas_service: CanvasService, owner: Actor
 ) -> None:
-    """07 Threshold 2: Reject cross-domain access for 4 cases (missing, expired, revoked, mismatched); accept valid."""
-    from find_yourself.db.models import Grant
+    """07 Threshold 2 & Phase C: Authoritative Memory checks, 4-way grant verification, and goal privacy enforcement."""
+    from find_yourself.db.models import Grant, Memory
     session = canvas_service.session
 
     root_task = create_task(session, owner, task_id="task-domain-01", domain="work")
     inst_work = canvas_service.create_instance(owner, project_name="跨域检测", template_id="work")
+
+    # Seed authoritative Memory record
+    mem_priv = Memory(
+        id="rec-priv-01",
+        owner_id=owner.owner_id,
+        domain="personal",
+        category="note",
+        content="保密个人笔记：绝密项目财务预估",
+        content_hash="h-priv-01",
+        active=True,
+    )
+    session.add(mem_priv)
+    session.flush()
 
     # 1. Without grant -> rejected
     with pytest.raises(ValidationFailed) as exc_info:
@@ -262,7 +275,101 @@ def test_cross_domain_violation_enforcement(
         )
     assert "cannot ingest 'personal' domain data without explicit grant authorization" in str(exc_info.value)
 
-    # 2. Case 1: Non-existent grant -> rejected
+    # 2. Case A: Non-existent record ID -> rejected (does not exist in authoritative storage)
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="读取不存在记录",
+            input_ref={"domain": "personal", "record_id": "rec-ghost-404"},
+        )
+    assert "not found in authoritative storage" in str(exc_info.value)
+
+    # 3. Case B: Deleted record ID -> rejected
+    mem_del = Memory(
+        id="rec-del-01",
+        owner_id=owner.owner_id,
+        domain="personal",
+        category="note",
+        content="已删除的私人资料",
+        content_hash="h-del-01",
+        active=False,
+        deleted_at=utcnow(),
+    )
+    session.add(mem_del)
+    session.flush()
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="读取已删除记录",
+            input_ref={"domain": "personal", "record_id": "rec-del-01"},
+        )
+    assert "deleted or deactivated" in str(exc_info.value)
+
+    # 4. Case C: Another user's record ID -> rejected
+    mem_other = Memory(
+        id="rec-other-01",
+        owner_id="attacker-user-999",
+        domain="personal",
+        category="note",
+        content="他人私有信息",
+        content_hash="h-other-01",
+        active=True,
+    )
+    session.add(mem_other)
+    session.flush()
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="读取他人记录",
+            input_ref={"domain": "personal", "record_id": "rec-other-01"},
+        )
+    assert "not owned by actor" in str(exc_info.value)
+
+    # 5. Case D: Domain spoofing (client says work, record is actually personal) -> rejected
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="客户端自报错误域尝试绕过",
+            input_ref={"domain": "work", "record_id": "rec-priv-01"},
+        )
+    assert "conflicts with authoritative domain" in str(exc_info.value)
+
+    # 6. Case E: Multiple records with conflicting domains -> rejected
+    mem_work = Memory(
+        id="rec-work-01",
+        owner_id=owner.owner_id,
+        domain="work",
+        category="ticket",
+        content="工作工单内容",
+        content_hash="h-work-01",
+        active=True,
+    )
+    session.add(mem_work)
+    session.flush()
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="混入多个不同域记录",
+            input_ref={"record_ids": ["rec-priv-01", "rec-work-01"]},
+        )
+    assert "mixed-domain input references are rejected" in str(exc_info.value)
+
+    # 7. Case F: Non-existent grant -> rejected
     with pytest.raises(ValidationFailed) as exc_info:
         canvas_service.dispatch_subtask(
             actor=owner,
@@ -270,11 +377,11 @@ def test_cross_domain_violation_enforcement(
             root_task_id=root_task.id,
             worker_id="EngineeringAgent",
             goal="伪造 grant_id",
-            input_ref={"domain": "personal", "grant_id": "grant-nonexistent-123"},
+            input_ref={"domain": "personal", "grant_id": "grant-nonexistent-123", "record_id": "rec-priv-01"},
         )
     assert "Grant grant-nonexistent-123 not found" in str(exc_info.value)
 
-    # 3. Case 2: Expired grant -> rejected
+    # 8. Case G: Expired grant -> rejected
     g_expired = Grant(
         id="grant-expired-01",
         source_domain="personal",
@@ -298,7 +405,7 @@ def test_cross_domain_violation_enforcement(
         )
     assert "has expired" in str(exc_info.value)
 
-    # 4. Case 3: Revoked grant -> rejected
+    # 9. Case H: Revoked grant -> rejected
     g_revoked = Grant(
         id="grant-revoked-01",
         source_domain="personal",
@@ -306,6 +413,7 @@ def test_cross_domain_violation_enforcement(
         record_ids=["rec-priv-01"],
         expires_at=utcnow() + timedelta(days=5),
         state="revoked",
+        revoked_at=utcnow(),
         scope_hash="hash-revoked",
     )
     session.add(g_revoked)
@@ -322,7 +430,7 @@ def test_cross_domain_violation_enforcement(
         )
     assert "is not active" in str(exc_info.value)
 
-    # 5. Case 4: Record ID mismatch -> rejected
+    # 10. Case I: Record ID mismatch in grant -> rejected
     g_mismatch = Grant(
         id="grant-mismatch-01",
         source_domain="personal",
@@ -346,7 +454,19 @@ def test_cross_domain_violation_enforcement(
         )
     assert "does not authorize record 'rec-priv-01'" in str(exc_info.value)
 
-    # 6. Valid active unexpired grant covering rec-priv-01 -> succeeds!
+    # 11. Case J: Goal embeds ungranted raw personal content -> rejected
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="处理这段内容：保密个人笔记：绝密项目财务预估，分析它的工作影响",
+            input_ref={"record_id": "rec-work-01"},
+        )
+    assert "raw cross-domain text in goal is rejected" in str(exc_info.value)
+
+    # 12. Valid active unexpired grant covering rec-priv-01 -> succeeds!
     g_valid = Grant(
         id="grant-valid-01",
         source_domain="personal",
@@ -364,7 +484,7 @@ def test_cross_domain_violation_enforcement(
         instance_id=inst_work.id,
         root_task_id=root_task.id,
         worker_id="EngineeringAgent",
-        goal="授权读取私人数据",
+        goal="授权读取私人数据进行工作汇报整合",
         input_ref={"domain": "personal", "grant_id": "grant-valid-01", "record_id": "rec-priv-01"},
     )
     assert rec.state == "dispatched"
@@ -448,25 +568,33 @@ def test_hermes_dispatch_roundtrip_settlement(
         lambda: {"name": "Hermes", "healthy": True, "stage": "本机握手通过", "binary_path": "hermes", "blocking_reason": None},
     )
 
-    # 1. Success case: mock dispatch_and_run
-    fake_receipt = "rcpt-mock-123456"
+    # 1. Success case: mock dispatch_and_run with real telemetry
+    fake_local_exec = "exec-local-mock-123456"
+    fake_session_id = "sess-hermes-987654"
     fake_output = "Hermes已完成日常安排推演与归档。"
     monkeypatch.setattr(
         canvas_service.hermes_adapter,
         "dispatch_and_run",
-        lambda subtask_id, goal, timeout_sec=60: {
+        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None: {
             "subtask_id": subtask_id,
-            "receipt_id": fake_receipt,
+            "local_execution_id": fake_local_exec,
+            "external_session_id": fake_session_id,
             "agent": "Hermes",
             "goal": goal,
             "stage_transitions": [
-                {"stage": "submitted", "timestamp": "2026-10-01T00:00:00Z"},
-                {"stage": "accepted", "timestamp": "2026-10-01T00:00:01Z", "receipt_id": fake_receipt},
-                {"stage": "completed", "timestamp": "2026-10-01T00:00:05Z"},
+                {"stage": "submitted", "timestamp": "2026-10-01T00:00:00Z", "local_execution_id": fake_local_exec},
+                {"stage": "running", "timestamp": "2026-10-01T00:00:01Z"},
+                {"stage": "execution_succeeded", "timestamp": "2026-10-01T00:00:04Z", "external_session_id": fake_session_id},
+                {"stage": "accepted_by_validator", "timestamp": "2026-10-01T00:00:05Z"},
             ],
             "state": "completed",
+            "validation_passed": True,
             "output": fake_output,
             "duration_ms": 4200,
+            "tokens": 1500,
+            "model": "agnes-2.5-flash",
+            "estimated_cost_usd": 0.05,
+            "cost_status": "estimated",
         },
     )
 
@@ -482,7 +610,9 @@ def test_hermes_dispatch_roundtrip_settlement(
 
     assert disp.state == "completed"
     assert disp.completed_at is not None
-    assert disp.input_ref["receipt_id"] == fake_receipt
+    assert disp.input_ref["local_execution_id"] == fake_local_exec
+    assert disp.input_ref["external_session_id"] == fake_session_id
+    assert disp.input_ref["validation_passed"] is True
     assert disp.input_ref["output"] == fake_output
     assert disp.input_ref["duration_ms"] == 4200
 
@@ -495,7 +625,7 @@ def test_hermes_dispatch_roundtrip_settlement(
     events = canvas_service.get_events(owner, inst.id, cursor=0)
     event_types = [e["event_type"] for e in events]
     assert "task.dispatched" in event_types
-    assert "agent.task_accepted" in event_types
+    assert "agent.task_submitted" in event_types
     assert "agent.task_completed" in event_types
 
     # Idempotency check: re-dispatching with same key returns existing without duplicate run
@@ -509,6 +639,66 @@ def test_hermes_dispatch_roundtrip_settlement(
         idempotency_key="disp-hermes-roundtrip-01",
     )
     assert disp_dup.id == disp.id
+
+
+def test_hermes_dispatch_exit_zero_fails_acceptance_criteria_releases_budget(
+    canvas_service: CanvasService, owner: Actor, monkeypatch
+) -> None:
+    """Phase D Item 3: Exit code 0 but failing acceptance criteria marks subtask as failed and releases budget."""
+    from find_yourself.db.models import BudgetReservation
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-hermes-criteria-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="验收门槛测试", template_id="personal")
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "healthy": True, "stage": "本机握手通过", "binary_path": "hermes", "blocking_reason": None},
+    )
+
+    # Returncode 0 from Hermes CLI, but output does NOT satisfy required criteria
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "dispatch_and_run",
+        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None: {
+            "subtask_id": subtask_id,
+            "local_execution_id": "exec-local-crit-001",
+            "external_session_id": "sess-crit-001",
+            "agent": "Hermes",
+            "goal": goal,
+            "stage_transitions": [
+                {"stage": "submitted", "timestamp": "2026-10-01T00:00:00Z"},
+                {"stage": "running", "timestamp": "2026-10-01T00:00:01Z"},
+                {"stage": "execution_succeeded", "timestamp": "2026-10-01T00:00:04Z"},
+                {"stage": "rejected_by_validator", "timestamp": "2026-10-01T00:00:05Z", "error": "Acceptance criteria failed: missing required phrase 'MANDATORY_OUTPUT' in output"},
+            ],
+            "state": "failed",
+            "validation_passed": False,
+            "output": "普通输出文本，不含验收必要字符串",
+            "duration_ms": 3100,
+            "error": "Acceptance criteria failed: missing required phrase 'MANDATORY_OUTPUT' in output",
+        },
+    )
+
+    disp = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="执行严格验收任务",
+        acceptance_criteria="MANDATORY_OUTPUT",
+        budget_slice=0.30,
+    )
+
+    assert disp.state == "failed"
+    assert disp.input_ref["validation_passed"] is False
+    assert "Acceptance criteria failed" in disp.input_ref["error"]
+
+    # Budget reservation is RELEASED, not settled!
+    res_id = disp.input_ref["reservation_id"]
+    res = session.get(BudgetReservation, res_id)
+    assert res.state == "released"
 
 
 def test_hermes_dispatch_failure_releases_budget(
@@ -530,7 +720,7 @@ def test_hermes_dispatch_failure_releases_budget(
     monkeypatch.setattr(
         canvas_service.hermes_adapter,
         "dispatch_and_run",
-        lambda subtask_id, goal, timeout_sec=60: {
+        lambda subtask_id, goal, timeout_sec=60, **kwargs: {
             "subtask_id": subtask_id,
             "receipt_id": "rcpt-fail-123",
             "agent": "Hermes",
