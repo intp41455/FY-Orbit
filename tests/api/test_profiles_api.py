@@ -48,6 +48,14 @@ def test_profiles_api_lifecycle(client: TestClient) -> None:
     assert imp["subject_id"] == subj_id
     import_id = imp["id"]
 
+    # 3b. Confirm Alice as self
+    r_conf = client.post(
+        f"/api/profiles/imports/{import_id}/confirm_speakers",
+        json={"mappings": {"Alice": "self"}},
+        headers=headers,
+    )
+    assert r_conf.status_code == 200
+
     # 4. Run profiling synthesis
     r_run = client.post(
         f"/api/profiles/{subj_id}/runs",
@@ -73,7 +81,8 @@ def test_profiles_api_lifecycle(client: TestClient) -> None:
     assert r_rev_detail.json()["id"] == rev["id"]
 
     # 6. Submit evidence feedback
-    evidence_id = rev["clusters"][0]["nodes"][0]["evidence_refs"][0]
+    all_nodes = [node for cl in rev["clusters"] for node in cl["nodes"]]
+    evidence_id = all_nodes[0]["evidence_refs"][0]
     r_fb = client.post(
         f"/api/profiles/evidence/{evidence_id}/feedback",
         json={"action": "accept", "feedback_text": "确为本人的核心价值观表达"},
@@ -82,9 +91,27 @@ def test_profiles_api_lifecycle(client: TestClient) -> None:
     assert r_fb.status_code == 200
     assert r_fb.json()["action"] == "accept"
 
-    # 7. Delete import and verify cascading tombstone
+    # 7. Delete import and verify cascading tombstone & redaction
     r_del = client.delete(f"/api/profiles/imports/{import_id}", headers=headers)
     assert r_del.status_code == 204
+
+    # 8. Revisions list defaults to hiding invalidated revisions
+    r_revs_after = client.get(f"/api/profiles/{subj_id}/revisions", headers=headers)
+    assert r_revs_after.status_code == 200
+    assert len(r_revs_after.json()["items"]) == 0
+
+    # Revisions detail defaults to 404 for invalidated
+    r_detail_after = client.get(f"/api/profiles/revisions/{rev['id']}", headers=headers)
+    assert r_detail_after.status_code == 404
+
+    # Revisions detail with allow_invalidated=true returns scrubbed text
+    r_detail_allow = client.get(f"/api/profiles/revisions/{rev['id']}?allow_invalidated=true", headers=headers)
+    assert r_detail_allow.status_code == 200
+    detail_data = r_detail_allow.json()
+    assert "REDACTED" in detail_data["core_summary"]["summary"]
+    for cl in detail_data["clusters"]:
+        for n in cl["nodes"]:
+            assert "REDACTED" in n["description"]
 
 
 def test_profiles_api_csrf_enforcement(client: TestClient) -> None:

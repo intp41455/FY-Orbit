@@ -243,11 +243,14 @@ def test_root_task_validation(
 def test_cross_domain_violation_enforcement(
     canvas_service: CanvasService, owner: Actor
 ) -> None:
-    """Threshold 4: Reject cross-domain data reading without explicit grant."""
-    root_task = create_task(canvas_service.session, owner, task_id="task-domain-01", domain="work")
+    """07 Threshold 2: Reject cross-domain access for 4 cases (missing, expired, revoked, mismatched); accept valid."""
+    from find_yourself.db.models import Grant
+    session = canvas_service.session
+
+    root_task = create_task(session, owner, task_id="task-domain-01", domain="work")
     inst_work = canvas_service.create_instance(owner, project_name="跨域检测", template_id="work")
 
-    # Work instance accessing personal data without grant -> rejected
+    # 1. Without grant -> rejected
     with pytest.raises(ValidationFailed) as exc_info:
         canvas_service.dispatch_subtask(
             actor=owner,
@@ -255,20 +258,305 @@ def test_cross_domain_violation_enforcement(
             root_task_id=root_task.id,
             worker_id="EngineeringAgent",
             goal="尝试读取私人敏感数据",
-            input_ref={"domain": "personal", "ref": "private-notes.txt"},
+            input_ref={"domain": "personal", "ref": "rec-priv-01"},
         )
-    assert "Work canvas cannot ingest personal domain data" in str(exc_info.value)
+    assert "cannot ingest 'personal' domain data without explicit grant authorization" in str(exc_info.value)
 
-    # Accessing with explicit grant -> succeeds
+    # 2. Case 1: Non-existent grant -> rejected
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="伪造 grant_id",
+            input_ref={"domain": "personal", "grant_id": "grant-nonexistent-123"},
+        )
+    assert "Grant grant-nonexistent-123 not found" in str(exc_info.value)
+
+    # 3. Case 2: Expired grant -> rejected
+    g_expired = Grant(
+        id="grant-expired-01",
+        source_domain="personal",
+        consumer_domain="work",
+        record_ids=["rec-priv-01"],
+        expires_at=utcnow() - timedelta(hours=1),
+        state="active",
+        scope_hash="hash-expired",
+    )
+    session.add(g_expired)
+    session.flush()
+
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="过期授权",
+            input_ref={"domain": "personal", "grant_id": "grant-expired-01", "record_id": "rec-priv-01"},
+        )
+    assert "has expired" in str(exc_info.value)
+
+    # 4. Case 3: Revoked grant -> rejected
+    g_revoked = Grant(
+        id="grant-revoked-01",
+        source_domain="personal",
+        consumer_domain="work",
+        record_ids=["rec-priv-01"],
+        expires_at=utcnow() + timedelta(days=5),
+        state="revoked",
+        scope_hash="hash-revoked",
+    )
+    session.add(g_revoked)
+    session.flush()
+
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="撤销授权",
+            input_ref={"domain": "personal", "grant_id": "grant-revoked-01", "record_id": "rec-priv-01"},
+        )
+    assert "is not active" in str(exc_info.value)
+
+    # 5. Case 4: Record ID mismatch -> rejected
+    g_mismatch = Grant(
+        id="grant-mismatch-01",
+        source_domain="personal",
+        consumer_domain="work",
+        record_ids=["rec-priv-999"],
+        expires_at=utcnow() + timedelta(days=5),
+        state="active",
+        scope_hash="hash-mismatch",
+    )
+    session.add(g_mismatch)
+    session.flush()
+
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="越权读取非授权记录",
+            input_ref={"domain": "personal", "grant_id": "grant-mismatch-01", "record_id": "rec-priv-01"},
+        )
+    assert "does not authorize record 'rec-priv-01'" in str(exc_info.value)
+
+    # 6. Valid active unexpired grant covering rec-priv-01 -> succeeds!
+    g_valid = Grant(
+        id="grant-valid-01",
+        source_domain="personal",
+        consumer_domain="work",
+        record_ids=["rec-priv-01"],
+        expires_at=utcnow() + timedelta(days=5),
+        state="active",
+        scope_hash="hash-valid",
+    )
+    session.add(g_valid)
+    session.flush()
+
     rec = canvas_service.dispatch_subtask(
         actor=owner,
         instance_id=inst_work.id,
         root_task_id=root_task.id,
         worker_id="EngineeringAgent",
         goal="授权读取私人数据",
-        input_ref={"domain": "personal", "grant_id": "grant-123"},
+        input_ref={"domain": "personal", "grant_id": "grant-valid-01", "record_id": "rec-priv-01"},
     )
     assert rec.state == "dispatched"
+
+
+def test_budget_lifecycle_unconnected_worker_no_reservation(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """07 Threshold 4: Unconnected worker (pending_adapter) does NOT reserve budget; settled/released on lifecycle."""
+    from find_yourself.db.models import BudgetReservation
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-budget-life-01", domain="work")
+    inst = canvas_service.create_instance(owner, project_name="预算生命周期测试", template_id="work")
+
+    # Dispatch to OpenCode (unconnected) -> state='pending_adapter'
+    disp_pending = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="OpenCode",
+        goal="未接通的 Worker 任务",
+        budget_slice=0.20,
+    )
+    assert disp_pending.state == "pending_adapter"
+    # Zero budget reservation created!
+    res_pending = session.query(BudgetReservation).filter_by(task_id=root_task.id).all()
+    assert len(res_pending) == 0
+
+    # Dispatch to internal EngineeringAgent -> reserves budget!
+    disp_internal = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="EngineeringAgent",
+        goal="内部可用 Worker 任务",
+        budget_slice=0.20,
+    )
+    assert disp_internal.state == "dispatched"
+    res_list = session.query(BudgetReservation).filter_by(task_id=root_task.id).all()
+    assert len(res_list) == 1
+    assert res_list[0].state == "reserved"
+    assert float(res_list[0].amount) == 0.20
+
+    # Complete subtask -> settles budget
+    canvas_service.complete_subtask(owner, inst.id, disp_internal.subtask_id, output="执行完成")
+    session.refresh(res_list[0])
+    assert res_list[0].state == "settled"
+
+    # Dispatch another and cancel -> releases budget
+    disp_cancel = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="EngineeringAgent",
+        goal="将被取消的任务",
+        budget_slice=0.15,
+    )
+    res_cancel = session.query(BudgetReservation).filter_by(idempotency_key=f"disp-res-dispatch-{inst.id}-{disp_cancel.subtask_id}").first()
+    assert res_cancel.state == "reserved"
+
+    canvas_service.cancel_subtask(owner, inst.id, disp_cancel.subtask_id, reason="测试取消释放")
+    session.refresh(res_cancel)
+    assert res_cancel.state == "released"
+
+
+def test_hermes_dispatch_roundtrip_settlement(
+    canvas_service: CanvasService, owner: Actor, monkeypatch
+) -> None:
+    """07 Threshold 1: Hermes dispatch calls adapter, receives receipt/output, writes to DispatchRecord and settles budget."""
+    from find_yourself.db.models import BudgetReservation
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-hermes-root-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="Hermes调度往返", template_id="personal")
+
+    # Ensure probe says Hermes is healthy
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "healthy": True, "stage": "本机握手通过", "binary_path": "hermes", "blocking_reason": None},
+    )
+
+    # 1. Success case: mock dispatch_and_run
+    fake_receipt = "rcpt-mock-123456"
+    fake_output = "Hermes已完成日常安排推演与归档。"
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "dispatch_and_run",
+        lambda subtask_id, goal, timeout_sec=60: {
+            "subtask_id": subtask_id,
+            "receipt_id": fake_receipt,
+            "agent": "Hermes",
+            "goal": goal,
+            "stage_transitions": [
+                {"stage": "submitted", "timestamp": "2026-10-01T00:00:00Z"},
+                {"stage": "accepted", "timestamp": "2026-10-01T00:00:01Z", "receipt_id": fake_receipt},
+                {"stage": "completed", "timestamp": "2026-10-01T00:00:05Z"},
+            ],
+            "state": "completed",
+            "output": fake_output,
+            "duration_ms": 4200,
+        },
+    )
+
+    disp = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="梳理本周事项",
+        budget_slice=0.25,
+        idempotency_key="disp-hermes-roundtrip-01",
+    )
+
+    assert disp.state == "completed"
+    assert disp.completed_at is not None
+    assert disp.input_ref["receipt_id"] == fake_receipt
+    assert disp.input_ref["output"] == fake_output
+    assert disp.input_ref["duration_ms"] == 4200
+
+    # Verify budget settled
+    res_id = disp.input_ref["reservation_id"]
+    res = session.get(BudgetReservation, res_id)
+    assert res.state == "settled"
+
+    # Verify canvas events recorded
+    events = canvas_service.get_events(owner, inst.id, cursor=0)
+    event_types = [e["event_type"] for e in events]
+    assert "task.dispatched" in event_types
+    assert "agent.task_accepted" in event_types
+    assert "agent.task_completed" in event_types
+
+    # Idempotency check: re-dispatching with same key returns existing without duplicate run
+    disp_dup = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="梳理本周事项",
+        budget_slice=0.25,
+        idempotency_key="disp-hermes-roundtrip-01",
+    )
+    assert disp_dup.id == disp.id
+
+
+def test_hermes_dispatch_failure_releases_budget(
+    canvas_service: CanvasService, owner: Actor, monkeypatch
+) -> None:
+    """07 Threshold 1 & 4: Hermes dispatch failure releases budget reservation without hanging."""
+    from find_yourself.db.models import BudgetReservation
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-hermes-fail-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="Hermes调度失败测试", template_id="personal")
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "healthy": True, "stage": "本机握手通过", "binary_path": "hermes", "blocking_reason": None},
+    )
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "dispatch_and_run",
+        lambda subtask_id, goal, timeout_sec=60: {
+            "subtask_id": subtask_id,
+            "receipt_id": "rcpt-fail-123",
+            "agent": "Hermes",
+            "goal": goal,
+            "state": "failed",
+            "error": "Simulated Hermes CLI exit code 1",
+            "duration_ms": 1500,
+        },
+    )
+
+    disp = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="会失败的 Hermes 任务",
+        budget_slice=0.30,
+    )
+
+    assert disp.state == "failed"
+    assert disp.input_ref["error"] == "Simulated Hermes CLI exit code 1"
+
+    # Budget reservation must be released!
+    res_id = disp.input_ref["reservation_id"]
+    res = session.get(BudgetReservation, res_id)
+    assert res.state == "released"
 
 
 def test_record_handoff(
@@ -357,3 +645,33 @@ def test_event_emission_monotonic_sequence(
     assert seqs == sorted(seqs)
     assert len(seqs) == len(set(seqs))
     assert seqs[-1] == len(events)
+
+
+def test_concurrent_event_emission_multi_threads(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """07 P1-4: Concurrent event emission verifies monotonic seq allocation without gaps or duplicates."""
+    import concurrent.futures
+
+    inst = canvas_service.create_instance(owner, project_name="并发事件压测", template_id="personal")
+
+    def emit_worker(thread_idx: int):
+        for j in range(5):
+            canvas_service._emit_event(
+                instance_id=inst.id,
+                event_type="agent.ping",
+                agent_id="Hermes",
+                details={"thread": thread_idx, "iter": j},
+            )
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [executor.submit(emit_worker, i) for i in range(4)]
+        concurrent.futures.wait(futures)
+
+    events = canvas_service.get_events(owner, inst.id, cursor=0)
+    ping_events = [e for e in events if e["event_type"] == "agent.ping"]
+    assert len(ping_events) == 20
+
+    seqs = [e["seq"] for e in ping_events]
+    assert len(seqs) == len(set(seqs))
+    assert seqs == sorted(seqs)

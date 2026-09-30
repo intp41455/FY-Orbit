@@ -14,13 +14,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import shutil
+import subprocess
+import threading
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, HandoffPacket, Task
+from find_yourself.adapters.hermes_adapter import HermesAdapter
+from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, Grant, HandoffPacket, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
@@ -60,11 +63,14 @@ class CanvasService:
         audit: AuditService,
         budget: BudgetService | None = None,
         grants: GrantService | None = None,
+        hermes_adapter: HermesAdapter | None = None,
     ):
         self.session = session
         self.audit = audit
         self.budget = budget or BudgetService(session, audit)
-        self.grants = grants
+        self.grants = grants or GrantService(session, audit)
+        self.hermes_adapter = hermes_adapter or HermesAdapter()
+        self._event_lock = threading.RLock()
 
     # -----------------------------------------------------------------------
     # Templates & Connectors
@@ -76,29 +82,58 @@ class CanvasService:
         """Probe machine for actual connector availability with zero-simulation status."""
         connectors = []
 
-        # 1. Hermes Agent
-        hermes_bin = shutil.which("hermes")
+        # 1. Hermes Agent - run real protocol handshake via hermes_adapter.probe()
+        hermes_probe = self.hermes_adapter.probe()
         connectors.append({
             "name": "Hermes",
             "protocol": "ACP / TUI JSON-RPC",
             "role": "orchestrator",
-            "stage": "本机握手通过" if hermes_bin else "仅设计",
-            "healthy": bool(hermes_bin),
-            "binary_path": hermes_bin,
-            "blocking_reason": None if hermes_bin else "未在本机 PATH 检测到 hermes 可执行文件，需安装 NousResearch/hermes-agent",
+            "stage": hermes_probe.get("stage", "仅设计"),
+            "healthy": bool(hermes_probe.get("healthy")),
+            "binary_path": hermes_probe.get("binary_path"),
+            "version": hermes_probe.get("version"),
+            "blocking_reason": hermes_probe.get("blocking_reason"),
             "domains": ["personal"],
         })
 
-        # 2. Codex
+        # 2. Codex - check PATH and execute --version for handshake
         codex_bin = shutil.which("codex")
+        codex_healthy = False
+        codex_stage = "仅设计"
+        codex_version = None
+        codex_blocking = "未在本机 PATH 检测到 codex 可执行文件"
+        if codex_bin:
+            try:
+                c_res = subprocess.run(
+                    [codex_bin, "--version"],
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=5,
+                    check=False,
+                )
+                if c_res.returncode == 0:
+                    codex_healthy = True
+                    codex_stage = "本机握手通过"
+                    codex_version = (c_res.stdout.strip().splitlines() or [""])[0]
+                    codex_blocking = None
+                else:
+                    codex_stage = "发现接口"
+                    codex_blocking = f"Codex --version exited with code {c_res.returncode}: {c_res.stderr.strip()}"
+            except Exception as e:
+                codex_stage = "发现接口"
+                codex_blocking = f"Codex probe error: {str(e)}"
+
         connectors.append({
             "name": "Codex",
             "protocol": "Internal Agent SDK / CLI",
             "role": "orchestrator",
-            "stage": "本机握手通过" if codex_bin else "仅设计",
-            "healthy": bool(codex_bin),
+            "stage": codex_stage,
+            "healthy": codex_healthy,
             "binary_path": codex_bin,
-            "blocking_reason": None if codex_bin else "未在本机 PATH 检测到 codex 可执行文件",
+            "version": codex_version,
+            "blocking_reason": codex_blocking,
             "domains": ["work", "personal"],
         })
 
@@ -111,6 +146,7 @@ class CanvasService:
             "stage": "发现接口" if opencode_bin else "仅设计",
             "healthy": bool(opencode_bin),
             "binary_path": opencode_bin,
+            "version": None,
             "blocking_reason": None if opencode_bin else "未在本机 PATH 检测到 opencode 二进制，需安装 opencode 并启动 opencode serve",
             "domains": ["work"],
         })
@@ -124,6 +160,7 @@ class CanvasService:
             "stage": "发现接口" if pi_bin else "仅设计",
             "healthy": bool(pi_bin),
             "binary_path": pi_bin,
+            "version": None,
             "blocking_reason": None if pi_bin else "未在本机 PATH 检测到 pi agent，需配置 badlogic/pi-mono 运行环境",
             "domains": ["work"],
         })
@@ -136,6 +173,7 @@ class CanvasService:
             "stage": "仅设计",
             "healthy": False,
             "binary_path": None,
+            "version": None,
             "blocking_reason": "当前仅支持手动交接节点；无直接无头桌面自动化凭据",
             "domains": ["personal"],
         })
@@ -148,6 +186,7 @@ class CanvasService:
             "stage": "仅设计",
             "healthy": False,
             "binary_path": None,
+            "version": None,
             "blocking_reason": "当前仅支持手动交接节点或结构化模型能力，无客户端控制权限",
             "domains": ["personal"],
         })
@@ -160,6 +199,7 @@ class CanvasService:
             "stage": "合成任务往返",
             "healthy": True,
             "binary_path": "INTERNAL",
+            "version": "1.0-builtin",
             "blocking_reason": None,
             "domains": ["personal", "work"],
         })
@@ -170,6 +210,7 @@ class CanvasService:
             "stage": "合成任务往返",
             "healthy": True,
             "binary_path": "INTERNAL",
+            "version": "1.0-builtin",
             "blocking_reason": None,
             "domains": ["work"],
         })
@@ -281,6 +322,8 @@ class CanvasService:
         budget_slice: float = 0.05,
         deadline: datetime | None = None,
         input_ref: dict[str, Any] | None = None,
+        subtask_id: str | None = None,
+        idempotency_key: str | None = None,
     ) -> DispatchRecord:
         actor.require_owner()
         inst = self.get_instance(actor, instance_id)
@@ -307,40 +350,78 @@ class CanvasService:
                 f"Root task {root_task_id} not found or not owned by caller"
             )
 
-        # 3. Enforce domain boundary and data grant authorization
-        input_domain = (input_ref or {}).get("domain") or (input_ref or {}).get("privacy_domain")
-        if input_domain:
-            if inst.domain == "work" and input_domain == "personal":
-                if not (input_ref or {}).get("grant_id"):
-                    raise ValidationFailed(
-                        "Work canvas cannot ingest personal domain data without explicit grant authorization"
-                    )
-            elif inst.domain == "personal" and input_domain == "work":
-                if not (input_ref or {}).get("grant_id"):
-                    raise ValidationFailed(
-                        "Personal canvas cannot ingest work domain data without explicit grant authorization"
-                    )
+        # 3. Enforce domain boundary and strict data grant authorization
+        input_ref_dict = dict(input_ref or {})
+        grant_id = input_ref_dict.get("grant_id")
+        input_domain = (
+            input_ref_dict.get("domain")
+            or input_ref_dict.get("privacy_domain")
+            or input_ref_dict.get("source_domain")
+        )
 
-        subtask_id = f"sub-{uuid4().hex[:12]}"
-        idem_key = f"dispatch-{instance_id}-{subtask_id}"
+        target_records: list[str] = []
+        if "record_id" in input_ref_dict:
+            target_records.append(str(input_ref_dict["record_id"]))
+        if "record_ids" in input_ref_dict and isinstance(input_ref_dict["record_ids"], list):
+            target_records.extend([str(r) for r in input_ref_dict["record_ids"]])
+        if "ref" in input_ref_dict and str(input_ref_dict["ref"]) not in target_records:
+            target_records.append(str(input_ref_dict["ref"]))
 
-        # 4. Atomic budget reservation via BudgetService
-        if self.budget:
-            self.budget.reserve(
-                actor,
-                task_id=root_task_id,
-                amount=Decimal(str(budget_slice)),
-                idempotency_key=f"disp-res-{idem_key}",
-                scope="canvas_dispatch",
-            )
+        # Cross-reference with underlying Memory table if record exists to prevent client spoofing
+        for rid in target_records:
+            mem = self.session.get(Memory, rid)
+            if mem is not None and mem.domain != inst.domain:
+                input_domain = mem.domain
 
-        # 5. Check worker connectivity / adapter state
+        is_cross_domain = bool(input_domain and input_domain != inst.domain)
+
+        if is_cross_domain or grant_id:
+            if not grant_id:
+                raise ValidationFailed(
+                    f"Canvas in '{inst.domain}' domain cannot ingest '{input_domain}' domain data without explicit grant authorization"
+                )
+
+            grant = self.session.get(Grant, grant_id)
+            if grant is None:
+                raise ValidationFailed(f"Grant {grant_id} not found")
+            if grant.state != "active":
+                raise ValidationFailed(f"Grant {grant_id} is not active (state: {grant.state})")
+            if grant.expires_at <= utcnow():
+                raise ValidationFailed(f"Grant {grant_id} has expired at {grant.expires_at.isoformat()}")
+            if grant.consumer_domain != inst.domain:
+                raise ValidationFailed(
+                    f"Grant {grant_id} consumer domain '{grant.consumer_domain}' does not match canvas domain '{inst.domain}'"
+                )
+            if input_domain and grant.source_domain != input_domain:
+                raise ValidationFailed(
+                    f"Grant {grant_id} source domain '{grant.source_domain}' does not match input domain '{input_domain}'"
+                )
+
+            # Check coverage of all target records
+            if target_records:
+                for rid in target_records:
+                    if rid not in (grant.record_ids or []):
+                        raise ValidationFailed(
+                            f"Grant {grant_id} does not authorize record '{rid}' (authorized: {grant.record_ids})"
+                        )
+
+        # Idempotency check to prevent duplicate dispatches
+        assigned_subtask_id = subtask_id or f"sub-{uuid4().hex[:12]}"
+        idem_key = idempotency_key or f"dispatch-{instance_id}-{assigned_subtask_id}"
+
+        existing_record = self.session.execute(
+            select(DispatchRecord).where(DispatchRecord.idempotency_key == idem_key)
+        ).scalar_one_or_none()
+        if existing_record:
+            return existing_record
+
+        # 4. Check worker connectivity / adapter state BEFORE reserving budget!
         connector_map = {c["name"]: c for c in self.probe_connectors()}
         worker_info = connector_map.get(worker_id, {})
         worker_healthy = bool(worker_info.get("healthy"))
         is_internal = worker_id in ("EngineeringAgent", "ResearchAgent")
 
-        # External unconfigured agents enter 'pending_adapter' state truthfully
+        # External unconfigured agents enter 'pending_adapter' state truthfully without reserving budget
         if not worker_healthy and not is_internal:
             dispatch_state = "pending_adapter"
             event_type = "task.planned"
@@ -351,42 +432,245 @@ class CanvasService:
                 "adapter_status": "pending_adapter",
                 "message": f"Worker {worker_id} adapter is not connected. Subtask recorded as planned/pending adapter.",
             }
-        else:
-            dispatch_state = "dispatched"
-            event_type = "task.dispatched"
-            event_details = {
-                "goal": goal,
-                "orchestrator": inst.orchestrator_id,
-                "budget_slice": budget_slice,
-                "adapter_status": "connected",
-            }
+            record = DispatchRecord(
+                id=f"disp-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                root_task_id=root_task_id,
+                subtask_id=assigned_subtask_id,
+                orchestrator_id=inst.orchestrator_id,
+                worker_id=worker_id,
+                idempotency_key=idem_key,
+                input_ref=input_ref_dict,
+                goal=goal.strip(),
+                acceptance_criteria=acceptance_criteria.strip(),
+                budget_slice=budget_slice,
+                deadline=deadline or (utcnow() + timedelta(hours=2)),
+                state=dispatch_state,
+            )
+            self.session.add(record)
+            self._emit_event(
+                instance_id,
+                event_type,
+                task_id=assigned_subtask_id,
+                agent_id=worker_id,
+                details=event_details,
+            )
+            self.session.flush()
+            return record
 
-        record = DispatchRecord(
-            id=f"disp-{uuid4().hex[:12]}",
-            instance_id=instance_id,
-            root_task_id=root_task_id,
-            subtask_id=subtask_id,
-            orchestrator_id=inst.orchestrator_id,
-            worker_id=worker_id,
-            idempotency_key=idem_key,
-            input_ref=input_ref or {},
-            goal=goal.strip(),
-            acceptance_criteria=acceptance_criteria.strip(),
-            budget_slice=budget_slice,
-            deadline=deadline or (utcnow() + timedelta(hours=2)),
-            state=dispatch_state,
+        # 5. Worker is ready or internal: Reserve budget now!
+        res = None
+        if self.budget:
+            res = self.budget.reserve(
+                actor,
+                task_id=root_task_id,
+                amount=Decimal(str(budget_slice)),
+                idempotency_key=f"disp-res-{idem_key}",
+                scope="canvas_dispatch",
+            )
+
+        updated_input_ref = dict(input_ref_dict)
+        if res:
+            updated_input_ref["reservation_id"] = res.id
+
+        # 6. Dispatch and run if external connected adapter (Hermes)
+        if worker_id.lower() == "hermes":
+            self._emit_event(
+                instance_id,
+                "task.dispatched",
+                task_id=assigned_subtask_id,
+                agent_id=worker_id,
+                details={
+                    "goal": goal,
+                    "orchestrator": inst.orchestrator_id,
+                    "budget_slice": budget_slice,
+                    "adapter_status": "connected",
+                },
+            )
+
+            exec_res = self.hermes_adapter.dispatch_and_run(subtask_id=assigned_subtask_id, goal=goal)
+            receipt_id = exec_res.get("receipt_id")
+            updated_input_ref["receipt_id"] = receipt_id
+            updated_input_ref["execution_trace"] = exec_res
+            if exec_res.get("output"):
+                updated_input_ref["output"] = exec_res["output"]
+            if exec_res.get("error"):
+                updated_input_ref["error"] = exec_res["error"]
+            if exec_res.get("duration_ms") is not None:
+                updated_input_ref["duration_ms"] = exec_res["duration_ms"]
+
+            if exec_res.get("state") == "completed":
+                dispatch_state = "completed"
+                completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.task_accepted",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"receipt_id": receipt_id},
+                )
+                self._emit_event(
+                    instance_id,
+                    "agent.task_completed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "receipt_id": receipt_id,
+                        "output_preview": (exec_res.get("output") or "")[:200],
+                        "duration_ms": exec_res.get("duration_ms"),
+                    },
+                )
+                if self.budget and res:
+                    self.budget.settle(actor, res.id, settled_amount=Decimal(str(budget_slice)))
+            else:
+                dispatch_state = exec_res.get("state") or "failed"
+                completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    f"agent.task_{dispatch_state}",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "error": exec_res.get("error"),
+                        "duration_ms": exec_res.get("duration_ms"),
+                    },
+                )
+                if self.budget and res:
+                    self.budget.release(actor, res.id)
+
+            record = DispatchRecord(
+                id=f"disp-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                root_task_id=root_task_id,
+                subtask_id=assigned_subtask_id,
+                orchestrator_id=inst.orchestrator_id,
+                worker_id=worker_id,
+                idempotency_key=idem_key,
+                input_ref=updated_input_ref,
+                goal=goal.strip(),
+                acceptance_criteria=acceptance_criteria.strip(),
+                budget_slice=budget_slice,
+                deadline=deadline or (utcnow() + timedelta(hours=2)),
+                state=dispatch_state,
+                completed_at=completed_at,
+            )
+            self.session.add(record)
+            self.session.flush()
+            return record
+
+        else:
+            # Internal or other worker: mark dispatched
+            dispatch_state = "dispatched"
+            record = DispatchRecord(
+                id=f"disp-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                root_task_id=root_task_id,
+                subtask_id=assigned_subtask_id,
+                orchestrator_id=inst.orchestrator_id,
+                worker_id=worker_id,
+                idempotency_key=idem_key,
+                input_ref=updated_input_ref,
+                goal=goal.strip(),
+                acceptance_criteria=acceptance_criteria.strip(),
+                budget_slice=budget_slice,
+                deadline=deadline or (utcnow() + timedelta(hours=2)),
+                state=dispatch_state,
+            )
+            self.session.add(record)
+            self._emit_event(
+                instance_id,
+                "task.dispatched",
+                task_id=assigned_subtask_id,
+                agent_id=worker_id,
+                details={
+                    "goal": goal,
+                    "orchestrator": inst.orchestrator_id,
+                    "budget_slice": budget_slice,
+                    "adapter_status": "connected",
+                },
+            )
+            self.session.flush()
+            return record
+
+    def complete_subtask(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        output: str = "",
+        settled_budget: float | None = None,
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
         )
-        self.session.add(record)
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+        if rec.state in ("completed", "failed", "cancelled"):
+            raise Conflict(f"Subtask is already in terminal state: {rec.state}")
+
+        rec.state = "completed"
+        rec.completed_at = utcnow()
+        ref = dict(rec.input_ref or {})
+        ref["output"] = output
+        rec.input_ref = ref
+
+        res_id = ref.get("reservation_id")
+        if self.budget and res_id:
+            amt = settled_budget if settled_budget is not None else rec.budget_slice
+            self.budget.settle(actor, res_id, settled_amount=Decimal(str(amt)))
 
         self._emit_event(
             instance_id,
-            event_type,
+            "agent.task_completed",
             task_id=subtask_id,
-            agent_id=worker_id,
-            details=event_details,
+            agent_id=rec.worker_id,
+            details={"output_preview": output[:200]},
         )
         self.session.flush()
-        return record
+        return rec
+
+    def cancel_subtask(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        reason: str = "User cancelled subtask",
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
+        )
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+        if rec.state in ("completed", "failed", "cancelled"):
+            raise Conflict(f"Subtask is already in terminal state: {rec.state}")
+
+        rec.state = "cancelled"
+        rec.completed_at = utcnow()
+        ref = dict(rec.input_ref or {})
+        ref["cancel_reason"] = reason
+        rec.input_ref = ref
+
+        res_id = ref.get("reservation_id")
+        if self.budget and res_id:
+            self.budget.release(actor, res_id)
+
+        self._emit_event(
+            instance_id,
+            "agent.task_cancelled",
+            task_id=subtask_id,
+            agent_id=rec.worker_id,
+            details={"reason": reason},
+        )
+        self.session.flush()
+        return rec
 
     def record_handoff(
         self,
@@ -556,25 +840,27 @@ class CanvasService:
         agent_id: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> CanvasEvent:
-        if self.session.bind and self.session.bind.dialect.name == "postgresql":
-            self.session.execute(
-                select(CanvasInstance.id).where(CanvasInstance.id == instance_id).with_for_update()
+        with self._event_lock:
+            if self.session.bind and self.session.bind.dialect.name == "postgresql":
+                self.session.execute(
+                    select(CanvasInstance.id).where(CanvasInstance.id == instance_id).with_for_update()
+                )
+            stmt_max_seq = select(func.coalesce(func.max(CanvasEvent.seq), 0)).where(
+                CanvasEvent.instance_id == instance_id
             )
-        stmt_max_seq = select(func.coalesce(func.max(CanvasEvent.seq), 0)).where(
-            CanvasEvent.instance_id == instance_id
-        )
-        current_max = self.session.execute(stmt_max_seq).scalar() or 0
-        seq = current_max + 1
+            current_max = self.session.execute(stmt_max_seq).scalar() or 0
+            seq = current_max + 1
 
-        evt = CanvasEvent(
-            id=f"evt-{uuid4().hex[:12]}",
-            instance_id=instance_id,
-            seq=seq,
-            event_type=event_type,
-            task_id=task_id,
-            agent_id=agent_id,
-            details=details or {},
-            trace_id=f"tr-{uuid4().hex[:8]}",
-        )
-        self.session.add(evt)
-        return evt
+            evt = CanvasEvent(
+                id=f"evt-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                seq=seq,
+                event_type=event_type,
+                task_id=task_id,
+                agent_id=agent_id,
+                details=details or {},
+                trace_id=f"tr-{uuid4().hex[:8]}",
+            )
+            self.session.add(evt)
+            self.session.flush()
+            return evt

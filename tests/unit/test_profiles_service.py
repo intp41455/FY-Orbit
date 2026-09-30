@@ -45,8 +45,9 @@ def test_import_document_and_segmentation(profile_svc, owner):
 
     assert imp.status == "parsed"
     assert imp.size > 0
-    assert "Alice" in imp.subject_candidates
-    assert "Bob" in imp.subject_candidates
+    spk_names = [c["speaker"] if isinstance(c, dict) else c for c in imp.subject_candidates]
+    assert "Alice" in spk_names
+    assert "Bob" in spk_names
 
 
 def test_run_profiling_and_clusters_synthesis(profile_svc, owner):
@@ -251,3 +252,101 @@ def test_feedback_rejection_cascades_to_revision_clusters(profile_svc, owner):
     matching_node = next(n for cl in rev_refetched.clusters for n in cl["nodes"] if ev_id in n["evidence_refs"])
     assert matching_node["review_status"] == "rejected"
     assert matching_node["confidence"] == 0.0
+
+
+def test_delete_import_deep_redaction_and_revision_filtering(profile_svc, owner):
+    """07 Threshold 3: Deletion physically scrubs text in revisions and filters from default read APIs."""
+    doc = "我喜欢微服务治理与可观测性。"
+    s = profile_svc.create_subject(owner, label="本人", kind="self")
+    imp = profile_svc.import_document(owner, content=doc, filename="sensitive_doc.txt", subject_id=s.id)
+    rev = profile_svc.run_profiling(owner, s.id)
+
+    # Pre-deletion: original text is in clusters
+    assert any("可观测性" in n["description"] for cl in rev.clusters for n in cl["nodes"])
+    assert "基于" in rev.core_summary.get("summary", "")
+
+    # Perform physical deletion
+    profile_svc.delete_import(owner, imp.id)
+
+    # Post-deletion: text scrubbed in DB
+    from find_yourself.db.models import ProfileRevision
+    rev_refetched = profile_svc.session.get(ProfileRevision, rev.id)
+    assert rev_refetched.user_review_state == "invalidated"
+    assert "REDACTED" in rev_refetched.core_summary.get("summary", "")
+    assert "可观测性" not in rev_refetched.core_summary.get("summary", "")
+
+    for cl in rev_refetched.clusters:
+        for node in cl["nodes"]:
+            assert "REDACTED" in node["description"]
+            assert "可观测性" not in node["description"]
+            assert node.get("source_segment_id") is None
+            assert node.get("locator") == "[DELETED]"
+            assert node.get("speaker") == "[REDACTED]"
+
+    # list_revisions defaults to include_invalidated=False -> empty!
+    revs_default = profile_svc.list_revisions(owner, s.id, include_invalidated=False)
+    assert len(revs_default) == 0
+
+    # list_revisions with include_invalidated=True -> returns redacted version
+    revs_all = profile_svc.list_revisions(owner, s.id, include_invalidated=True)
+    assert len(revs_all) == 1
+    assert revs_all[0].id == rev.id
+
+    # get_revision defaults to allow_invalidated=False -> raises NotFound
+    with pytest.raises(NotFound) as exc_info:
+        profile_svc.get_revision(owner, rev.id, allow_invalidated=False)
+    assert "has been invalidated" in str(exc_info.value)
+
+    # get_revision with allow_invalidated=True -> succeeds with scrubbed content
+    rev_redacted = profile_svc.get_revision(owner, rev.id, allow_invalidated=True)
+    assert rev_redacted.id == rev.id
+
+
+def test_dialogue_vs_self_metrics_strict_separation(profile_svc, owner):
+    """07 Threshold 5: Third-party dialogue statements do not contaminate self preference metrics."""
+    doc = """
+    Alice: 我喜欢用Rust编写高性能网络代理。
+    Bob: 我喜欢用Python写数据脚本。我喜欢用动态类型。
+    """
+    s = profile_svc.create_subject(owner, label="本人", kind="self")
+    imp = profile_svc.import_document(owner, content=doc, filename="dialogue_chat.txt", subject_id=s.id)
+
+    # Confirm Alice is self
+    profile_svc.confirm_speakers(owner, imp.id, {"Alice": "self"})
+
+    rev = profile_svc.run_profiling(owner, s.id)
+
+    # Check metrics
+    pref_metric = next(m for m in rev.metrics if m["dimension"] == "自述偏好表达密度")
+    # Only Alice's 1 '我喜欢' should be counted in self numerator, not Bob's 2!
+    assert pref_metric["numerator"] == 1
+    assert "本人确认自述切片字数" in pref_metric["denominator_source"]
+
+    # Dialogue context metrics are explicitly distinct
+    dialogue_seg_metric = next(m for m in rev.metrics if m["dimension"] == "对话总切片数")
+    assert dialogue_seg_metric["raw_value"] == 2
+
+    third_party_seg_metric = next(m for m in rev.metrics if m["dimension"] == "第三方切片数")
+    assert third_party_seg_metric["raw_value"] == 1
+
+
+def test_speaker_confirmation_preserves_raw_speaker(profile_svc, owner):
+    """07 P1-3: confirm_speakers updates speaker while preserving immutable raw_speaker."""
+    doc = """
+    Speaker1: 这是一个测试语句。
+    """
+    s = profile_svc.create_subject(owner, label="本人", kind="self")
+    imp = profile_svc.import_document(owner, content=doc, filename="raw_spk.txt", subject_id=s.id)
+
+    from find_yourself.db.models import SourceSegment
+    seg = profile_svc.session.query(SourceSegment).filter_by(import_id=imp.id).first()
+    assert seg.speaker == "Speaker1"
+    assert seg.raw_speaker == "Speaker1"
+
+    # Confirm Speaker1 is self
+    profile_svc.confirm_speakers(owner, imp.id, {"Speaker1": "self"})
+
+    seg_after = profile_svc.session.query(SourceSegment).filter_by(import_id=imp.id).first()
+    assert seg_after.speaker == "self"
+    assert seg_after.raw_speaker == "Speaker1"  # Immutable original preserved!
+

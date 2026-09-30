@@ -135,6 +135,7 @@ async def import_document(
 
 
 @router.post("/imports/{id}/confirm-speakers", status_code=status.HTTP_200_OK)
+@router.post("/imports/{id}/confirm_speakers", status_code=status.HTTP_200_OK)
 async def confirm_speakers(
     id: str,
     body: ConfirmSpeakersRequest,
@@ -171,19 +172,11 @@ async def run_profiling(
 @router.get("/{subject_id}/revisions")
 async def list_revisions(
     subject_id: str,
+    include_invalidated: bool = False,
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
-    from sqlalchemy import select
-    from ...db.models import ProfileRevision
-
-    svc.profiles.get_subject(actor, subject_id)
-    stmt = (
-        select(ProfileRevision)
-        .where(ProfileRevision.subject_id == subject_id)
-        .order_by(ProfileRevision.revision.desc())
-    )
-    revs = list(svc.session.execute(stmt).scalars().all())
+    revs = svc.profiles.list_revisions(actor, subject_id, include_invalidated=include_invalidated)
     return {
         "items": [
             {
@@ -206,16 +199,11 @@ async def list_revisions(
 @router.get("/revisions/{id}")
 async def get_revision(
     id: str,
+    allow_invalidated: bool = False,
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
-    from ...db.models import ProfileRevision
-    from ...services.errors import NotFound
-
-    rev = svc.session.get(ProfileRevision, id)
-    if not rev:
-        raise NotFound(f"Profile revision not found: {id}")
-    svc.profiles.get_subject(actor, rev.subject_id)
+    rev = svc.profiles.get_revision(actor, id, allow_invalidated=allow_invalidated)
     return {
         "id": rev.id,
         "subject_id": rev.subject_id,

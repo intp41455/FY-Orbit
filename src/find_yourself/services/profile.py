@@ -160,6 +160,7 @@ class ProfileService:
                         id=seg_id,
                         import_id=import_id,
                         speaker=spk,
+                        raw_speaker=spk,
                         text_content=txt,
                         content_hash=seg_hash,
                         locator=loc,
@@ -186,17 +187,22 @@ class ProfileService:
                         id=seg_id,
                         import_id=import_id,
                         speaker=spk,
+                        raw_speaker=spk,
                         text_content=txt,
                         content_hash=seg_hash,
                         locator=f"L{idx}",
                     )
                 )
 
+        candidates = [
+            {"speaker": s, "raw_speaker": s, "candidate_subject": "self" if s == "self" else s}
+            for s in sorted(list(speakers))
+        ]
         imp = ProfileImport(
             id=import_id,
             owner_id=actor.owner_id,
             subject_id=subject_id,
-            subject_candidates=sorted(list(speakers)),
+            subject_candidates=candidates,
             original_asset_ref=filename,
             source_type="conversation_json" if parsed_json_msgs is not None else ("conversation_text" if len(speakers) > 1 else "text"),
             mime="application/json" if parsed_json_msgs is not None else "text/plain",
@@ -234,9 +240,30 @@ class ProfileService:
         segments = list(self.session.execute(stmt).scalars().all())
         updated_count = 0
         for seg in segments:
-            if seg.speaker in mappings:
+            current_tag = seg.raw_speaker or seg.speaker
+            if current_tag in mappings:
+                if not getattr(seg, "raw_speaker", None):
+                    seg.raw_speaker = seg.speaker
+                seg.speaker = mappings[current_tag]
+                updated_count += 1
+            elif seg.speaker in mappings:
+                if not getattr(seg, "raw_speaker", None):
+                    seg.raw_speaker = seg.speaker
                 seg.speaker = mappings[seg.speaker]
                 updated_count += 1
+
+        # Preserve confirmed mapping history on import record
+        old_cands = imp.subject_candidates or []
+        new_cands = []
+        for c in old_cands:
+            spk_name = c.get("speaker") if isinstance(c, dict) else c
+            new_cands.append({
+                "speaker": spk_name,
+                "raw_speaker": spk_name,
+                "confirmed_mapping": mappings.get(spk_name),
+            })
+        imp.subject_candidates = new_cands
+        flag_modified(imp, "subject_candidates")
 
         self.audit.append(
             actor,
@@ -285,34 +312,45 @@ class ProfileService:
         is_self_subject = (subj.kind == "self")
         unconfirmed_speakers: set[str] = set()
 
+        is_self_subject = (subj.kind == "self")
+        unconfirmed_speakers: set[str] = set()
+
+        self_segments: list[SourceSegment] = []
+        third_party_segments: list[SourceSegment] = []
+
         for seg in segments:
             snapshot_hasher.update(seg.content_hash.encode("utf-8"))
-            txt = seg.text_content
             spk = seg.speaker
 
             if is_self_subject:
                 is_self_speaker = spk in ("self", "user", "me", subj.label)
                 if is_self_speaker:
-                    if any(k in txt for k in self_keywords):
-                        kind = "self_report"
-                        dim = "偏好与目标"
-                        conf = 0.95
-                        rev_status = "accepted"
-                    elif any(k in txt for k in style_keywords):
-                        kind = "observed_stat"
-                        dim = "工程与思维风格"
-                        conf = 0.85
-                        rev_status = "candidate"
-                    else:
-                        kind = "observed_stat"
-                        dim = "日常习惯"
-                        conf = 0.70
-                        rev_status = "candidate"
+                    self_segments.append(seg)
                 else:
+                    third_party_segments.append(seg)
                     unconfirmed_speakers.add(spk)
-                    kind = "third_party_statement"
-                    dim = "他者视角与互动记录"
-                    conf = 0.60
+            else:
+                self_segments.append(seg)
+
+        # 1. Process Self Segments -> Self Evidence
+        self_evidence_list: list[ProfileEvidence] = []
+        for seg in self_segments:
+            txt = seg.text_content
+            if is_self_subject:
+                if any(k in txt for k in self_keywords):
+                    kind = "self_report"
+                    dim = "本人偏好与自述目标"
+                    conf = 0.95
+                    rev_status = "accepted"
+                elif any(k in txt for k in style_keywords):
+                    kind = "observed_stat"
+                    dim = "工程与思维风格"
+                    conf = 0.85
+                    rev_status = "candidate"
+                else:
+                    kind = "observed_stat"
+                    dim = "日常习惯"
+                    conf = 0.70
                     rev_status = "candidate"
             else:
                 if any(k in txt for k in style_keywords):
@@ -326,9 +364,8 @@ class ProfileService:
                     conf = 0.75
                     rev_status = "candidate"
 
-            ev_id = f"evi-{uuid4().hex[:12]}"
             ev = ProfileEvidence(
-                id=ev_id,
+                id=f"evi-{uuid4().hex[:12]}",
                 subject_id=subject_id,
                 source_segment_id=seg.id,
                 claim=txt[:200],
@@ -338,8 +375,27 @@ class ProfileService:
                 confidence=conf,
                 review_status=rev_status,
             )
-            evidence_list.append(ev)
+            self_evidence_list.append(ev)
             self.session.add(ev)
+
+        # 2. Process Third Party Segments -> Context Evidence (Strictly separated)
+        third_party_evidence_list: list[ProfileEvidence] = []
+        for seg in third_party_segments:
+            ev = ProfileEvidence(
+                id=f"evi-{uuid4().hex[:12]}",
+                subject_id=subject_id,
+                source_segment_id=seg.id,
+                claim=seg.text_content[:200],
+                evidence_kind="third_party_statement",
+                polarity="neutral",
+                proposed_dimension="他者发言与对话情境",
+                confidence=0.50,
+                review_status="candidate",
+            )
+            third_party_evidence_list.append(ev)
+            self.session.add(ev)
+
+        evidence_list = self_evidence_list + third_party_evidence_list
 
         snapshot_hash = snapshot_hasher.hexdigest() or hashlib.sha256(b"empty").hexdigest()
 
@@ -363,69 +419,140 @@ class ProfileService:
         latest_rev = self.session.execute(stmt_rev).scalars().first() or 0
         new_rev_num = latest_rev + 1
 
-        # Reproducible deterministic text metrics (strictly not arbitrary constant scores)
-        total_word_count = sum(len(seg.text_content) for seg in segments)
+        # Reproducible deterministic text metrics:
+        # STRICTLY SEPARATE: Confirmed Self Stats vs Overall Dialogue Context Stats
         all_text = " ".join(seg.text_content for seg in segments)
         tokens = re.findall(r"[\w\u4e00-\u9fa5]+", all_text)
         total_tokens = len(tokens)
         unique_tokens = len(set(tokens))
         lexical_diversity = round(unique_tokens / max(total_tokens, 1), 4)
 
-        pref_matches = sum(1 for seg in segments if any(k in seg.text_content for k in self_keywords))
-        self_preference_density = round((pref_matches / max(total_word_count, 1)) * 1000, 2)
+        dialogue_segment_count = len(segments)
+        dialogue_word_count = sum(len(seg.text_content) for seg in segments)
+        third_party_segment_count = len(third_party_segments)
+        third_party_word_count = sum(len(seg.text_content) for seg in third_party_segments)
 
-        tech_matches = sum(1 for seg in segments if any(k in seg.text_content for k in style_keywords))
-        domain_focus_ratio = round((tech_matches / max(total_word_count, 1)) * 1000, 2)
+        self_segment_count = len(self_segments)
+        self_word_count = sum(len(seg.text_content) for seg in self_segments)
+        # Self-preference density is calculated STRICTLY on self_segments (denominator: self_word_count)
+        self_pref_matches = sum(1 for seg in self_segments if any(k in seg.text_content for k in self_keywords))
+        self_preference_density = round((self_pref_matches / max(self_word_count, 1)) * 1000, 2)
 
-        metrics = [
-            {
-                "dimension": "语料切片样本量",
-                "raw_value": len(segments),
-                "display_value": f"{len(segments)} 切片",
-                "metric_type": "corpus_stat",
-                "evidence_count": len(evidence_list),
-                "calculation_formula": "count(source_segments)",
-            },
-            {
-                "dimension": "有效语料总字数",
-                "raw_value": total_word_count,
-                "display_value": f"{total_word_count} 字",
-                "metric_type": "corpus_stat",
-                "evidence_count": len(evidence_list),
-                "calculation_formula": "sum(length(text_content))",
-            },
-            {
-                "dimension": "词汇丰富度比率",
-                "raw_value": lexical_diversity,
-                "display_value": f"{round(lexical_diversity * 100, 1)}%",
-                "metric_type": "corpus_stat",
-                "evidence_count": len(evidence_list),
-                "calculation_formula": "unique_tokens / total_tokens",
-            },
-            {
-                "dimension": "自述偏好表达密度",
-                "raw_value": self_preference_density,
-                "display_value": f"{self_preference_density} 处/千字",
-                "metric_type": "corpus_stat",
-                "evidence_count": sum(1 for e in evidence_list if e.evidence_kind == "self_report"),
-                "calculation_formula": "count(preference_cues) * 1000 / total_chars",
-            },
-            {
-                "dimension": "工程与逻辑聚焦度",
-                "raw_value": domain_focus_ratio,
-                "display_value": f"{domain_focus_ratio} 处/千字",
-                "metric_type": "corpus_stat",
-                "evidence_count": sum(1 for e in evidence_list if "工程" in e.proposed_dimension or "逻辑" in e.proposed_dimension),
-                "calculation_formula": "count(domain_cues) * 1000 / total_chars",
-            },
-        ]
+        self_tech_matches = sum(1 for seg in self_segments if any(k in seg.text_content for k in style_keywords))
+        self_domain_focus_ratio = round((self_tech_matches / max(self_word_count, 1)) * 1000, 2)
+
+        if is_self_subject:
+            metrics = [
+                {
+                    "dimension": "本人有效自述切片数",
+                    "raw_value": self_segment_count,
+                    "display_value": f"{self_segment_count} 切片",
+                    "metric_type": "self_report",
+                    "evidence_count": len(self_evidence_list),
+                    "calculation_formula": "count(confirmed_self_segments)",
+                },
+                {
+                    "dimension": "本人自述有效总字数",
+                    "raw_value": self_word_count,
+                    "display_value": f"{self_word_count} 字",
+                    "metric_type": "self_report",
+                    "evidence_count": len(self_evidence_list),
+                    "calculation_formula": "sum(length(confirmed_self_segments))",
+                },
+                {
+                    "dimension": "自述偏好表达密度",
+                    "raw_value": self_preference_density,
+                    "display_value": f"{self_preference_density} 处/千字",
+                    "metric_type": "self_report",
+                    "evidence_count": self_pref_matches,
+                    "numerator": self_pref_matches,
+                    "denominator": self_word_count,
+                    "denominator_source": "本人确认自述切片字数 (self_word_count)",
+                    "calculation_formula": "count(self_pref_cues) * 1000 / self_chars",
+                },
+                {
+                    "dimension": "本人工程与逻辑聚焦度",
+                    "raw_value": self_domain_focus_ratio,
+                    "display_value": f"{self_domain_focus_ratio} 处/千字",
+                    "metric_type": "self_report",
+                    "evidence_count": self_tech_matches,
+                    "calculation_formula": "count(self_domain_cues) * 1000 / self_chars",
+                },
+                {
+                    "dimension": "对话语料总字数",
+                    "raw_value": dialogue_word_count,
+                    "display_value": f"{dialogue_word_count} 字 (第三方 {third_party_word_count} 字)",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "sum(length(all_dialogue_segments))",
+                },
+                {
+                    "dimension": "对话总切片数",
+                    "raw_value": dialogue_segment_count,
+                    "display_value": f"{dialogue_segment_count} 切片",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "count(all_dialogue_segments)",
+                },
+                {
+                    "dimension": "第三方切片数",
+                    "raw_value": third_party_segment_count,
+                    "display_value": f"{third_party_segment_count} 切片",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(third_party_evidence_list),
+                    "calculation_formula": "count(third_party_segments)",
+                },
+                {
+                    "dimension": "词汇丰富度比率",
+                    "raw_value": lexical_diversity,
+                    "display_value": f"{round(lexical_diversity * 100, 1)}%",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "unique_tokens / total_tokens",
+                },
+            ]
+        else:
+            metrics = [
+                {
+                    "dimension": "语料切片样本量",
+                    "raw_value": len(segments),
+                    "display_value": f"{len(segments)} 切片",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "count(source_segments)",
+                },
+                {
+                    "dimension": "有效语料总字数",
+                    "raw_value": dialogue_word_count,
+                    "display_value": f"{dialogue_word_count} 字",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "sum(length(text_content))",
+                },
+                {
+                    "dimension": "词汇丰富度比率",
+                    "raw_value": lexical_diversity,
+                    "display_value": f"{round(lexical_diversity * 100, 1)}%",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": len(evidence_list),
+                    "calculation_formula": "unique_tokens / total_tokens",
+                },
+                {
+                    "dimension": "工程与逻辑聚焦度",
+                    "raw_value": self_domain_focus_ratio,
+                    "display_value": f"{self_domain_focus_ratio} 处/千字",
+                    "metric_type": "corpus_stat",
+                    "evidence_count": self_tech_matches,
+                    "calculation_formula": "count(domain_cues) * 1000 / total_chars",
+                },
+            ]
 
         # Map source segment id to segment info for backlinks
         seg_map = {seg.id: seg for seg in segments}
 
-        # Synthesize Clusters & Nodes (JSON schema 1.0 with 2D coordinates)
+        # Synthesize Clusters: Core clusters contain only self_evidence!
         nodes_core = []
-        for i, ev in enumerate(evidence_list[:5]):
+        for i, ev in enumerate(self_evidence_list[:5]):
             seg = seg_map.get(ev.source_segment_id)
             nodes_core.append({
                 "id": f"n_{ev.id[:8]}",
@@ -444,7 +571,7 @@ class ProfileService:
             })
 
         nodes_style = []
-        for i, ev in enumerate(evidence_list[5:10]):
+        for i, ev in enumerate(self_evidence_list[5:10]):
             seg = seg_map.get(ev.source_segment_id)
             nodes_style.append({
                 "id": f"n_{ev.id[:8]}",
@@ -472,11 +599,39 @@ class ProfileService:
             {
                 "id": "c_style",
                 "name": "认知与实践风格",
-                "summary": "基于对话文本的条理性与思维模式观察",
+                "summary": "基于确认语料的条理性与思维模式观察",
                 "nodes": nodes_style,
             },
         ]
 
+        # Isolated cluster for third-party statements (if any)
+        if third_party_evidence_list:
+            nodes_tp = []
+            for i, ev in enumerate(third_party_evidence_list[:5]):
+                seg = seg_map.get(ev.source_segment_id)
+                nodes_tp.append({
+                    "id": f"n_{ev.id[:8]}",
+                    "label": ev.proposed_dimension,
+                    "description": ev.claim,
+                    "claim_kind": ev.evidence_kind,
+                    "confidence": float(ev.confidence),
+                    "review_status": ev.review_status,
+                    "evidence_refs": [ev.id],
+                    "source_segment_id": ev.source_segment_id,
+                    "locator": seg.locator if seg else "L1",
+                    "speaker": seg.speaker if seg else "unknown",
+                    "counter_evidence_refs": [],
+                    "x": 300 + (i % 3) * 140,
+                    "y": 240 + (i // 3) * 120,
+                })
+            clusters.append({
+                "id": "c_third_party",
+                "name": "他者发言与对话情境参考",
+                "summary": "未确认为本人自述的第三方发言记录，仅作为对话背景，不计入本人画像特质",
+                "nodes": nodes_tp,
+            })
+
+        # 2D edges: honest layout adjacency, no fake semantic correlation claims
         edges = []
         all_nodes = nodes_core + nodes_style
         for i in range(len(all_nodes) - 1):
@@ -484,8 +639,8 @@ class ProfileService:
                 "id": f"edge_{all_nodes[i]['id']}_{all_nodes[i+1]['id']}",
                 "source": all_nodes[i]["id"],
                 "target": all_nodes[i + 1]["id"],
-                "relation": "correlates_with",
-                "strength": 0.80,
+                "relation": "layout_adjacency",
+                "strength": 0.0,
             })
 
         limitations = [
@@ -650,6 +805,11 @@ class ProfileService:
                         if refs & ev_ids:
                             has_deleted_ref = True
                             nd["review_status"] = "invalidated"
+                            nd["confidence"] = 0.0
+                            nd["description"] = "[REDACTED: 来源语料已删除，原句已物理销毁]"
+                            nd["locator"] = "[DELETED]"
+                            nd["speaker"] = "[REDACTED]"
+                            nd.pop("source_segment_id", None)
                             nd["invalidation_note"] = f"Derived source import {import_id} deleted"
                         new_nodes.append(nd)
                     new_cl = dict(cl)
@@ -659,10 +819,20 @@ class ProfileService:
                     r.clusters = new_clusters
                     r.user_review_state = "invalidated"
                     core = dict(r.core_summary or {})
+                    core["summary"] = "[REDACTED: 来源语料已删除，派生特征已销毁封存]"
                     core["invalidation_note"] = f"Derived source import {import_id} was deleted by owner"
                     r.core_summary = core
+                    r.metrics = [
+                        {
+                            **m,
+                            "raw_value": 0,
+                            "display_value": "[INVALIDATED]",
+                        }
+                        for m in (r.metrics or [])
+                    ]
                     flag_modified(r, "clusters")
                     flag_modified(r, "core_summary")
+                    flag_modified(r, "metrics")
                     affected_revs.append(r.id)
 
         # Delete import (cascade takes care of segments and evidence in DB)
@@ -690,3 +860,32 @@ class ProfileService:
             },
         )
         self.session.flush()
+
+    def list_revisions(
+        self,
+        actor: Actor,
+        subject_id: str,
+        include_invalidated: bool = False,
+    ) -> list[ProfileRevision]:
+        actor.require_owner()
+        self.get_subject(actor, subject_id)
+        stmt = select(ProfileRevision).where(ProfileRevision.subject_id == subject_id)
+        if not include_invalidated:
+            stmt = stmt.where(ProfileRevision.user_review_state != "invalidated")
+        stmt = stmt.order_by(ProfileRevision.revision.desc())
+        return list(self.session.execute(stmt).scalars().all())
+
+    def get_revision(
+        self,
+        actor: Actor,
+        revision_id: str,
+        allow_invalidated: bool = False,
+    ) -> ProfileRevision:
+        actor.require_owner()
+        rev = self.session.get(ProfileRevision, revision_id)
+        if not rev:
+            raise NotFound(f"Profile revision not found: {revision_id}")
+        self.get_subject(actor, rev.subject_id)
+        if rev.user_review_state == "invalidated" and not allow_invalidated:
+            raise NotFound(f"Profile revision {revision_id} has been invalidated due to source data deletion")
+        return rev

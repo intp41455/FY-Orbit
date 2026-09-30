@@ -81,6 +81,7 @@ class SourceSegment(Base):
     conversation_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     message_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     speaker: Mapped[str] = mapped_column(String(100), default="unknown")
+    raw_speaker: Mapped[str | None] = mapped_column(String(100), nullable=True)
     occurred_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     text_content: Mapped[str] = mapped_column(Text)
     content_hash: Mapped[str] = mapped_column(HASH64)
