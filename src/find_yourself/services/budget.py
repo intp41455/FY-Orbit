@@ -29,6 +29,7 @@ ZERO = Decimal("0.000000")
 class BudgetLimits:
     per_task_usd: Decimal = Decimal("0.50")
     per_month_usd: Decimal = Decimal("10.00")
+    warn_threshold_pct: Decimal = Decimal("80.0")
 
 
 class BudgetService:
@@ -36,6 +37,11 @@ class BudgetService:
         self.s = session
         self.audit = audit
         self.limits = limits or BudgetLimits()
+        self.alert_handlers: list = []
+
+    def register_alert_handler(self, handler) -> None:
+        """Register a notification callback for budget threshold warnings and breaches."""
+        self.alert_handlers.append(handler)
 
     @staticmethod
     def month_key(when: datetime) -> str:
@@ -111,10 +117,38 @@ class BudgetService:
         # Per-task cap is aggregated over the WHOLE tree (root + descendants),
         # not per child. Monthly cap is global.
         task_used = self._reserved_sum(tree_ids, "task")
-        if task_used + amt > self.limits.per_task_usd:
-            raise Conflict("task_budget_exceeded", f"Tree budget exceeded ({task_used}+{amt})")
+        task_projected = task_used + amt
+        task_pct = (task_projected / self.limits.per_task_usd) * Decimal("100")
+
         month_used = self._reserved_sum(None, f"month:{month}")
-        if month_used + amt > self.limits.per_month_usd:
+        month_projected = month_used + amt
+        month_pct = (month_projected / self.limits.per_month_usd) * Decimal("100")
+
+        # Threshold notification chain (O06): alert on >= warn_threshold_pct or hard breach
+        if task_pct >= self.limits.warn_threshold_pct or month_pct >= self.limits.warn_threshold_pct:
+            level = "warning" if (task_projected <= self.limits.per_task_usd and month_projected <= self.limits.per_month_usd) else "critical"
+            alert_payload = {
+                "level": level,
+                "task_id": task_id,
+                "root_id": root,
+                "task_used_usd": str(task_used),
+                "month_used_usd": str(month_used),
+                "requested_usd": str(amt),
+                "task_limit_usd": str(self.limits.per_task_usd),
+                "month_limit_usd": str(self.limits.per_month_usd),
+                "task_usage_pct": f"{task_pct:.1f}%",
+                "month_usage_pct": f"{month_pct:.1f}%",
+            }
+            self.audit.append(actor, "budget.alert", task_id, alert_payload)
+            for handler in self.alert_handlers:
+                try:
+                    handler(alert_payload)
+                except Exception:
+                    pass
+
+        if task_projected > self.limits.per_task_usd:
+            raise Conflict("task_budget_exceeded", f"Tree budget exceeded ({task_used}+{amt})")
+        if month_projected > self.limits.per_month_usd:
             raise Conflict("monthly_budget_exceeded", "Monthly budget exceeded")
 
         row = BudgetReservation(
