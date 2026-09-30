@@ -29,9 +29,14 @@ export interface ProfileClusterNode {
   description: string;
   claim_kind: string;
   confidence: number;
-  review_status: 'pending' | 'accepted' | 'edited' | 'rejected' | 'uncertain';
+  review_status: 'candidate' | 'pending' | 'accepted' | 'edited' | 'rejected' | 'uncertain' | 'invalidated';
   evidence_refs: string[];
   counter_evidence_refs: string[];
+  source_segment_id?: string;
+  locator?: string;
+  speaker?: string;
+  x?: number;
+  y?: number;
 }
 
 export interface ProfileCluster {
@@ -41,9 +46,20 @@ export interface ProfileCluster {
   nodes: ProfileClusterNode[];
 }
 
+export interface ProfileEdge {
+  id: string;
+  source: string;
+  target: string;
+  relation: string;
+  strength: number;
+}
+
 export interface ProfileMetric {
   dimension: string;
-  score: number;
+  score?: number;
+  raw_value?: number;
+  display_value?: string;
+  calculation_formula?: string;
   metric_type: 'corpus_stat' | 'self_report' | 'derived';
   evidence_count: number;
 }
@@ -56,8 +72,13 @@ export interface ProfileRevision {
     title: string;
     summary: string;
     evidence_count: number;
+    formal_norm?: boolean;
+    scale_name?: string | null;
+    norm_note?: string;
+    invalidation_note?: string;
   };
   clusters: ProfileCluster[];
+  edges?: ProfileEdge[];
   metrics: ProfileMetric[];
   limitations: string[];
   user_review_state: string;
@@ -73,6 +94,11 @@ export const profilesApi = {
     request<ProfileSubject>(`/api/profiles/subjects/${id}`),
   importDocument: (body: { content: string; filename?: string; subject_id?: string; privacy_domain?: string }) =>
     request<ProfileImport>('/api/profiles/imports', { method: 'POST', body }),
+  confirmSpeakers: (importId: string, mappings: Record<string, string>) =>
+    request<{ import_id: string; updated_segments: number; mappings: Record<string, string> }>(
+      `/api/profiles/imports/${importId}/confirm-speakers`,
+      { method: 'POST', body: { mappings } }
+    ),
   runProfiling: (subjectId: string, body?: { rule_version?: string }) =>
     request<ProfileRevision>(`/api/profiles/${subjectId}/runs`, { method: 'POST', body: body ?? {} }),
   listRevisions: (subjectId: string) =>

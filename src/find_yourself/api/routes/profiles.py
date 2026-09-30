@@ -36,6 +36,10 @@ class FeedbackRequest(BaseModel):
     feedback_text: str | None = Field(default=None, max_length=2000)
 
 
+class ConfirmSpeakersRequest(BaseModel):
+    mappings: dict[str, str]
+
+
 @router.post("/subjects", status_code=status.HTTP_201_CREATED)
 async def create_subject(
     body: CreateSubjectRequest,
@@ -128,6 +132,18 @@ async def import_document(
         "status": imp.status,
         "created_at": imp.created_at.isoformat(),
     }
+
+
+@router.post("/imports/{id}/confirm-speakers", status_code=status.HTTP_200_OK)
+async def confirm_speakers(
+    id: str,
+    body: ConfirmSpeakersRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    res = svc.profiles.confirm_speakers(actor, import_id=id, mappings=body.mappings)
+    svc.session.commit()
+    return res
 
 
 @router.post("/{subject_id}/runs", status_code=status.HTTP_201_CREATED)

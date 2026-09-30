@@ -30,7 +30,7 @@ export function CanvasPage() {
   const [showDispatch, setShowDispatch] = useState(false);
   const [dispatchWorker, setDispatchWorker] = useState('');
   const [dispatchGoal, setDispatchGoal] = useState('');
-  const [dispatchBudget, setDispatchBudget] = useState(0.1);
+  const [dispatchBudget, setDispatchBudget] = useState(0.05);
 
   // Handoff form
   const [showHandoff, setShowHandoff] = useState(false);
@@ -104,6 +104,10 @@ export function CanvasPage() {
     e.preventDefault();
     const targetWorker = dispatchWorker || activeTemplate?.workers?.[0] || 'WorkBuddy';
     if (!activeInstance || !dispatchGoal.trim() || !targetWorker) return;
+    if (dispatchBudget > 0.50) {
+      setError('单次派发预算切片最高不可超过 $0.50');
+      return;
+    }
     try {
       await canvasApi.dispatchSubtask(activeInstance.id, {
         root_task_id: `root-${activeInstance.id}`,
@@ -157,6 +161,21 @@ export function CanvasPage() {
         return 'badge-primary';
       default:
         return 'badge-neutral';
+    }
+  }
+
+  function getDispatchBadge(state: string) {
+    switch (state) {
+      case 'completed':
+        return <span className="badge badge-ok">已完成 (completed)</span>;
+      case 'dispatched':
+        return <span className="badge badge-primary">已派发 (dispatched)</span>;
+      case 'pending_adapter':
+        return <span className="badge badge-neutral" style={{ background: '#fef3c7', color: '#92400e' }}>待接入 / 计划派发 (pending_adapter)</span>;
+      case 'failed':
+        return <span className="badge badge-neutral" style={{ background: '#fee2e2', color: '#991b1b' }}>失败 (failed)</span>;
+      default:
+        return <span className="badge badge-neutral">{state}</span>;
     }
   }
 
@@ -255,24 +274,38 @@ export function CanvasPage() {
             {showDispatch && (
               <form onSubmit={handleDispatchSubtask} style={{ marginTop: '1rem', padding: '1rem', background: '#f8fafc', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
                 <h5>派发受约束子任务 (Subtask Dispatch)</h5>
+                <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem' }}>
+                  单次派发预算强制限制在 $0.50 以内；未就绪的 Worker 将记录为待接入 (pending_adapter) 计划事件。
+                </div>
                 <div style={{ display: 'flex', gap: '1rem', margin: '0.5rem 0' }}>
                   <div className="form-group" style={{ flex: 1 }}>
-                    <label>目标执行 Worker</label>
-                    <select value={dispatchWorker} onChange={(e) => setDispatchWorker(e.target.value)}>
-                      {activeTemplate?.workers.map((w) => (
-                        <option key={w} value={w}>{w}</option>
-                      ))}
+                    <label htmlFor="dispatch-worker-select">目标执行 Worker</label>
+                    <select
+                      id="dispatch-worker-select"
+                      value={dispatchWorker}
+                      onChange={(e) => setDispatchWorker(e.target.value)}
+                    >
+                      {activeTemplate?.workers.map((w) => {
+                        const probe = connectors.find((c) => c.name.toLowerCase() === w.toLowerCase());
+                        const isReady = probe?.healthy;
+                        return (
+                          <option key={w} value={w}>
+                            {w} {isReady ? '(就绪)' : '(待接入/计划派发)'}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                   <div className="form-group" style={{ width: '150px' }}>
-                    <label>预算切片 ($)</label>
+                    <label htmlFor="dispatch-budget-input">预算切片 ($ ≤ 0.50)</label>
                     <input
+                      id="dispatch-budget-input"
                       type="number"
-                      step="0.05"
+                      step="0.01"
                       min="0.01"
-                      max="5.0"
-                      value={dispatchBudget}
-                      onChange={(e) => setDispatchBudget(parseFloat(e.target.value))}
+                      max="0.50"
+                      value={isNaN(dispatchBudget) ? '' : dispatchBudget}
+                      onChange={(e) => setDispatchBudget(parseFloat(e.target.value) || 0)}
                     />
                   </div>
                 </div>
@@ -390,7 +423,7 @@ export function CanvasPage() {
                     <div key={d.id} style={{ padding: '0.75rem', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <strong>{d.goal}</strong>
-                        <span className="badge badge-primary">{d.state}</span>
+                        {getDispatchBadge(d.state)}
                       </div>
                       <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '0.25rem' }}>
                         执行者: <strong>{d.worker_id}</strong> · 预算切片: ${d.budget_slice.toFixed(2)} · {new Date(d.created_at).toLocaleTimeString()}
@@ -449,6 +482,11 @@ export function CanvasPage() {
                 >
                   <div>
                     <strong>{c.name}</strong> · <span style={{ color: '#64748b' }}>{c.protocol} ({c.role})</span>
+                    {c.binary_path && (
+                      <div style={{ fontSize: '0.72rem', color: '#10b981', marginTop: '2px' }}>
+                        可执行路径: <code>{c.binary_path}</code>
+                      </div>
+                    )}
                     {c.blocking_reason && (
                       <div style={{ fontSize: '0.75rem', color: '#b45309', marginTop: '2px' }}>
                         阻断原因: {c.blocking_reason}

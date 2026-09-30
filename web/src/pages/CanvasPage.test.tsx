@@ -63,11 +63,21 @@ const mockConnectors: ConnectorProbe[] = [
     name: 'Hermes',
     protocol: 'ACP / TUI JSON-RPC',
     role: 'orchestrator',
+    stage: '合成任务往返',
+    healthy: true,
+    binary_path: 'C:\\Users\\intpj\\AppData\\Local\\hermes\\bin\\hermes.cmd',
+    blocking_reason: null,
+    domains: ['personal'],
+  },
+  {
+    name: 'OpenCode',
+    protocol: 'OpenCode CLI / ACP',
+    role: 'worker',
     stage: '仅设计',
     healthy: false,
     binary_path: null,
-    blocking_reason: '未检测到 hermes 二进制',
-    domains: ['personal'],
+    blocking_reason: '未检测到 opencode 二进制',
+    domains: ['work'],
   },
 ];
 
@@ -93,7 +103,7 @@ const mockSnapshot: CanvasSnapshot = {
       orchestrator_id: 'Hermes',
       worker_id: 'WorkBuddy',
       goal: '整理日程数据',
-      state: 'dispatched',
+      state: 'pending_adapter',
       budget_slice: 0.1,
       created_at: new Date().toISOString(),
     },
@@ -137,12 +147,13 @@ describe('CanvasPage (05 功能规格)', () => {
     expect(screen.getByText('使用者 (Owner)')).toBeInTheDocument();
     expect(screen.getByText('主控协同中心 (Center)')).toBeInTheDocument();
     expect(screen.getByText('整理日程数据')).toBeInTheDocument();
+    expect(screen.getByText(/待接入 \/ 计划派发 \(pending_adapter\)/)).toBeInTheDocument();
     expect(screen.getByText('需求已明确拆解')).toBeInTheDocument();
     expect(screen.getByText('本机握手通过')).toBeInTheDocument();
-    expect(screen.getByText(/未检测到 hermes 二进制/)).toBeInTheDocument();
+    expect(screen.getByText(/未检测到 opencode 二进制/)).toBeInTheDocument();
   });
 
-  it('allows user to dispatch a subtask', async () => {
+  it('allows user to dispatch a subtask within budget limit', async () => {
     vi.mocked(canvasApi.templates).mockResolvedValue({ items: mockTemplates });
     vi.mocked(canvasApi.connectors).mockResolvedValue({ items: mockConnectors });
     vi.mocked(canvasApi.listInstances).mockResolvedValue({ items: [mockInstance], count: 1 });
@@ -153,7 +164,7 @@ describe('CanvasPage (05 功能规格)', () => {
       orchestrator_id: 'Hermes',
       worker_id: 'WorkBuddy',
       goal: '新增日程同步',
-      state: 'dispatched',
+      state: 'pending_adapter',
       budget_slice: 0.2,
       created_at: new Date().toISOString(),
     });
@@ -177,5 +188,33 @@ describe('CanvasPage (05 功能规格)', () => {
         goal: '新增日程同步',
       }));
     });
+  });
+
+  it('rejects subtask dispatch exceeding 0.50 budget', async () => {
+    vi.mocked(canvasApi.templates).mockResolvedValue({ items: mockTemplates });
+    vi.mocked(canvasApi.connectors).mockResolvedValue({ items: mockConnectors });
+    vi.mocked(canvasApi.listInstances).mockResolvedValue({ items: [mockInstance], count: 1 });
+    vi.mocked(canvasApi.getSnapshot).mockResolvedValue(mockSnapshot);
+
+    const user = userEvent.setup();
+    render(<CanvasPage />);
+
+    const openDispatchBtn = await screen.findByRole('button', { name: '派发子任务' });
+    await user.click(openDispatchBtn);
+
+    const budgetInput = await screen.findByLabelText(/预算切片/);
+    await user.clear(budgetInput);
+    await user.type(budgetInput, '0.80');
+
+    const goalInput = await screen.findByLabelText(/目标描述/);
+    await user.type(goalInput, '超出预算任务');
+
+    const submitBtn = screen.getByRole('button', { name: '确认派发' });
+    const form = submitBtn.closest('form');
+    expect(form).not.toBeNull();
+    if (form) fireEvent.submit(form);
+
+    expect(await screen.findByText(/单次派发预算切片最高不可超过 \$0\.50/)).toBeInTheDocument();
+    expect(canvasApi.dispatchSubtask).not.toHaveBeenCalled();
   });
 });

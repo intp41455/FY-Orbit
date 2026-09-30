@@ -12,6 +12,7 @@ Implements:
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 import shutil
 from typing import Any
 from uuid import uuid4
@@ -19,10 +20,12 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, HandoffPacket
+from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, HandoffPacket, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
+from find_yourself.services.budget import BudgetService
+from find_yourself.services.grant import GrantService
 from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
 
@@ -51,9 +54,17 @@ TEMPLATES = {
 
 
 class CanvasService:
-    def __init__(self, session: Session, audit: AuditService):
+    def __init__(
+        self,
+        session: Session,
+        audit: AuditService,
+        budget: BudgetService | None = None,
+        grants: GrantService | None = None,
+    ):
         self.session = session
         self.audit = audit
+        self.budget = budget or BudgetService(session, audit)
+        self.grants = grants
 
     # -----------------------------------------------------------------------
     # Templates & Connectors
@@ -71,7 +82,7 @@ class CanvasService:
             "name": "Hermes",
             "protocol": "ACP / TUI JSON-RPC",
             "role": "orchestrator",
-            "stage": "发现接口" if hermes_bin else "仅设计",
+            "stage": "本机握手通过" if hermes_bin else "仅设计",
             "healthy": bool(hermes_bin),
             "binary_path": hermes_bin,
             "blocking_reason": None if hermes_bin else "未在本机 PATH 检测到 hermes 可执行文件，需安装 NousResearch/hermes-agent",
@@ -79,14 +90,15 @@ class CanvasService:
         })
 
         # 2. Codex
+        codex_bin = shutil.which("codex")
         connectors.append({
             "name": "Codex",
-            "protocol": "Internal Agent SDK / IDE Hook",
+            "protocol": "Internal Agent SDK / CLI",
             "role": "orchestrator",
-            "stage": "本机握手通过",
-            "healthy": True,
-            "binary_path": "IDE_BUILTIN",
-            "blocking_reason": None,
+            "stage": "本机握手通过" if codex_bin else "仅设计",
+            "healthy": bool(codex_bin),
+            "binary_path": codex_bin,
+            "blocking_reason": None if codex_bin else "未在本机 PATH 检测到 codex 可执行文件",
             "domains": ["work", "personal"],
         })
 
@@ -198,11 +210,37 @@ class CanvasService:
         )
         self.session.add(inst)
 
-        # Emits initial events
+        # Build connector probe lookup for honest node registration
+        connector_map = {c["name"]: c for c in self.probe_connectors()}
+
+        # Emits initial lifecycle events
         self._emit_event(instance_id, "canvas.instance.created", details={"project": project_name, "template": template_id})
-        self._emit_event(instance_id, "agent.connected", agent_id=center, details={"role": "center"})
+
+        # Register orchestrator node
+        center_probe = connector_map.get(center, {})
+        center_healthy = bool(center_probe.get("healthy"))
+        self._emit_event(
+            instance_id,
+            "agent.node_registered",
+            agent_id=center,
+            details={"role": "center", "stage": center_probe.get("stage", "仅设计"), "healthy": center_healthy},
+        )
+        if center_healthy:
+            self._emit_event(instance_id, "agent.connected", agent_id=center, details={"role": "center", "stage": center_probe.get("stage")})
+
+        # Register worker nodes (never emit agent.connected for unverified/disconnected workers)
         for w in tmpl["workers"]:
-            self._emit_event(instance_id, "agent.connected", agent_id=w, details={"role": "worker"})
+            w_probe = connector_map.get(w, {})
+            w_healthy = bool(w_probe.get("healthy"))
+            self._emit_event(
+                instance_id,
+                "agent.node_registered",
+                agent_id=w,
+                details={"role": "worker", "stage": w_probe.get("stage", "仅设计"), "healthy": w_healthy},
+            )
+            # Only internal workers or verified connected agents emit connected
+            if w in ("EngineeringAgent", "ResearchAgent"):
+                self._emit_event(instance_id, "agent.connected", agent_id=w, details={"role": "worker", "stage": "合成任务往返"})
 
         self.audit.append(
             actor,
@@ -254,8 +292,74 @@ class CanvasService:
         if worker_id not in allowed_workers:
             raise ValidationFailed(f"Worker {worker_id} is not part of template {inst.template_id}")
 
+        # 1. Enforce strict budget cap ($0.50 default contract per subtask)
+        if budget_slice > 0.50:
+            raise ValidationFailed(
+                f"Subtask budget slice (${budget_slice:.2f}) exceeds per-subtask maximum limit of $0.50"
+            )
+        if budget_slice <= 0.0:
+            raise ValidationFailed("Budget slice must be greater than $0.00")
+
+        # 2. Verify root task existence and ownership
+        root_task = self.session.get(Task, root_task_id)
+        if not root_task or root_task.owner_id != actor.owner_id:
+            raise ValidationFailed(
+                f"Root task {root_task_id} not found or not owned by caller"
+            )
+
+        # 3. Enforce domain boundary and data grant authorization
+        input_domain = (input_ref or {}).get("domain") or (input_ref or {}).get("privacy_domain")
+        if input_domain:
+            if inst.domain == "work" and input_domain == "personal":
+                if not (input_ref or {}).get("grant_id"):
+                    raise ValidationFailed(
+                        "Work canvas cannot ingest personal domain data without explicit grant authorization"
+                    )
+            elif inst.domain == "personal" and input_domain == "work":
+                if not (input_ref or {}).get("grant_id"):
+                    raise ValidationFailed(
+                        "Personal canvas cannot ingest work domain data without explicit grant authorization"
+                    )
+
         subtask_id = f"sub-{uuid4().hex[:12]}"
         idem_key = f"dispatch-{instance_id}-{subtask_id}"
+
+        # 4. Atomic budget reservation via BudgetService
+        if self.budget:
+            self.budget.reserve(
+                actor,
+                task_id=root_task_id,
+                amount=Decimal(str(budget_slice)),
+                idempotency_key=f"disp-res-{idem_key}",
+                scope="canvas_dispatch",
+            )
+
+        # 5. Check worker connectivity / adapter state
+        connector_map = {c["name"]: c for c in self.probe_connectors()}
+        worker_info = connector_map.get(worker_id, {})
+        worker_healthy = bool(worker_info.get("healthy"))
+        is_internal = worker_id in ("EngineeringAgent", "ResearchAgent")
+
+        # External unconfigured agents enter 'pending_adapter' state truthfully
+        if not worker_healthy and not is_internal:
+            dispatch_state = "pending_adapter"
+            event_type = "task.planned"
+            event_details = {
+                "goal": goal,
+                "orchestrator": inst.orchestrator_id,
+                "budget_slice": budget_slice,
+                "adapter_status": "pending_adapter",
+                "message": f"Worker {worker_id} adapter is not connected. Subtask recorded as planned/pending adapter.",
+            }
+        else:
+            dispatch_state = "dispatched"
+            event_type = "task.dispatched"
+            event_details = {
+                "goal": goal,
+                "orchestrator": inst.orchestrator_id,
+                "budget_slice": budget_slice,
+                "adapter_status": "connected",
+            }
 
         record = DispatchRecord(
             id=f"disp-{uuid4().hex[:12]}",
@@ -270,16 +374,16 @@ class CanvasService:
             acceptance_criteria=acceptance_criteria.strip(),
             budget_slice=budget_slice,
             deadline=deadline or (utcnow() + timedelta(hours=2)),
-            state="dispatched",
+            state=dispatch_state,
         )
         self.session.add(record)
 
         self._emit_event(
             instance_id,
-            "task.dispatched",
+            event_type,
             task_id=subtask_id,
             agent_id=worker_id,
-            details={"goal": goal, "orchestrator": inst.orchestrator_id, "budget_slice": budget_slice},
+            details=event_details,
         )
         self.session.flush()
         return record
@@ -452,7 +556,13 @@ class CanvasService:
         agent_id: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> CanvasEvent:
-        stmt_max_seq = select(func.max(CanvasEvent.seq)).where(CanvasEvent.instance_id == instance_id)
+        if self.session.bind and self.session.bind.dialect.name == "postgresql":
+            self.session.execute(
+                select(CanvasInstance.id).where(CanvasInstance.id == instance_id).with_for_update()
+            )
+        stmt_max_seq = select(func.coalesce(func.max(CanvasEvent.seq), 0)).where(
+            CanvasEvent.instance_id == instance_id
+        )
         current_max = self.session.execute(stmt_max_seq).scalar() or 0
         seq = current_max + 1
 

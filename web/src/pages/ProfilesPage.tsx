@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react';
-import { profilesApi, type ProfileCluster, type ProfileImport, type ProfileMetric, type ProfileRevision, type ProfileSubject } from '../api/profiles';
+import {
+  profilesApi,
+  type ProfileCluster,
+  type ProfileClusterNode,
+  type ProfileEdge,
+  type ProfileImport,
+  type ProfileMetric,
+  type ProfileRevision,
+  type ProfileSubject,
+} from '../api/profiles';
 import { errorMessage } from '../components/ui';
 
 export function ProfilesPage() {
@@ -22,6 +31,15 @@ export function ProfilesPage() {
   const [importDomain, setImportDomain] = useState<'personal' | 'work'>('personal');
   const [lastImport, setLastImport] = useState<ProfileImport | null>(null);
   const [importing, setImporting] = useState(false);
+
+  // Speaker confirmation
+  const [speakerMappings, setSpeakerMappings] = useState<Record<string, string>>({});
+  const [confirmingSpeakers, setConfirmingSpeakers] = useState(false);
+  const [speakerConfirmMsg, setSpeakerConfirmMsg] = useState<string | null>(null);
+
+  // 2D Graph vs List View & Selected Node Inspector
+  const [viewMode, setViewMode] = useState<'graph' | 'list'>('graph');
+  const [selectedNode, setSelectedNode] = useState<ProfileClusterNode | null>(null);
 
   // Load subjects
   useEffect(() => {
@@ -46,13 +64,17 @@ export function ProfilesPage() {
 
   async function selectSubject(subj: ProfileSubject) {
     setActiveSubject(subj);
+    setSelectedNode(null);
     try {
       const revRes = await profilesApi.listRevisions(subj.id);
       setRevisions(revRes.items);
       if (revRes.items.length > 0) {
         setActiveRevision(revRes.items[0]);
+        const firstNode = revRes.items[0].clusters?.[0]?.nodes?.[0] ?? null;
+        setSelectedNode(firstNode);
       } else {
         setActiveRevision(null);
+        setSelectedNode(null);
       }
     } catch (err) {
       setError(errorMessage(err));
@@ -83,6 +105,7 @@ export function ProfilesPage() {
     if (!importContent.trim() || !activeSubject) return;
     setImporting(true);
     setError(null);
+    setSpeakerConfirmMsg(null);
     try {
       const imp = await profilesApi.importDocument({
         content: importContent,
@@ -92,10 +115,30 @@ export function ProfilesPage() {
       });
       setLastImport(imp);
       setImportContent('');
+      // Initialize speaker mappings
+      const initialMap: Record<string, string> = {};
+      imp.subject_candidates?.forEach((c) => {
+        initialMap[c.speaker] = c.candidate_subject || (activeSubject.kind === 'self' ? 'self' : activeSubject.id);
+      });
+      setSpeakerMappings(initialMap);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setImporting(false);
+    }
+  }
+
+  async function handleConfirmSpeakers() {
+    if (!lastImport) return;
+    setConfirmingSpeakers(true);
+    setError(null);
+    try {
+      const res = await profilesApi.confirmSpeakers(lastImport.id, speakerMappings);
+      setSpeakerConfirmMsg(`已确认 ${res.updated_segments} 个发言人切片归属，重新运行推演将准确隔离本人与第三方陈述。`);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setConfirmingSpeakers(false);
     }
   }
 
@@ -107,6 +150,8 @@ export function ProfilesPage() {
       const rev = await profilesApi.runProfiling(activeSubject.id);
       setRevisions((old) => [rev, ...old]);
       setActiveRevision(rev);
+      const firstNode = rev.clusters?.[0]?.nodes?.[0] ?? null;
+      setSelectedNode(firstNode);
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -132,11 +177,17 @@ export function ProfilesPage() {
           ),
         }));
         setActiveRevision({ ...activeRevision, clusters: updatedClusters });
+        if (selectedNode && selectedNode.evidence_refs.includes(evidenceId)) {
+          setSelectedNode({ ...selectedNode, review_status: newStatus });
+        }
       }
     } catch (err) {
       setError(errorMessage(err));
     }
   }
+
+  const allNodes: ProfileClusterNode[] = activeRevision?.clusters?.flatMap((c) => c.nodes) ?? [];
+  const edges: ProfileEdge[] = activeRevision?.edges ?? [];
 
   return (
     <div className="page-container">
@@ -218,7 +269,7 @@ export function ProfilesPage() {
 
       {activeSubject ? (
         <div className="grid grid-2" style={{ gap: '1.5rem' }}>
-          {/* Left Column: Input and Ingestion */}
+          {/* Left Column: Input, Ingestion & Speaker Resolution */}
           <div>
             <div className="card" style={{ marginBottom: '1.5rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -226,7 +277,7 @@ export function ProfilesPage() {
                 <span className="badge badge-neutral">对象: {activeSubject.label}</span>
               </div>
               <p className="subtext" style={{ fontSize: '0.85rem' }}>
-                粘贴对话文本、反思日记或会议记录。系统将按换行与说话人前缀自动切片，并建立可追溯证据链。
+                粘贴对话文本、反思日记或会议记录。系统按说话人前缀自动切片，并建立可追溯证据链。
               </p>
 
               <form onSubmit={handleImportDocument}>
@@ -286,16 +337,45 @@ export function ProfilesPage() {
                   <div style={{ fontSize: '0.8rem', color: '#64748b' }}>
                     ID: {lastImport.id} | 大小: {lastImport.size} 字节 | 状态: {lastImport.status}
                   </div>
+
+                  {speakerConfirmMsg && (
+                    <div style={{ marginTop: '0.5rem', padding: '0.4rem 0.6rem', background: '#ecfdf5', color: '#065f46', borderRadius: '4px', fontSize: '0.8rem' }}>
+                      {speakerConfirmMsg}
+                    </div>
+                  )}
+
                   {lastImport.subject_candidates?.length > 0 && (
-                    <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
-                      <strong>检测到的发言人切片：</strong>
-                      <ul style={{ margin: '0.25rem 0', paddingLeft: '1.2rem' }}>
+                    <div style={{ marginTop: '0.75rem', fontSize: '0.8rem' }}>
+                      <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>检测到的发言人切片归属映射：</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
                         {lastImport.subject_candidates.map((c, i) => (
-                          <li key={i}>
-                            发言人 <code>{c.speaker}</code>: {c.segment_count} 个段落切片 (匹配候选: {c.candidate_subject})
-                          </li>
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                            <span>
+                              发言人 <code>{c.speaker}</code> ({c.segment_count} 段)
+                            </span>
+                            <select
+                              value={speakerMappings[c.speaker] || 'third_party'}
+                              onChange={(e) =>
+                                setSpeakerMappings({ ...speakerMappings, [c.speaker]: e.target.value })
+                              }
+                              style={{ fontSize: '0.75rem', padding: '2px 4px' }}
+                            >
+                              <option value="self">映射为本人 (Self)</option>
+                              <option value={activeSubject.id}>映射为当前主体 ({activeSubject.label})</option>
+                              <option value="third_party">第三方陈述 (仅供参考)</option>
+                            </select>
+                          </div>
                         ))}
-                      </ul>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginTop: '0.5rem', width: '100%', fontSize: '0.75rem' }}
+                        onClick={handleConfirmSpeakers}
+                        disabled={confirmingSpeakers}
+                      >
+                        {confirmingSpeakers ? '保存中...' : '确认发言人归属并生效'}
+                      </button>
                     </div>
                   )}
                 </div>
@@ -308,7 +388,7 @@ export function ProfilesPage() {
               <ul style={{ margin: 0, paddingLeft: '1.2rem', fontSize: '0.85rem', color: '#78350f' }}>
                 <li><strong>非医疗/非心理诊断：</strong>画像结果仅反映输入文本的语言特征与结构推演，严格禁止下达任何临床诊断。</li>
                 <li><strong>语料样本有限性：</strong>未导入的事实不作为定性依据，避免过度泛化。</li>
-                <li><strong>事实与自述隔离：</strong>文本统计证据与用户主观自述严格分列，并在雷达图与特征群中独立标记。</li>
+                <li><strong>事实与自述隔离：</strong>文本统计证据与用户主观自述严格分列，并在图谱与特征群中独立标记。</li>
               </ul>
             </div>
           </div>
@@ -330,7 +410,10 @@ export function ProfilesPage() {
                         value={activeRevision.id}
                         onChange={(e) => {
                           const r = revisions.find((x) => x.id === e.target.value);
-                          if (r) setActiveRevision(r);
+                          if (r) {
+                            setActiveRevision(r);
+                            setSelectedNode(r.clusters?.[0]?.nodes?.[0] ?? null);
+                          }
                         }}
                         style={{ fontSize: '0.8rem', padding: '2px 6px' }}
                       >
@@ -345,98 +428,299 @@ export function ProfilesPage() {
                   </div>
                 </div>
 
+                {/* Norm Note / Ethical Disclaimer */}
+                <div style={{ padding: '0.75rem', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                    <strong style={{ fontSize: '0.85rem', color: '#0f172a' }}>客观语料统计指标说明</strong>
+                    <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>
+                      {activeRevision.core_summary?.formal_norm ? '标准化常模' : '非标准化常模 (Formal Norm: False)'}
+                    </span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.8rem', color: '#475569' }}>
+                    {activeRevision.core_summary?.norm_note ||
+                      '未接入标准化心理量表授权输入，不呈现推测性能力分或人格测评常模分；以下呈现指标为可重算语料客观统计与自述提取。'}
+                  </p>
+                </div>
+
                 <p style={{ fontSize: '0.9rem', color: '#334155', background: '#f1f5f9', padding: '0.75rem', borderRadius: '4px' }}>
                   {activeRevision.core_summary?.summary}
                 </p>
 
-                {/* Radar / Metrics Section */}
+                {/* Authentic Quantitative Corpus Metrics */}
                 <div style={{ marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-                  <h4>量化推演维度 (Corpus Stats vs Self Report)</h4>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
-                    {activeRevision.metrics?.map((m: ProfileMetric, i: number) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.85rem' }}>
-                        <span style={{ width: '140px', fontWeight: 500 }}>{m.dimension}</span>
-                        <div style={{ flex: 1, height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
-                          <div
-                            style={{
-                              width: `${m.score}%`,
-                              height: '100%',
-                              background: m.metric_type === 'corpus_stat' ? '#3b82f6' : '#10b981',
-                            }}
-                          />
+                  <h4>客观量化推演维度 (Deterministic Metrics)</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', marginTop: '0.5rem' }}>
+                    {activeRevision.metrics?.map((m: ProfileMetric, i: number) => {
+                      const displayVal = m.display_value || (m.raw_value !== undefined ? String(m.raw_value) : `${m.score ?? 0}`);
+                      return (
+                        <div key={i} style={{ padding: '0.5rem 0.75rem', background: '#f8fafc', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem', fontSize: '0.85rem' }}>
+                            <span style={{ fontWeight: 600, color: '#1e293b' }}>{m.dimension}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{displayVal}</span>
+                              <span className={`badge ${m.metric_type === 'corpus_stat' ? 'badge-primary' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
+                                {m.metric_type === 'corpus_stat' ? '语料统计' : '用户自述'}
+                              </span>
+                            </div>
+                          </div>
+                          <div style={{ height: '6px', background: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div
+                              style={{
+                                width: `${Math.min(100, Math.max(5, m.score ?? 50))}%`,
+                                height: '100%',
+                                background: m.metric_type === 'corpus_stat' ? '#3b82f6' : '#10b981',
+                              }}
+                            />
+                          </div>
+                          {m.calculation_formula && (
+                            <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '0.25rem' }}>
+                              公式: <code>{m.calculation_formula}</code> · 证据切片数: {m.evidence_count}
+                            </div>
+                          )}
                         </div>
-                        <span style={{ width: '32px', textAlign: 'right', fontWeight: 600 }}>{m.score}</span>
-                        <span className={`badge ${m.metric_type === 'corpus_stat' ? 'badge-primary' : 'badge-neutral'}`} style={{ fontSize: '0.75rem' }}>
-                          {m.metric_type === 'corpus_stat' ? '语料统计' : '用户自述'}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Clusters & Evidence Verification */}
-                <div>
-                  <h4>特征群与证据闭环 (Clusters & Evidence Feedback)</h4>
-                  {activeRevision.clusters?.map((c: ProfileCluster) => (
-                    <div key={c.id} style={{ marginBottom: '1.25rem', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem' }}>
-                      <div style={{ fontWeight: 600, color: '#1e293b' }}>{c.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem' }}>{c.summary}</div>
+                {/* Graph vs List Switcher */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1.5rem', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0 }}>特征群与推演关系网 (Clusters & Relation Graph)</h4>
+                  <div style={{ display: 'flex', gap: '0.25rem' }}>
+                    <button
+                      type="button"
+                      className={`btn btn-xs ${viewMode === 'graph' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setViewMode('graph')}
+                    >
+                      二维关系图
+                    </button>
+                    <button
+                      type="button"
+                      className={`btn btn-xs ${viewMode === 'list' ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => setViewMode('list')}
+                    >
+                      详细列表
+                    </button>
+                  </div>
+                </div>
 
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        {c.nodes?.map((node) => (
-                          <div
-                            key={node.id}
-                            style={{
-                              padding: '0.5rem',
-                              background: '#f8fafc',
-                              borderRadius: '4px',
-                              borderLeft: `3px solid ${
-                                node.review_status === 'accepted' ? '#10b981' : node.review_status === 'rejected' ? '#ef4444' : '#64748b'
-                              }`,
-                            }}
-                          >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <strong style={{ fontSize: '0.85rem' }}>{node.label}</strong>
-                              <span className={`badge ${node.review_status === 'accepted' ? 'badge-ok' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
-                                状态: {node.review_status}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: '#475569', margin: '0.25rem 0' }}>{node.description}</div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
-                              <small style={{ color: '#94a3b8' }}>置信度: {(node.confidence * 100).toFixed(0)}% · 来源: {node.claim_kind}</small>
-                              <div style={{ display: 'flex', gap: '0.25rem' }}>
-                                <button
-                                  type="button"
-                                  className="btn btn-xs"
-                                  style={{ padding: '2px 6px', fontSize: '0.7rem' }}
-                                  onClick={() => handleEvidenceFeedback(node.evidence_refs[0], 'accept')}
-                                >
-                                  确认
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-xs"
-                                  style={{ padding: '2px 6px', fontSize: '0.7rem' }}
-                                  onClick={() => handleEvidenceFeedback(node.evidence_refs[0], 'reject')}
-                                >
-                                  否定
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-xs"
-                                  style={{ padding: '2px 6px', fontSize: '0.7rem' }}
-                                  onClick={() => handleEvidenceFeedback(node.evidence_refs[0], 'uncertain')}
-                                >
-                                  待验证
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
+                {/* 2D Graph View */}
+                {viewMode === 'graph' ? (
+                  <div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.5rem', position: 'relative' }}>
+                      <svg viewBox="0 0 520 280" style={{ width: '100%', height: '260px', display: 'block' }}>
+                        {/* Edges */}
+                        {edges.map((e, idx) => {
+                          const src = allNodes.find((n) => n.id === e.source);
+                          const dst = allNodes.find((n) => n.id === e.target);
+                          if (!src || !dst) return null;
+                          const x1 = src.x ?? 120;
+                          const y1 = src.y ?? 100;
+                          const x2 = dst.x ?? 360;
+                          const y2 = dst.y ?? 180;
+                          return (
+                            <g key={idx}>
+                              <line
+                                x1={x1}
+                                y1={y1}
+                                x2={x2}
+                                y2={y2}
+                                stroke="#94a3b8"
+                                strokeWidth="2"
+                                strokeDasharray={e.relation === 'inhibits' ? '4 3' : undefined}
+                              />
+                              <text
+                                x={(x1 + x2) / 2}
+                                y={(y1 + y2) / 2 - 4}
+                                fontSize="10"
+                                fill="#64748b"
+                                textAnchor="middle"
+                              >
+                                {e.relation}
+                              </text>
+                            </g>
+                          );
+                        })}
+
+                        {/* Nodes */}
+                        {allNodes.map((node) => {
+                          const nx = node.x ?? 150;
+                          const ny = node.y ?? 120;
+                          const isSelected = selectedNode?.id === node.id;
+                          const statusColor =
+                            node.review_status === 'accepted'
+                              ? '#10b981'
+                              : node.review_status === 'rejected'
+                              ? '#ef4444'
+                              : node.review_status === 'invalidated'
+                              ? '#94a3b8'
+                              : '#3b82f6';
+                          return (
+                            <g
+                              key={node.id}
+                              transform={`translate(${nx}, ${ny})`}
+                              onClick={() => setSelectedNode(node)}
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <circle
+                                r="22"
+                                fill="#ffffff"
+                                stroke={statusColor}
+                                strokeWidth={isSelected ? '3' : '2'}
+                              />
+                              <circle r="5" fill={statusColor} />
+                              <text
+                                y="32"
+                                fontSize="10"
+                                fontWeight={isSelected ? '700' : '500'}
+                                fill="#1e293b"
+                                textAnchor="middle"
+                              >
+                                {node.label.length > 7 ? node.label.slice(0, 7) + '...' : node.label}
+                              </text>
+                              <text y="43" fontSize="8" fill="#64748b" textAnchor="middle">
+                                {(node.confidence * 100).toFixed(0)}% · {node.review_status}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </svg>
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
+                        点击节点查看事实链定位与证据回溯
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    {/* Selected Node Evidence Backlink Panel */}
+                    {selectedNode && (
+                      <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#ffffff', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <strong style={{ fontSize: '0.9rem' }}>{selectedNode.label}</strong>
+                          <span
+                            className={`badge ${
+                              selectedNode.review_status === 'accepted'
+                                ? 'badge-ok'
+                                : selectedNode.review_status === 'rejected'
+                                ? 'badge-neutral'
+                                : 'badge-primary'
+                            }`}
+                            style={{ fontSize: '0.75rem' }}
+                          >
+                            状态: {selectedNode.review_status}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: '0.85rem', color: '#475569', margin: '0.4rem 0' }}>
+                          {selectedNode.description}
+                        </p>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', background: '#f8fafc', padding: '0.5rem', borderRadius: '4px', marginBottom: '0.5rem' }}>
+                          <div>
+                            <strong>证据源定位:</strong> <code>{selectedNode.locator || '自动推演切片'}</code>
+                          </div>
+                          <div>
+                            <strong>发言主体:</strong> {selectedNode.speaker || '自述 / 语料'} · <strong>类型:</strong> {selectedNode.claim_kind}
+                          </div>
+                          <div>
+                            <strong>切片证据 ID:</strong> <code>{selectedNode.source_segment_id || selectedNode.evidence_refs[0] || 'N/A'}</code>
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <small style={{ color: '#94a3b8' }}>置信度: {(selectedNode.confidence * 100).toFixed(0)}%</small>
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <button
+                              type="button"
+                              className="btn btn-xs"
+                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleEvidenceFeedback(selectedNode.evidence_refs[0] || selectedNode.id, 'accept')}
+                            >
+                              确认
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-xs"
+                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleEvidenceFeedback(selectedNode.evidence_refs[0] || selectedNode.id, 'reject')}
+                            >
+                              否定
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-xs"
+                              style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                              onClick={() => handleEvidenceFeedback(selectedNode.evidence_refs[0] || selectedNode.id, 'uncertain')}
+                            >
+                              待验证
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* List View */
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {activeRevision.clusters?.map((c: ProfileCluster) => (
+                      <div key={c.id} style={{ border: '1px solid #e2e8f0', borderRadius: '6px', padding: '0.75rem' }}>
+                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{c.name}</div>
+                        <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.5rem' }}>{c.summary}</div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          {c.nodes?.map((node) => (
+                            <div
+                              key={node.id}
+                              style={{
+                                padding: '0.5rem',
+                                background: '#f8fafc',
+                                borderRadius: '4px',
+                                borderLeft: `3px solid ${
+                                  node.review_status === 'accepted' ? '#10b981' : node.review_status === 'rejected' ? '#ef4444' : '#64748b'
+                                }`,
+                              }}
+                            >
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <strong style={{ fontSize: '0.85rem' }}>{node.label}</strong>
+                                <span className={`badge ${node.review_status === 'accepted' ? 'badge-ok' : 'badge-neutral'}`} style={{ fontSize: '0.7rem' }}>
+                                  状态: {node.review_status}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#475569', margin: '0.25rem 0' }}>{node.description}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.25rem' }}>
+                                定位: <code>{node.locator || '未定位'}</code> (发言人: {node.speaker || '自述'})
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.25rem' }}>
+                                <small style={{ color: '#94a3b8' }}>置信度: {(node.confidence * 100).toFixed(0)}% · 来源: {node.claim_kind}</small>
+                                <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs"
+                                    style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                                    onClick={() => handleEvidenceFeedback(node.evidence_refs[0] || node.id, 'accept')}
+                                  >
+                                    确认
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs"
+                                    style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                                    onClick={() => handleEvidenceFeedback(node.evidence_refs[0] || node.id, 'reject')}
+                                  >
+                                    否定
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="btn btn-xs"
+                                    style={{ padding: '2px 6px', fontSize: '0.7rem' }}
+                                    onClick={() => handleEvidenceFeedback(node.evidence_refs[0] || node.id, 'uncertain')}
+                                  >
+                                    待验证
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="card" style={{ textAlign: 'center', padding: '3rem 1rem', color: '#64748b' }}>

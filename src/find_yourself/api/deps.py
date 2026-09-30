@@ -71,6 +71,7 @@ def get_db(request: Request):
 def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> Services:
     audit = AuditService(db)
     grants = GrantService(db, audit)
+    budget_svc = BudgetService(db, audit)
     return Services(
         session=db,
         audit=audit,
@@ -79,12 +80,12 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         grants=grants,
         memory=MemoryService(db, grants, audit),
         deletion=DeletionService(db, audit),
-        budget=BudgetService(db, audit),
+        budget=budget_svc,
         outbox=OutboxService(db, audit),
         skills=SkillService(db, audit),
         agents=AgentService(db, audit),
         profiles=ProfileService(db, audit),
-        canvas=CanvasService(db, audit),
+        canvas=CanvasService(db, audit, budget=budget_svc, grants=grants),
     )
 
 

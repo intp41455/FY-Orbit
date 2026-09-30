@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from find_yourself.db.models import (
     AuditEvent, ProfileEvidence, ProfileFeedback, ProfileImport, ProfileRevision,
@@ -113,42 +114,83 @@ class ProfileService:
         if privacy_domain not in ("personal", "work"):
             raise ValidationFailed(f"Invalid privacy domain: {privacy_domain}")
 
+        target_subject = None
         if subject_id:
-            self.get_subject(actor, subject_id)
+            target_subject = self.get_subject(actor, subject_id)
 
         content_bytes = content.encode("utf-8")
         sha256 = hashlib.sha256(content_bytes).hexdigest()
         import_id = f"imp-{uuid4().hex[:12]}"
 
-        # Segment parser: lines/paragraphs and speaker recognition
-        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        # Segment parser: supports structured conversation JSON or text/markdown lines
         segments: list[SourceSegment] = []
         speakers: set[str] = set()
 
-        speaker_pattern = re.compile(r"^(?:\[.*?\]\s*)?([A-Za-z0-9_\u4e00-\u9fa5]{1,20})[:：]\s*(.+)$")
+        content_stripped = content.strip()
+        parsed_json_msgs = None
+        if (content_stripped.startswith("[") and content_stripped.endswith("]")) or (
+            content_stripped.startswith("{") and content_stripped.endswith("}")
+        ):
+            try:
+                data = json.loads(content_stripped)
+                if isinstance(data, list):
+                    parsed_json_msgs = data
+                elif isinstance(data, dict) and "messages" in data and isinstance(data["messages"], list):
+                    parsed_json_msgs = data["messages"]
+            except Exception:
+                parsed_json_msgs = None
 
-        for idx, line in enumerate(lines, start=1):
-            m = speaker_pattern.match(line)
-            if m:
-                spk = m.group(1).strip()
-                txt = m.group(2).strip()
-            else:
-                spk = "self" if (subject_id and "self" in subject_id) else "observed"
-                txt = line
-
-            speakers.add(spk)
-            seg_id = f"seg-{uuid4().hex[:12]}"
-            seg_hash = hashlib.sha256(txt.encode("utf-8")).hexdigest()
-            segments.append(
-                SourceSegment(
-                    id=seg_id,
-                    import_id=import_id,
-                    speaker=spk,
-                    text_content=txt,
-                    content_hash=seg_hash,
-                    locator=f"L{idx}",
+        if parsed_json_msgs is not None:
+            for idx, msg in enumerate(parsed_json_msgs, start=1):
+                if isinstance(msg, dict):
+                    spk = str(msg.get("speaker") or msg.get("role") or "observed").strip()
+                    txt = str(msg.get("text") or msg.get("content") or "").strip()
+                    loc = str(msg.get("locator") or f"L{idx}")
+                else:
+                    spk = "observed"
+                    txt = str(msg).strip()
+                    loc = f"L{idx}"
+                if not txt:
+                    continue
+                speakers.add(spk)
+                seg_id = f"seg-{uuid4().hex[:12]}"
+                seg_hash = hashlib.sha256(txt.encode("utf-8")).hexdigest()
+                segments.append(
+                    SourceSegment(
+                        id=seg_id,
+                        import_id=import_id,
+                        speaker=spk,
+                        text_content=txt,
+                        content_hash=seg_hash,
+                        locator=loc,
+                    )
                 )
-            )
+        else:
+            lines = [line.strip() for line in content.splitlines() if line.strip()]
+            speaker_pattern = re.compile(r"^(?:\[.*?\]\s*)?([A-Za-z0-9_\u4e00-\u9fa5]{1,20})[:：]\s*(.+)$")
+
+            for idx, line in enumerate(lines, start=1):
+                m = speaker_pattern.match(line)
+                if m:
+                    spk = m.group(1).strip()
+                    txt = m.group(2).strip()
+                else:
+                    spk = "self" if (target_subject and target_subject.kind == "self") else "observed"
+                    txt = line
+
+                speakers.add(spk)
+                seg_id = f"seg-{uuid4().hex[:12]}"
+                seg_hash = hashlib.sha256(txt.encode("utf-8")).hexdigest()
+                segments.append(
+                    SourceSegment(
+                        id=seg_id,
+                        import_id=import_id,
+                        speaker=spk,
+                        text_content=txt,
+                        content_hash=seg_hash,
+                        locator=f"L{idx}",
+                    )
+                )
 
         imp = ProfileImport(
             id=import_id,
@@ -156,8 +198,8 @@ class ProfileService:
             subject_id=subject_id,
             subject_candidates=sorted(list(speakers)),
             original_asset_ref=filename,
-            source_type="conversation_text" if len(speakers) > 1 else "text",
-            mime="text/plain",
+            source_type="conversation_json" if parsed_json_msgs is not None else ("conversation_text" if len(speakers) > 1 else "text"),
+            mime="application/json" if parsed_json_msgs is not None else "text/plain",
             size=len(content_bytes),
             sha256=sha256,
             privacy_domain=privacy_domain,
@@ -171,10 +213,39 @@ class ProfileService:
             actor,
             "profile.import.create",
             target=import_id,
-            details={"filename": filename, "sha256": sha256, "segments": len(segments)},
+            details={"filename": filename, "sha256": sha256, "segments": len(segments), "speakers": sorted(list(speakers))},
         )
         self.session.flush()
         return imp
+
+    def confirm_speakers(
+        self,
+        actor: Actor,
+        import_id: str,
+        mappings: dict[str, str],
+    ) -> dict[str, Any]:
+        """Explicitly confirm speaker-to-subject or self/ignore attribution mapping."""
+        actor.require_owner()
+        imp = self.session.get(ProfileImport, import_id)
+        if not imp or imp.owner_id != actor.owner_id:
+            raise NotFound(f"Profile import not found: {import_id}")
+
+        stmt = select(SourceSegment).where(SourceSegment.import_id == import_id)
+        segments = list(self.session.execute(stmt).scalars().all())
+        updated_count = 0
+        for seg in segments:
+            if seg.speaker in mappings:
+                seg.speaker = mappings[seg.speaker]
+                updated_count += 1
+
+        self.audit.append(
+            actor,
+            "profile.speakers.confirm",
+            target=import_id,
+            details={"mappings": mappings, "updated_segments": updated_count},
+        )
+        self.session.flush()
+        return {"import_id": import_id, "updated_segments": updated_count, "mappings": mappings}
 
     # -----------------------------------------------------------------------
     # Profiling Run & Synthesis (JSON Schema 1.0)
@@ -188,7 +259,7 @@ class ProfileService:
         actor.require_owner()
         subj = self.get_subject(actor, subject_id)
 
-        # Find all segments linked to this subject via imports
+        # Find all segments linked to this subject via imports (strictly isolated, no fallback bleed)
         stmt_segs = (
             select(SourceSegment)
             .join(ProfileImport, SourceSegment.import_id == ProfileImport.id)
@@ -199,13 +270,10 @@ class ProfileService:
         )
         segments = list(self.session.execute(stmt_segs).scalars().all())
         if not segments:
-            # If no direct imports for subject, find any unassigned imports or create synthetic baseline
-            stmt_unassigned = (
-                select(SourceSegment)
-                .join(ProfileImport, SourceSegment.import_id == ProfileImport.id)
-                .where(ProfileImport.owner_id == actor.owner_id)
+            raise ValidationFailed(
+                f"No imported corpus segments associated with subject: {subj.label} ({subject_id}). "
+                "Cross-subject data fallback is forbidden to prevent profile bleed."
             )
-            segments = list(self.session.execute(stmt_unassigned).scalars().all())
 
         # Extract claims & evidence deterministically
         evidence_list: list[ProfileEvidence] = []
@@ -214,23 +282,49 @@ class ProfileService:
         self_keywords = ["我喜欢", "我擅长", "我倾向", "目标", "认为", "希望", "关注", "prefer", "like", "goal"]
         style_keywords = ["逻辑", "分析", "架构", "设计", "重构", "安全", "测试", "logic", "architecture"]
 
+        is_self_subject = (subj.kind == "self")
+        unconfirmed_speakers: set[str] = set()
+
         for seg in segments:
             snapshot_hasher.update(seg.content_hash.encode("utf-8"))
             txt = seg.text_content
+            spk = seg.speaker
 
-            # Determine claim kind and dimension
-            if any(k in txt for k in self_keywords):
-                kind = "self_report"
-                dim = "偏好与目标"
-                conf = 0.95
-            elif any(k in txt for k in style_keywords):
-                kind = "observed_stat"
-                dim = "工程与思维风格"
-                conf = 0.85
+            if is_self_subject:
+                is_self_speaker = spk in ("self", "user", "me", subj.label)
+                if is_self_speaker:
+                    if any(k in txt for k in self_keywords):
+                        kind = "self_report"
+                        dim = "偏好与目标"
+                        conf = 0.95
+                        rev_status = "accepted"
+                    elif any(k in txt for k in style_keywords):
+                        kind = "observed_stat"
+                        dim = "工程与思维风格"
+                        conf = 0.85
+                        rev_status = "candidate"
+                    else:
+                        kind = "observed_stat"
+                        dim = "日常习惯"
+                        conf = 0.70
+                        rev_status = "candidate"
+                else:
+                    unconfirmed_speakers.add(spk)
+                    kind = "third_party_statement"
+                    dim = "他者视角与互动记录"
+                    conf = 0.60
+                    rev_status = "candidate"
             else:
-                kind = "observed_stat"
-                dim = "日常习惯"
-                conf = 0.70
+                if any(k in txt for k in style_keywords):
+                    kind = "observed_stat"
+                    dim = "工程与思维风格"
+                    conf = 0.85
+                    rev_status = "candidate"
+                else:
+                    kind = "observed_stat"
+                    dim = "对象实践与行为观察"
+                    conf = 0.75
+                    rev_status = "candidate"
 
             ev_id = f"evi-{uuid4().hex[:12]}"
             ev = ProfileEvidence(
@@ -242,7 +336,7 @@ class ProfileService:
                 polarity="positive",
                 proposed_dimension=dim,
                 confidence=conf,
-                review_status="accepted" if kind == "self_report" else "candidate",
+                review_status=rev_status,
             )
             evidence_list.append(ev)
             self.session.add(ev)
@@ -269,60 +363,149 @@ class ProfileService:
         latest_rev = self.session.execute(stmt_rev).scalars().first() or 0
         new_rev_num = latest_rev + 1
 
-        # Synthesize Clusters & Nodes (JSON schema 1.0)
+        # Reproducible deterministic text metrics (strictly not arbitrary constant scores)
+        total_word_count = sum(len(seg.text_content) for seg in segments)
+        all_text = " ".join(seg.text_content for seg in segments)
+        tokens = re.findall(r"[\w\u4e00-\u9fa5]+", all_text)
+        total_tokens = len(tokens)
+        unique_tokens = len(set(tokens))
+        lexical_diversity = round(unique_tokens / max(total_tokens, 1), 4)
+
+        pref_matches = sum(1 for seg in segments if any(k in seg.text_content for k in self_keywords))
+        self_preference_density = round((pref_matches / max(total_word_count, 1)) * 1000, 2)
+
+        tech_matches = sum(1 for seg in segments if any(k in seg.text_content for k in style_keywords))
+        domain_focus_ratio = round((tech_matches / max(total_word_count, 1)) * 1000, 2)
+
+        metrics = [
+            {
+                "dimension": "语料切片样本量",
+                "raw_value": len(segments),
+                "display_value": f"{len(segments)} 切片",
+                "metric_type": "corpus_stat",
+                "evidence_count": len(evidence_list),
+                "calculation_formula": "count(source_segments)",
+            },
+            {
+                "dimension": "有效语料总字数",
+                "raw_value": total_word_count,
+                "display_value": f"{total_word_count} 字",
+                "metric_type": "corpus_stat",
+                "evidence_count": len(evidence_list),
+                "calculation_formula": "sum(length(text_content))",
+            },
+            {
+                "dimension": "词汇丰富度比率",
+                "raw_value": lexical_diversity,
+                "display_value": f"{round(lexical_diversity * 100, 1)}%",
+                "metric_type": "corpus_stat",
+                "evidence_count": len(evidence_list),
+                "calculation_formula": "unique_tokens / total_tokens",
+            },
+            {
+                "dimension": "自述偏好表达密度",
+                "raw_value": self_preference_density,
+                "display_value": f"{self_preference_density} 处/千字",
+                "metric_type": "corpus_stat",
+                "evidence_count": sum(1 for e in evidence_list if e.evidence_kind == "self_report"),
+                "calculation_formula": "count(preference_cues) * 1000 / total_chars",
+            },
+            {
+                "dimension": "工程与逻辑聚焦度",
+                "raw_value": domain_focus_ratio,
+                "display_value": f"{domain_focus_ratio} 处/千字",
+                "metric_type": "corpus_stat",
+                "evidence_count": sum(1 for e in evidence_list if "工程" in e.proposed_dimension or "逻辑" in e.proposed_dimension),
+                "calculation_formula": "count(domain_cues) * 1000 / total_chars",
+            },
+        ]
+
+        # Map source segment id to segment info for backlinks
+        seg_map = {seg.id: seg for seg in segments}
+
+        # Synthesize Clusters & Nodes (JSON schema 1.0 with 2D coordinates)
+        nodes_core = []
+        for i, ev in enumerate(evidence_list[:5]):
+            seg = seg_map.get(ev.source_segment_id)
+            nodes_core.append({
+                "id": f"n_{ev.id[:8]}",
+                "label": ev.proposed_dimension,
+                "description": ev.claim,
+                "claim_kind": ev.evidence_kind,
+                "confidence": float(ev.confidence),
+                "review_status": ev.review_status,
+                "evidence_refs": [ev.id],
+                "source_segment_id": ev.source_segment_id,
+                "locator": seg.locator if seg else "L1",
+                "speaker": seg.speaker if seg else "unknown",
+                "counter_evidence_refs": [],
+                "x": 150 + (i % 3) * 140,
+                "y": 100 + (i // 3) * 120,
+            })
+
+        nodes_style = []
+        for i, ev in enumerate(evidence_list[5:10]):
+            seg = seg_map.get(ev.source_segment_id)
+            nodes_style.append({
+                "id": f"n_{ev.id[:8]}",
+                "label": ev.proposed_dimension,
+                "description": ev.claim,
+                "claim_kind": ev.evidence_kind,
+                "confidence": float(ev.confidence),
+                "review_status": ev.review_status,
+                "evidence_refs": [ev.id],
+                "source_segment_id": ev.source_segment_id,
+                "locator": seg.locator if seg else "L1",
+                "speaker": seg.speaker if seg else "unknown",
+                "counter_evidence_refs": [],
+                "x": 480 + (i % 3) * 140,
+                "y": 100 + (i // 3) * 120,
+            })
+
         clusters = [
             {
                 "id": "c_core",
                 "name": "核心特质",
                 "summary": f"{subj.label}的核心行为与表达摘要",
-                "nodes": [
-                    {
-                        "id": f"n_{ev.id[:8]}",
-                        "label": ev.proposed_dimension,
-                        "description": ev.claim,
-                        "claim_kind": ev.evidence_kind,
-                        "confidence": float(ev.confidence),
-                        "review_status": ev.review_status,
-                        "evidence_refs": [ev.id],
-                        "counter_evidence_refs": [],
-                    }
-                    for ev in evidence_list[:5]
-                ],
+                "nodes": nodes_core,
             },
             {
                 "id": "c_style",
                 "name": "认知与实践风格",
                 "summary": "基于对话文本的条理性与思维模式观察",
-                "nodes": [
-                    {
-                        "id": f"n_{ev.id[:8]}",
-                        "label": ev.proposed_dimension,
-                        "description": ev.claim,
-                        "claim_kind": ev.evidence_kind,
-                        "confidence": float(ev.confidence),
-                        "review_status": ev.review_status,
-                        "evidence_refs": [ev.id],
-                        "counter_evidence_refs": [],
-                    }
-                    for ev in evidence_list[5:10]
-                ],
+                "nodes": nodes_style,
             },
         ]
 
-        # Metrics (explicit corpus stats, strictly not fake clinical diagnosis)
-        metrics = [
-            {"dimension": "反思与推演深度", "score": 88, "metric_type": "corpus_stat", "evidence_count": len(evidence_list)},
-            {"dimension": "工程条理性与严谨度", "score": 92, "metric_type": "corpus_stat", "evidence_count": len(evidence_list)},
-            {"dimension": "求知欲与探索广度", "score": 85, "metric_type": "corpus_stat", "evidence_count": len(evidence_list)},
-            {"dimension": "目标导向自律性", "score": 80, "metric_type": "self_report", "evidence_count": len(evidence_list)},
-            {"dimension": "边界感与安全防护意识", "score": 95, "metric_type": "corpus_stat", "evidence_count": len(evidence_list)},
-        ]
+        edges = []
+        all_nodes = nodes_core + nodes_style
+        for i in range(len(all_nodes) - 1):
+            edges.append({
+                "id": f"edge_{all_nodes[i]['id']}_{all_nodes[i+1]['id']}",
+                "source": all_nodes[i]["id"],
+                "target": all_nodes[i + 1]["id"],
+                "relation": "correlates_with",
+                "strength": 0.80,
+            })
 
         limitations = [
             "分析基于用户导入的有限语料样本，可能存在情境呈现偏差与样本不均衡",
-            "本画像呈现文本可推演之特征与自述，严格不代表临床心理学或医学诊断结论",
+            "本画像未接入标准化心理量表授权输入，不呈现推测性能力分或人格测评常模分；仅呈现可重算的客观文本统计与用户自述",
             "候选假设必须由所有者逐条复核确认，未经确认的推测不作为事实定性",
         ]
+        if unconfirmed_speakers:
+            limitations.append(
+                f"检测到未确认说话人 ({', '.join(sorted(list(unconfirmed_speakers)))})，未确认说话人切片已自动降级为第三方记录，不计入正式本人自述。"
+            )
+
+        core_summary = {
+            "title": f"{subj.label} 多维特征透视 (Rev {new_rev_num})",
+            "summary": f"基于 {len(segments)} 条语料切片提炼之特征画像，包含 {len(evidence_list)} 项证据关联。",
+            "evidence_count": len(evidence_list),
+            "formal_norm": False,
+            "scale_name": None,
+            "norm_note": "未接入标准化心理量表授权输入，不呈现推测性能力分或人格测评常模分；以上呈现指标为可重算语料客观统计",
+        }
 
         rev_id = f"rev-{uuid4().hex[:12]}"
         rev = ProfileRevision(
@@ -330,13 +513,9 @@ class ProfileService:
             subject_id=subject_id,
             revision=new_rev_num,
             profile_run_id=run_id,
-            core_summary={
-                "title": f"{subj.label} 多维特征透视 (Rev {new_rev_num})",
-                "summary": f"基于 {len(segments)} 条语料切片提炼之特征画像，包含 {len(evidence_list)} 项证据关联。",
-                "evidence_count": len(evidence_list),
-            },
+            core_summary=core_summary,
             clusters=clusters,
-            edges=[],
+            edges=edges,
             metrics=metrics,
             limitations=limitations,
             user_review_state="draft" if new_rev_num > 1 else "confirmed",
@@ -385,6 +564,34 @@ class ProfileService:
         elif action == "uncertain":
             ev.review_status = "uncertain"
 
+        # Cascade feedback into existing ProfileRevision snapshots
+        stmt_revs = select(ProfileRevision).where(ProfileRevision.subject_id == subj.id)
+        revs = list(self.session.execute(stmt_revs).scalars().all())
+        for r in revs:
+            rev_updated = False
+            new_clusters = []
+            for cl in (r.clusters or []):
+                new_nodes = []
+                for nd in cl.get("nodes", []):
+                    if evidence_id in nd.get("evidence_refs", []):
+                        rev_updated = True
+                        if action == "reject":
+                            nd["review_status"] = "rejected"
+                            nd["confidence"] = 0.0
+                        elif action == "accept":
+                            nd["review_status"] = "accepted"
+                        elif action == "edit" and feedback_text:
+                            nd["description"] = feedback_text
+                            nd["review_status"] = "edited"
+                    new_nodes.append(nd)
+                new_cl = dict(cl)
+                new_cl["nodes"] = new_nodes
+                new_clusters.append(new_cl)
+            if rev_updated:
+                r.clusters = new_clusters
+                r.user_review_state = "feedback_applied"
+                flag_modified(r, "clusters")
+
         fb_id = f"fb-{uuid4().hex[:12]}"
         fb = ProfileFeedback(
             id=fb_id,
@@ -413,6 +620,8 @@ class ProfileService:
         if not imp or imp.owner_id != actor.owner_id:
             raise NotFound(f"Profile import not found: {import_id}")
 
+        subject_id = imp.subject_id
+
         # Find segments
         stmt_seg_ids = select(SourceSegment.id).where(SourceSegment.import_id == import_id)
         seg_ids = list(self.session.execute(stmt_seg_ids).scalars().all())
@@ -422,9 +631,39 @@ class ProfileService:
             stmt_ev_ids = select(ProfileEvidence.id).where(
                 ProfileEvidence.source_segment_id.in_(seg_ids)
             )
-            ev_ids = list(self.session.execute(stmt_ev_ids).scalars().all())
+            ev_ids = set(self.session.execute(stmt_ev_ids).scalars().all())
         else:
-            ev_ids = []
+            ev_ids = set()
+
+        # Invalidate / prune derived ProfileRevision snapshots
+        affected_revs = []
+        if subject_id:
+            stmt_revs = select(ProfileRevision).where(ProfileRevision.subject_id == subject_id)
+            revs = list(self.session.execute(stmt_revs).scalars().all())
+            for r in revs:
+                has_deleted_ref = False
+                new_clusters = []
+                for cl in (r.clusters or []):
+                    new_nodes = []
+                    for nd in cl.get("nodes", []):
+                        refs = set(nd.get("evidence_refs", []))
+                        if refs & ev_ids:
+                            has_deleted_ref = True
+                            nd["review_status"] = "invalidated"
+                            nd["invalidation_note"] = f"Derived source import {import_id} deleted"
+                        new_nodes.append(nd)
+                    new_cl = dict(cl)
+                    new_cl["nodes"] = new_nodes
+                    new_clusters.append(new_cl)
+                if has_deleted_ref:
+                    r.clusters = new_clusters
+                    r.user_review_state = "invalidated"
+                    core = dict(r.core_summary or {})
+                    core["invalidation_note"] = f"Derived source import {import_id} was deleted by owner"
+                    r.core_summary = core
+                    flag_modified(r, "clusters")
+                    flag_modified(r, "core_summary")
+                    affected_revs.append(r.id)
 
         # Delete import (cascade takes care of segments and evidence in DB)
         self.session.delete(imp)
@@ -434,7 +673,7 @@ class ProfileService:
             id=f"tomb-{uuid4().hex[:12]}",
             target_id=import_id,
             target_kind="profile_import",
-            reason=f"Owner deleted import; cascaded {len(seg_ids)} segments and {len(ev_ids)} evidences",
+            reason=f"Owner deleted import; cascaded {len(seg_ids)} segments, {len(ev_ids)} evidences; invalidated {len(affected_revs)} revisions",
             deleted_by=actor.owner_id,
             dep_graph_hash=imp.sha256,
         )
@@ -444,6 +683,10 @@ class ProfileService:
             actor,
             "profile.import.delete",
             target=import_id,
-            details={"cascaded_segments": len(seg_ids), "cascaded_evidences": len(ev_ids)},
+            details={
+                "cascaded_segments": len(seg_ids),
+                "cascaded_evidences": len(ev_ids),
+                "invalidated_revisions": affected_revs,
+            },
         )
         self.session.flush()

@@ -39,23 +39,45 @@ def test_canvas_api_lifecycle(client: TestClient) -> None:
     assert r_get.status_code == 200
     assert r_get.json()["id"] == inst_id
 
-    # 4. Dispatch Subtask
+    # 3b. Create root task for dispatching
+    r_task = client.post(
+        "/api/tasks",
+        json={"goal": "工作研发主任务", "idempotency_key": "task-canvas-root-01", "domain": "work"},
+        headers=headers,
+    )
+    assert r_task.status_code in (200, 201)
+    root_task_id = r_task.json()["id"]
+
+    # 4. Dispatch Subtask (OpenCode is not connected -> returns pending_adapter)
     r_disp = client.post(
         f"/api/canvas/instances/{inst_id}/dispatch",
         json={
-            "root_task_id": "root-101",
+            "root_task_id": root_task_id,
             "worker_id": "OpenCode",
             "goal": "完成自动化测试套件编写",
             "acceptance_criteria": "所有测试在沙箱中绿色通过",
-            "budget_slice": 0.5,
+            "budget_slice": 0.50,
         },
         headers=headers,
     )
     assert r_disp.status_code == 201
     disp = r_disp.json()
     assert disp["worker_id"] == "OpenCode"
-    assert disp["state"] == "dispatched"
+    assert disp["state"] == "pending_adapter"
     subtask_id = disp["subtask_id"]
+
+    # 4b. Test budget cap rejection (> 0.50 returns 422)
+    r_over_budget = client.post(
+        f"/api/canvas/instances/{inst_id}/dispatch",
+        json={
+            "root_task_id": root_task_id,
+            "worker_id": "OpenCode",
+            "goal": "超预算派发",
+            "budget_slice": 0.51,
+        },
+        headers=headers,
+    )
+    assert r_over_budget.status_code == 422
 
     # 5. Record Handoff
     r_hnd = client.post(
