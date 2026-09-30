@@ -13,7 +13,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db.models import Agent, AgentLease
+from ..db.models import Agent, AgentLease, ServiceIdentity
 from ..db.types import utcnow
 from .actor import Actor
 from .errors import Conflict, NotFound, ValidationFailed
@@ -106,6 +106,13 @@ class AgentService:
             select(AgentLease).where(AgentLease.agent_id == agent_id, AgentLease.state == "active")
         ).scalars():
             lease.state = "revoked"
+        # Revoke all associated service identities for this agent name
+        svc_identities = self.s.execute(
+            select(ServiceIdentity).where(ServiceIdentity.name == agent.name, ServiceIdentity.state == "active")
+        ).scalars()
+        for svc_ident in svc_identities:
+            svc_ident.state = "revoked"
+            svc_ident.revoked_at = utcnow()
         agent.state = "revoked"
         agent.healthy = False
         self.s.flush()

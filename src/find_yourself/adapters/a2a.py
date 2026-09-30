@@ -156,3 +156,241 @@ def _error(req_id, code: int, message: str, data: Any = None) -> dict:
     if data is not None:
         body["error"]["data"] = data
     return body
+
+
+# ============================================================================
+# Outbound A2A Client & Server-side Trusted Endpoint Registry (F4)
+# ============================================================================
+
+from dataclasses import dataclass, field
+import httpx
+import secrets
+
+
+class A2AClientError(Exception):
+    """Base exception for outbound A2A client operations."""
+
+
+class UntrustedEndpointError(A2AClientError):
+    """Raised when an outbound A2A call targets an endpoint not in the trusted registry."""
+
+
+class A2ARpcError(A2AClientError):
+    """Raised when a remote agent returns a JSON-RPC error response."""
+
+    def __init__(self, code: int, message: str, data: Any = None):
+        super().__init__(f"[{code}] {message}")
+        self.code = code
+        self.message = message
+        self.data = data
+
+
+class A2ATimeoutError(A2AClientError):
+    """Raised when an outbound A2A call times out."""
+
+
+@dataclass(frozen=True)
+class TrustedEndpointConfig:
+    endpoint_key: str
+    base_url: str
+    expected_name: str | None = None
+    auth_token: str | None = None
+
+
+class TrustedEndpointRegistry:
+    """Server-side registry of pre-approved outbound Agent endpoints.
+
+    Prevents models or callers from directing requests to arbitrary or internal URLs.
+    """
+
+    def __init__(self, endpoints: list[TrustedEndpointConfig] | None = None):
+        self._endpoints: dict[str, TrustedEndpointConfig] = {}
+        for ep in endpoints or []:
+            self.register(ep.endpoint_key, ep.base_url, ep.expected_name, ep.auth_token)
+
+    def register(self, endpoint_key: str, base_url: str,
+                 expected_name: str | None = None,
+                 auth_token: str | None = None) -> TrustedEndpointConfig:
+        config = TrustedEndpointConfig(
+            endpoint_key=endpoint_key,
+            base_url=base_url.rstrip("/"),
+            expected_name=expected_name,
+            auth_token=auth_token,
+        )
+        self._endpoints[endpoint_key] = config
+        return config
+
+    def get(self, endpoint_key: str) -> TrustedEndpointConfig | None:
+        return self._endpoints.get(endpoint_key)
+
+    def validate_target(self, endpoint_key_or_url: str) -> TrustedEndpointConfig:
+        clean = endpoint_key_or_url.rstrip("/")
+        # 1. Match by endpoint_key
+        if clean in self._endpoints:
+            return self._endpoints[clean]
+        # 2. Match by exact base_url
+        for ep in self._endpoints.values():
+            if ep.base_url == clean:
+                return ep
+        raise UntrustedEndpointError(
+            f"Endpoint '{endpoint_key_or_url}' is not in the server-side trusted endpoint registry"
+        )
+
+
+class A2AClient:
+    """Outbound A2A client discovering cards and submitting tasks to trusted external agents."""
+
+    def __init__(self, registry: TrustedEndpointRegistry | None = None,
+                 http_client: httpx.Client | None = None,
+                 app: Any = None,
+                 default_base_url: str = "http://agent.local"):
+        self.registry = registry or TrustedEndpointRegistry()
+        if http_client is not None:
+            self._client = http_client
+        elif app is not None:
+            from starlette.testclient import TestClient
+            self._client = TestClient(app, base_url=default_base_url)
+            setattr(self._client, "_is_test_client", True)
+        else:
+            self._client = httpx.Client(timeout=10.0)
+
+    def _post(self, url: str, payload: dict, headers: dict, timeout: float | None):
+        kwargs: dict[str, Any] = {"json": payload, "headers": headers}
+        if not getattr(self._client, "_is_test_client", False) and timeout is not None:
+            kwargs["timeout"] = timeout
+        return self._client.post(url, **kwargs)
+
+    def get_agent_card(self, endpoint_key_or_url: str) -> dict:
+        """Fetch and validate the Agent Card from /.well-known/agent.json."""
+        config = self.registry.validate_target(endpoint_key_or_url)
+        url = f"{config.base_url}{AGENT_CARD_PATH}"
+        try:
+            resp = self._client.get(url)
+        except httpx.TimeoutException as e:
+            raise A2ATimeoutError(f"Timeout fetching agent card from {url}") from e
+        except Exception as e:
+            raise A2AClientError(f"Network error fetching agent card: {e}") from e
+
+        if resp.status_code != 200:
+            raise A2AClientError(f"Failed to fetch agent card (HTTP {resp.status_code}): {resp.text}")
+
+        card = resp.json()
+        required_fields = ("name", "version", "protocolVersion", "capabilities", "skills")
+        for f in required_fields:
+            if f not in card:
+                raise A2AClientError(f"Invalid Agent Card: missing required field '{f}'")
+
+        if config.expected_name and card.get("name") != config.expected_name:
+            raise A2AClientError(
+                f"Agent Card name mismatch: expected '{config.expected_name}', got '{card.get('name')}'"
+            )
+        return card
+
+    def send_message(self, endpoint_key_or_url: str, message: dict, *,
+                     task_id: str | None = None,
+                     auth_token: str | None = None,
+                     timeout: float = 10.0) -> dict:
+        """Submit a task to the remote agent using JSON-RPC message/send."""
+        config = self.registry.validate_target(endpoint_key_or_url)
+        url = f"{config.base_url}{JSONRPC_PATH}"
+        token = auth_token or config.auth_token
+
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req_id = secrets.token_hex(8)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "message/send",
+            "params": {"message": message, "taskId": task_id},
+        }
+
+        try:
+            resp = self._post(url, payload, headers, timeout)
+        except httpx.TimeoutException as e:
+            raise A2ATimeoutError(f"Timeout submitting task to {url}") from e
+        except Exception as e:
+            raise A2AClientError(f"Network error calling {url}: {e}") from e
+
+        if resp.status_code != 200:
+            raise A2AClientError(f"A2A call failed with HTTP {resp.status_code}: {resp.text}")
+
+        body = resp.json()
+        if "error" in body:
+            err = body["error"]
+            raise A2ARpcError(err.get("code", -32000), err.get("message", "RPC Error"), err.get("data"))
+        return body.get("result", {})
+
+    def get_task(self, endpoint_key_or_url: str, task_id: str, *,
+                 auth_token: str | None = None,
+                 timeout: float = 10.0) -> dict:
+        """Poll task status using tasks/get."""
+        config = self.registry.validate_target(endpoint_key_or_url)
+        url = f"{config.base_url}{JSONRPC_PATH}"
+        token = auth_token or config.auth_token
+
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req_id = secrets.token_hex(8)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "tasks/get",
+            "params": {"id": task_id},
+        }
+
+        try:
+            resp = self._post(url, payload, headers, timeout)
+        except httpx.TimeoutException as e:
+            raise A2ATimeoutError(f"Timeout polling task {task_id} from {url}") from e
+        except Exception as e:
+            raise A2AClientError(f"Network error polling task {task_id}: {e}") from e
+
+        if resp.status_code != 200:
+            raise A2AClientError(f"A2A tasks/get failed with HTTP {resp.status_code}: {resp.text}")
+
+        body = resp.json()
+        if "error" in body:
+            err = body["error"]
+            raise A2ARpcError(err.get("code", -32000), err.get("message", "RPC Error"), err.get("data"))
+        return body.get("result", {})
+
+    def cancel_task(self, endpoint_key_or_url: str, task_id: str, *,
+                    auth_token: str | None = None,
+                    timeout: float = 10.0) -> dict:
+        """Cancel an in-flight task using tasks/cancel."""
+        config = self.registry.validate_target(endpoint_key_or_url)
+        url = f"{config.base_url}{JSONRPC_PATH}"
+        token = auth_token or config.auth_token
+
+        headers = {"Content-Type": "application/json"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        req_id = secrets.token_hex(8)
+        payload = {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "method": "tasks/cancel",
+            "params": {"id": task_id},
+        }
+
+        try:
+            resp = self._post(url, payload, headers, timeout)
+        except httpx.TimeoutException as e:
+            raise A2ATimeoutError(f"Timeout cancelling task {task_id} on {url}") from e
+        except Exception as e:
+            raise A2AClientError(f"Network error cancelling task {task_id}: {e}") from e
+
+        if resp.status_code != 200:
+            raise A2AClientError(f"A2A tasks/cancel failed with HTTP {resp.status_code}: {resp.text}")
+
+        body = resp.json()
+        if "error" in body:
+            err = body["error"]
+            raise A2ARpcError(err.get("code", -32000), err.get("message", "RPC Error"), err.get("data"))
+        return body.get("result", {})

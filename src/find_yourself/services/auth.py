@@ -76,6 +76,46 @@ class AuthService:
         row.plaintext_token = token  # type: ignore[attr-defined]
         return row
 
+    def issue_scoped_service_credential(
+        self,
+        actor: Actor,
+        *,
+        name: str,
+        kind: str = "agent",
+        task_id: str | None = None,
+        domains: list[str] | None = None,
+        tools: list[str] | None = None,
+        budget_cents: int | None = None,
+        ttl_seconds: int = 3600,
+    ) -> tuple[ServiceIdentity, str]:
+        """Issue a scoped service credential bounded by task, domains, tools, budget, and deadline."""
+        actor.require_owner()
+        token = secrets.token_hex(32)
+        capabilities = [f"tool:{t}" for t in (tools or [])]
+        if budget_cents is not None:
+            capabilities.append(f"budget:{budget_cents}")
+        now = utcnow()
+        expires = now + timedelta(seconds=ttl_seconds)
+        row = ServiceIdentity(
+            id=uuid4().hex,
+            kind=kind,
+            name=name,
+            task_binding=task_id,
+            domains=list(domains or []),
+            capabilities=capabilities,
+            secret_hash=hashlib.sha256(token.encode()).hexdigest(),
+            lease_expires_at=expires,
+            state="active",
+        )
+        self.s.add(row)
+        self.s.flush()
+        self.audit.append(
+            actor, "service.scoped_credential_issued", row.id,
+            {"kind": kind, "task_id": task_id, "domains": domains, "tools": tools, "ttl": ttl_seconds, "budget": budget_cents}
+        )
+        row.plaintext_token = token  # type: ignore[attr-defined]
+        return row, token
+
     def service_actor(self, token: str) -> Actor:
         if not token:
             raise Unauthenticated("no_credentials", "Service token required")
@@ -86,7 +126,20 @@ class AuthService:
         row = rows[0]
         if row.lease_expires_at is not None and row.lease_expires_at <= utcnow():
             raise Unauthenticated("service_expired", "Service identity lease expired")
-        return Actor.service(row.id, row.kind, list(row.domains or []))
+        
+        tools = tuple(c.removeprefix("tool:") for c in (row.capabilities or []) if c.startswith("tool:"))
+        budget_caps = [c.removeprefix("budget:") for c in (row.capabilities or []) if c.startswith("budget:")]
+        budget_cents = int(budget_caps[0]) if budget_caps and budget_caps[0].isdigit() else None
+
+        return Actor.service(
+            row.id,
+            row.kind,
+            list(row.domains or []),
+            task_id=row.task_binding,
+            allowed_tools=tools,
+            expires_at=row.lease_expires_at,
+            max_budget_cents=budget_cents,
+        )
 
     # -- local dev token (loopback only) ----------------------------------
     def local_dev_actor(self, token: str, remote_addr: str) -> Actor:
