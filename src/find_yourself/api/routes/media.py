@@ -72,3 +72,39 @@ async def readonly_maintenance(actor: Actor = Depends(csrf_protected),
     wrote = after != before
     return {"action_taken": wrote, "audit_events": before, "skills": skill_count,
             "read_only": True, "note": "No drift -> no DB write, no audit append"}
+
+
+class CreativeExecuteRequest(BaseModel):
+    tool_id: str
+    task_id: str
+    idempotency_key: str
+    params: dict = Field(default_factory=dict)
+    approved: bool = False
+
+
+@router.get("/api/creative/tools")
+async def list_creative_tools(actor: Actor = Depends(get_actor),
+                              svc: Services = Depends(get_services)) -> dict:
+    """Lists creative & daily arrangement tool declarations with full privacy/provider specs."""
+    from ...adapters.creative_tools import CreativeToolsService
+    tool_svc = CreativeToolsService(svc.session, svc.audit, svc.budget)
+    return {"tools": tool_svc.list_declarations()}
+
+
+@router.post("/api/creative/execute")
+async def execute_creative_tool(body: CreativeExecuteRequest,
+                                actor: Actor = Depends(csrf_protected),
+                                svc: Services = Depends(get_services)) -> dict:
+    """Executes a creative tool or enforces individual approval / unconfigured error."""
+    from ...adapters.creative_tools import CreativeToolsService
+    tool_svc = CreativeToolsService(svc.session, svc.audit, svc.budget)
+    result = tool_svc.execute_tool(
+        actor,
+        tool_id=body.tool_id,
+        task_id=body.task_id,
+        idempotency_key=body.idempotency_key,
+        params=body.params,
+        approved=body.approved,
+    )
+    svc.session.commit()
+    return result
