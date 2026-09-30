@@ -59,10 +59,14 @@ class PostgresCorePorts:
         *,
         effect_dir: str = ".runtime/effects",
         planner: Callable[[str, int, str, list[dict]], dict] | None = None,
+        tool_executors: dict[str, Callable[[dict], dict]] | None = None,
+        allow_echo: bool = True,
     ):
         self._sf = session_factory
         self._effect_dir = effect_dir
         self._planner = planner or _default_planner
+        self._tool_executors = tool_executors or {}
+        self._allow_echo = allow_echo
 
     # -- helpers ----------------------------------------------------------
     def _run(self, fn: Callable[[Session], Any]) -> Any:
@@ -186,10 +190,22 @@ class PostgresCorePorts:
                     bs.release(_WORKER, r.id)
         await self._a(work)
 
-    # -- Tool step (default local, no paid model) -------------------------
+    # -- Tool step (production requires configured executor; echo restricted to test) --
     async def run_tool_step(self, task_id: str, attempt: int, tool: str, payload: dict[str, Any],
                             idempotency_key: str, checkpoint_key: str) -> dict:
-        return {"status": "ok", "output": {"tool": tool, "echo": payload}, "spent_usd": 0.0}
+        if tool in self._tool_executors:
+            try:
+                res = self._tool_executors[tool](payload)
+                return {"status": "ok", "output": res, "spent_usd": 0.0}
+            except Exception as e:
+                return {"status": "failed", "error": f"tool_execution_failed: {e}", "spent_usd": 0.0}
+        if self._allow_echo:
+            return {"status": "ok", "output": {"tool": tool, "echo": payload}, "spent_usd": 0.0}
+        return {
+            "status": "failed",
+            "error": f"unconfigured_tool_executor: production path requires configured executor for '{tool}', echo fallback disallowed",
+            "spent_usd": 0.0,
+        }
 
     # -- Approval re-verification -----------------------------------------
     async def verify_approval_permission(self, proposal_id: str, expected_digest: str, expected_version: int) -> dict:
