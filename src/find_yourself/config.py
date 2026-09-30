@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     s3_endpoint: str = ""
     s3_bucket: str = "find-yourself"
     s3_region: str = "us-east-1"
+    s3_access_key: str = "fy-minio"
+    s3_secret_key: str = "minio_dev_change_me_not_for_prod"
     artifacts_path: str = ".runtime/artifacts"
     otlp_endpoint: str = ""
     agent_endpoints: dict[str, str] = {}

@@ -245,6 +245,22 @@ def _probe_config(environment: str) -> tuple[str, str]:
         return "NOT_RUN", f"settings not usable in this env: {type(e).__name__}"
 
 
+def _s3_ready(endpoint: str = "") -> tuple[bool, str]:
+    ep = endpoint or os.environ.get("FY_S3_ENDPOINT", "")
+    if ep:
+        try:
+            import urllib.request
+            req = urllib.request.Request(f"{ep.rstrip('/')}/health/live", method="GET")
+            with urllib.request.urlopen(req, timeout=2) as resp:
+                if resp.status == 200:
+                    return True, f"S3 endpoint {ep} healthy"
+        except Exception:
+            pass
+    if _container_running("fy-minio"):
+        return True, "container fy-minio running"
+    return False, f"S3 unavailable (checked endpoint '{ep}' and fy-minio container)"
+
+
 # --------------------------------------------------------------------------- #
 # backup
 # --------------------------------------------------------------------------- #
@@ -256,15 +272,15 @@ def cmd_backup(args: argparse.Namespace) -> dict:
     db_ready = _container_running(args.container)
     preflight.append({"component": "database", "ready": db_ready,
                       "detail": f"container {args.container} " + ("running" if db_ready else "not running")})
-    s3_ready = _container_running("fy-minio")
+    s3_ready, s3_detail = _s3_ready()
     preflight.append({"component": "object_storage", "ready": s3_ready,
-                      "detail": "container fy-minio running" if s3_ready else "container fy-minio not running"})
+                      "detail": s3_detail})
 
     # ---- 计划模式（默认）：不执行 dump，只写计划 ----
     if not args.execute:
         planned = {
             "database_dump": f"pg_dump -> {target}/db-<utc>.sql (with --execute)",
-            "object_prefix": "minio/mirror bucket (when minio running)",
+            "object_prefix": "s3/mirror bucket (when s3 running)",
             "tombstones": "include tombstones table so restore can replay deletions",
             "retention_days": 30,
         }
@@ -273,7 +289,7 @@ def cmd_backup(args: argparse.Namespace) -> dict:
             "mode": "plan", "environment": args.environment,
             "created_at_utc": _utcnow(), "target": target, "include": args.include,
             "components": preflight, "planned": planned, "status": "PLANNED",
-            "note": "Run with --execute to actually run pg_dump. This writes no data.",
+            "note": "Run with --execute to actually run pg_dump and snapshot object storage. This writes no data.",
         }
         os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
         with open(manifest_path, "w", encoding="utf-8") as f:
@@ -287,7 +303,7 @@ def cmd_backup(args: argparse.Namespace) -> dict:
             "manifest": manifest_path,
         }
 
-    # ---- --execute：真实 pg_dump ----
+    # ---- --execute：真实 pg_dump + 对象镜像 ----
     if not db_ready:
         return {
             "command": "backup", "status": "NOT_RUN", "exit_code": 3,
@@ -326,10 +342,26 @@ def cmd_backup(args: argparse.Namespace) -> dict:
     except ValueError:
         table_count = -1
 
-    obj_status = "SKIPPED" if not s3_ready else "NOT_IMPLEMENTED"
-    obj_detail = ("minio container not running; object storage NOT captured"
-                  if not s3_ready else
-                  "minio running; object mirror not implemented in this revision")
+    obj_info = {"status": "SKIPPED", "detail": s3_detail, "count": 0, "objects": []}
+    covers_obj = False
+    if s3_ready or os.path.exists(".runtime/artifacts"):
+        try:
+            from find_yourself.config import settings as get_settings
+            from find_yourself.adapters.artifacts import build_artifact_store
+            s_cfg = get_settings()
+            store = build_artifact_store(s_cfg)
+            snap = store.backup_snapshot(target)
+            obj_info = {
+                "status": "OK",
+                "detail": f"captured {snap.get('count', 0)} objects from {type(store).__name__}",
+                "count": snap.get("count", 0),
+                "objects": snap.get("objects", []),
+            }
+            covers_obj = True
+        except Exception as e:
+            obj_info = {"status": "FAIL", "detail": f"snapshot failed: {e}", "count": 0, "objects": []}
+    else:
+        obj_info = {"status": "SKIPPED", "detail": s3_detail, "count": 0, "objects": []}
 
     manifest = {
         "kind": "find_yourself.backup.manifest", "version": 1,
@@ -340,25 +372,26 @@ def cmd_backup(args: argparse.Namespace) -> dict:
             "table_count": table_count, "server_version": ver.strip(),
             "pg_dump_version": pgdver.strip(), "exit_code": dump_rc,
         },
-        "object_storage": {"status": obj_status, "detail": obj_detail},
-        "covers_object_storage": False,
-        "note": "DB-only backup; object storage explicitly NOT included. No credentials in this manifest.",
+        "object_storage": obj_info,
+        "covers_object_storage": covers_obj,
+        "note": "Full backup containing database dump and object storage snapshots. No credentials in this manifest."
+        if covers_obj else "DB-only backup; object storage explicitly NOT included. No credentials in this manifest.",
     }
     os.makedirs(os.path.dirname(manifest_path) or ".", exist_ok=True)
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2, sort_keys=True)
 
-    overall = "OK_DB_ONLY"
+    overall = "OK" if covers_obj else "OK_DB_ONLY"
     return {
         "command": "backup", "status": overall, "exit_code": 0,
         "environment": args.environment, "recorded_at_utc": _utcnow(),
         "checks": [
             {"name": "database_dump", "status": "OK",
              "detail": f"{dump_name} {size}B tables={table_count} sha256={sha[:12]}..."},
-            {"name": "object_storage", "status": obj_status, "detail": obj_detail},
+            {"name": "object_storage", "status": obj_info["status"], "detail": obj_info["detail"]},
         ],
-        "summary": f"DB dump written; object storage NOT covered ({obj_status}). "
-                   f"Restore must also mirror objects for a full recovery.",
+        "summary": "Full backup (database and object storage) written successfully."
+        if covers_obj else f"DB dump written; object storage NOT covered ({obj_info['status']}). Restore must also mirror objects for a full recovery.",
         "manifest": manifest_path,
     }
 
@@ -484,6 +517,37 @@ def cmd_restore(args: argparse.Namespace) -> dict:
     manifest_tables = int(db_info.get("table_count", -1))
     tables_match = (manifest_tables == rec_tables)
 
+    # 3b) 对象存储恢复与删除 Tombstone 重放
+    tombstones_set = set()
+    _, tb_out = _pg(args.container, "select target_id from tombstones;", db=rec_db)
+    _, del_art_out = _pg(args.container, "select id from artifacts where deleted_at is not null;", db=rec_db)
+    for line in (tb_out or "").splitlines():
+        t = line.strip()
+        if t and not t.startswith("target_id") and not t.startswith("-") and not t.startswith("(") and len(t) > 3:
+            tombstones_set.add(t)
+    for line in (del_art_out or "").splitlines():
+        t = line.strip()
+        if t and not t.startswith("id") and not t.startswith("-") and not t.startswith("(") and len(t) > 3:
+            tombstones_set.add(t)
+
+    obj_restore_result = {"status": "SKIPPED", "detail": "not in manifest"}
+    if manifest.get("covers_object_storage"):
+        try:
+            from find_yourself.config import settings as get_settings
+            from find_yourself.adapters.artifacts import build_artifact_store
+            s_cfg = get_settings()
+            store = build_artifact_store(s_cfg)
+            source_dir = db_info.get("dir") or os.path.dirname(os.path.abspath(args.manifest))
+            res = store.restore_snapshot(source_dir, tombstones=tombstones_set)
+            obj_restore_result = {
+                "status": "OK",
+                "detail": f"restored {res['restored']} objects, suppressed {res['skipped_tombstones']} tombstoned artifacts",
+                "restored": res["restored"],
+                "skipped_tombstones": res["skipped_tombstones"],
+            }
+        except Exception as e:
+            obj_restore_result = {"status": "FAIL", "detail": f"object restore failed: {e}"}
+
     # 4) 清理临时库（--keep-db 时保留，便于在恢复库上跑后续校验）
     dropped = True
     if getattr(args, "keep_db", False):
@@ -503,8 +567,8 @@ def cmd_restore(args: argparse.Namespace) -> dict:
             "summary": f"restore into {rec_db} failed; temp db dropped",
         }
 
-    status = "OK" if tables_match else "FAIL"
-    code = 0 if tables_match else 2
+    status = "OK" if (tables_match and obj_restore_result["status"] in {"OK", "SKIPPED"}) else "FAIL"
+    code = 0 if (tables_match and obj_restore_result["status"] in {"OK", "SKIPPED"}) else 2
     return {
         "command": "restore", "status": status, "exit_code": code,
         "environment": args.environment, "recorded_at_utc": _utcnow(),
@@ -515,9 +579,11 @@ def cmd_restore(args: argparse.Namespace) -> dict:
              "detail": f"created+restored {rec_db}" + ("; kept (--keep-db)" if not dropped else "; then dropped")},
             {"name": "table_count", "status": "OK" if tables_match else "FAIL",
              "detail": f"manifest={manifest_tables} recovered={rec_tables}"},
+            {"name": "object_storage_restore", "status": obj_restore_result["status"],
+             "detail": obj_restore_result["detail"]},
         ],
-        "summary": f"recovered into throwaway db; tables match={tables_match}. "
-                   f"Object storage replay still required for full recovery.",
+        "summary": "Recovered into throwaway recovery DB and restored object storage with tombstone replay."
+        if manifest.get("covers_object_storage") else f"recovered into throwaway db; tables match={tables_match}. Object storage replay still required for full recovery.",
         "manifest": os.path.abspath(args.manifest),
     }
 

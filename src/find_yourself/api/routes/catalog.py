@@ -52,3 +52,17 @@ async def get_artifact(artifact_id: str, request: Request,
     data = store.get(artifact_id)
     return Response(content=data, media_type=art.media_type,
                     headers={"Content-Disposition": f'inline; filename="{artifact_id}"'})
+
+
+@router.get("/artifacts/{artifact_id}/presigned")
+async def get_artifact_presigned(artifact_id: str,
+                                 expires_in: int = 300,
+                                 actor: Actor = Depends(get_actor),
+                                 svc: Services = Depends(get_services),
+                                 settings: Settings = Depends(get_settings)) -> dict:
+    art = svc.session.get(Artifact, artifact_id)
+    if art is None or art.deleted_at is not None:
+        raise NotFound("artifact_not_found", "Artifact not found")
+    store = build_artifact_store(settings)
+    url = store.presigned_get(artifact_id, expires_in_seconds=expires_in)
+    return {"artifact_id": artifact_id, "url": url, "expires_in": expires_in}
