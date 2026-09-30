@@ -183,8 +183,10 @@ class AssessmentScorer:
             d: round(sum(v) / len(v), 3) for d, v in totals.items()
         }
         s.status = "scored"
-        s.result = {
+
+        result_payload = {
             "profile": profile,
+            "scales": profile,
             "questionnaire_id": q.id,
             "questionnaire_version": q.version,
             "item_set_hash": q.item_set_hash,
@@ -192,7 +194,32 @@ class AssessmentScorer:
             "synthetic": True,
             "norms": None,  # never fabricate population norms
             "clinical": False,
+            "norm_note": "无匹配常模，不提供人群百分位。",
         }
+
+        if q.id == "fourdim-exploratory":
+            e_or_i = "E" if profile.get("EI", 3) >= 3 else "I"
+            s_or_n = "N" if profile.get("SN", 3) >= 3 else "S"
+            t_or_f = "F" if profile.get("TF", 3) >= 3 else "T"
+            j_or_p = "P" if profile.get("JP", 3) >= 3 else "J"
+            type_code = f"{e_or_i}{s_or_n}{t_or_f}{j_or_p}"
+            result_payload["type_label"] = f"[非官方探索倾向: {type_code}]"
+            result_payload["official_mbti"] = False
+            result_payload["caveat"] = (
+                "探索性自我反思工具，绝非官方 MBTI® 认证报告，亦非医学/心理诊断。"
+                "官方 MBTI 仅经合法授权接入；结果不定义固定因果命运。"
+            )
+            result_payload["interpretation"] = (
+                f"在当前探索性题目中体现出 {type_code} 维度的情境倾向，建议结合现实生活多面反思。"
+            )
+        elif q.id == "bigfive-synthetic":
+            result_payload["type_label"] = "大五人格维度自测探索（合成模板）"
+            result_payload["caveat"] = (
+                "本问卷基于合成条目，用于证明计分链路。非官方 IPIP 常模库，不具备临床诊断或能力评价效力。"
+            )
+            result_payload["interpretation"] = "各维度得分为当前自评平均分，无常模对照时不输出人群百分位。"
+
+        s.result = result_payload
         return s
 
     def get(self, session_id: str) -> AssessmentSession:

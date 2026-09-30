@@ -111,3 +111,40 @@ async def list_messages(conversation_id: str, actor: Actor = Depends(get_actor),
                               Message.deleted_at.is_(None)).order_by(Message.created_at.asc())
     ).scalars()
     return [_serialize_message(m) for m in rows]
+
+
+@router.post("/{conversation_id}/reply")
+async def generate_reply(conversation_id: str,
+                         body: dict | None = None,
+                         actor: Actor = Depends(csrf_protected),
+                         svc: Services = Depends(get_services)) -> dict:
+    from ...services.companion import CompanionService
+    c = _get_owned(svc, actor, conversation_id)
+    user_text = (body or {}).get("message")
+    if not user_text:
+        last_user = svc.session.execute(
+            select(Message).where(Message.conversation_id == c.id, Message.role == "user", Message.deleted_at.is_(None))
+            .order_by(Message.created_at.desc())
+        ).scalars().first()
+        user_text = last_user.content if last_user else ""
+
+    companion = CompanionService(svc.session, svc.audit)
+    resp = companion.respond(actor, c, user_text)
+
+    m = Message(
+        id=uuid4().hex,
+        conversation_id=c.id,
+        role="assistant",
+        content=resp["content"],
+        source="companion",
+        client_message_id=uuid4().hex,
+    )
+    svc.session.add(m)
+    c.updated_at = utcnow()
+    svc.session.flush()
+    svc.audit.append(actor, "companion.replied", m.id, {"mode": c.mode, "is_crisis": resp.get("is_crisis", False)})
+    svc.session.commit()
+
+    serialized = _serialize_message(m)
+    serialized["metadata"] = resp
+    return serialized

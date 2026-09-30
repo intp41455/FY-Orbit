@@ -22,6 +22,9 @@ export interface RealAssessmentResult {
   interpretation?: string;
   caveat?: string;
   norm_note?: string;
+  official_mbti?: boolean;
+  clinical?: boolean;
+  synthetic?: boolean;
 }
 export interface RealAssessmentSession {
   session_id: string;

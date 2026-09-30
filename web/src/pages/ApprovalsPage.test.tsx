@@ -64,4 +64,24 @@ describe('ApprovalsPage semantics (BUG-04)', () => {
     await waitFor(() => expect(screen.getByText('deadbeef')).toBeInTheDocument());
     expect(screen.getByText('branch-x')).toBeInTheDocument();
   });
+
+  it('renders accurate diff, permissions, rollback, outbound domains and cost estimate (U04)', async () => {
+    vi.mocked(proposalsApi.list).mockResolvedValue([
+      makeProposal({
+        payload: { target_file: 'src/main.py', change: '+def new_feature(): pass' },
+        rollback: 'revert git commit abc123',
+        cost_estimate: { amount: '0.05', currency: 'USD' },
+        out_bound: { domains: ['work', 'analytics'] },
+        evidence_ids: ['ev-test-pass-01'],
+        artifact_ids: ['art-diff-01'],
+      }),
+    ]);
+    render(<ApprovalsPage />);
+    await waitFor(() => expect(screen.getByText(/精确差异/)).toBeInTheDocument());
+    expect(screen.getByText(/revert git commit abc123/)).toBeInTheDocument();
+    expect(screen.getByText(/0.05 USD/)).toBeInTheDocument();
+    expect(screen.getByText(/work, analytics/)).toBeInTheDocument();
+    expect(screen.getByText(/ev-test-pass-01/)).toBeInTheDocument();
+    expect(screen.getByText(/art-diff-01/)).toBeInTheDocument();
+  });
 });

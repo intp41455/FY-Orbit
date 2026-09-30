@@ -27,7 +27,8 @@ EXTERNAL_OPS = {"task.merge", "task.release"}
 IMMEDIATE_OPS = {
     "memory.upsert", "memory.delete", "grant.add", "grant.revoke",
     "agent.register", "agent.drain", "skill.stage", "skill.promote",
-    "skill.disable", "config.model", "conversation.delete",
+    "skill.disable", "skill.rollback", "config.model", "conversation.delete",
+    "profile.update",
 }
 
 _ALLOWED = {

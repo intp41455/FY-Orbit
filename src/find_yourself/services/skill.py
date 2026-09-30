@@ -89,3 +89,31 @@ class SkillService:
         self.s.flush()
         self.audit.append(actor, "skill.disabled", skill.id)
         return skill
+
+    def rollback(self, actor: Actor, current_skill_id: str, target_skill_id: str) -> tuple[Skill, Skill]:
+        """Roll back a regressed skill by disabling current and re-activating target."""
+        actor.require_owner()
+        curr = self.s.get(Skill, current_skill_id)
+        if curr is None:
+            raise NotFound("skill_not_found", f"Current skill {current_skill_id} not found")
+        target = self.s.get(Skill, target_skill_id)
+        if target is None:
+            raise NotFound("skill_not_found", f"Target rollback skill {target_skill_id} not found")
+        if curr.name != target.name:
+            raise Conflict("skill_name_mismatch", "Can only roll back between versions of the same skill")
+
+        curr.state = "disabled"
+        target.state = "active"
+        self.s.flush()
+        self.audit.append(
+            actor, "skill.rolled_back", curr.id,
+            {"from_version": curr.semantic_version, "to_version": target.semantic_version}
+        )
+        return curr, target
+
+    def can_invoke(self, skill_id: str) -> bool:
+        """Only promoted 'active' skills can be invoked. Staged or disabled skills are rejected."""
+        skill = self.s.get(Skill, skill_id)
+        if skill is None:
+            return False
+        return skill.state == "active"
