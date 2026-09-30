@@ -37,9 +37,11 @@ def _build_workflow_input(t: Task) -> dict:
         "goal": t.goal,
         "domain": t.domain,
         "mode": t.mode,
+        "depth": t.depth,
         "idempotency_key": t.idempotency_key,
         "limits": {
             "max_steps": t.max_steps,
+            "max_depth": 2,
             "max_retries": 2,
             "max_cost_usd": 0.5,
             "deadline": deadline.isoformat(),

@@ -139,6 +139,16 @@ class TaskWorkflow:
         await self._act("append_audit", "workflow", "task.started", task_id,
                         {"mode": inp.mode, "domain": inp.domain})
 
+        if inp.depth > limits.max_depth:
+            await self._act("release_budget", task_id, attempt)
+            await self._act(
+                "task_fail",
+                task_id,
+                attempt,
+                {"code": "max_depth_reached", "message": f"Task depth {inp.depth} exceeds limit {limits.max_depth}"},
+            )
+            return self._finish(task_id, "failed", Stage.failed, 0, 0.0, code="max_depth_reached")
+
         history: list[dict[str, Any]] = []
         steps = 0
         spent = 0.0

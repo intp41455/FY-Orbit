@@ -20,13 +20,16 @@ from .errors import NotFound, ValidationFailed
 from .hasher import digest
 from .audit import AuditService
 
+from typing import Callable
+
 MAX_GRANT_SECONDS = 30 * 24 * 3600
 
 
 class GrantService:
-    def __init__(self, session: Session, audit: AuditService):
+    def __init__(self, session: Session, audit: AuditService, on_change: Callable[[], None] | None = None):
         self.s = session
         self.audit = audit
+        self.on_change = on_change
 
     def create(
         self,
@@ -62,6 +65,8 @@ class GrantService:
         self.s.flush()
         self.audit.append(actor, "grant.created", g.id,
                           {"source": source_domain, "consumer": consumer_domain, "n": len(record_ids)})
+        if self.on_change:
+            self.on_change()
         return g
 
     def revoke(self, actor: Actor, grant_id: str) -> Grant:
@@ -73,6 +78,8 @@ class GrantService:
         g.revoked_at = utcnow()
         self.audit.append(actor, "grant.revoked", g.id)
         self.s.flush()
+        if self.on_change:
+            self.on_change()
         return g
 
     def is_authorized(self, *, record_domain: str, record_id: str, consumer_domain: str) -> bool:

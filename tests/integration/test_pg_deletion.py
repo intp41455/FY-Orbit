@@ -179,3 +179,51 @@ def test_g8_delete_cascade_and_verify_replay(pg):
     mine2 = [t for t in report2["tombstones"] if t["tombstone_id"] == tomb.id]
     assert mine2 and mine2[0]["ok"] is False
     assert any("primary" in v for v in mine2[0]["violations"])
+
+
+def test_pg_multilevel_derived_cascade(pg):
+    s, ids = pg
+    owner = Actor.owner("owner-g8-multi", csrf_token="")
+    audit = AuditService(s)
+    deleter = DeletionService(s, audit)
+
+    m1 = "mem1-" + os.urandom(4).hex()
+    m2 = "mem2-" + os.urandom(4).hex()
+    m3 = "mem3-" + os.urandom(4).hex()
+
+    _mem(s, m1, "owner-g8-multi")
+    _mem(s, m2, "owner-g8-multi")
+    _mem(s, m3, "owner-g8-multi")
+
+    # M1 -> M2 -> M3
+    r1 = SourceRelation(
+        id="rel1-" + os.urandom(4).hex(), source_id=m1, source_kind="memory",
+        derived_id=m2, derived_kind="memory", relation_type="derives",
+        permission_snapshot={}, version=1,
+    )
+    r2 = SourceRelation(
+        id="rel2-" + os.urandom(4).hex(), source_id=m2, source_kind="memory",
+        derived_id=m3, derived_kind="memory", relation_type="derives",
+        permission_snapshot={}, version=1,
+    )
+    s.add_all([r1, r2])
+    s.flush()
+
+    ids["memories"] += [m1, m2, m3]
+    ids["relations"] += [r1.id, r2.id]
+
+    plan = deleter.plan(m1)
+    assert m2 in plan["derived_memory_ids"]
+    assert m3 in plan["derived_memory_ids"]
+
+    tomb = deleter.delete(owner, m1, "memory", "multilevel test")
+    s.commit()
+    ids["tombstones"].append(tomb.id)
+
+    # Assert all three are soft-deleted
+    for mid in (m1, m2, m3):
+        row = s.get(Memory, mid)
+        assert row.active is False
+        assert row.deleted_at is not None
+        assert row.content == ""
+

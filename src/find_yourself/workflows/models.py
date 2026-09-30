@@ -52,6 +52,7 @@ def checkpoint_key(task_id: str, attempt: int, stage: str) -> str:
 # ---------------------------------------------------------------------------
 class WorkflowLimits(Strict):
     max_steps: int = Field(default=8, ge=1, le=100)
+    max_depth: int = Field(default=2, ge=0, le=4)
     max_retries: int = Field(default=2, ge=0, le=5)
     max_cost_usd: float = Field(default=0.5, gt=0, le=100.0)
     deadline: str = Field(description="timezone-aware UTC ISO-8601 instant")
@@ -63,6 +64,7 @@ class TaskWorkflowInput(Strict):
     goal: str = Field(min_length=1, max_length=12000)
     domain: str = "personal"
     mode: str = "listen"
+    depth: int = Field(default=0, ge=0, le=4)
     idempotency_key: str = Field(min_length=8, max_length=100)
     limits: WorkflowLimits
     # The workflow itself is a deterministic orchestrator. The *plan* for what

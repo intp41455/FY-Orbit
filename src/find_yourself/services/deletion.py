@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import (
-    Artifact, Memory, MemoryRevision, SearchDocument, SourceRelation, Tombstone,
+    Artifact, Memory, MemoryRevision, Proposal, SearchDocument, SourceRelation, Tombstone,
 )
 from ..db.types import utcnow
 from .actor import Actor
@@ -29,25 +29,40 @@ class DeletionService:
         self.audit = audit
 
     def plan(self, target_id: str) -> dict:
-        derived = list(self.s.execute(
-            select(SourceRelation).where(SourceRelation.source_id == target_id)
-        ).scalars())
-        derived_ids = [d.derived_id for d in derived]
+        # Recursive transitive closure of derived records via SourceRelation
+        visited: set[str] = set()
+        queue = [target_id]
+        while queue:
+            curr = queue.pop(0)
+            edges = list(self.s.execute(
+                select(SourceRelation).where(SourceRelation.source_id == curr)
+            ).scalars())
+            for e in edges:
+                if e.derived_id not in visited and e.derived_id != target_id:
+                    visited.add(e.derived_id)
+                    queue.append(e.derived_id)
+        derived_ids = sorted(list(visited))
+        all_ids = [target_id] + derived_ids
+
         revisions = list(self.s.execute(
-            select(MemoryRevision).where(MemoryRevision.memory_id.in_([target_id] + derived_ids))
-        ).scalars()) if derived_ids or True else []
+            select(MemoryRevision).where(MemoryRevision.memory_id.in_(all_ids))
+        ).scalars()) if all_ids else []
         search_rows = list(self.s.execute(
-            select(SearchDocument).where(SearchDocument.record_id.in_([target_id] + derived_ids))
-        ).scalars())
+            select(SearchDocument).where(SearchDocument.record_id.in_(all_ids))
+        ).scalars()) if all_ids else []
         artifacts = list(self.s.execute(
-            select(Artifact).where(Artifact.task_id == target_id)
-        ).scalars())
+            select(Artifact).where(Artifact.task_id.in_(all_ids))
+        ).scalars()) if all_ids else []
+        proposals = list(self.s.execute(
+            select(Proposal).where(Proposal.target_id.in_(all_ids))
+        ).scalars()) if all_ids else []
         return {
             "target_id": target_id,
             "derived_memory_ids": derived_ids,
             "revision_ids": [r.id for r in revisions],
             "search_doc_ids": [r.id for r in search_rows],
             "artifact_ids": [a.id for a in artifacts],
+            "proposal_ids": [p.id for p in proposals],
         }
 
     def delete(self, actor: Actor, target_id: str, target_kind: str, reason: str) -> Tombstone:
@@ -96,6 +111,14 @@ class DeletionService:
             if art is not None:
                 art.deleted_at = now
                 art.verified = False
+
+        # Redact proposal payloads referencing deleted records
+        for pid in plan.get("proposal_ids", []):
+            prop = self.s.get(Proposal, pid)
+            if prop is not None:
+                prop.payload = {"redacted": True, "reason": "target_deleted"}
+                if prop.status == "pending":
+                    prop.status = "rejected"
 
         graph_hash = digest(plan)
         tomb = Tombstone(
@@ -153,6 +176,11 @@ class DeletionService:
                 a = self.s.get(Artifact, aid)
                 if a is not None and a.deleted_at is None:
                     violations.append(f"artifact {aid} not deleted")
+
+            for pid in plan["proposal_ids"]:
+                p = self.s.get(Proposal, pid)
+                if p is not None and not (isinstance(p.payload, dict) and p.payload.get("redacted")):
+                    violations.append(f"proposal {pid} not redacted")
 
             ok = not violations
             all_ok = all_ok and ok

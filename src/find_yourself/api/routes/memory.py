@@ -9,11 +9,17 @@ trusted beyond that.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 
-from ..deps import get_actor, get_services, Services
+from ..deps import csrf_protected, get_actor, get_services, Services
 from ...services.actor import Actor
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
+
+
+class DenyHypothesisRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    message_id: str | None = None
 
 
 @router.get("/search")
@@ -27,3 +33,31 @@ async def search_memory(
 ) -> dict:
     results = svc.memory.search(consumer_domain=domain, query=q, limit=limit)
     return {"results": results, "consumer_domain": domain, "count": len(results)}
+
+
+@router.get("/{id}/revisions")
+async def get_memory_revisions(
+    id: str,
+    actor: Actor = Depends(get_actor),
+    svc: Services = Depends(get_services),
+) -> dict:
+    revisions = svc.memory.get_revisions(actor, id)
+    return {"memory_id": id, "revisions": revisions, "count": len(revisions)}
+
+
+@router.post("/{id}/deny")
+async def deny_memory_hypothesis(
+    id: str,
+    body: DenyHypothesisRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict:
+    mem = svc.memory.deny_hypothesis(actor, id, body.reason, body.message_id)
+    svc.session.commit()
+    return {
+        "id": mem.id,
+        "active": mem.active,
+        "endorsed": mem.endorsed,
+        "hypothesis_status": mem.hypothesis_status,
+        "version": mem.version,
+    }

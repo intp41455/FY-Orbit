@@ -25,6 +25,8 @@ from .grant import GrantService
 from .hasher import content_hash, digest
 from .audit import AuditService
 
+import threading
+
 CROSS_DOMAIN = {"shared"}
 SAME_DOMAIN_CATEGORIES = {"self_report", "tool_fact", "assessment_result", "preference"}
 
@@ -34,6 +36,16 @@ class MemoryService:
         self.s = session
         self.grants = grants
         self.audit = audit
+        self._cache: dict[tuple, list[dict]] = {}
+        self._cache_lock = threading.Lock()
+        self._cache_version: int = 1
+        # Invalidate search cache whenever grants change
+        self.grants.on_change = self.invalidate_cache
+
+    def invalidate_cache(self) -> None:
+        with self._cache_lock:
+            self._cache.clear()
+            self._cache_version += 1
 
     def upsert(
         self,
@@ -88,15 +100,26 @@ class MemoryService:
             row.version += 1
         self.s.flush()
 
-        # Derived-source graph edges (independent authz later).
+        # Derived-source graph edges (independent authz later; check duplicates).
         for sid in source_ids:
-            edge = SourceRelation(
-                id=uuid4().hex, source_id=sid, source_kind="content",
-                derived_id=row.id, derived_kind="memory", relation_type="derives",
-                permission_snapshot={"record_domain": domain, "active": active},
-            )
-            self.s.add(edge)
+            existing_edge = self.s.execute(
+                select(SourceRelation).where(
+                    SourceRelation.source_id == sid,
+                    SourceRelation.derived_id == row.id,
+                    SourceRelation.relation_type == "derives",
+                )
+            ).scalar_one_or_none()
+            if existing_edge is None:
+                edge = SourceRelation(
+                    id=uuid4().hex, source_id=sid, source_kind="content",
+                    derived_id=row.id, derived_kind="memory", relation_type="derives",
+                    permission_snapshot={"record_domain": domain, "active": active},
+                )
+                self.s.add(edge)
+            else:
+                existing_edge.permission_snapshot = {"record_domain": domain, "active": active}
         self.s.flush()
+        self.invalidate_cache()
         self.audit.append(actor, "memory.upsert", row.id,
                           {"domain": domain, "active": active, "derived_across": derived_across})
         return row
@@ -109,35 +132,109 @@ class MemoryService:
         row.active = True
         row.endorsed = True
         self.s.flush()
+        self.invalidate_cache()
         self.audit.append(actor, "memory.activated", row.id, {"domain": row.domain})
         return row
 
-    def search(self, consumer_domain: str, query: str, limit: int = 8) -> list[dict]:
-        """Authorization-first retrieval (BUG-11)."""
-        now = utcnow()
-        # Candidate set: only active, non-deleted memories.
-        candidates = self.s.execute(
-            select(Memory).where(Memory.active.is_(True), Memory.deleted_at.is_(None))
-        ).scalars()
+    def deny_hypothesis(
+        self, actor: Actor, memory_id: str, reason: str, message_id: str | None = None
+    ) -> Memory:
+        actor.require_owner()
+        row = self.s.get(Memory, memory_id)
+        if row is None:
+            raise NotFound("memory_not_found", "Memory not found")
+        row.active = False
+        row.endorsed = False
+        row.version += 1
+        self.s.add(MemoryRevision(
+            id=uuid4().hex, memory_id=row.id, version=row.version,
+            content_hash=row.content_hash, redacted=False,
+        ))
+        edge = SourceRelation(
+            id=uuid4().hex,
+            source_id=message_id or actor.owner_id or "owner",
+            source_kind="denial_statement",
+            derived_id=row.id,
+            derived_kind="memory",
+            relation_type="cites",
+            permission_snapshot={"denied": True, "reason": reason, "timestamp": utcnow().isoformat()},
+        )
+        self.s.add(edge)
+        self.s.flush()
+        self.invalidate_cache()
+        self.audit.append(actor, "memory.hypothesis_denied", row.id, {"reason": reason, "domain": row.domain})
+        return row
 
-        scored: list[tuple[int, Memory]] = []
-        terms = [t.lower() for t in query.split() if t.strip()]
-        for m in candidates:
-            # Authorization predicate applied BEFORE ranking.
-            if not self.grants.is_authorized(
-                record_domain=m.domain, record_id=m.id, consumer_domain=consumer_domain
-            ):
-                continue
-            text = m.content.lower()
-            score = sum(1 for t in terms if t in text)
-            if score or not query.strip():
-                scored.append((score, m))
-        scored.sort(key=lambda x: (-x[0], x[1].id))
-        out = []
-        for score, m in scored[:limit]:
-            out.append({
-                "id": m.id, "version": m.version, "kind": "memory", "domain": m.domain,
-                "category": m.category, "content": m.content, "hypothesis_status": m.hypothesis_status,
-                "score": score,
-            })
-        return out
+    def get_revisions(self, actor: Actor, memory_id: str) -> list[dict]:
+        actor.require_authenticated()
+        mem = self.s.get(Memory, memory_id)
+        if mem is None:
+            raise NotFound("memory_not_found", "Memory not found")
+        revs = list(self.s.execute(
+            select(MemoryRevision).where(MemoryRevision.memory_id == memory_id).order_by(MemoryRevision.version.asc())
+        ).scalars())
+        sources = list(self.s.execute(
+            select(SourceRelation).where(SourceRelation.derived_id == memory_id)
+        ).scalars())
+        source_list = [
+            {"source_id": s.source_id, "source_kind": s.source_kind, "relation_type": s.relation_type}
+            for s in sources
+        ]
+        return [
+            {
+                "revision_id": r.id,
+                "version": r.version,
+                "content_hash": r.content_hash,
+                "redacted": r.redacted,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "sources": source_list,
+            }
+            for r in revs
+        ]
+
+    def search(self, consumer_domain: str, query: str, limit: int = 8) -> list[dict]:
+        """Authorization-first retrieval (BUG-11) with cache invalidation (M04)."""
+        norm_query = query.strip().lower()
+        cache_key = (consumer_domain, norm_query, limit, self._cache_version)
+        with self._cache_lock:
+            cached = self._cache.get(cache_key)
+            if cached is not None:
+                # Fast check that all cached items are still currently authorized
+                all_authed = True
+                for item in cached:
+                    if not self.grants.is_authorized(
+                        record_domain=item["domain"], record_id=item["id"], consumer_domain=consumer_domain
+                    ):
+                        all_authed = False
+                        break
+                if all_authed:
+                    return [dict(x) for x in cached]
+
+            now = utcnow()
+            # Candidate set: only active, non-deleted memories.
+            candidates = list(self.s.execute(
+                select(Memory).where(Memory.active.is_(True), Memory.deleted_at.is_(None))
+            ).scalars())
+
+            scored: list[tuple[int, Memory]] = []
+            terms = [t.lower() for t in query.split() if t.strip()]
+            for m in candidates:
+                # Authorization predicate applied BEFORE ranking.
+                if not self.grants.is_authorized(
+                    record_domain=m.domain, record_id=m.id, consumer_domain=consumer_domain
+                ):
+                    continue
+                text = m.content.lower()
+                score = sum(1 for t in terms if t in text)
+                if score or not query.strip():
+                    scored.append((score, m))
+            scored.sort(key=lambda x: (-x[0], x[1].id))
+            out = []
+            for score, m in scored[:limit]:
+                out.append({
+                    "id": m.id, "version": m.version, "kind": "memory", "domain": m.domain,
+                    "category": m.category, "content": m.content, "hypothesis_status": m.hypothesis_status,
+                    "score": score,
+                })
+            self._cache[cache_key] = [dict(x) for x in out]
+            return out

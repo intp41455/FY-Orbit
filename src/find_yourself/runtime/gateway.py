@@ -20,9 +20,11 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from ..config import Settings
+from ..db.models import Grant
+from ..db.types import utcnow
 from ..services.actor import Actor
 from ..services.budget import BudgetService
-from ..services.errors import Conflict, ValidationFailed
+from ..services.errors import Conflict, PermissionDenied, ValidationFailed
 
 
 class ModelNotConfigured(Conflict):
@@ -42,10 +44,47 @@ class CallResult:
     settled_amount: Decimal
 
 
+@dataclass
+class ModelRequest:
+    domain: str = "personal"
+    prompt: str = ""
+    personal_source_ids: list[str] | None = None
+
+
 class ModelGateway:
-    def __init__(self, settings: Settings, budget: BudgetService):
+    def __init__(self, settings: Settings | None = None, budget: BudgetService | None = None):
         self.settings = settings
         self.budget = budget
+
+    def validate_outbound_privacy(
+        self,
+        request: ModelRequest,
+        grants: list[Grant] | None = None,
+    ) -> None:
+        """Enforces domain isolation on outbound model requests (R03).
+
+        If a request originates from or targets a domain other than 'personal' (e.g. 'work'),
+        no raw personal source records may be included in the outbound prompt unless an
+        active, unexpired grant explicitly covers those record IDs.
+        """
+        if request.domain != "personal" and request.personal_source_ids:
+            active_granted_ids: set[str] = set()
+            now = utcnow()
+            if grants:
+                for g in grants:
+                    if (
+                        g.state == "active"
+                        and g.source_domain == "personal"
+                        and g.consumer_domain == request.domain
+                        and g.expires_at > now
+                    ):
+                        active_granted_ids.update(g.record_ids or [])
+            ungranted = [sid for sid in request.personal_source_ids if sid not in active_granted_ids]
+            if ungranted:
+                raise PermissionDenied(
+                    "sensitive_domain_leak",
+                    f"Outbound model request in domain '{request.domain}' contains unauthorized personal records: {ungranted}",
+                )
 
     @property
     def configured(self) -> bool:

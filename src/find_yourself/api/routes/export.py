@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from ...db.models import Conversation, Grant, Memory, Message
+from ...services.export import ExportService
 from ..deps import csrf_protected, get_actor, get_services, Services
 from ..schemas import ExportRequest
 from ...services.actor import Actor
@@ -27,35 +28,20 @@ async def export_data(body: ExportRequest, actor: Actor = Depends(csrf_protected
     if not body.confirm:
         raise PermissionDenied("export_confirm", "Data export requires explicit confirmation", 400)
 
-    conversations = svc.session.execute(
-        select(Conversation).where(Conversation.owner_id == actor.owner_id,
-                                    Conversation.deleted_at.is_(None))
-    ).scalars()
-    conv_list = []
-    for c in conversations:
-        msgs = svc.session.execute(
-            select(Message).where(Message.conversation_id == c.id,
-                                  Message.deleted_at.is_(None)).order_by(Message.created_at.asc())
-        ).scalars()
-        conv_list.append({
-            "id": c.id, "title": c.title, "domain": c.domain, "mode": c.mode,
-            "messages": [{"role": m.role, "content": m.content, "source": m.source} for m in msgs],
-        })
+    export_svc = ExportService(svc.session, svc.audit)
+    bundle = export_svc.create_export_bundle(actor)
+    token_info = export_svc.generate_download_token(actor, bundle)
+    bundle["download_token"] = token_info["download_token"]
+    bundle["expires_at"] = token_info["expires_at"]
+    return bundle
 
-    memories = svc.session.execute(
-        select(Memory).where(Memory.owner_id == actor.owner_id, Memory.deleted_at.is_(None))
-    ).scalars()
-    grants = svc.session.execute(select(Grant)).scalars()
 
-    return {
-        "owner_id": actor.owner_id,
-        "conversations": conv_list,
-        "memories": [{"id": m.id, "domain": m.domain, "category": m.category,
-                      "content": m.content, "version": m.version} for m in memories],
-        "grants": [{"id": g.id, "source_domain": g.source_domain,
-                    "consumer_domain": g.consumer_domain, "state": g.state} for g in grants],
-        "contains_secrets": False,
-    }
+@router.get("/export/download/{token}")
+async def download_export(token: str, actor: Actor = Depends(get_actor),
+                          svc: Services = Depends(get_services)) -> dict:
+    actor.require_owner()
+    export_svc = ExportService(svc.session, svc.audit)
+    return export_svc.consume_download_token(token)
 
 
 @router.get("/internal/audit/verify")
