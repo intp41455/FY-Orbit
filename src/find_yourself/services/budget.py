@@ -197,6 +197,27 @@ class BudgetService:
         self.s.flush()
         return row
 
+    def hold_unknown_pricing(
+        self, actor: Actor, reservation_id: str, *, reason: str = "pricing_unknown"
+    ) -> BudgetReservation:
+        """Hold a reservation in 'unknown' state when provider pricing is unavailable.
+
+        CRITICAL: Unlike settle(), this does NOT free the budget allocation.
+        The reservation continues to count in _reserved_sum() against both task
+        and monthly limits, preventing unbudgeted consumption until provider reconciliation.
+        """
+        row = self.s.get(BudgetReservation, reservation_id)
+        if row is None or row.state not in ("reserved", "unknown"):
+            raise NotFound("reservation_not_found", "Reservation not found or not active")
+        row.state = "unknown"
+        self.audit.append(actor, "budget.pricing_unknown", row.task_id, {
+            "reservation_id": reservation_id,
+            "held_amount": str(row.amount),
+            "reason": reason,
+        })
+        self.s.flush()
+        return row
+
     def cancel_task(self, actor: Actor, task_id: str) -> int:
         """Cancel a task, propagate to children and release unsettled reservations."""
         task = self.s.get(Task, task_id)

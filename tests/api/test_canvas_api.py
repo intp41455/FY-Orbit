@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from helpers import login_owner
 
@@ -125,9 +126,30 @@ def test_canvas_api_csrf_enforcement(client: TestClient) -> None:
     assert r.status_code == 403
 
 
-def test_canvas_api_hermes_dispatch_and_handoff_lifecycle(client: TestClient) -> None:
+def test_canvas_api_hermes_dispatch_and_handoff_lifecycle(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     """Full HTTP API end-to-end test with auth, CSRF, real routing, session management,
     Hermes dispatch, ResearchAgent handoff, and domain mismatch enforcement."""
+    # Deterministic hermetic adapter mocking for 100% test portability
+    monkeypatch.setattr(
+        "find_yourself.adapters.hermes_adapter.HermesAdapter.probe",
+        lambda self: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
+    monkeypatch.setattr(
+        "find_yourself.adapters.hermes_adapter.HermesAdapter.dispatch_and_run",
+        lambda self, subtask_id, goal, acceptance_criteria=None, local_execution_id=None: {
+            "state": "completed",
+            "validation_passed": True,
+            "output": "【多智能体协同响应】作为个人协作规划器，我协调任务与数据安全边界。",
+            "tokens": 420,
+            "model": "hermes-3-llama-3.1-8b",
+            "cost_status": "unknown",
+            "estimated_cost_usd": 0.0,
+            "duration_ms": 320,
+            "external_session_id": "sess-mock-01",
+            "local_execution_id": local_execution_id,
+        },
+    )
+
     headers = login_owner(client)
 
     # 1. Create personal canvas instance
@@ -245,8 +267,19 @@ def test_canvas_api_hermes_dispatch_and_handoff_lifecycle(client: TestClient) ->
     assert r_disp_research.status_code == 201
     disp_r = r_disp_research.json()
     assert disp_r["worker_id"] == "ResearchAgent"
-    assert disp_r["state"] == "completed"
+    # ResearchAgent enters dispatched (truthful internal staging, not fake auto-completed)
+    assert disp_r["state"] == "dispatched"
     subtask_2_id = disp_r["subtask_id"]
+
+    # 6b. Explicitly complete subtask 2 via API endpoint
+    r_complete = client.post(
+        f"/api/canvas/instances/{inst_id}/subtasks/{subtask_2_id}/complete",
+        json={"output": "[ResearchAgent] 已完成跨产品代理方案调研与对比报告。"},
+        headers=headers,
+    )
+    assert r_complete.status_code == 200
+    comp_r = r_complete.json()
+    assert comp_r["state"] == "completed"
 
     # 7. Get Snapshot and verify both agents collaborated with events tied to subtask IDs
     r_snap = client.get(f"/api/canvas/instances/{inst_id}/snapshot", headers=headers)

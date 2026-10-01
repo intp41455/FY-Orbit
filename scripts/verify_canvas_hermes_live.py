@@ -114,7 +114,7 @@ def main():
         "budget_slice_usd": 0.25,
         "estimated_cost_usd": disp.input_ref.get("estimated_cost_usd", 0.0),
         "cost_status": disp.input_ref.get("cost_status", "unknown"),
-        "settled_cost_usd": (disp.input_ref.get("budget_settlement") or {}).get("settled_amount_usd", 0.0),
+        "settled_cost_usd": (disp.input_ref.get("budget_settlement") or {}).get("settled_amount_usd"),
         "budget_settlement": disp.input_ref.get("budget_settlement"),
         "duration_ms": disp.input_ref.get("duration_ms"),
         "tokens": disp.input_ref.get("tokens"),

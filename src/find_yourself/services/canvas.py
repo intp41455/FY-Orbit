@@ -263,22 +263,22 @@ class CanvasService:
             "name": "ResearchAgent",
             "protocol": "A2A / Internal",
             "role": "worker",
-            "stage": "合成任务往返",
+            "stage": "发现接口",
             "healthy": True,
             "binary_path": "INTERNAL",
             "version": "1.0-builtin",
-            "blocking_reason": None,
+            "blocking_reason": "内部研究员代理支持接收派发与交接包；需工作流或调用方提交完成回传",
             "domains": ["personal", "work"],
         })
         connectors.append({
             "name": "EngineeringAgent",
             "protocol": "A2A / Internal",
             "role": "worker",
-            "stage": "合成任务往返",
+            "stage": "发现接口",
             "healthy": True,
             "binary_path": "INTERNAL",
             "version": "1.0-builtin",
-            "blocking_reason": None,
+            "blocking_reason": "内部工程代理支持接收派发与任务拆解；需调用方提交完成回传",
             "domains": ["work"],
         })
 
@@ -544,7 +544,13 @@ class CanvasService:
                         "idempotency_key": idem_key,
                     },
                 )
-                self.session.flush()
+                res_id = (existing_record.input_ref or {}).get("reservation_id")
+                if self.budget and res_id:
+                    try:
+                        self.budget.hold_unknown_pricing(actor, res_id, reason="crash_in_flight_needs_reconciliation")
+                    except Exception:
+                        pass
+                self.session.commit()
                 return existing_record
             return existing_record
 
@@ -619,7 +625,8 @@ class CanvasService:
             local_exec_id = f"exec-local-{uuid4().hex[:12]}"
             updated_input_ref["local_execution_id"] = local_exec_id
 
-            # PRE-EXECUTION PERSISTENCE: Record task in 'running' state BEFORE invoking external process!
+            # PRE-EXECUTION PERSISTENCE & DURABLE OUTBOX:
+            # Commit the record in 'running' state BEFORE invoking external process!
             record = DispatchRecord(
                 id=f"disp-{uuid4().hex[:12]}",
                 instance_id=instance_id,
@@ -636,8 +643,6 @@ class CanvasService:
                 state="running",
             )
             self.session.add(record)
-            self.session.flush()
-
             self._emit_event(
                 instance_id,
                 "task.dispatched",
@@ -651,6 +656,8 @@ class CanvasService:
                     "local_execution_id": local_exec_id,
                 },
             )
+            # Commit pre-execution intent to DB so it is durable across crashes & separate connections
+            self.session.commit()
 
             # Build acceptance criteria dict if string or dict
             crit_dict = None
@@ -684,7 +691,7 @@ class CanvasService:
                 )
                 if self.budget and res:
                     self.budget.release(actor, res.id)
-                self.session.flush()
+                self.session.commit()
                 raise
 
             ext_sess_id = exec_res.get("external_session_id")
@@ -731,7 +738,7 @@ class CanvasService:
                         "tokens": exec_res.get("tokens"),
                     },
                 )
-                # Truthful budget settlement separating actual, estimated, and unknown pricing
+                # Truthful budget accounting: unknown pricing is NOT zero cost!
                 if self.budget and res:
                     if cost_status in ("actual", "estimated") and est_cost > 0.0:
                         settle_amt = Decimal(str(est_cost))
@@ -748,14 +755,17 @@ class CanvasService:
                             "cost_status": cost_status,
                         }
                     else:
-                        # Truthful accounting for local provider: unknown pricing is settled at $0.00 actual
-                        self.budget.settle(actor, res.id, settled_amount=Decimal("0.00"))
+                        # Unknown pricing: hold reservation in 'unknown' state to prevent unbudgeted token drain
+                        self.budget.hold_unknown_pricing(actor, res.id, reason="provider_pricing_unknown")
                         updated_input_ref["budget_settlement"] = {
-                            "status": "settled",
+                            "status": "held_unknown",
                             "reserved_amount_usd": float(budget_slice),
-                            "settled_amount_usd": 0.0,
+                            "settled_amount_usd": None,
                             "cost_status": "unknown",
-                            "note": "Pricing unknown; settled at $0.00 actual consumption",
+                            "tokens": exec_res.get("tokens"),
+                            "model": exec_res.get("model"),
+                            "provider": "hermes_local_provider",
+                            "note": "Provider pricing is unknown; reservation retained in 'unknown' state to prevent unbudgeted token consumption until reconciliation.",
                         }
             else:
                 record.state = exec_res.get("state") or "failed"
@@ -773,89 +783,38 @@ class CanvasService:
                     },
                 )
                 if self.budget and res:
-                    self.budget.release(actor, res.id)
-                    updated_input_ref["budget_settlement"] = {
-                        "status": "released",
-                        "reserved_amount_usd": float(budget_slice),
-                        "settled_amount_usd": 0.0,
-                    }
+                    tokens_used = exec_res.get("tokens") or 0
+                    if tokens_used > 0 and cost_status == "unknown":
+                        # Tokens were consumed with unknown pricing; cannot claim zero cost!
+                        self.budget.hold_unknown_pricing(actor, res.id, reason="task_unvalidated_but_tokens_consumed")
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "held_unknown",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": None,
+                            "cost_status": "unknown",
+                            "tokens": tokens_used,
+                            "note": "Subtask failed or rejected by validator, but tokens were consumed with unknown pricing; reservation held pending reconciliation.",
+                        }
+                    elif cost_status in ("actual", "estimated") and est_cost > 0.0:
+                        settle_amt = Decimal(str(est_cost))
+                        self.budget.settle(actor, res.id, settled_amount=min(settle_amt, Decimal(str(budget_slice))))
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "settled",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": float(settle_amt),
+                            "cost_status": cost_status,
+                        }
+                    else:
+                        self.budget.release(actor, res.id)
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "released",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": 0.0,
+                        }
 
             record.input_ref = dict(updated_input_ref)
             flag_modified(record, "input_ref")
-            self.session.flush()
-            return record
-
-        elif worker_id == "ResearchAgent":
-            local_exec_id = f"exec-local-{uuid4().hex[:12]}"
-            updated_input_ref["local_execution_id"] = local_exec_id
-
-            record = DispatchRecord(
-                id=f"disp-{uuid4().hex[:12]}",
-                instance_id=instance_id,
-                root_task_id=root_task_id,
-                subtask_id=assigned_subtask_id,
-                orchestrator_id=inst.orchestrator_id,
-                worker_id=worker_id,
-                idempotency_key=idem_key,
-                input_ref=updated_input_ref,
-                goal=goal.strip(),
-                acceptance_criteria=str(acceptance_criteria).strip() if not isinstance(acceptance_criteria, dict) else str(acceptance_criteria),
-                budget_slice=budget_slice,
-                deadline=deadline or (utcnow() + timedelta(hours=2)),
-                state="running",
-            )
-            self.session.add(record)
-            self.session.flush()
-
-            self._emit_event(
-                instance_id,
-                "task.dispatched",
-                task_id=assigned_subtask_id,
-                agent_id=worker_id,
-                details={
-                    "goal": goal,
-                    "orchestrator": inst.orchestrator_id,
-                    "budget_slice": budget_slice,
-                    "adapter_status": "connected",
-                    "local_execution_id": local_exec_id,
-                },
-            )
-            self._emit_event(
-                instance_id,
-                "agent.task_submitted",
-                task_id=assigned_subtask_id,
-                agent_id=worker_id,
-                details={"local_execution_id": local_exec_id},
-            )
-            subagent_output = f"[{worker_id}] 针对目标 '{goal}' 完成深入研究与跨代理交接事实核查。"
-            record.state = "completed"
-            record.completed_at = utcnow()
-            updated_input_ref["output"] = subagent_output
-            updated_input_ref["duration_ms"] = 350
-            updated_input_ref["budget_settlement"] = {
-                "status": "settled",
-                "reserved_amount_usd": float(budget_slice),
-                "settled_amount_usd": 0.0,
-                "cost_status": "internal_worker",
-            }
-            record.input_ref = dict(updated_input_ref)
-            flag_modified(record, "input_ref")
-
-            self._emit_event(
-                instance_id,
-                "agent.task_completed",
-                task_id=assigned_subtask_id,
-                agent_id=worker_id,
-                details={
-                    "local_execution_id": local_exec_id,
-                    "output_preview": subagent_output,
-                    "duration_ms": 350,
-                },
-            )
-            if self.budget and res:
-                self.budget.settle(actor, res.id, settled_amount=Decimal("0.00"))
-
-            self.session.flush()
+            self.session.commit()
             return record
 
         else:
@@ -889,7 +848,7 @@ class CanvasService:
                     "adapter_status": "connected",
                 },
             )
-            self.session.flush()
+            self.session.commit()
             return record
 
     def complete_subtask(

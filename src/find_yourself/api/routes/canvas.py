@@ -44,6 +44,11 @@ class RecordHandoffRequest(BaseModel):
     next_steps: list[str] = Field(default_factory=list)
 
 
+class CompleteSubtaskRequest(BaseModel):
+    output: str = Field(default="")
+    settled_budget: float | None = None
+
+
 @router.get("/templates")
 async def list_templates(
     svc: Services = Depends(get_services),
@@ -211,4 +216,31 @@ async def record_handoff(
         "target_worker_id": hnd.target_worker_id,
         "completed_items": hnd.completed_items,
         "created_at": hnd.created_at.isoformat(),
+    }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/complete")
+async def complete_subtask(
+    id: str,
+    subtask_id: str,
+    body: CompleteSubtaskRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    rec = svc.canvas.complete_subtask(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        output=body.output,
+        settled_budget=body.settled_budget,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "output": (rec.input_ref or {}).get("output", ""),
+        "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
     }

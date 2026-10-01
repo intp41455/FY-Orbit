@@ -916,28 +916,44 @@ def test_concurrent_event_emission_multi_threads(
 
 
 def test_pre_execution_persistence_and_crash_reconciliation(
-    canvas_service: CanvasService, owner: Actor
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Issue 3: DispatchRecord is persisted in 'running' state BEFORE invoking Hermes;
+    """Issue 3 / P0.1: DispatchRecord is persisted in 'running' state BEFORE invoking Hermes;
     if a crash occurred and the same idempotency key is retried, it enters unknown_needs_reconciliation
     without re-executing the external process."""
-    from find_yourself.db.models import DispatchRecord
+    from find_yourself.db.models import DispatchRecord, BudgetReservation
+    from sqlalchemy.orm import sessionmaker
+
+    # 0. Deterministically mock HermesAdapter.probe to healthy
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
 
     session = canvas_service.session
+    SecondSession = sessionmaker(bind=session.bind, expire_on_commit=False, future=True)
     root_task = create_task(session, owner, task_id="task-reconcile-01", domain="personal")
     inst = canvas_service.create_instance(owner, project_name="对账与崩溃测试", template_id="personal")
 
-    # Mock Hermes adapter that tracks call count and simulates crash on first run
+    # Mock Hermes adapter that tracks call count, inspects DB state mid-execution via a second session,
+    # and simulates a crash
     call_count = 0
+    state_in_other_session_during_call = None
+    idem_key = "crash-test-idem-001"
 
     def mock_dispatch(subtask_id, goal, **kwargs):
-        nonlocal call_count
+        nonlocal call_count, state_in_other_session_during_call
         call_count += 1
+        # Inspect using a separate DB session to prove durable commit prior to external call!
+        with SecondSession() as other_session:
+            r = other_session.query(DispatchRecord).filter_by(idempotency_key=idem_key).first()
+            if r:
+                state_in_other_session_during_call = r.state
         raise RuntimeError("Simulated process crash during external execution")
 
     canvas_service.hermes_adapter.dispatch_and_run = mock_dispatch
 
-    idem_key = "crash-test-idem-001"
     # 1. First execution crashes
     with pytest.raises(RuntimeError):
         canvas_service.dispatch_subtask(
@@ -949,14 +965,22 @@ def test_pre_execution_persistence_and_crash_reconciliation(
             idempotency_key=idem_key,
         )
     assert call_count == 1
+    # Verify that during the call, a separate session saw the record committed in 'running' state!
+    assert state_in_other_session_during_call == "running"
 
     # 2. Verify record exists in DB with state 'failed'
     rec_after_crash = session.query(DispatchRecord).filter_by(idempotency_key=idem_key).one()
     assert rec_after_crash.state == "failed"
 
-    # 3. Simulate a power cut before state update: record was left in 'running' in DB
+    # 3. Simulate a power cut before state update: record was left in 'running' in DB,
+    # and reservation remained in 'reserved' state (not released).
     rec_after_crash.state = "running"
-    session.flush()
+    res_id = (rec_after_crash.input_ref or {}).get("reservation_id")
+    if res_id:
+        res_row = session.get(BudgetReservation, res_id)
+        if res_row:
+            res_row.state = "reserved"
+    session.commit()
 
     # 4. Retrying with same idempotency key must NOT invoke Hermes again!
     retry_rec = canvas_service.dispatch_subtask(
@@ -974,13 +998,27 @@ def test_pre_execution_persistence_and_crash_reconciliation(
     events = canvas_service.get_events(owner, inst.id)
     assert any(e["event_type"] == "agent.reconciliation_required" for e in events)
 
+    # Budget reservation is held in unknown state rather than released or settled
+    if res_id:
+        res_row = session.get(BudgetReservation, res_id)
+        assert res_row.state == "unknown"
+
 
 def test_truthful_budget_settlement_unknown_vs_known(
-    canvas_service: CanvasService, owner: Actor
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Issue 2: Unknown provider cost settles at $0.00 actual instead of falsely billing the full cap."""
+    """Issue 2 / P0.2: Unknown provider cost is held in 'unknown' state without freeing budget;
+    known cost settles at actual cost."""
     from decimal import Decimal
+    from find_yourself.db.models import BudgetReservation
     from find_yourself.services.errors import Conflict
+
+    # Mock probe to healthy
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
 
     session = canvas_service.session
     root_task = create_task(session, owner, task_id="task-budget-truth-01", domain="personal")
@@ -1008,10 +1046,14 @@ def test_truthful_budget_settlement_unknown_vs_known(
     )
     assert rec_unknown.state == "completed"
     settlement = rec_unknown.input_ref["budget_settlement"]
-    assert settlement["status"] == "settled"
+    assert settlement["status"] == "held_unknown"
     assert settlement["reserved_amount_usd"] == 0.25
-    assert settlement["settled_amount_usd"] == 0.0
+    assert settlement["settled_amount_usd"] is None
     assert settlement["cost_status"] == "unknown"
+
+    # In DB, the reservation state is 'unknown' (still counting towards limits)
+    res_unknown = session.get(BudgetReservation, rec_unknown.input_ref["reservation_id"])
+    assert res_unknown.state == "unknown"
 
     # Case B: Provider with known cost (e.g. $0.08) settles at actual $0.08
     canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
@@ -1055,10 +1097,16 @@ def test_truthful_budget_settlement_unknown_vs_known(
 
 
 def test_multi_agent_handoff_and_research_agent_dispatch(
-    canvas_service: CanvasService, owner: Actor
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Issue 1 & Multi-Agent: Hermes completes subtask 1, hands off to ResearchAgent,
-    and ResearchAgent executes subtask 2 to completion."""
+    """Issue 1 & P0.3: Hermes completes subtask 1, hands off to ResearchAgent,
+    and ResearchAgent is dispatched (not faked); caller/internal engine completes subtask 2."""
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
+
     session = canvas_service.session
     root_task = create_task(session, owner, task_id="task-multiagent-01", domain="personal")
     inst = canvas_service.create_instance(owner, project_name="双Agent协作测试", template_id="personal")
@@ -1099,7 +1147,7 @@ def test_multi_agent_handoff_and_research_agent_dispatch(
     assert handoff.source_worker_id == "Hermes"
     assert handoff.target_worker_id == "ResearchAgent"
 
-    # 3. ResearchAgent dispatches and completes subtask 2
+    # 3. ResearchAgent dispatches subtask 2 (enters dispatched, NOT fake auto-completed)
     rec2 = canvas_service.dispatch_subtask(
         actor=owner,
         instance_id=inst.id,
@@ -1109,10 +1157,19 @@ def test_multi_agent_handoff_and_research_agent_dispatch(
         budget_slice=0.20,
         input_ref={"handoff_packet_id": handoff.id},
     )
-    assert rec2.state == "completed"
-    assert "ResearchAgent" in rec2.input_ref["output"]
+    assert rec2.state == "dispatched"
 
-    # 4. Snapshot verifies both agents collaborated
+    # 4. Caller/Worker completes subtask 2 truthfully via complete_subtask
+    completed_rec2 = canvas_service.complete_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        subtask_id=rec2.subtask_id,
+        output="[ResearchAgent] 完成背景文献调研与整理",
+    )
+    assert completed_rec2.state == "completed"
+    assert "[ResearchAgent]" in completed_rec2.input_ref["output"]
+
+    # 5. Snapshot verifies both agents collaborated
     snap = canvas_service.get_snapshot(owner, inst.id)
     assert len(snap["dispatches"]) == 2
     assert len(snap["handoffs"]) == 1
