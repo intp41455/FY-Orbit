@@ -86,6 +86,59 @@ class BudgetService:
             q = q.where(BudgetReservation.task_id.in_(task_ids))
         return Decimal(str(self.s.execute(q).scalar() or 0))
 
+    def _month_window(self, when: datetime) -> tuple[datetime, datetime]:
+        start = when.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if start.month == 12:
+            end = start.replace(year=start.year + 1, month=1)
+        else:
+            end = start.replace(month=start.month + 1)
+        return start, end
+
+    def _tree_budget_used(self, tree_ids: list[str]) -> Decimal:
+        """Calculate total budget committed by a task tree:
+        active reservations (reserved/unknown) + settled actual consumption."""
+        if not tree_ids:
+            return ZERO
+        q_res = select(func.coalesce(func.sum(BudgetReservation.amount), 0)).where(
+            BudgetReservation.task_id.in_(tree_ids),
+            BudgetReservation.state.in_(["reserved", "unknown"]),
+        )
+        res_sum = Decimal(str(self.s.execute(q_res).scalar() or 0))
+
+        q_settled = select(func.coalesce(func.sum(BudgetLedger.delta), 0)).where(
+            BudgetLedger.task_id.in_(tree_ids),
+            BudgetLedger.reason == "settle",
+        )
+        settled_sum = Decimal(str(self.s.execute(q_settled).scalar() or 0))
+
+        return res_sum + settled_sum
+
+    def _month_budget_used(self, when: datetime) -> Decimal:
+        """Calculate total budget committed across all scopes in the rolling month:
+        active reservations (reserved/unknown) + settled actual consumption."""
+        start, end = self._month_window(when)
+        month_str = self.month_key(when)
+
+        # In-flight reservations in this month (covers canvas_dispatch, task, and monthly scopes)
+        q_res = select(func.coalesce(func.sum(BudgetReservation.amount), 0)).where(
+            BudgetReservation.state.in_(["reserved", "unknown"]),
+            (
+                ((BudgetReservation.created_at >= start) & (BudgetReservation.created_at < end))
+                | (BudgetReservation.period == f"month:{month_str}")
+            ),
+        )
+        res_sum = Decimal(str(self.s.execute(q_res).scalar() or 0))
+
+        # Settled actual consumption in this month
+        q_settled = select(func.coalesce(func.sum(BudgetLedger.delta), 0)).where(
+            BudgetLedger.reason == "settle",
+            BudgetLedger.created_at >= start,
+            BudgetLedger.created_at < end,
+        )
+        settled_sum = Decimal(str(self.s.execute(q_settled).scalar() or 0))
+
+        return res_sum + settled_sum
+
     def reserve(
         self,
         actor: Actor,
@@ -115,12 +168,14 @@ class BudgetService:
         tree_ids = self._tree_task_ids(root)
 
         # Per-task cap is aggregated over the WHOLE tree (root + descendants),
-        # not per child. Monthly cap is global.
-        task_used = self._reserved_sum(tree_ids, "task")
+        # counting both in-flight reservations and settled actual expenses.
+        task_used = self._tree_budget_used(tree_ids)
         task_projected = task_used + amt
         task_pct = (task_projected / self.limits.per_task_usd) * Decimal("100")
 
-        month_used = self._reserved_sum(None, f"month:{month}")
+        # Monthly cap is global across the rolling month, covering all scopes (task, canvas, monthly)
+        # and counting both in-flight reservations and settled actual expenses.
+        month_used = self._month_budget_used(now)
         month_projected = month_used + amt
         month_pct = (month_projected / self.limits.per_month_usd) * Decimal("100")
 

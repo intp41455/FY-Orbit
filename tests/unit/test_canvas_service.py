@@ -723,6 +723,7 @@ def test_hermes_dispatch_exit_zero_fails_acceptance_criteria_releases_budget(
             ],
             "state": "failed",
             "validation_passed": False,
+            "zero_consumption_proven": True,
             "output": "普通输出文本，不含验收必要字符串",
             "duration_ms": 3100,
             "error": "Acceptance criteria failed: missing required phrase 'MANDATORY_OUTPUT' in output",
@@ -752,7 +753,7 @@ def test_hermes_dispatch_exit_zero_fails_acceptance_criteria_releases_budget(
 def test_hermes_dispatch_failure_releases_budget(
     canvas_service: CanvasService, owner: Actor, monkeypatch
 ) -> None:
-    """07 Threshold 1 & 4: Hermes dispatch failure releases budget reservation without hanging."""
+    """07 Threshold 1 & 4: Hermes dispatch failure releases budget reservation when not started or zero consumption proven."""
     from find_yourself.db.models import BudgetReservation
 
     session = canvas_service.session
@@ -774,6 +775,7 @@ def test_hermes_dispatch_failure_releases_budget(
             "agent": "Hermes",
             "goal": goal,
             "state": "failed",
+            "not_started": True,
             "error": "Simulated Hermes CLI exit code 1",
             "duration_ms": 1500,
         },
@@ -968,14 +970,17 @@ def test_pre_execution_persistence_and_crash_reconciliation(
     # Verify that during the call, a separate session saw the record committed in 'running' state!
     assert state_in_other_session_during_call == "running"
 
-    # 2. Verify record exists in DB with state 'failed'
+    # 2. Verify record exists in DB with state 'unknown_needs_reconciliation' and reservation held as 'unknown'
     rec_after_crash = session.query(DispatchRecord).filter_by(idempotency_key=idem_key).one()
-    assert rec_after_crash.state == "failed"
+    assert rec_after_crash.state == "unknown_needs_reconciliation"
+    res_id = (rec_after_crash.input_ref or {}).get("reservation_id")
+    if res_id:
+        res_row = session.get(BudgetReservation, res_id)
+        assert res_row.state == "unknown"
 
     # 3. Simulate a power cut before state update: record was left in 'running' in DB,
     # and reservation remained in 'reserved' state (not released).
     rec_after_crash.state = "running"
-    res_id = (rec_after_crash.input_ref or {}).get("reservation_id")
     if res_id:
         res_row = session.get(BudgetReservation, res_id)
         if res_row:
@@ -1084,9 +1089,10 @@ def test_truthful_budget_settlement_unknown_vs_known(
     assert settlement_known["cost_status"] == "actual"
 
     # Case C: Over-settlement exceeding reservation is rejected with Conflict in BudgetService.settle()
+    root_task_over = create_task(session, owner, task_id="task-budget-over-01", domain="personal")
     res_over = canvas_service.budget.reserve(
         owner,
-        task_id=root_task.id,
+        task_id=root_task_over.id,
         amount=Decimal("0.25"),
         idempotency_key="over-res-idem-01",
         scope="canvas_dispatch",
@@ -1168,6 +1174,8 @@ def test_multi_agent_handoff_and_research_agent_dispatch(
     )
     assert completed_rec2.state == "completed"
     assert "[ResearchAgent]" in completed_rec2.input_ref["output"]
+    assert completed_rec2.input_ref.get("completed_by") == "owner/manual"
+    assert completed_rec2.input_ref.get("is_manual_completion") is True
 
     # 5. Snapshot verifies both agents collaborated
     snap = canvas_service.get_snapshot(owner, inst.id)
@@ -1175,3 +1183,239 @@ def test_multi_agent_handoff_and_research_agent_dispatch(
     assert len(snap["handoffs"]) == 1
     assert any(d["worker_id"] == "Hermes" for d in snap["dispatches"])
     assert any(d["worker_id"] == "ResearchAgent" for d in snap["dispatches"])
+
+
+def test_hermes_dispatch_timeout_remote_started_holds_unknown_budget(
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """12 Review P0: Exception/Timeout after dispatch must hold budget in 'unknown' state
+    and transition record to 'unknown_needs_reconciliation' without releasing budget or re-running."""
+    from find_yourself.db.models import BudgetReservation, DispatchRecord
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-timeout-test-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="超时挂起预算测试", template_id="personal")
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
+
+    call_count = 0
+
+    def mock_timeout_dispatch(subtask_id, goal, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise TimeoutError("Remote process received task but local execution timed out waiting for receipt")
+
+    canvas_service.hermes_adapter.dispatch_and_run = mock_timeout_dispatch
+
+    idem_key = "timeout-res-idem-999"
+    with pytest.raises(TimeoutError):
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst.id,
+            root_task_id=root_task.id,
+            worker_id="Hermes",
+            goal="执行可能超时的远端任务",
+            budget_slice=0.25,
+            idempotency_key=idem_key,
+        )
+
+    assert call_count == 1
+    rec = session.query(DispatchRecord).filter_by(idempotency_key=idem_key).one()
+    assert rec.state == "unknown_needs_reconciliation"
+    settlement = rec.input_ref.get("budget_settlement", {})
+    assert settlement.get("status") == "held_unknown"
+    assert settlement.get("cost_status") == "unknown"
+
+    res_id = (rec.input_ref or {}).get("reservation_id")
+    assert res_id is not None
+    res_row = session.get(BudgetReservation, res_id)
+    assert res_row.state == "unknown"  # Critical: NOT released!
+
+    # Verify reconciliation_required event emitted
+    events = canvas_service.get_events(owner, inst.id)
+    assert any(e["event_type"] == "agent.reconciliation_required" for e in events)
+
+    # Retry with same idempotency key must NOT invoke Hermes again!
+    retry_rec = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="执行可能超时的远端任务重试",
+        budget_slice=0.25,
+        idempotency_key=idem_key,
+    )
+    assert call_count == 1
+    assert retry_rec.state == "unknown_needs_reconciliation"
+
+
+def test_hermes_dispatch_failure_missing_telemetry_holds_unknown_budget(
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """12 Review P0: Process failure without telemetry (missing tokens/cost) cannot prove zero consumption;
+    holds budget in 'unknown' state."""
+    from find_yourself.db.models import BudgetReservation, DispatchRecord
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-missing-telem-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="缺遥测失败测试", template_id="personal")
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
+
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "failed",
+        "error": "Non-zero exit code 1; usage.json was not generated or missing telemetry",
+        "tokens": None,
+        "cost_status": "unknown",
+        "estimated_cost_usd": None,
+        "zero_consumption_proven": False,
+        "not_started": False,
+    }
+
+    rec = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="执行缺遥测失败任务",
+        budget_slice=0.25,
+    )
+    assert rec.state == "unknown_needs_reconciliation"
+    settlement = rec.input_ref.get("budget_settlement", {})
+    assert settlement.get("status") == "held_unknown"
+    assert settlement.get("cost_status") == "unknown"
+
+    res_id = (rec.input_ref or {}).get("reservation_id")
+    res_row = session.get(BudgetReservation, res_id)
+    assert res_row.state == "unknown"  # Held!
+
+
+def test_budget_monthly_cap_covers_canvas_dispatches_and_settlement(
+    canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """12 Review P0: Canvas dispatches (scope='canvas_dispatch') and settled actual expenses
+    must count towards the rolling monthly limit; triggers alert >= 80% and raises Conflict on breach."""
+    from decimal import Decimal
+    from find_yourself.services.errors import Conflict
+
+    monkeypatch.setattr(
+        canvas_service.hermes_adapter,
+        "probe",
+        lambda: {"name": "Hermes", "installed": True, "healthy": True, "version": "0.1.0"},
+    )
+
+    session = canvas_service.session
+    inst = canvas_service.create_instance(owner, project_name="月度额度覆盖测试", template_id="personal")
+
+    alerts = []
+    canvas_service.budget.alert_handlers.append(lambda a: alerts.append(a))
+
+    # Configure per-month limit to $1.00 for clear test thresholds (default is $10.00)
+    canvas_service.budget.limits.per_month_usd = Decimal("1.00")
+    canvas_service.budget.limits.per_task_usd = Decimal("10.00")
+
+    # Dispatch 1: $0.40 known actual cost $0.35 -> settles $0.35
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "completed",
+        "validation_passed": True,
+        "estimated_cost_usd": 0.35,
+        "cost_status": "actual",
+        "tokens": 2000,
+        "output": "完成1",
+    }
+    t1 = create_task(session, owner, task_id="task-month-01", domain="personal")
+    rec1 = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=t1.id,
+        worker_id="Hermes",
+        goal="月度任务1",
+        budget_slice=0.40,
+        idempotency_key="m-disp-01",
+    )
+    assert rec1.state == "completed"
+
+    # Dispatch 2: $0.45 reservation (month total projected = 0.35 settled + 0.45 = 0.80 -> 80% warning!)
+    t2 = create_task(session, owner, task_id="task-month-02", domain="personal")
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "completed",
+        "validation_passed": True,
+        "estimated_cost_usd": 0.40,
+        "cost_status": "actual",
+        "tokens": 2000,
+        "output": "完成2",
+    }
+    rec2 = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=t2.id,
+        worker_id="Hermes",
+        goal="月度任务2",
+        budget_slice=0.45,
+        idempotency_key="m-disp-02",
+    )
+    assert rec2.state == "completed"
+    assert len(alerts) >= 1
+    assert any(a.get("level") == "warning" for a in alerts)
+
+    # Now month used = 0.35 + 0.40 = 0.75 settled.
+    # Dispatch 3: $0.30 reservation -> projected = 0.75 + 0.30 = 1.05 > 1.00 limit -> Must be rejected with Conflict!
+    t3 = create_task(session, owner, task_id="task-month-03", domain="personal")
+    with pytest.raises(Conflict) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst.id,
+            root_task_id=t3.id,
+            worker_id="Hermes",
+            goal="月度任务3越限",
+            budget_slice=0.30,
+            idempotency_key="m-disp-03",
+        )
+    assert "Monthly budget exceeded" in str(exc_info.value)
+
+
+def test_complete_subtask_distinguishes_manual_completion(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """12 Review P1: Manual completion must record completed_by='owner/manual' and is_manual_completion=True."""
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-manual-comp-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="手动完成标识测试", template_id="personal")
+
+    # Dispatch to ResearchAgent (stays in dispatched)
+    rec = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="ResearchAgent",
+        goal="需要所有者手动完成的任务",
+        budget_slice=0.10,
+    )
+    assert rec.state == "dispatched"
+
+    # Complete via complete_subtask with default completed_by
+    completed = canvas_service.complete_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        subtask_id=rec.subtask_id,
+        output="所有者手动填写的分析结果",
+    )
+    assert completed.state == "completed"
+    assert completed.input_ref["completed_by"] == "owner/manual"
+    assert completed.input_ref["is_manual_completion"] is True
+
+    # Verify event emitted with manual completion attributes
+    events = canvas_service.get_events(owner, inst.id)
+    comp_events = [e for e in events if e["event_type"] == "agent.task_completed" and e["task_id"] == rec.subtask_id]
+    assert len(comp_events) == 1
+    assert comp_events[0]["details"]["completed_by"] == "owner/manual"
+    assert comp_events[0]["details"]["is_manual_completion"] is True
+

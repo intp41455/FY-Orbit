@@ -674,11 +674,9 @@ class CanvasService:
                     local_execution_id=local_exec_id,
                 )
             except Exception as exc:
-                record.state = "failed"
+                record.state = "unknown_needs_reconciliation"
                 record.completed_at = utcnow()
                 updated_input_ref["error"] = str(exc)
-                record.input_ref = dict(updated_input_ref)
-                flag_modified(record, "input_ref")
                 self._emit_event(
                     instance_id,
                     "agent.task_failed",
@@ -689,8 +687,33 @@ class CanvasService:
                         "error": str(exc),
                     },
                 )
+                self._emit_event(
+                    instance_id,
+                    "agent.reconciliation_required",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "message": "External execution encountered an exception or timeout after dispatch; actual provider cost cannot be proven zero. Reservation held pending reconciliation.",
+                        "local_execution_id": local_exec_id,
+                        "error": str(exc),
+                    },
+                )
+                # CRITICAL: External process was already dispatched. An exception or timeout
+                # does not prove zero consumption. Hold reservation in 'unknown' state!
                 if self.budget and res:
-                    self.budget.release(actor, res.id)
+                    try:
+                        self.budget.hold_unknown_pricing(actor, res.id, reason=f"execution_exception:{type(exc).__name__}")
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "held_unknown",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": None,
+                            "cost_status": "unknown",
+                            "note": f"Subtask raised {type(exc).__name__}; reservation held pending provider reconciliation.",
+                        }
+                    except Exception:
+                        pass
+                record.input_ref = dict(updated_input_ref)
+                flag_modified(record, "input_ref")
                 self.session.commit()
                 raise
 
@@ -768,7 +791,8 @@ class CanvasService:
                             "note": "Provider pricing is unknown; reservation retained in 'unknown' state to prevent unbudgeted token consumption until reconciliation.",
                         }
             else:
-                record.state = exec_res.get("state") or "failed"
+                raw_state = exec_res.get("state") or "failed"
+                record.state = raw_state
                 record.completed_at = utcnow()
                 self._emit_event(
                     instance_id,
@@ -784,18 +808,7 @@ class CanvasService:
                 )
                 if self.budget and res:
                     tokens_used = exec_res.get("tokens") or 0
-                    if tokens_used > 0 and cost_status == "unknown":
-                        # Tokens were consumed with unknown pricing; cannot claim zero cost!
-                        self.budget.hold_unknown_pricing(actor, res.id, reason="task_unvalidated_but_tokens_consumed")
-                        updated_input_ref["budget_settlement"] = {
-                            "status": "held_unknown",
-                            "reserved_amount_usd": float(budget_slice),
-                            "settled_amount_usd": None,
-                            "cost_status": "unknown",
-                            "tokens": tokens_used,
-                            "note": "Subtask failed or rejected by validator, but tokens were consumed with unknown pricing; reservation held pending reconciliation.",
-                        }
-                    elif cost_status in ("actual", "estimated") and est_cost > 0.0:
+                    if cost_status in ("actual", "estimated") and est_cost > 0.0:
                         settle_amt = Decimal(str(est_cost))
                         self.budget.settle(actor, res.id, settled_amount=min(settle_amt, Decimal(str(budget_slice))))
                         updated_input_ref["budget_settlement"] = {
@@ -804,13 +817,38 @@ class CanvasService:
                             "settled_amount_usd": float(settle_amt),
                             "cost_status": cost_status,
                         }
-                    else:
+                    elif exec_res.get("zero_consumption_proven") is True or exec_res.get("not_started") is True:
+                        # Only release if there is explicit proof the process never started or incurred zero cost
                         self.budget.release(actor, res.id)
                         updated_input_ref["budget_settlement"] = {
                             "status": "released",
                             "reserved_amount_usd": float(budget_slice),
                             "settled_amount_usd": 0.0,
                         }
+                    else:
+                        # Failed or missing telemetry: cannot prove zero consumption!
+                        # Hold reservation in 'unknown' state pending reconciliation.
+                        record.state = "unknown_needs_reconciliation"
+                        self.budget.hold_unknown_pricing(actor, res.id, reason="execution_failed_or_missing_telemetry")
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "held_unknown",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": None,
+                            "cost_status": "unknown",
+                            "tokens": tokens_used,
+                            "note": "Subtask failed or lacked telemetry; cannot prove zero consumption, reservation held pending reconciliation.",
+                        }
+                        self._emit_event(
+                            instance_id,
+                            "agent.reconciliation_required",
+                            task_id=assigned_subtask_id,
+                            agent_id=worker_id,
+                            details={
+                                "message": "Subtask failed without proof of zero consumption; reconciliation required.",
+                                "local_execution_id": local_exec_id,
+                                "external_session_id": ext_sess_id,
+                            },
+                        )
 
             record.input_ref = dict(updated_input_ref)
             flag_modified(record, "input_ref")
@@ -858,6 +896,7 @@ class CanvasService:
         subtask_id: str,
         output: str = "",
         settled_budget: float | None = None,
+        completed_by: str = "owner/manual",
     ) -> DispatchRecord:
         actor.require_owner()
         self.get_instance(actor, instance_id)
@@ -871,10 +910,13 @@ class CanvasService:
         if rec.state in ("completed", "failed", "cancelled"):
             raise Conflict(f"Subtask is already in terminal state: {rec.state}")
 
+        is_manual = completed_by in ("manual", "owner/manual", "owner")
         rec.state = "completed"
         rec.completed_at = utcnow()
         ref = dict(rec.input_ref or {})
         ref["output"] = output
+        ref["completed_by"] = completed_by
+        ref["is_manual_completion"] = is_manual
         rec.input_ref = dict(ref)
         flag_modified(rec, "input_ref")
 
@@ -888,7 +930,11 @@ class CanvasService:
             "agent.task_completed",
             task_id=subtask_id,
             agent_id=rec.worker_id,
-            details={"output_preview": output[:200]},
+            details={
+                "output_preview": output[:200],
+                "completed_by": completed_by,
+                "is_manual_completion": is_manual,
+            },
         )
         self.session.flush()
         return rec

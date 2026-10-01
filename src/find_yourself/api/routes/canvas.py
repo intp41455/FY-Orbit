@@ -47,6 +47,7 @@ class RecordHandoffRequest(BaseModel):
 class CompleteSubtaskRequest(BaseModel):
     output: str = Field(default="")
     settled_budget: float | None = None
+    completed_by: str = Field(default="owner/manual")
 
 
 @router.get("/templates")
@@ -233,6 +234,7 @@ async def complete_subtask(
         subtask_id=subtask_id,
         output=body.output,
         settled_budget=body.settled_budget,
+        completed_by=body.completed_by,
     )
     svc.session.commit()
     return {
@@ -242,5 +244,7 @@ async def complete_subtask(
         "worker_id": rec.worker_id,
         "state": rec.state,
         "output": (rec.input_ref or {}).get("output", ""),
+        "completed_by": (rec.input_ref or {}).get("completed_by", "owner/manual"),
+        "is_manual_completion": (rec.input_ref or {}).get("is_manual_completion", True),
         "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
     }
