@@ -14,6 +14,8 @@ run on an isolated in-memory SQLite database without touching env/network.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import os
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -50,6 +52,12 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
 
     if session_maker is None:
         engine = engine_from_url(settings.database_url)
+        if engine.dialect.name == "sqlite":
+            from ..db.base import Base
+            import find_yourself.db.models  # noqa: F401
+            import find_yourself.db.profile_models  # noqa: F401
+            import find_yourself.db.canvas_models  # noqa: F401
+            Base.metadata.create_all(engine)
         session_maker = session_factory(engine)
 
     @asynccontextmanager
@@ -93,4 +101,26 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
 
     register_exception_handlers(app)
     app.include_router(api_router)
+
+    # Optional static directory mount for desktop standalone mode (FY_STATIC_DIR)
+    static_dir = os.environ.get("FY_STATIC_DIR")
+    if static_dir and Path(static_dir).is_dir():
+        from starlette.staticfiles import StaticFiles
+        from starlette.responses import FileResponse
+
+        s_path = Path(static_dir).resolve()
+
+        @app.middleware("http")
+        async def spa_fallback_middleware(request, call_next):
+            response = await call_next(request)
+            if response.status_code == 404 and request.method == "GET":
+                path = request.url.path
+                if not any(path.startswith(prefix) for prefix in ("/api", "/auth", "/health", "/metrics", "/docs", "/openapi")):
+                    index_file = s_path / "index.html"
+                    if index_file.is_file():
+                        return FileResponse(index_file)
+            return response
+
+        app.mount("/", StaticFiles(directory=str(s_path), html=True), name="static")
+
     return app

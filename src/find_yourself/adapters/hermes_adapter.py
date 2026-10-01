@@ -100,7 +100,7 @@ class HermesAdapter:
         self,
         subtask_id: str,
         goal: str,
-        timeout_sec: int = 60,
+        timeout_sec: int = 120,
         acceptance_criteria: dict[str, Any] | None = None,
         local_execution_id: str | None = None,
     ) -> dict[str, Any]:

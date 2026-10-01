@@ -10,3 +10,4 @@ dist/
 test-results/
 playwright-report/
 *.egg-info/
+dist-desktop/

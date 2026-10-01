@@ -16,6 +16,7 @@ interface AuthState {
   loading: boolean;
   error: string | null;
   login: () => void;
+  loginWithToken: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -91,6 +92,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/auth/login';
   }, []);
 
+  const loginWithToken = useCallback(
+    async (token: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await authApi.localDevToken({ token });
+        if (res.csrf_token) setCsrfToken(res.csrf_token);
+        await refresh();
+      } catch (err: unknown) {
+        setError(
+          (err as { message?: string })?.message || '本地口令校验失败，请检查口令并确保在 127.0.0.1 访问。',
+        );
+        setLoading(false);
+      }
+    },
+    [refresh],
+  );
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -103,8 +122,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ owner, loading, error, login, logout, refresh }),
-    [owner, loading, error, login, logout, refresh],
+    () => ({ owner, loading, error, login, loginWithToken, logout, refresh }),
+    [owner, loading, error, login, loginWithToken, logout, refresh],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

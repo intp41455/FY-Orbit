@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from find_yourself.adapters.hermes_adapter import HermesAdapter
+from find_yourself.adapters.research_agent_adapter import ResearchAgentAdapter
 from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, Grant, HandoffPacket, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
@@ -125,12 +126,14 @@ class CanvasService:
         budget: BudgetService | None = None,
         grants: GrantService | None = None,
         hermes_adapter: HermesAdapter | None = None,
+        research_agent_adapter: ResearchAgentAdapter | None = None,
     ):
         self.session = session
         self.audit = audit
         self.budget = budget or BudgetService(session, audit)
         self.grants = grants or GrantService(session, audit)
         self.hermes_adapter = hermes_adapter or HermesAdapter()
+        self.research_agent_adapter = research_agent_adapter or ResearchAgentAdapter()
         self._event_lock = threading.RLock()
 
     # -----------------------------------------------------------------------
@@ -259,15 +262,16 @@ class CanvasService:
         })
 
         # 7. Built-in ResearchAgent & EngineeringAgent
+        research_probe = self.research_agent_adapter.probe()
         connectors.append({
             "name": "ResearchAgent",
-            "protocol": "A2A / Internal",
+            "protocol": research_probe.get("protocol", "A2A / JSON-RPC 2.0"),
             "role": "worker",
-            "stage": "发现接口",
-            "healthy": True,
-            "binary_path": "INTERNAL",
-            "version": "1.0-builtin",
-            "blocking_reason": "内部研究员代理支持接收派发与交接包；需工作流或调用方提交完成回传",
+            "stage": research_probe.get("stage", "本机握手通过"),
+            "healthy": bool(research_probe.get("healthy")),
+            "binary_path": research_probe.get("binary_path", "INTERNAL_A2A_SERVICE"),
+            "version": research_probe.get("version", "1.0.0"),
+            "blocking_reason": research_probe.get("blocking_reason"),
             "domains": ["personal", "work"],
         })
         connectors.append({
@@ -317,6 +321,22 @@ class CanvasService:
             },
         )
         self.session.add(inst)
+
+        # Auto-create default root Task for this canvas instance in the matching domain
+        root_task_id = f"root-{instance_id}"
+        existing_task = self.session.get(Task, root_task_id)
+        if not existing_task:
+            default_root_task = Task(
+                id=root_task_id,
+                owner_id=actor.owner_id,
+                root_task_id=root_task_id,
+                goal=f"Canvas Project: {project_name.strip()}",
+                domain=tmpl["domain"],
+                status="queued",
+                deadline=utcnow() + timedelta(days=7),
+                idempotency_key=f"task-canvas-{instance_id}",
+            )
+            self.session.add(default_root_task)
 
         # Build connector probe lookup for honest node registration
         connector_map = {c["name"]: c for c in self.probe_connectors()}
@@ -391,6 +411,7 @@ class CanvasService:
         input_ref: dict[str, Any] | None = None,
         subtask_id: str | None = None,
         idempotency_key: str | None = None,
+        auto_run: bool | None = None,
     ) -> DispatchRecord:
         actor.require_owner()
         inst = self.get_instance(actor, instance_id)
@@ -412,6 +433,20 @@ class CanvasService:
 
         # 2. Verify root task existence, ownership, and domain
         root_task = self.session.get(Task, root_task_id)
+        if not root_task and root_task_id == f"root-{inst.id}":
+            root_task = Task(
+                id=root_task_id,
+                owner_id=actor.owner_id,
+                root_task_id=root_task_id,
+                goal=f"Canvas Project: {inst.project_name}",
+                domain=inst.domain,
+                status="queued",
+                deadline=utcnow() + timedelta(days=7),
+                idempotency_key=f"task-canvas-{inst.id}",
+            )
+            self.session.add(root_task)
+            self.session.flush()
+
         if not root_task or root_task.owner_id != actor.owner_id:
             raise ValidationFailed(
                 f"Root task {root_task_id} not found or not owned by caller"
@@ -855,6 +890,245 @@ class CanvasService:
             self.session.commit()
             return record
 
+        elif worker_id.lower() in ("researchagent", "research_agent") and (
+            auto_run is True
+            or (auto_run is None and (input_ref_dict.get("auto_run") is True or input_ref_dict.get("handoff_auto_execute") is True))
+        ):
+            # Re-verify grant before execution
+            if grant_id:
+                rechecked_grant = self.session.get(Grant, grant_id)
+                if not rechecked_grant or rechecked_grant.state != "active" or rechecked_grant.revoked_at is not None or rechecked_grant.expires_at <= utcnow():
+                    if self.budget and res:
+                        self.budget.release(actor, res.id)
+                    raise ValidationFailed(f"Grant {grant_id} is no longer active prior to execution")
+
+            # 1. Structured handoff packet ingestion from Hermes / upstream subtask
+            handoff_packet = None
+            if "handoff_packet_id" in input_ref_dict:
+                hnd_id = str(input_ref_dict["handoff_packet_id"])
+                hnd = self.session.get(HandoffPacket, hnd_id)
+                if not hnd or hnd.instance_id != instance_id:
+                    if self.budget and res:
+                        self.budget.release(actor, res.id)
+                    raise ValidationFailed(f"Handoff packet {hnd_id} not found in instance {instance_id}")
+                upstream_output = ""
+                if hnd.source_task_id:
+                    src_rec = self.session.execute(
+                        select(DispatchRecord).where(
+                            DispatchRecord.instance_id == instance_id,
+                            DispatchRecord.subtask_id == hnd.source_task_id,
+                        )
+                    ).scalar_one_or_none()
+                    if src_rec:
+                        if src_rec.state != "completed":
+                            if self.budget and res:
+                                self.budget.release(actor, res.id)
+                            raise ValidationFailed(f"Upstream task {hnd.source_task_id} state is '{src_rec.state}'; cannot hand off incomplete task")
+                        upstream_output = (src_rec.input_ref or {}).get("output") or ""
+                handoff_packet = {
+                    "handoff_packet_id": hnd.id,
+                    "stage": hnd.stage,
+                    "source_worker_id": hnd.source_worker_id,
+                    "target_worker_id": hnd.target_worker_id,
+                    "source_task_id": hnd.source_task_id,
+                    "upstream_output": upstream_output,
+                    "completed_items": hnd.completed_items or [],
+                    "artifact_refs": hnd.artifact_refs or [],
+                    "evidence_refs": hnd.evidence_refs or [],
+                }
+            elif "source_task_id" in input_ref_dict or "upstream_subtask_id" in input_ref_dict:
+                src_task_id = str(input_ref_dict.get("source_task_id") or input_ref_dict.get("upstream_subtask_id"))
+                src_rec = self.session.execute(
+                    select(DispatchRecord).where(
+                        DispatchRecord.instance_id == instance_id,
+                        DispatchRecord.subtask_id == src_task_id,
+                    )
+                ).scalar_one_or_none()
+                if not src_rec or src_rec.instance_id != instance_id:
+                    if self.budget and res:
+                        self.budget.release(actor, res.id)
+                    raise ValidationFailed(f"Upstream task {src_task_id} not found in instance {instance_id}")
+                if src_rec.state != "completed":
+                    if self.budget and res:
+                        self.budget.release(actor, res.id)
+                    raise ValidationFailed(f"Upstream task {src_task_id} state is '{src_rec.state}'; cannot hand off incomplete task")
+                upstream_output = (src_rec.input_ref or {}).get("output") or ""
+                handoff_packet = {
+                    "source_worker_id": src_rec.worker_id,
+                    "target_worker_id": worker_id,
+                    "source_task_id": src_rec.subtask_id,
+                    "upstream_output": upstream_output,
+                    "completed_items": (src_rec.input_ref or {}).get("completed_items", []),
+                    "artifact_refs": (src_rec.input_ref or {}).get("artifact_refs", []),
+                }
+
+            local_exec_id = f"exec-local-research-{uuid4().hex[:12]}"
+            updated_input_ref["local_execution_id"] = local_exec_id
+            if handoff_packet:
+                updated_input_ref["handoff_packet"] = handoff_packet
+
+            # PRE-EXECUTION PERSISTENCE & DURABLE OUTBOX:
+            record = DispatchRecord(
+                id=f"disp-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                root_task_id=root_task_id,
+                subtask_id=assigned_subtask_id,
+                orchestrator_id=inst.orchestrator_id,
+                worker_id=worker_id,
+                idempotency_key=idem_key,
+                input_ref=updated_input_ref,
+                goal=goal.strip(),
+                acceptance_criteria=str(acceptance_criteria).strip() if not isinstance(acceptance_criteria, dict) else str(acceptance_criteria),
+                budget_slice=budget_slice,
+                deadline=deadline or (utcnow() + timedelta(hours=2)),
+                state="running",
+            )
+            self.session.add(record)
+            self._emit_event(
+                instance_id,
+                "task.dispatched",
+                task_id=assigned_subtask_id,
+                agent_id=worker_id,
+                details={
+                    "goal": goal,
+                    "orchestrator": inst.orchestrator_id,
+                    "budget_slice": budget_slice,
+                    "adapter_status": "connected",
+                    "local_execution_id": local_exec_id,
+                    "handoff_ingested": bool(handoff_packet),
+                },
+            )
+            self.session.commit()
+
+            # Execute via ResearchAgentAdapter
+            try:
+                exec_res = self.research_agent_adapter.dispatch_and_run(
+                    subtask_id=assigned_subtask_id,
+                    goal=goal,
+                    handoff_packet=handoff_packet,
+                    acceptance_criteria=acceptance_criteria,
+                    local_execution_id=local_exec_id,
+                )
+            except Exception as exc:
+                record.state = "unknown_needs_reconciliation"
+                record.completed_at = utcnow()
+                updated_input_ref["error"] = str(exc)
+                self._emit_event(
+                    instance_id,
+                    "agent.task_failed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"local_execution_id": local_exec_id, "error": str(exc)},
+                )
+                self._emit_event(
+                    instance_id,
+                    "agent.reconciliation_required",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "message": "ResearchAgent execution encountered an exception; reservation held pending reconciliation.",
+                        "local_execution_id": local_exec_id,
+                        "error": str(exc),
+                    },
+                )
+                if self.budget and res:
+                    try:
+                        self.budget.hold_unknown_pricing(actor, res.id, reason=f"execution_exception:{type(exc).__name__}")
+                        updated_input_ref["budget_settlement"] = {
+                            "status": "held_unknown",
+                            "reserved_amount_usd": float(budget_slice),
+                            "settled_amount_usd": None,
+                            "cost_status": "unknown",
+                            "note": f"Subtask raised {type(exc).__name__}; reservation held pending reconciliation.",
+                        }
+                    except Exception:
+                        pass
+                record.input_ref = dict(updated_input_ref)
+                flag_modified(record, "input_ref")
+                self.session.commit()
+                raise
+
+            val_passed = bool(exec_res.get("validation_passed"))
+            duration_ms = exec_res.get("duration_ms", 0)
+            est_cost = exec_res.get("estimated_cost_usd", 0.01)
+            cost_status = exec_res.get("cost_status", "actual")
+            output_content = exec_res.get("output", "")
+
+            updated_input_ref["execution_trace"] = exec_res
+            updated_input_ref["tokens"] = exec_res.get("tokens")
+            updated_input_ref["model"] = exec_res.get("model")
+            updated_input_ref["cost_status"] = cost_status
+            updated_input_ref["duration_ms"] = duration_ms
+            updated_input_ref["validation_passed"] = val_passed
+            updated_input_ref["output"] = output_content
+            updated_input_ref["completed_by"] = "ResearchAgent/A2A"
+            updated_input_ref["is_manual_completion"] = False
+
+            if exec_res.get("state") == "completed" and val_passed:
+                record.state = "completed"
+                record.completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.task_submitted",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"local_execution_id": local_exec_id},
+                )
+                self._emit_event(
+                    instance_id,
+                    "agent.task_completed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "local_execution_id": local_exec_id,
+                        "output_preview": output_content[:200],
+                        "duration_ms": duration_ms,
+                        "model": exec_res.get("model"),
+                        "tokens": exec_res.get("tokens"),
+                        "completed_by": "ResearchAgent/A2A",
+                        "is_manual_completion": False,
+                    },
+                )
+                if self.budget and res:
+                    settle_amt = Decimal(str(est_cost))
+                    if settle_amt > Decimal(str(budget_slice)):
+                        settle_amt = Decimal(str(budget_slice))
+                    self.budget.settle(actor, res.id, settled_amount=settle_amt)
+                    updated_input_ref["budget_settlement"] = {
+                        "status": "settled",
+                        "reserved_amount_usd": float(budget_slice),
+                        "settled_amount_usd": float(settle_amt),
+                        "cost_status": cost_status,
+                    }
+            else:
+                record.state = "failed"
+                record.completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.task_failed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={
+                        "local_execution_id": local_exec_id,
+                        "error": exec_res.get("error"),
+                        "duration_ms": duration_ms,
+                    },
+                )
+                if self.budget and res:
+                    settle_amt = Decimal(str(min(est_cost, budget_slice)))
+                    self.budget.settle(actor, res.id, settled_amount=settle_amt)
+                    updated_input_ref["budget_settlement"] = {
+                        "status": "settled",
+                        "reserved_amount_usd": float(budget_slice),
+                        "settled_amount_usd": float(settle_amt),
+                        "cost_status": cost_status,
+                    }
+
+            record.input_ref = dict(updated_input_ref)
+            flag_modified(record, "input_ref")
+            self.session.commit()
+            return record
+
         else:
             # Internal or other worker: mark dispatched
             dispatch_state = "dispatched"
@@ -1083,6 +1357,7 @@ class CanvasService:
                     "goal": d.goal,
                     "state": d.state,
                     "budget_slice": float(d.budget_slice),
+                    "input_ref": d.input_ref,
                     "created_at": d.created_at.isoformat(),
                 }
                 for d in dispatches

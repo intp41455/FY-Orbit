@@ -28,6 +28,7 @@ class DispatchSubtaskRequest(BaseModel):
     budget_slice: float = Field(default=0.05, gt=0.0, le=0.50)
     deadline: datetime | None = None
     input_ref: dict[str, Any] = Field(default_factory=dict)
+    auto_run: bool | None = None
 
 
 class RecordHandoffRequest(BaseModel):
@@ -170,6 +171,7 @@ async def dispatch_subtask(
         budget_slice=body.budget_slice,
         deadline=body.deadline,
         input_ref=body.input_ref,
+        auto_run=body.auto_run,
     )
     svc.session.commit()
     return {

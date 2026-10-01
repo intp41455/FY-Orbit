@@ -31,6 +31,7 @@ export function CanvasPage() {
   const [dispatchWorker, setDispatchWorker] = useState('');
   const [dispatchGoal, setDispatchGoal] = useState('');
   const [dispatchBudget, setDispatchBudget] = useState(0.05);
+  const [dispatching, setDispatching] = useState(false);
 
   // Handoff form
   const [showHandoff, setShowHandoff] = useState(false);
@@ -102,25 +103,35 @@ export function CanvasPage() {
 
   async function handleDispatchSubtask(e: React.FormEvent) {
     e.preventDefault();
-    const targetWorker = dispatchWorker || activeTemplate?.workers?.[0] || 'WorkBuddy';
-    if (!activeInstance || !dispatchGoal.trim() || !targetWorker) return;
+    console.log('[Canvas] handleDispatchSubtask invoked', { activeInstance: activeInstance?.id, dispatchWorker, dispatchGoal, dispatchBudget });
+    const targetWorker = dispatchWorker || activeInstance?.orchestrator_id || activeTemplate?.workers?.[0] || 'Hermes';
+    if (!activeInstance || !dispatchGoal.trim() || !targetWorker) {
+      console.warn('[Canvas] early return: missing params', { hasInst: !!activeInstance, goal: dispatchGoal.trim(), targetWorker });
+      return;
+    }
     if (dispatchBudget > 0.50) {
       setError('单次派发预算切片最高不可超过 $0.50');
       return;
     }
+    setDispatching(true);
     try {
-      await canvasApi.dispatchSubtask(activeInstance.id, {
+      console.log('[Canvas] calling dispatchSubtask API...', { instId: activeInstance.id, targetWorker, goal: dispatchGoal.trim() });
+      const res = await canvasApi.dispatchSubtask(activeInstance.id, {
         root_task_id: `root-${activeInstance.id}`,
         worker_id: targetWorker,
         goal: dispatchGoal.trim(),
         budget_slice: dispatchBudget,
       });
+      console.log('[Canvas] dispatchSubtask success', res);
       setShowDispatch(false);
       setDispatchGoal('');
       // Refresh snapshot
-      selectInstance(activeInstance);
+      await selectInstance(activeInstance);
     } catch (err) {
+      console.error('[Canvas] dispatchSubtask error', err);
       setError(errorMessage(err));
+    } finally {
+      setDispatching(false);
     }
   }
 
@@ -285,6 +296,11 @@ export function CanvasPage() {
                       value={dispatchWorker}
                       onChange={(e) => setDispatchWorker(e.target.value)}
                     >
+                      {!activeTemplate?.workers.includes(activeInstance.orchestrator_id) && (
+                        <option value={activeInstance.orchestrator_id}>
+                          {activeInstance.orchestrator_id} (主控执行)
+                        </option>
+                      )}
                       {activeTemplate?.workers.map((w) => {
                         const probe = connectors.find((c) => c.name.toLowerCase() === w.toLowerCase());
                         const isReady = probe?.healthy;
@@ -320,7 +336,9 @@ export function CanvasPage() {
                     onChange={(e) => setDispatchGoal(e.target.value)}
                   />
                 </div>
-                <button type="submit" className="btn btn-primary btn-sm">确认派发</button>
+                <button type="submit" className="btn btn-primary btn-sm" disabled={dispatching}>
+                  {dispatching ? '派发执行中...' : '确认派发'}
+                </button>
               </form>
             )}
 
