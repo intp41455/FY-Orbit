@@ -24,7 +24,7 @@ from find_yourself.db.types import ID, MONEY, TZDateTime, utcnow
 CANVAS_DOMAINS = ("personal", "work")
 CANVAS_STATES = ("active", "paused", "completed", "cancelled")
 DISPATCH_STATES = (
-    "planned", "pending_adapter", "dispatched", "accepted", "running", "completed", "failed", "cancelled"
+    "planned", "pending_adapter", "dispatched", "accepted", "running", "completed", "failed", "cancelled", "unknown_needs_reconciliation"
 )
 
 

@@ -123,3 +123,140 @@ def test_canvas_api_csrf_enforcement(client: TestClient) -> None:
         json={"project_name": "无CSRF请求", "template_id": "personal"},
     )
     assert r.status_code == 403
+
+
+def test_canvas_api_hermes_dispatch_and_handoff_lifecycle(client: TestClient) -> None:
+    """Full HTTP API end-to-end test with auth, CSRF, real routing, session management,
+    Hermes dispatch, ResearchAgent handoff, and domain mismatch enforcement."""
+    headers = login_owner(client)
+
+    # 1. Create personal canvas instance
+    r_inst = client.post(
+        "/api/canvas/instances",
+        json={"project_name": "API端到端多智能体协作", "template_id": "personal"},
+        headers=headers,
+    )
+    assert r_inst.status_code == 201
+    inst = r_inst.json()
+    inst_id = inst["id"]
+    assert inst["domain"] == "personal"
+    assert inst["orchestrator_id"] == "Hermes"
+
+    # 2. Create personal root task
+    r_task = client.post(
+        "/api/tasks",
+        json={"goal": "个人生活多智能体主任务", "idempotency_key": "task-pers-api-root-01", "domain": "personal"},
+        headers=headers,
+    )
+    assert r_task.status_code in (200, 201)
+    root_task_id = r_task.json()["id"]
+
+    # 3. Create work root task to test domain mismatch rejection via API
+    r_work_task = client.post(
+        "/api/tasks",
+        json={"goal": "工作工程主任务", "idempotency_key": "task-work-api-root-01", "domain": "work"},
+        headers=headers,
+    )
+    assert r_work_task.status_code in (200, 201)
+    work_root_task_id = r_work_task.json()["id"]
+
+    # 3a. Dispathing work root task to personal canvas must fail with 422
+    r_mismatch = client.post(
+        f"/api/canvas/instances/{inst_id}/dispatch",
+        json={
+            "root_task_id": work_root_task_id,
+            "worker_id": "Hermes",
+            "goal": "尝试跨域混入工作任务",
+            "budget_slice": 0.20,
+        },
+        headers=headers,
+    )
+    assert r_mismatch.status_code == 422
+    assert "Root task domain 'work' does not match canvas domain 'personal'" in r_mismatch.json().get("error", {}).get("message", "")
+
+    # 3b. Dispathing goal with ungranted sensitive marker must fail with 422
+    r_smuggle = client.post(
+        f"/api/canvas/instances/{inst_id}/dispatch",
+        json={
+            "root_task_id": root_task_id,
+            "worker_id": "Hermes",
+            "goal": "请处理公司的商业机密材料",
+            "budget_slice": 0.20,
+        },
+        headers=headers,
+    )
+    assert r_smuggle.status_code == 422
+    assert "sensitive marker '商业机密'" in r_smuggle.json().get("error", {}).get("message", "")
+
+    # 4. Dispatch valid subtask to Hermes via HTTP API
+    r_disp_hermes = client.post(
+        f"/api/canvas/instances/{inst_id}/dispatch",
+        json={
+            "root_task_id": root_task_id,
+            "worker_id": "Hermes",
+            "goal": "请用简短中文说明你在多智能体协作环境中的核心角色",
+            "acceptance_criteria": {"contains": ["多智能体"], "min_length": 5},
+            "budget_slice": 0.25,
+        },
+        headers=headers,
+    )
+    assert r_disp_hermes.status_code == 201
+    disp_h = r_disp_hermes.json()
+    assert disp_h["worker_id"] == "Hermes"
+    assert disp_h["state"] == "completed"
+    subtask_1_id = disp_h["subtask_id"]
+
+    # 5. Record structured handoff packet from Hermes to ResearchAgent
+    r_handoff = client.post(
+        f"/api/canvas/instances/{inst_id}/handoff",
+        json={
+            "stage": "research_delegation",
+            "goal": "交接深入研究子任务",
+            "source_worker_id": "Hermes",
+            "target_worker_id": "ResearchAgent",
+            "source_task_id": subtask_1_id,
+            "completed_items": ["Hermes完成初步角色与策略澄清"],
+            "artifact_refs": ["artifacts/hermes-init.json"],
+            "evidence_refs": ["evidence/traces/hermes.json"],
+            "unresolved_issues": [],
+            "risks": [],
+            "next_steps": ["由ResearchAgent展开深入文献与方案分析"],
+        },
+        headers=headers,
+    )
+    assert r_handoff.status_code == 201
+    hnd = r_handoff.json()
+    assert hnd["source_worker_id"] == "Hermes"
+    assert hnd["target_worker_id"] == "ResearchAgent"
+    handoff_id = hnd["id"]
+
+    # 6. Dispatch second subtask to ResearchAgent with handoff packet
+    r_disp_research = client.post(
+        f"/api/canvas/instances/{inst_id}/dispatch",
+        json={
+            "root_task_id": root_task_id,
+            "worker_id": "ResearchAgent",
+            "goal": "根据交接上下文执行跨产品代理方案调研",
+            "budget_slice": 0.20,
+            "input_ref": {"handoff_id": handoff_id},
+        },
+        headers=headers,
+    )
+    assert r_disp_research.status_code == 201
+    disp_r = r_disp_research.json()
+    assert disp_r["worker_id"] == "ResearchAgent"
+    assert disp_r["state"] == "completed"
+    subtask_2_id = disp_r["subtask_id"]
+
+    # 7. Get Snapshot and verify both agents collaborated with events tied to subtask IDs
+    r_snap = client.get(f"/api/canvas/instances/{inst_id}/snapshot", headers=headers)
+    assert r_snap.status_code == 200
+    snap = r_snap.json()
+    assert len(snap["dispatches"]) == 2
+    assert len(snap["handoffs"]) == 1
+
+    # Verify event sequence and task IDs
+    events = snap["events"]
+    assert any(e["event_type"] == "agent.task_completed" and e["task_id"] == subtask_1_id for e in events)
+    assert any(e["event_type"] == "agent.task_completed" and e["task_id"] == subtask_2_id for e in events)
+    assert any(e["event_type"] == "handoff.created" and e["task_id"] == subtask_1_id for e in events)

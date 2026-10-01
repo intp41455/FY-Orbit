@@ -10,10 +10,17 @@ Verifies:
 """
 
 import importlib
+from pathlib import Path
+import sys
+
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
 import sqlalchemy as sa
 import pytest
+
+_proj_root = str(Path(__file__).resolve().parents[2])
+if _proj_root not in sys.path:
+    sys.path.insert(0, _proj_root)
 
 m0003 = importlib.import_module("migrations.versions.0003_add_raw_speaker_to_source_segments")
 upgrade = m0003.upgrade

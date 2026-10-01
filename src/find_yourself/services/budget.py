@@ -170,14 +170,20 @@ class BudgetService:
         row = self.s.get(BudgetReservation, reservation_id)
         if row is None or row.state != "reserved":
             raise NotFound("reservation_not_found", "Reservation not found or not reserving")
+        amt = Decimal(str(settled_amount))
+        if amt > row.amount:
+            raise Conflict(
+                "settlement_exceeds_reservation",
+                f"Settled amount (${amt}) exceeds reserved amount (${row.amount})"
+            )
         row.state = "settled"
         row.settled_at = utcnow()
         seq = self.s.execute(select(func.coalesce(func.max(BudgetLedger.seq), 0))).scalar() or 0
         self.s.add(BudgetLedger(
             id=uuid4().hex, reservation_id=row.id, task_id=row.task_id,
-            delta=Decimal(str(settled_amount)), reason="settle", seq=seq + 1,
+            delta=amt, reason="settle", seq=seq + 1,
         ))
-        self.audit.append(actor, "budget.settled", row.task_id, {"amount": str(settled_amount)})
+        self.audit.append(actor, "budget.settled", row.task_id, {"amount": str(amt), "reserved": str(row.amount)})
         self.s.flush()
         return row
 

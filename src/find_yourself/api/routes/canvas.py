@@ -24,7 +24,7 @@ class DispatchSubtaskRequest(BaseModel):
     root_task_id: str = Field(min_length=1, max_length=64)
     worker_id: str = Field(min_length=1, max_length=64)
     goal: str = Field(min_length=1, max_length=300)
-    acceptance_criteria: str = Field(default="", max_length=2000)
+    acceptance_criteria: Any = Field(default="")
     budget_slice: float = Field(default=0.05, gt=0.0, le=0.50)
     deadline: datetime | None = None
     input_ref: dict[str, Any] = Field(default_factory=dict)

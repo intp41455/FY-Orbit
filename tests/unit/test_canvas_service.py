@@ -464,7 +464,55 @@ def test_cross_domain_violation_enforcement(
             goal="处理这段内容：保密个人笔记：绝密项目财务预估，分析它的工作影响",
             input_ref={"record_id": "rec-work-01"},
         )
-    assert "raw cross-domain text in goal is rejected" in str(exc_info.value)
+    assert "ungranted full text" in str(exc_info.value) or "ungranted excerpt/clause" in str(exc_info.value)
+
+    # 11b. Case K: Goal embeds excerpt/clause (short phrase) from ungranted private memory -> rejected
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="请重点审查绝密项目财务预估部分",
+            input_ref={"record_id": "rec-work-01"},
+        )
+    assert "ungranted excerpt/clause" in str(exc_info.value)
+
+    # 11c. Case L: Goal paraphrasing / n-gram overlap with ungranted private memory -> rejected
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_work.id,
+            root_task_id=root_task.id,
+            worker_id="EngineeringAgent",
+            goal="审查个人财务预估和绝密项目风险",
+            input_ref={"record_id": "rec-work-01"},
+        )
+    assert "overlapping fragments" in str(exc_info.value) or "excerpt" in str(exc_info.value)
+
+    # 11d. Case M: Root task domain mismatch (work root task submitted to personal canvas) -> rejected
+    inst_personal = canvas_service.create_instance(owner, project_name="个人生活画布", template_id="personal")
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_personal.id,
+            root_task_id=root_task.id,  # root_task has domain='work'
+            worker_id="Hermes",
+            goal="尝试在个人画布使用工作根任务",
+        )
+    assert "Root task domain 'work' does not match canvas domain 'personal'" in str(exc_info.value)
+
+    # 11e. Case N: Sensitive marker of opposite domain in goal without records -> rejected
+    root_task_personal = create_task(session, owner, task_id="task-pers-root-01", domain="personal")
+    with pytest.raises(ValidationFailed) as exc_info:
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst_personal.id,
+            root_task_id=root_task_personal.id,
+            worker_id="Hermes",
+            goal="协助整理公司的未公开代码和商业机密",
+        )
+    assert "sensitive marker '商业机密' from work domain" in str(exc_info.value)
 
     # 12. Valid active unexpired grant covering rec-priv-01 -> succeeds!
     g_valid = Grant(
@@ -575,7 +623,7 @@ def test_hermes_dispatch_roundtrip_settlement(
     monkeypatch.setattr(
         canvas_service.hermes_adapter,
         "dispatch_and_run",
-        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None: {
+        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None, **kwargs: {
             "subtask_id": subtask_id,
             "local_execution_id": fake_local_exec,
             "external_session_id": fake_session_id,
@@ -661,7 +709,7 @@ def test_hermes_dispatch_exit_zero_fails_acceptance_criteria_releases_budget(
     monkeypatch.setattr(
         canvas_service.hermes_adapter,
         "dispatch_and_run",
-        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None: {
+        lambda subtask_id, goal, timeout_sec=60, acceptance_criteria=None, **kwargs: {
             "subtask_id": subtask_id,
             "local_execution_id": "exec-local-crit-001",
             "external_session_id": "sess-crit-001",
@@ -865,3 +913,208 @@ def test_concurrent_event_emission_multi_threads(
     seqs = [e["seq"] for e in ping_events]
     assert len(seqs) == len(set(seqs))
     assert seqs == sorted(seqs)
+
+
+def test_pre_execution_persistence_and_crash_reconciliation(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """Issue 3: DispatchRecord is persisted in 'running' state BEFORE invoking Hermes;
+    if a crash occurred and the same idempotency key is retried, it enters unknown_needs_reconciliation
+    without re-executing the external process."""
+    from find_yourself.db.models import DispatchRecord
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-reconcile-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="对账与崩溃测试", template_id="personal")
+
+    # Mock Hermes adapter that tracks call count and simulates crash on first run
+    call_count = 0
+
+    def mock_dispatch(subtask_id, goal, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError("Simulated process crash during external execution")
+
+    canvas_service.hermes_adapter.dispatch_and_run = mock_dispatch
+
+    idem_key = "crash-test-idem-001"
+    # 1. First execution crashes
+    with pytest.raises(RuntimeError):
+        canvas_service.dispatch_subtask(
+            actor=owner,
+            instance_id=inst.id,
+            root_task_id=root_task.id,
+            worker_id="Hermes",
+            goal="测试执行前持久化",
+            idempotency_key=idem_key,
+        )
+    assert call_count == 1
+
+    # 2. Verify record exists in DB with state 'failed'
+    rec_after_crash = session.query(DispatchRecord).filter_by(idempotency_key=idem_key).one()
+    assert rec_after_crash.state == "failed"
+
+    # 3. Simulate a power cut before state update: record was left in 'running' in DB
+    rec_after_crash.state = "running"
+    session.flush()
+
+    # 4. Retrying with same idempotency key must NOT invoke Hermes again!
+    retry_rec = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="测试执行前持久化重试",
+        idempotency_key=idem_key,
+    )
+    # Hermes was NOT called a second time!
+    assert call_count == 1
+    # State transitioned to unknown_needs_reconciliation
+    assert retry_rec.state == "unknown_needs_reconciliation"
+    events = canvas_service.get_events(owner, inst.id)
+    assert any(e["event_type"] == "agent.reconciliation_required" for e in events)
+
+
+def test_truthful_budget_settlement_unknown_vs_known(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """Issue 2: Unknown provider cost settles at $0.00 actual instead of falsely billing the full cap."""
+    from decimal import Decimal
+    from find_yourself.services.errors import Conflict
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-budget-truth-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="真实费用测试", template_id="personal")
+
+    # Case A: Local execution with cost_status='unknown'
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "completed",
+        "validation_passed": True,
+        "estimated_cost_usd": 0.0,
+        "cost_status": "unknown",
+        "tokens": 1200,
+        "model": "local-hermes",
+        "duration_ms": 500,
+        "output": "多智能体任务完成",
+    }
+    rec_unknown = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="多智能体任务",
+        acceptance_criteria="多智能体",
+        budget_slice=0.25,
+    )
+    assert rec_unknown.state == "completed"
+    settlement = rec_unknown.input_ref["budget_settlement"]
+    assert settlement["status"] == "settled"
+    assert settlement["reserved_amount_usd"] == 0.25
+    assert settlement["settled_amount_usd"] == 0.0
+    assert settlement["cost_status"] == "unknown"
+
+    # Case B: Provider with known cost (e.g. $0.08) settles at actual $0.08
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "completed",
+        "validation_passed": True,
+        "estimated_cost_usd": 0.08,
+        "cost_status": "actual",
+        "tokens": 5000,
+        "model": "cloud-hermes",
+        "duration_ms": 1200,
+        "output": "多智能体已知费用完成",
+    }
+    rec_known = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="多智能体已知费用",
+        acceptance_criteria="多智能体",
+        budget_slice=0.25,
+        idempotency_key="known-cost-idem-01",
+    )
+    assert rec_known.state == "completed"
+    settlement_known = rec_known.input_ref["budget_settlement"]
+    assert settlement_known["status"] == "settled"
+    assert settlement_known["reserved_amount_usd"] == 0.25
+    assert settlement_known["settled_amount_usd"] == 0.08
+    assert settlement_known["cost_status"] == "actual"
+
+    # Case C: Over-settlement exceeding reservation is rejected with Conflict in BudgetService.settle()
+    res_over = canvas_service.budget.reserve(
+        owner,
+        task_id=root_task.id,
+        amount=Decimal("0.25"),
+        idempotency_key="over-res-idem-01",
+        scope="canvas_dispatch",
+    )
+    with pytest.raises(Conflict) as exc_info:
+        canvas_service.budget.settle(owner, res_over.id, settled_amount=Decimal("0.50"))
+    assert "exceeds reserved amount" in str(exc_info.value)
+
+
+def test_multi_agent_handoff_and_research_agent_dispatch(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """Issue 1 & Multi-Agent: Hermes completes subtask 1, hands off to ResearchAgent,
+    and ResearchAgent executes subtask 2 to completion."""
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-multiagent-01", domain="personal")
+    inst = canvas_service.create_instance(owner, project_name="双Agent协作测试", template_id="personal")
+
+    canvas_service.hermes_adapter.dispatch_and_run = lambda **kwargs: {
+        "state": "completed",
+        "validation_passed": True,
+        "estimated_cost_usd": 0.0,
+        "cost_status": "unknown",
+        "tokens": 1500,
+        "model": "local-hermes",
+        "output": "Hermes分析完成，准备交接研究员",
+    }
+    # 1. Hermes dispatches subtask 1
+    rec1 = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="Hermes",
+        goal="第一阶段：初步需求分析",
+        budget_slice=0.20,
+    )
+    assert rec1.state == "completed"
+
+    # 2. Hermes hands off to ResearchAgent
+    handoff = canvas_service.record_handoff(
+        actor=owner,
+        instance_id=inst.id,
+        stage="research_delegation",
+        goal="交接研究任务",
+        source_worker_id="Hermes",
+        target_worker_id="ResearchAgent",
+        source_task_id=rec1.subtask_id,
+        completed_items=["完成需求拆解与关键词提取"],
+        artifact_refs=["artifacts/hermes-analysis.md"],
+        evidence_refs=["evidence/traces/hermes.json"],
+    )
+    assert handoff.source_worker_id == "Hermes"
+    assert handoff.target_worker_id == "ResearchAgent"
+
+    # 3. ResearchAgent dispatches and completes subtask 2
+    rec2 = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="ResearchAgent",
+        goal="第二阶段：深入背景文献调研",
+        budget_slice=0.20,
+        input_ref={"handoff_packet_id": handoff.id},
+    )
+    assert rec2.state == "completed"
+    assert "ResearchAgent" in rec2.input_ref["output"]
+
+    # 4. Snapshot verifies both agents collaborated
+    snap = canvas_service.get_snapshot(owner, inst.id)
+    assert len(snap["dispatches"]) == 2
+    assert len(snap["handoffs"]) == 1
+    assert any(d["worker_id"] == "Hermes" for d in snap["dispatches"])
+    assert any(d["worker_id"] == "ResearchAgent" for d in snap["dispatches"])

@@ -102,6 +102,7 @@ class HermesAdapter:
         goal: str,
         timeout_sec: int = 60,
         acceptance_criteria: dict[str, Any] | None = None,
+        local_execution_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute subtask via Hermes oneshot mode and capture complete execution trace.
 
@@ -122,7 +123,7 @@ class HermesAdapter:
                 "error": probe_info.get("blocking_reason"),
             }
 
-        local_execution_id = f"exec-local-{uuid4().hex[:12]}"
+        local_execution_id = local_execution_id or f"exec-local-{uuid4().hex[:12]}"
         start_time = time.time()
         start_iso = datetime.now(timezone.utc).isoformat()
 

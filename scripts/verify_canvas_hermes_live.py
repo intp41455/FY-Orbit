@@ -79,11 +79,13 @@ def main():
         goal=goal,
         acceptance_criteria="多智能体",
         budget_slice=0.25,
+        subtask_id=subtask_id,
         idempotency_key="disp-live-hermes-01",
     )
     session.commit()
 
     print(f"Dispatch status: {disp.state}")
+    print(f"Subtask ID: {disp.subtask_id}")
     print(f"Local Execution ID: {disp.input_ref.get('local_execution_id')}")
     print(f"External Session ID: {disp.input_ref.get('external_session_id')}")
     print(f"Output preview: {disp.input_ref.get('output', '')[:120]}")
@@ -97,11 +99,11 @@ def main():
     output_hash = hashlib.sha256(output_text.encode("utf-8")).hexdigest()
 
     trace_payload = {
-        "title": "Hermes Live Canvas API End-to-End Execution Trace",
+        "title": "CanvasService → Hermes CLI 本地往返",
         "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
         "canvas_instance_id": instance.id,
         "root_task_id": root_task.id,
-        "subtask_id": subtask_id,
+        "subtask_id": disp.subtask_id,
         "local_execution_id": disp.input_ref.get("local_execution_id"),
         "external_session_id": disp.input_ref.get("external_session_id"),
         "agent": "Hermes",
@@ -112,7 +114,8 @@ def main():
         "budget_slice_usd": 0.25,
         "estimated_cost_usd": disp.input_ref.get("estimated_cost_usd", 0.0),
         "cost_status": disp.input_ref.get("cost_status", "unknown"),
-        "budget_settlement": "settled" if disp.state == "completed" else "released",
+        "settled_cost_usd": (disp.input_ref.get("budget_settlement") or {}).get("settled_amount_usd", 0.0),
+        "budget_settlement": disp.input_ref.get("budget_settlement"),
         "duration_ms": disp.input_ref.get("duration_ms"),
         "tokens": disp.input_ref.get("tokens"),
         "model": disp.input_ref.get("model"),
