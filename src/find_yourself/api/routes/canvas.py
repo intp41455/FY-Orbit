@@ -48,7 +48,8 @@ class RecordHandoffRequest(BaseModel):
 class CompleteSubtaskRequest(BaseModel):
     output: str = Field(default="")
     settled_budget: float | None = None
-    completed_by: str = Field(default="owner/manual")
+    artifact_version: str | None = None
+    verification_id: str | None = None
 
 
 class CancelSubtaskRequest(BaseModel):
@@ -66,8 +67,15 @@ class ResubmitSubtaskRequest(BaseModel):
 
 
 class VerifySubtaskRequest(BaseModel):
-    verifier_id: str = Field(default="Verifier/independent")
     test_results: dict[str, Any] = Field(default_factory=dict)
+    artifact_hash: str | None = None
+
+
+class ExecuteVerificationRequest(BaseModel):
+    workspace_dir: str
+    command: list[str] = Field(default_factory=list)
+    target_files: list[str] = Field(default_factory=list)
+    timeout_seconds: float = 30.0
 
 
 class HarnessRunRequest(BaseModel):
@@ -280,7 +288,8 @@ async def complete_subtask(
         subtask_id=subtask_id,
         output=body.output,
         settled_budget=body.settled_budget,
-        completed_by=body.completed_by,
+        artifact_version=body.artifact_version,
+        verification_id=body.verification_id,
     )
     svc.session.commit()
     return {
@@ -290,8 +299,10 @@ async def complete_subtask(
         "worker_id": rec.worker_id,
         "state": rec.state,
         "output": (rec.input_ref or {}).get("output", ""),
-        "completed_by": (rec.input_ref or {}).get("completed_by", "owner/manual"),
+        "completed_by": (rec.input_ref or {}).get("completed_by"),
         "is_manual_completion": (rec.input_ref or {}).get("is_manual_completion", True),
+        "bound_verification_id": (rec.input_ref or {}).get("bound_verification_id"),
+        "bound_artifact_hash": (rec.input_ref or {}).get("bound_artifact_hash"),
         "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
     }
 
@@ -390,8 +401,37 @@ async def verify_subtask(
         actor,
         instance_id=id,
         subtask_id=subtask_id,
-        verifier_id=body.verifier_id,
         test_results=body.test_results,
+        artifact_hash=body.artifact_hash,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "verification": (rec.input_ref or {}).get("verification", {}),
+    }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/execute-verification")
+async def execute_verification(
+    id: str,
+    subtask_id: str,
+    body: ExecuteVerificationRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """Execute actual test command on workspace code artifacts via TrustedVerificationRunner."""
+    rec = svc.canvas.execute_trusted_verification(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        workspace_dir=body.workspace_dir,
+        command=body.command,
+        target_files=body.target_files,
+        timeout_seconds=body.timeout_seconds,
     )
     svc.session.commit()
     return {

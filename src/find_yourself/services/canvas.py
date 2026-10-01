@@ -34,6 +34,7 @@ from find_yourself.services.audit import AuditService
 from find_yourself.services.budget import BudgetService
 from find_yourself.services.grant import GrantService
 from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from find_yourself.services.verification import TrustedVerificationRunner
 
 
 TEMPLATES = {
@@ -400,9 +401,11 @@ class CanvasService:
         return inst
 
     def get_instance(self, actor: Actor, instance_id: str) -> CanvasInstance:
-        actor.require_owner()
+        actor.require_authenticated()
         inst = self.session.get(CanvasInstance, instance_id)
-        if not inst or inst.owner_id != actor.owner_id:
+        if not inst:
+            raise NotFound(f"Canvas instance not found: {instance_id}")
+        if actor.subject_type == "owner" and inst.owner_id != actor.owner_id:
             raise NotFound(f"Canvas instance not found: {instance_id}")
         return inst
 
@@ -1309,9 +1312,10 @@ class CanvasService:
         subtask_id: str,
         output: str = "",
         settled_budget: float | None = None,
-        completed_by: str = "owner/manual",
+        artifact_version: str | None = None,
+        verification_id: str | None = None,
     ) -> DispatchRecord:
-        actor.require_owner()
+        actor.require_authenticated()
         self.get_instance(actor, instance_id)
         stmt = select(DispatchRecord).where(
             DispatchRecord.instance_id == instance_id,
@@ -1323,12 +1327,66 @@ class CanvasService:
         if rec.state in ("completed", "failed", "cancelled"):
             raise Conflict(f"Subtask is already in terminal state: {rec.state}")
 
-        is_manual = completed_by in ("manual", "owner/manual", "owner")
+        # Authenticated executor identity determined strictly by service authentication
+        if actor.service_id:
+            caller_identity = f"service/{actor.service_id}"
+            is_manual = False
+        else:
+            caller_identity = "owner/manual"
+            is_manual = True
+
+        ref = dict(rec.input_ref or {})
+
+        # Verification & Artifact Version Binding
+        requires_verification = bool(
+            ref.get("artifacts")
+            or ref.get("artifact_hash")
+            or ref.get("acceptance_criteria")
+            or ref.get("verification")
+            or artifact_version
+            or verification_id
+        )
+
+        verification = ref.get("verification")
+        if requires_verification:
+            if not verification or not verification.get("passed"):
+                raise ValidationFailed(
+                    f"Subtask {subtask_id} cannot be completed without an active passing verification record. "
+                    "Run trusted verification before final acceptance."
+                )
+
+            if verification_id and verification.get("verification_id") != verification_id:
+                raise ValidationFailed(
+                    f"Verification ID mismatch: bound verification is {verification.get('verification_id')}, "
+                    f"specified {verification_id}"
+                )
+
+            verified_artifact_hash = verification.get("composite_artifact_hash") or verification.get("artifact_hash")
+            current_artifact_hash = ref.get("artifact_hash") or ref.get("current_artifact_version")
+
+            if artifact_version:
+                if verified_artifact_hash and artifact_version != verified_artifact_hash:
+                    raise ValidationFailed(
+                        f"Artifact version mismatch: verified artifact hash is {verified_artifact_hash}, "
+                        f"but completion specified {artifact_version}"
+                    )
+            elif current_artifact_hash and verified_artifact_hash:
+                if current_artifact_hash != verified_artifact_hash:
+                    raise ValidationFailed(
+                        f"Artifact version drift: current artifact hash {current_artifact_hash} does not match "
+                        f"verified artifact hash {verified_artifact_hash}. Re-verification required."
+                    )
+
+            ref["bound_verification_id"] = verification.get("verification_id")
+            ref["bound_artifact_hash"] = verified_artifact_hash or current_artifact_hash
+        else:
+            ref["bound_verification_id"] = None
+            ref["bound_artifact_hash"] = None
+
         rec.state = "completed"
         rec.completed_at = utcnow()
-        ref = dict(rec.input_ref or {})
         ref["output"] = output
-        ref["completed_by"] = completed_by
+        ref["completed_by"] = caller_identity
         ref["is_manual_completion"] = is_manual
         rec.input_ref = dict(ref)
         flag_modified(rec, "input_ref")
@@ -1345,8 +1403,10 @@ class CanvasService:
             agent_id=rec.worker_id,
             details={
                 "output_preview": output[:200],
-                "completed_by": completed_by,
+                "completed_by": caller_identity,
                 "is_manual_completion": is_manual,
+                "verification_id": verification.get("verification_id") if verification else None,
+                "bound_artifact_hash": ref.get("bound_artifact_hash"),
             },
         )
         self.session.flush()
@@ -1494,8 +1554,9 @@ class CanvasService:
         actor: Actor,
         instance_id: str,
         subtask_id: str,
-        verifier_id: str,
         test_results: dict[str, Any],
+        verifier_id: str | None = None,
+        artifact_hash: str | None = None,
     ) -> DispatchRecord:
         actor.require_owner()
         self.get_instance(actor, instance_id)
@@ -1507,15 +1568,26 @@ class CanvasService:
         if not rec:
             raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
 
+        # Verifier identity determined by service authentication
+        verifier_identity = f"service/{actor.service_id}" if actor.service_id else (verifier_id or f"owner/{actor.owner_id}")
+
         passed = bool(test_results.get("passed", False))
         ref = dict(rec.input_ref or {})
+        verification_id = test_results.get("verification_id") or f"verif-{uuid4().hex[:12]}"
+        art_hash = artifact_hash or test_results.get("composite_artifact_hash") or test_results.get("artifact_hash")
+
         verification_entry = {
-            "verifier_id": verifier_id,
+            "verification_id": verification_id,
+            "verifier_id": verifier_identity,
             "verified_at": utcnow().isoformat(),
             "passed": passed,
             "details": test_results,
+            "artifact_hash": art_hash,
+            "composite_artifact_hash": art_hash,
         }
         ref["verification"] = verification_entry
+        if art_hash:
+            ref["artifact_hash"] = art_hash
         rec.input_ref = dict(ref)
         flag_modified(rec, "input_ref")
 
@@ -1524,8 +1596,63 @@ class CanvasService:
             instance_id,
             event_type,
             task_id=subtask_id,
-            agent_id=verifier_id,
+            agent_id=verifier_identity,
             details=verification_entry,
+        )
+        self.session.flush()
+        return rec
+
+    def execute_trusted_verification(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        workspace_dir: str,
+        command: list[str] | str,
+        target_files: list[str] | None = None,
+        timeout_seconds: float = 30.0,
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
+        )
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+
+        verifier_identity = f"service/{actor.service_id}" if actor.service_id else f"owner/{actor.owner_id}"
+
+        # Run TrustedVerificationRunner on actual workspace files
+        receipt = TrustedVerificationRunner.execute_test(
+            workspace_dir=workspace_dir,
+            command=command,
+            timeout_seconds=timeout_seconds,
+            target_files=target_files,
+        )
+        receipt["verifier_id"] = verifier_identity
+
+        ref = dict(rec.input_ref or {})
+        ref["verification"] = receipt
+        ref["artifact_hash"] = receipt["composite_artifact_hash"]
+        rec.input_ref = dict(ref)
+        flag_modified(rec, "input_ref")
+
+        event_type = "agent.independent_verification_passed" if receipt["passed"] else "agent.independent_verification_failed"
+        self._emit_event(
+            instance_id,
+            event_type,
+            task_id=subtask_id,
+            agent_id=verifier_identity,
+            details={
+                "verification_id": receipt["verification_id"],
+                "passed": receipt["passed"],
+                "exit_code": receipt["exit_code"],
+                "duration_ms": receipt["duration_ms"],
+                "composite_artifact_hash": receipt["composite_artifact_hash"],
+                "artifacts_count": len(receipt["artifact_digests"]),
+            },
         )
         self.session.flush()
         return rec

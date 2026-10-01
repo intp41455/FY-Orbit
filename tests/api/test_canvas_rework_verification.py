@@ -156,8 +156,9 @@ def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClie
     # -------------------------------------------------------------------------
     # Step 6: 独立验证 (Independent Verification)
     # -------------------------------------------------------------------------
+    artifact_hash = resubmit_payload["artifacts"][0]["sha256"]
     verify_payload = {
-        "verifier_id": "Verifier/independent-pytest",
+        "artifact_hash": artifact_hash,
         "test_results": {
             "passed": True,
             "tests_run": 4,
@@ -170,6 +171,7 @@ def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClie
             ],
             "execution_time_ms": 45,
             "coverage_pct": 100.0,
+            "composite_artifact_hash": artifact_hash,
         },
     }
     r_verify = client.post(
@@ -180,15 +182,19 @@ def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClie
     assert r_verify.status_code == 200, r_verify.text
     verify_data = r_verify.json()
     assert verify_data["verification"]["passed"] is True
+    verification_id = verify_data["verification"]["verification_id"]
     record_step("6_independent_verification", verify_payload, verify_data)
 
     # -------------------------------------------------------------------------
     # Step 7: 最终验收与预算结算 (Final Acceptance & Budget Settlement)
     # -------------------------------------------------------------------------
+    # Executor identity is determined strictly by authentication actor (cannot be spoofed by request body).
     complete_payload = {
         "output": "脱敏模块经独立测试验证全部达标，正式验收合并。返工轮次：1，最终状态：合格。",
         "settled_budget": 0.03,
-        "completed_by": "EngineeringAgent/reworked",
+        "artifact_version": artifact_hash,
+        "verification_id": verification_id,
+        "completed_by": "EngineeringAgent/spoofed_attempt",  # Ignored by server
     }
     r_complete = client.post(
         f"/api/canvas/instances/{inst_id}/subtasks/{subtask_id}/complete",
@@ -198,7 +204,11 @@ def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClie
     assert r_complete.status_code == 200, r_complete.text
     complete_data = r_complete.json()
     assert complete_data["state"] == "completed"
-    assert complete_data["is_manual_completion"] is False
+    # Identity is determined by server authentication (owner session -> owner/manual), not spoofed body string
+    assert complete_data["completed_by"] == "owner/manual"
+    assert complete_data["is_manual_completion"] is True
+    assert complete_data["bound_verification_id"] == verification_id
+    assert complete_data["bound_artifact_hash"] == artifact_hash
     record_step("7_final_acceptance", complete_payload, complete_data)
 
     # -------------------------------------------------------------------------

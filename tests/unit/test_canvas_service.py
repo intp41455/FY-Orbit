@@ -1419,3 +1419,61 @@ def test_complete_subtask_distinguishes_manual_completion(
     assert comp_events[0]["details"]["completed_by"] == "owner/manual"
     assert comp_events[0]["details"]["is_manual_completion"] is True
 
+
+def test_cancel_subtask_releases_budget_and_confirms_process_tree_killed(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """Verify subtask cancellation terminates process tree and releases budget reservation."""
+    from find_yourself.adapters.community_harness_adapter import _ACTIVE_EXECUTIONS
+
+    session = canvas_service.session
+    root_task = create_task(session, owner, task_id="task-cancel-tree-01", domain="work")
+    inst = canvas_service.create_instance(owner, project_name="取消与进程树清理测试", template_id="work")
+
+    # Dispatch subtask with $0.05 budget reservation
+    rec = canvas_service.dispatch_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        root_task_id=root_task.id,
+        worker_id="EngineeringAgent",
+        goal="执行长时间编译与测试任务",
+        budget_slice=0.05,
+    )
+    assert rec.state in ("dispatched", "running")
+
+    # Simulate active execution registered in adapter
+    exec_id = "exec-test-cancel-tree-123"
+    _ACTIVE_EXECUTIONS[exec_id] = {
+        "task_id": rec.subtask_id,
+        "executor": "peri",
+        "status": "running",
+        "events": [],
+        "cancelled": False,
+    }
+    rec_input = dict(rec.input_ref or {})
+    rec_input["harness_result"] = {"execution_id": exec_id}
+    rec.input_ref = rec_input
+    session.flush()
+
+    # Cancel the subtask
+    cancelled_rec = canvas_service.cancel_subtask(
+        actor=owner,
+        instance_id=inst.id,
+        subtask_id=rec.subtask_id,
+        reason="用户主动取消长时间任务",
+    )
+    assert cancelled_rec.state == "cancelled"
+    assert cancelled_rec.input_ref["cancel_reason"] == "用户主动取消长时间任务"
+    assert cancelled_rec.input_ref["process_tree_killed"] is True
+
+    # Verify adapter recorded cancellation
+    assert _ACTIVE_EXECUTIONS[exec_id]["cancelled"] is True
+    assert _ACTIVE_EXECUTIONS[exec_id]["status"] == "cancelled"
+
+    # Verify emitted event
+    events = canvas_service.get_events(owner, inst.id)
+    cancel_events = [e for e in events if e["event_type"] == "agent.task_cancelled" and e["task_id"] == rec.subtask_id]
+    assert len(cancel_events) == 1
+    assert cancel_events[0]["details"]["process_tree_killed"] is True
+
+

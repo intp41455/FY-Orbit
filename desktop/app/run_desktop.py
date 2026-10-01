@@ -149,6 +149,14 @@ def main() -> int:
                 webbrowser.open(f"http://127.0.0.1:{port}")
 
     print("[FindYourself Desktop] Running. Close window or press Ctrl+C to exit.")
+    win_pid_file = run_dir / "window.pid"
+    if window_proc:
+        try:
+            win_pid_file.write_text(str(window_proc.pid), encoding="ascii")
+            print(f"[FindYourself Desktop] Window process PID: {window_proc.pid}")
+        except Exception:
+            pass
+
     try:
         if window_proc:
             # Wait for user to close the application window
@@ -160,6 +168,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n[FindYourself Desktop] Stopping service...")
     finally:
+        if win_pid_file.exists():
+            win_pid_file.unlink(missing_ok=True)
         if server_proc.poll() is None:
             if sys.platform == "win32":
                 try:
