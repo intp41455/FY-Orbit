@@ -177,5 +177,33 @@ Write-Host " [Find Yourself Desktop] Service Ready! (PID: $($proc.Id))" -Foregro
 Write-Host " URL: http://127.0.0.1:$Port" -ForegroundColor Green
 
 if (-not $NoBrowser) {
-    Start-Process "http://127.0.0.1:$Port"
+    $webviewDataDir = Join-Path $RunDir "webview-profile"
+    if (-not (Test-Path $webviewDataDir)) {
+        New-Item -ItemType Directory -Path $webviewDataDir -Force | Out-Null
+    }
+
+    $edgeExe = $null
+    $edgeCandidates = @(
+        "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        "C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+        "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe"
+    )
+    foreach ($cand in $edgeCandidates) {
+        if (Test-Path $cand) {
+            $edgeExe = $cand
+            break
+        }
+    }
+
+    if ($edgeExe) {
+        Write-Host " [Find Yourself Desktop] Launching standalone application window (Edge App Mode)..." -ForegroundColor Cyan
+        $winProc = Start-Process -FilePath $edgeExe `
+            -ArgumentList "--app=http://127.0.0.1:$Port", "--window-size=1280,840", "--user-data-dir=`"$webviewDataDir`"" `
+            -PassThru
+        Write-Host " [Find Yourself Desktop] Standalone window launched (PID: $($winProc.Id))." -ForegroundColor Green
+    } else {
+        Write-Host " [Find Yourself Desktop] Standalone window engine not detected, opening default browser as fallback..." -ForegroundColor Yellow
+        Start-Process "http://127.0.0.1:$Port"
+    }
 }
+

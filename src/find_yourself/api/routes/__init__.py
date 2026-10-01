@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from . import a2a, agents, assessments, auth, canvas, catalog, conversations, export, health, inference, media, memory, profiles, proposals, skills, tasks
+from . import a2a, agents, assessments, auth, canvas, catalog, charts, conversations, export, health, inference, media, memory, profiles, proposals, skills, sync, tasks
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -21,4 +21,6 @@ api_router.include_router(skills.router)
 api_router.include_router(media.router)
 api_router.include_router(profiles.router)
 api_router.include_router(canvas.router)
+api_router.include_router(sync.router)
+api_router.include_router(charts.router)
 

@@ -33,6 +33,7 @@ from ..services.proposal import ProposalService
 from ..services.skill import SkillService
 from ..services.profile import ProfileService
 from ..services.canvas import CanvasService
+from ..services.sync import SyncService
 
 SESSION_COOKIE = "fy_session"
 CSRF_HEADER = "x-csrf-token"
@@ -54,6 +55,7 @@ class Services:
     agents: AgentService
     profiles: ProfileService
     canvas: CanvasService
+    sync: SyncService
 
 
 def get_settings(request: Request) -> Settings:
@@ -66,6 +68,9 @@ def get_db(request: Request):
         yield session
     finally:
         session.close()
+
+
+get_session = get_db
 
 
 def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> Services:
@@ -86,6 +91,7 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         agents=AgentService(db, audit),
         profiles=ProfileService(db, audit),
         canvas=CanvasService(db, audit, budget=budget_svc, grants=grants),
+        sync=SyncService(db),
     )
 
 

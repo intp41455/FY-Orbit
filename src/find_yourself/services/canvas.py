@@ -24,6 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from find_yourself.adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
 from find_yourself.adapters.hermes_adapter import HermesAdapter
 from find_yourself.adapters.research_agent_adapter import ResearchAgentAdapter
 from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, Grant, HandoffPacket, Memory, Task
@@ -41,7 +42,7 @@ TEMPLATES = {
         "name": "私人事务模板",
         "domain": "personal",
         "center": "Hermes",
-        "workers": ["WorkBuddy", "豆包", "ResearchAgent"],
+        "workers": ["WorkBuddy", "豆包", "ResearchAgent", "Peri"],
         "description": "处理个人规划、生活事务、内容创作与知识整理。任何敏感资料严格按需授权。",
         "default_budget": 0.50,
         "max_depth": 3,
@@ -51,12 +52,13 @@ TEMPLATES = {
         "name": "工作工程模板",
         "domain": "work",
         "center": "Codex",
-        "workers": ["OpenCode", "Pi agent", "EngineeringAgent"],
+        "workers": ["OpenCode", "Pi agent", "EngineeringAgent", "Peri"],
         "description": "处理需求拆解、架构设计、代码实现、测试、审查与发布准备。独立工作域与隔离工作区。",
         "default_budget": 2.00,
         "max_depth": 4,
     },
 }
+
 
 
 def _inspect_goal_privacy(
@@ -127,6 +129,7 @@ class CanvasService:
         grants: GrantService | None = None,
         hermes_adapter: HermesAdapter | None = None,
         research_agent_adapter: ResearchAgentAdapter | None = None,
+        peri_adapter: PeriAdapter | None = None,
     ):
         self.session = session
         self.audit = audit
@@ -134,7 +137,9 @@ class CanvasService:
         self.grants = grants or GrantService(session, audit)
         self.hermes_adapter = hermes_adapter or HermesAdapter()
         self.research_agent_adapter = research_agent_adapter or ResearchAgentAdapter()
+        self.peri_adapter = peri_adapter or PeriAdapter()
         self._event_lock = threading.RLock()
+
 
     # -----------------------------------------------------------------------
     # Templates & Connectors
@@ -286,7 +291,22 @@ class CanvasService:
             "domains": ["work"],
         })
 
+        # 8. Peri (Rust Agent)
+        peri_probe = self.peri_adapter.probe()
+        connectors.append({
+            "name": "Peri",
+            "protocol": "CLI Headless / ACP",
+            "role": "worker",
+            "stage": peri_probe.get("stage", "本机握手通过"),
+            "healthy": bool(peri_probe.get("healthy")),
+            "binary_path": peri_probe.get("binary_path"),
+            "version": peri_probe.get("version"),
+            "blocking_reason": peri_probe.get("blocking_reason"),
+            "domains": ["personal", "work"],
+        })
+
         return connectors
+
 
     # -----------------------------------------------------------------------
     # Instance Lifecycle
@@ -1051,8 +1071,9 @@ class CanvasService:
             val_passed = bool(exec_res.get("validation_passed"))
             duration_ms = exec_res.get("duration_ms", 0)
             est_cost = exec_res.get("estimated_cost_usd", 0.01)
-            cost_status = exec_res.get("cost_status", "actual")
+            cost_status = exec_res.get("cost_status", "estimated")
             output_content = exec_res.get("output", "")
+            completed_by_val = exec_res.get("completed_by", "ResearchAgent/local_stub")
 
             updated_input_ref["execution_trace"] = exec_res
             updated_input_ref["tokens"] = exec_res.get("tokens")
@@ -1061,7 +1082,7 @@ class CanvasService:
             updated_input_ref["duration_ms"] = duration_ms
             updated_input_ref["validation_passed"] = val_passed
             updated_input_ref["output"] = output_content
-            updated_input_ref["completed_by"] = "ResearchAgent/A2A"
+            updated_input_ref["completed_by"] = completed_by_val
             updated_input_ref["is_manual_completion"] = False
 
             if exec_res.get("state") == "completed" and val_passed:
@@ -1085,7 +1106,7 @@ class CanvasService:
                         "duration_ms": duration_ms,
                         "model": exec_res.get("model"),
                         "tokens": exec_res.get("tokens"),
-                        "completed_by": "ResearchAgent/A2A",
+                        "completed_by": completed_by_val,
                         "is_manual_completion": False,
                     },
                 )
@@ -1129,8 +1150,126 @@ class CanvasService:
             self.session.commit()
             return record
 
+        elif worker_id.lower() in ("peri", "peri+ecc") and (
+            auto_run is True
+            or (auto_run is None and (input_ref_dict.get("auto_run") is True or input_ref_dict.get("harness_auto_execute") is True))
+        ):
+            local_exec_id = f"exec-local-peri-{uuid4().hex[:12]}"
+            updated_input_ref["local_execution_id"] = local_exec_id
+
+            # PRE-EXECUTION PERSISTENCE & DURABLE OUTBOX:
+            record = DispatchRecord(
+                id=f"disp-{uuid4().hex[:12]}",
+                instance_id=instance_id,
+                root_task_id=root_task_id,
+                subtask_id=assigned_subtask_id,
+                orchestrator_id=inst.orchestrator_id,
+                worker_id=worker_id,
+                idempotency_key=idem_key,
+                input_ref=updated_input_ref,
+                goal=goal.strip(),
+                acceptance_criteria=str(acceptance_criteria).strip() if not isinstance(acceptance_criteria, dict) else str(acceptance_criteria),
+                budget_slice=budget_slice,
+                deadline=deadline or (utcnow() + timedelta(hours=2)),
+                state="running",
+            )
+            self.session.add(record)
+            self._emit_event(
+                instance_id,
+                "task.dispatched",
+                task_id=assigned_subtask_id,
+                agent_id=worker_id,
+                details={
+                    "goal": goal,
+                    "orchestrator": inst.orchestrator_id,
+                    "budget_slice": budget_slice,
+                    "adapter_status": "connected",
+                    "local_execution_id": local_exec_id,
+                },
+            )
+            self.session.commit()
+
+            envelope = TaskEnvelope(
+                task_id=assigned_subtask_id,
+                goal=goal,
+                workspace_dir=input_ref_dict.get("workspace_dir", ""),
+                budget_limit_usd=budget_slice,
+                deadline_seconds=30.0,
+                input_refs=updated_input_ref,
+                executor=worker_id.lower(),
+                ecc_skills=input_ref_dict.get("ecc_skills", []),
+            )
+            harness_res = self.peri_adapter.submit(envelope)
+            updated_input_ref["harness_result"] = {
+                "execution_id": harness_res.execution_id,
+                "status": harness_res.status,
+                "exit_code": harness_res.exit_code,
+                "duration_ms": harness_res.duration_ms,
+                "cost_status": harness_res.cost_status,
+                "artifacts": harness_res.artifacts,
+                "error": harness_res.error_message,
+            }
+
+            if harness_res.status == "rejected_boundary":
+                record.state = "failed"
+                record.completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.task_failed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"reason": "Sandbox boundary violation rejected", "error": harness_res.error_message},
+                )
+                if self.budget and res:
+                    self.budget.release(actor, res.id)
+            elif harness_res.status == "blocked_credentials":
+                # External credentials missing: hold reservation in unknown_needs_reconciliation, don't fake zero cost!
+                record.state = "unknown_needs_reconciliation"
+                record.completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.reconciliation_required",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"reason": "LLM provider credentials missing on host", "local_execution_id": local_exec_id},
+                )
+                if self.budget and res:
+                    self.budget.hold_unknown_pricing(actor, res.id, reason="credentials_missing_external_hold")
+            elif harness_res.status == "completed":
+                record.state = "completed"
+                record.completed_at = utcnow()
+                updated_input_ref["output"] = harness_res.output
+                self._emit_event(
+                    instance_id,
+                    "agent.task_completed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"output_preview": harness_res.output[:200], "duration_ms": harness_res.duration_ms},
+                )
+                if self.budget and res:
+                    settle_amt = Decimal(str(min(harness_res.estimated_cost_usd, budget_slice)))
+                    self.budget.settle(actor, res.id, settled_amount=settle_amt)
+            else:
+                record.state = "failed"
+                record.completed_at = utcnow()
+                self._emit_event(
+                    instance_id,
+                    "agent.task_failed",
+                    task_id=assigned_subtask_id,
+                    agent_id=worker_id,
+                    details={"error": harness_res.error_message},
+                )
+                if self.budget and res:
+                    self.budget.release(actor, res.id)
+
+            record.input_ref = dict(updated_input_ref)
+            flag_modified(record, "input_ref")
+            self.session.commit()
+            return record
+
         else:
             # Internal or other worker: mark dispatched
+
             dispatch_state = "dispatched"
             record = DispatchRecord(
                 id=f"disp-{uuid4().hex[:12]}",
@@ -1236,6 +1375,13 @@ class CanvasService:
         rec.completed_at = utcnow()
         ref = dict(rec.input_ref or {})
         ref["cancel_reason"] = reason
+
+        # Terminate running process tree if registered
+        exec_id = ref.get("harness_result", {}).get("execution_id")
+        if exec_id:
+            self.peri_adapter.cancel(exec_id)
+            ref["process_tree_killed"] = True
+
         rec.input_ref = dict(ref)
         flag_modified(rec, "input_ref")
 
@@ -1248,10 +1394,142 @@ class CanvasService:
             "agent.task_cancelled",
             task_id=subtask_id,
             agent_id=rec.worker_id,
-            details={"reason": reason},
+            details={"reason": reason, "process_tree_killed": bool(exec_id)},
         )
         self.session.flush()
         return rec
+
+    def request_rework(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        feedback: str,
+        criteria_unmet: list[str] | None = None,
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
+        )
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+        if rec.state in ("completed", "failed", "cancelled"):
+            raise Conflict(f"Cannot request rework on terminal subtask: {rec.state}")
+
+        rec.state = "waiting_rework"
+        rec.attempts += 1
+        ref = dict(rec.input_ref or {})
+        rework_entry = {
+            "attempt": rec.attempts,
+            "requested_at": utcnow().isoformat(),
+            "feedback": feedback,
+            "criteria_unmet": criteria_unmet or [],
+        }
+        history = list(ref.get("rework_history", []))
+        history.append(rework_entry)
+        ref["rework_history"] = history
+        rec.input_ref = dict(ref)
+        flag_modified(rec, "input_ref")
+
+        self._emit_event(
+            instance_id,
+            "agent.rework_requested",
+            task_id=subtask_id,
+            agent_id=rec.worker_id,
+            details={
+                "attempt": rec.attempts,
+                "feedback": feedback,
+                "criteria_unmet": criteria_unmet or [],
+            },
+        )
+        self.session.flush()
+        return rec
+
+    def resubmit_subtask(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        output: str,
+        artifacts: list[dict[str, Any]] | None = None,
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
+        )
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+        if rec.state != "waiting_rework":
+            raise Conflict(f"Subtask is not in waiting_rework state (current: {rec.state})")
+
+        rec.state = "running"
+        ref = dict(rec.input_ref or {})
+        ref["output"] = output
+        ref["reworked_artifacts"] = artifacts or []
+        rec.input_ref = dict(ref)
+        flag_modified(rec, "input_ref")
+
+        self._emit_event(
+            instance_id,
+            "agent.subtask_resubmitted",
+            task_id=subtask_id,
+            agent_id=rec.worker_id,
+            details={
+                "attempt": rec.attempts,
+                "output_preview": output[:200],
+                "artifacts_count": len(artifacts or []),
+            },
+        )
+        self.session.flush()
+        return rec
+
+    def verify_subtask(
+        self,
+        actor: Actor,
+        instance_id: str,
+        subtask_id: str,
+        verifier_id: str,
+        test_results: dict[str, Any],
+    ) -> DispatchRecord:
+        actor.require_owner()
+        self.get_instance(actor, instance_id)
+        stmt = select(DispatchRecord).where(
+            DispatchRecord.instance_id == instance_id,
+            DispatchRecord.subtask_id == subtask_id,
+        )
+        rec = self.session.execute(stmt).scalar_one_or_none()
+        if not rec:
+            raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
+
+        passed = bool(test_results.get("passed", False))
+        ref = dict(rec.input_ref or {})
+        verification_entry = {
+            "verifier_id": verifier_id,
+            "verified_at": utcnow().isoformat(),
+            "passed": passed,
+            "details": test_results,
+        }
+        ref["verification"] = verification_entry
+        rec.input_ref = dict(ref)
+        flag_modified(rec, "input_ref")
+
+        event_type = "agent.independent_verification_passed" if passed else "agent.independent_verification_failed"
+        self._emit_event(
+            instance_id,
+            event_type,
+            task_id=subtask_id,
+            agent_id=verifier_id,
+            details=verification_entry,
+        )
+        self.session.flush()
+        return rec
+
 
     def record_handoff(
         self,

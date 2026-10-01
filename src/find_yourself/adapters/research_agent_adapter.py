@@ -29,21 +29,24 @@ class ResearchAgentAdapter:
         card = self.service.get_agent_card()
         return {
             "name": "ResearchAgent",
-            "protocol": "A2A / JSON-RPC 2.0",
+            "protocol": "A2A / JSON-RPC 2.0 (Internal Stub)",
             "role": "worker",
-            "stage": "本机握手通过",
+            "stage": "发现接口",
             "healthy": not self.service.draining,
             "version": self.service.version,
-            "binary_path": "INTERNAL_A2A_SERVICE",
+            "binary_path": "INTERNAL_A2A_STUB",
+            "execution_type": "local_stub",
+            "is_external_agent": False,
+            "simulated": True,
             "capabilities": {
-                "academic_search": True,
+                "academic_search": "simulated",
                 "citation_check": True,
                 "evidence_verification": True,
                 "handoff_ingestion": True,
                 "oneshot": True,
                 "reconcile": False,
             },
-            "blocking_reason": None if not self.service.draining else "Agent is currently in draining mode",
+            "blocking_reason": "当前运行于内部规则桩模式（local_stub/simulated），未连接外部独立进程或真实学术数据库",
             "domains": ["personal", "work"],
             "agent_card": card,
         }
@@ -131,11 +134,12 @@ class ResearchAgentAdapter:
 
         # 3. Format structured, authentic agent output
         output_text = (
-            f"[ResearchAgent 独立文献调研与论据合成]\n"
+            f"[ResearchAgent 本地规则桩/local_stub 论据整理]\n"
             f"调研结论: {findings}\n"
-            f"引用文献: {', '.join(citations)}\n"
+            f"引用文献 (规则桩模拟/未联网实测): {', '.join(citations)}\n"
             f"证据哈希: {evidence_hash}\n"
-            f"置信度: {confidence_score * 100:.1f}%"
+            f"置信度: {confidence_score * 100:.1f}%\n"
+            f"执行模式: local_stub (simulated)"
         )
 
         # 4. Acceptance criteria validation
@@ -165,7 +169,7 @@ class ResearchAgentAdapter:
         # 5. Truthful token and cost metrics
         combined_len = sum(len(p.get("text", "")) for p in parts) + len(output_text)
         tokens = max(150, combined_len // 3 + 100)
-        # Authentic cost rate: $0.000002 per token + $0.002 base execution fee
+        # Estimated cost rate: $0.000002 per token + $0.002 base execution fee (clearly labeled estimated)
         estimated_cost_usd = round(tokens * 0.000002 + 0.002, 4)
 
         external_session_id = f"sess-research-{uuid4().hex[:12]}"
@@ -189,8 +193,10 @@ class ResearchAgentAdapter:
             "tokens": tokens,
             "model": "research-synth-v1",
             "estimated_cost_usd": estimated_cost_usd,
-            "cost_status": "actual",
-            "completed_by": "ResearchAgent/A2A",
+            "cost_status": "estimated",
+            "completed_by": "ResearchAgent/local_stub",
+            "execution_type": "local_stub",
+            "is_external_agent": False,
             "is_manual_completion": False,
             "handoff_ingested": bool(handoff_packet),
             "stage_transitions": [

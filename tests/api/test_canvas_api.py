@@ -293,3 +293,80 @@ def test_canvas_api_hermes_dispatch_and_handoff_lifecycle(client: TestClient, mo
     assert any(e["event_type"] == "agent.task_completed" and e["task_id"] == subtask_1_id for e in events)
     assert any(e["event_type"] == "agent.task_completed" and e["task_id"] == subtask_2_id for e in events)
     assert any(e["event_type"] == "handoff.created" and e["task_id"] == subtask_1_id for e in events)
+
+
+def test_canvas_community_harnesses_probe(client: TestClient) -> None:
+    headers = login_owner(client)
+    r = client.get("/api/canvas/harnesses", headers=headers)
+    assert r.status_code == 200
+    items = r.json()["items"]
+    assert len(items) == 4
+    names = [i["name"] for i in items]
+    assert "CCB" in names
+    assert "cc-fleet" in names
+    assert "Peri" in names
+    assert "ECC" in names
+
+
+def test_canvas_community_harness_run_and_boundary_rejection(client: TestClient) -> None:
+    headers = login_owner(client)
+
+    # 1. Successful run with boundary enforcement
+    r_run = client.post(
+        "/api/canvas/harness-run",
+        json={
+            "task_id": "api-task-peri-1",
+            "goal": "echo 'safe synthetic execution'",
+            "executor": "peri",
+            "budget_limit_usd": 0.05,
+            "deadline_seconds": 15.0,
+        },
+        headers=headers,
+    )
+    assert r_run.status_code == 200
+    res = r_run.json()
+    assert res["task_id"] == "api-task-peri-1"
+    assert res["executor"] == "peri"
+    assert res["sandbox_boundary_enforced"] is True
+    assert res["status"] in ("completed", "blocked_credentials")
+
+    # 2. Path traversal attack blocked with status 'rejected_boundary'
+    r_attack = client.post(
+        "/api/canvas/harness-run",
+        json={
+            "task_id": "api-task-peri-attack",
+            "goal": "read private env",
+            "workspace_dir": "../../.env",
+            "executor": "peri",
+        },
+        headers=headers,
+    )
+    assert r_attack.status_code == 200
+    atk = r_attack.json()
+    assert atk["status"] == "rejected_boundary"
+    assert atk["exit_code"] == 403
+    assert atk["sandbox_boundary_enforced"] is True
+
+
+def test_canvas_community_harness_cancel_api(client: TestClient) -> None:
+    headers = login_owner(client)
+    r_cancel = client.post(
+        "/api/canvas/harness-cancel",
+        json={"execution_id": "nonexistent-exec-id"},
+        headers=headers,
+    )
+    assert r_cancel.status_code == 200
+    assert r_cancel.json()["cancelled"] is False
+
+
+def test_canvas_community_harness_benchmark_api(client: TestClient) -> None:
+    headers = login_owner(client)
+    r_bench = client.get("/api/canvas/benchmark/summary", headers=headers)
+    assert r_bench.status_code == 200
+    summary = r_bench.json()["summary"]
+    assert summary["evaluation_type"] == "synthetic_unit_assertions"
+    assert "retraction_statement" in summary
+    assert summary["live_model_harness_benchmark"] == "BLOCKED_EXTERNAL"
+    assert summary["status"] == "PARTIAL"
+
+

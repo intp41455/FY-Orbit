@@ -1,0 +1,107 @@
+"""API integration tests for charts: compute, import, and interpret."""
+
+from __future__ import annotations
+
+import pytest
+from fastapi.testclient import TestClient
+from helpers import login_owner
+
+
+def test_chart_compute_and_interpret_flow(client: TestClient) -> None:
+    headers = login_owner(client)
+
+    # 1. Compute Bazi chart
+    res_bazi = client.post(
+        "/api/charts/compute",
+        json={
+            "birth_date": "1992-08-18",
+            "birth_time": "14:30",
+            "timezone_str": "Asia/Shanghai",
+            "system": "bazi",
+        },
+        headers=headers,
+    )
+    assert res_bazi.status_code == 200
+    bazi_data = res_bazi.json()
+    assert bazi_data["system"] == "bazi"
+    assert bazi_data["unknown_time"] is False
+    assert len(bazi_data["data_hash"]) == 64
+    chart_id = bazi_data["chart_id"]
+
+    # 2. Interpret the computed chart
+    res_interp = client.post(
+        "/api/charts/interpret",
+        json={
+            "chart_id": chart_id,
+            "perspective": "psychological",
+            "user_notes": "关于职业转型的探索",
+            "authorized_domain": "personal",
+            "include_web_search": True,
+            "include_personal_memory": True,
+        },
+        headers=headers,
+    )
+    assert res_interp.status_code == 200
+    interp_data = res_interp.json()
+    assert interp_data["chart_id"] == chart_id
+    assert "computed_chart" in interp_data["sections"]
+    assert "public_reference" in interp_data["sections"]
+    assert "hypothesis_reasoning" in interp_data["sections"]
+    assert "免责声明" in interp_data["disclaimer"]
+    assert len(interp_data["web_citations"]) > 0
+
+
+def test_chart_compute_western(client: TestClient) -> None:
+    headers = login_owner(client)
+
+    res_west = client.post(
+        "/api/charts/compute",
+        json={
+            "birth_date": "1998-12-05",
+            "birth_time": "09:15",
+            "timezone_str": "Europe/London",
+            "longitude": -0.12,
+            "latitude": 51.5,
+            "system": "western",
+        },
+        headers=headers,
+    )
+    assert res_west.status_code == 200
+    data = res_west.json()
+    assert data["system"] == "western"
+    assert "Sun" in data["computed_data"]["planets"]
+
+
+def test_chart_import_and_interpret_flow(client: TestClient) -> None:
+    headers = login_owner(client)
+
+    # 1. Import external raw chart text
+    res_import = client.post(
+        "/api/charts/import",
+        json={
+            "raw_text": "命主八字：甲子年 丙寅月 戊辰日 庚申时",
+            "source_software": "AstroScannerOCR",
+            "system": "bazi",
+        },
+        headers=headers,
+    )
+    assert res_import.status_code == 200
+    imp_data = res_import.json()
+    assert imp_data["is_external_imported"] is True
+    assert imp_data["external_source"] == "AstroScannerOCR"
+    chart_id = imp_data["chart_id"]
+
+    # 2. Interpret imported chart
+    res_interp = client.post(
+        "/api/charts/interpret",
+        json={
+            "chart_id": chart_id,
+            "perspective": "traditional",
+            "include_web_search": True,
+        },
+        headers=headers,
+    )
+    assert res_interp.status_code == 200
+    interp = res_interp.json()
+    assert "computed_chart" in interp["sections"]
+    assert "public_reference" in interp["sections"]

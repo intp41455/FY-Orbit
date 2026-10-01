@@ -39,6 +39,9 @@ from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
 import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
 
 # --- Test-only SQLite TZ shim (see module docstring; Core defect noted) -------
 def _tz_result_value(self, value, dialect):

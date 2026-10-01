@@ -51,6 +51,40 @@ class CompleteSubtaskRequest(BaseModel):
     completed_by: str = Field(default="owner/manual")
 
 
+class CancelSubtaskRequest(BaseModel):
+    reason: str = Field(default="User cancelled subtask")
+
+
+class RequestReworkRequest(BaseModel):
+    feedback: str = Field(min_length=1)
+    criteria_unmet: list[str] = Field(default_factory=list)
+
+
+class ResubmitSubtaskRequest(BaseModel):
+    output: str = Field(default="")
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class VerifySubtaskRequest(BaseModel):
+    verifier_id: str = Field(default="Verifier/independent")
+    test_results: dict[str, Any] = Field(default_factory=dict)
+
+
+class HarnessRunRequest(BaseModel):
+    task_id: str = Field(min_length=1, max_length=64)
+    goal: str = Field(min_length=1, max_length=300)
+    executor: str = Field(default="peri", max_length=64)
+    ecc_skills: list[str] = Field(default_factory=list)
+    budget_limit_usd: float = Field(default=0.05, gt=0.0, le=0.50)
+    deadline_seconds: float = Field(default=60.0, gt=0.0, le=600.0)
+    input_refs: dict[str, Any] = Field(default_factory=dict)
+    workspace_dir: str = Field(default="")
+
+
+class HarnessCancelRequest(BaseModel):
+    execution_id: str = Field(min_length=1, max_length=128)
+
+
 @router.get("/templates")
 async def list_templates(
     svc: Services = Depends(get_services),
@@ -63,6 +97,16 @@ async def probe_connectors(
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     return {"items": svc.canvas.probe_connectors()}
+
+
+@router.get("/harnesses")
+async def probe_community_harnesses(
+    actor: Actor = Depends(get_actor),
+) -> dict[str, Any]:
+    """Probe community harness execution candidates (CCB, cc-fleet, Peri, ECC)."""
+    from ...adapters.community_harness_adapter import CommunityHarnessRegistry
+    registry = CommunityHarnessRegistry()
+    return {"items": registry.probe_all()}
 
 
 @router.post("/instances", status_code=status.HTTP_201_CREATED)
@@ -250,3 +294,192 @@ async def complete_subtask(
         "is_manual_completion": (rec.input_ref or {}).get("is_manual_completion", True),
         "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
     }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/cancel")
+async def cancel_subtask(
+    id: str,
+    subtask_id: str,
+    body: CancelSubtaskRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    rec = svc.canvas.cancel_subtask(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        reason=body.reason,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "cancel_reason": (rec.input_ref or {}).get("cancel_reason"),
+        "process_tree_killed": (rec.input_ref or {}).get("process_tree_killed", False),
+        "completed_at": rec.completed_at.isoformat() if rec.completed_at else None,
+    }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/rework")
+async def request_rework(
+    id: str,
+    subtask_id: str,
+    body: RequestReworkRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    rec = svc.canvas.request_rework(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        feedback=body.feedback,
+        criteria_unmet=body.criteria_unmet,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "attempts": rec.attempts,
+        "rework_history": (rec.input_ref or {}).get("rework_history", []),
+    }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/resubmit")
+async def resubmit_subtask(
+    id: str,
+    subtask_id: str,
+    body: ResubmitSubtaskRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    rec = svc.canvas.resubmit_subtask(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        output=body.output,
+        artifacts=body.artifacts,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "attempts": rec.attempts,
+        "output": (rec.input_ref or {}).get("output", ""),
+        "reworked_artifacts": (rec.input_ref or {}).get("reworked_artifacts", []),
+    }
+
+
+@router.post("/instances/{id}/subtasks/{subtask_id}/verify")
+async def verify_subtask(
+    id: str,
+    subtask_id: str,
+    body: VerifySubtaskRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    rec = svc.canvas.verify_subtask(
+        actor,
+        instance_id=id,
+        subtask_id=subtask_id,
+        verifier_id=body.verifier_id,
+        test_results=body.test_results,
+    )
+    svc.session.commit()
+    return {
+        "id": rec.id,
+        "instance_id": rec.instance_id,
+        "subtask_id": rec.subtask_id,
+        "worker_id": rec.worker_id,
+        "state": rec.state,
+        "verification": (rec.input_ref or {}).get("verification", {}),
+    }
+
+
+@router.post("/harness-run")
+async def run_community_harness(
+    body: HarnessRunRequest,
+    actor: Actor = Depends(csrf_protected),
+) -> dict[str, Any]:
+    """Execute a task in isolated sandbox using community harness (Peri / Peri+ECC / etc.)."""
+    from ...adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
+    envelope = TaskEnvelope(
+        task_id=body.task_id,
+        goal=body.goal,
+        workspace_dir=body.workspace_dir,
+        budget_limit_usd=body.budget_limit_usd,
+        deadline_seconds=body.deadline_seconds,
+        input_refs=body.input_refs,
+        executor=body.executor,
+        ecc_skills=body.ecc_skills,
+    )
+    adapter = PeriAdapter()
+    result = adapter.submit(envelope)
+    return {
+        "execution_id": result.execution_id,
+        "task_id": result.task_id,
+        "executor": result.executor,
+        "status": result.status,
+        "exit_code": result.exit_code,
+        "duration_ms": result.duration_ms,
+        "cost_status": result.cost_status,
+        "estimated_cost_usd": result.estimated_cost_usd,
+        "artifacts": result.artifacts,
+        "events": result.events,
+        "output": result.output,
+        "error_message": result.error_message,
+        "sandbox_boundary_enforced": result.sandbox_boundary_enforced,
+    }
+
+
+@router.post("/harness-cancel")
+async def cancel_community_harness(
+    body: HarnessCancelRequest,
+    actor: Actor = Depends(csrf_protected),
+) -> dict[str, Any]:
+    """Cancel an active community harness execution."""
+    from ...adapters.community_harness_adapter import PeriAdapter
+    adapter = PeriAdapter()
+    cancelled = adapter.cancel(body.execution_id)
+    return {"execution_id": body.execution_id, "cancelled": cancelled}
+
+
+@router.post("/benchmark/run")
+async def run_harness_benchmark(
+    actor: Actor = Depends(csrf_protected),
+) -> dict[str, Any]:
+    """Execute the controlled comparison benchmark across Baseline, Peri, and Peri+ECC."""
+    from ...adapters.community_harness_adapter import HarnessBenchmarkRunner
+    runner = HarnessBenchmarkRunner()
+    report = runner.run_benchmark()
+    return report
+
+
+@router.get("/benchmark/summary")
+async def get_benchmark_summary(
+    actor: Actor = Depends(get_actor),
+) -> dict[str, Any]:
+    """Retrieve the latest community harness benchmark comparison results."""
+    from pathlib import Path
+    import json
+    from ...adapters.community_harness_adapter import HarnessBenchmarkRunner, REPO_ROOT
+
+    evidence_file = REPO_ROOT / "evidence" / "community_harness_benchmark.json"
+    if evidence_file.exists():
+        try:
+            return json.loads(evidence_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
+    # Run benchmark if not yet run
+    runner = HarnessBenchmarkRunner()
+    return runner.run_benchmark()
+

@@ -57,6 +57,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             import find_yourself.db.models  # noqa: F401
             import find_yourself.db.profile_models  # noqa: F401
             import find_yourself.db.canvas_models  # noqa: F401
+            import find_yourself.db.sync_models  # noqa: F401
             Base.metadata.create_all(engine)
         session_maker = session_factory(engine)
 

@@ -106,9 +106,9 @@ class ResearchAgentService(BaseSpecializedAgentService):
         super().__init__(
             name="ResearchAgent",
             version=version,
-            description="Specialized agent performing academic search, source synthesis, and citation verification.",
+            description="Specialized agent performing academic search, source synthesis, and citation verification (current mode: local_stub/simulated).",
             skills=[
-                {"name": "academic_search", "description": "Searches trusted academic repositories"},
+                {"name": "academic_search", "description": "Searches trusted academic repositories (simulated in local stub)"},
                 {"name": "citation_check", "description": "Verifies source attribution and provenance"},
             ],
         )
@@ -119,22 +119,28 @@ class ResearchAgentService(BaseSpecializedAgentService):
             if isinstance(part, dict) and "text" in part:
                 text_content += part["text"] + " "
 
-        # Generate grounded citations and findings
+        # Truthful provenance labeling: do NOT claim unqueried arXiv/DOI as real peer-reviewed citations!
         digest = hashlib.sha256(text_content.strip().encode()).hexdigest()[:8]
-        citations = [f"src:arxiv:2026.{digest}", "src:doi:10.1038/s41586-026-0001"]
-        findings = f"Research synthesis for query: '{text_content.strip()}'. Validated against {len(citations)} external academic sources."
+        citations = [f"mock-ref:synthetic-sample-{digest}", "mock-ref:internal-corpus-stub"]
+        findings = (
+            f"[local_stub/规则桩模拟] 基于上游交接输入的提炼结论: '{text_content.strip()}'. "
+            f"注意：当前运行于本地规则桩模式，未发起真实外部学术数据库请求。"
+        )
 
         return {
             "id": task_id,
             "agent": self.name,
             "agent_version": self.version,
+            "execution_type": "local_stub",
             "status": {"state": "completed"},
             "result": {
                 "role": "assistant",
                 "findings": findings,
                 "citations": citations,
-                "confidence_score": 0.96,
+                "confidence_score": 0.85,
                 "evidence_hash": f"sha256:{digest}",
+                "execution_mode": "local_stub",
+                "provenance": "simulated_local_stub",
             },
         }
 

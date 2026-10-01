@@ -142,28 +142,28 @@ def test_hermes_to_research_agent_real_handoff_success(
     assert disp_research.completed_at is not None
 
     ref = disp_research.input_ref
-    assert ref["completed_by"] == "ResearchAgent/A2A"
+    assert ref["completed_by"] == "ResearchAgent/local_stub"
     assert ref["is_manual_completion"] is False
     assert ref["handoff_packet"]["source_worker_id"] == "Hermes"
     assert ref["handoff_packet"]["upstream_output"] == hermes_output
     assert len(ref["handoff_packet"]["completed_items"]) == 2
 
-    # Verify real research agent outputs: citations and evidence
+    # Verify research agent outputs: mock citations and evidence hash
     trace = ref["execution_trace"]
     assert trace["agent"] == "ResearchAgent"
     assert trace["validation_passed"] is True
     assert len(trace["citations"]) >= 2
-    assert any("arxiv" in c or "doi" in c for c in trace["citations"])
+    assert all("mock-ref" in c for c in trace["citations"])
     assert trace["evidence_hash"].startswith("sha256:")
-    assert "[ResearchAgent 独立文献调研与论据合成]" in ref["output"]
+    assert "[ResearchAgent 本地规则桩/local_stub 论据整理]" in ref["output"]
 
-    # Verify truthful budget settlement
+    # Verify truthful budget settlement (estimated cost, NOT claimed actual)
     settlement = ref["budget_settlement"]
     assert settlement["status"] == "settled"
     assert settlement["reserved_amount_usd"] == 0.20
     assert settlement["settled_amount_usd"] > 0.0
     assert settlement["settled_amount_usd"] <= 0.20
-    assert settlement["cost_status"] == "actual"
+    assert settlement["cost_status"] == "estimated"
 
     # Verify reservation in DB is settled
     res_db = session.get(BudgetReservation, ref["reservation_id"])
@@ -182,7 +182,7 @@ def test_hermes_to_research_agent_real_handoff_success(
     agent_completed_events = [e for e in events if e["event_type"] == "agent.task_completed"]
     assert len(agent_completed_events) == 2
     research_event = [e for e in agent_completed_events if e["agent_id"] == "ResearchAgent"][0]
-    assert research_event["details"]["completed_by"] == "ResearchAgent/A2A"
+    assert research_event["details"]["completed_by"] == "ResearchAgent/local_stub"
     assert research_event["details"]["is_manual_completion"] is False
 
 
@@ -319,7 +319,7 @@ def test_cross_domain_handoff_allowed_with_active_grant(
         auto_run=True,
     )
     assert disp.state == "completed"
-    assert disp.input_ref["completed_by"] == "ResearchAgent/A2A"
+    assert disp.input_ref["completed_by"] == "ResearchAgent/local_stub"
     assert disp.input_ref["is_manual_completion"] is False
 
 
