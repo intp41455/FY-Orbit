@@ -238,6 +238,15 @@ class BudgetService:
             id=uuid4().hex, reservation_id=row.id, task_id=row.task_id,
             delta=amt, reason="settle", seq=seq + 1,
         ))
+        # GAP-C1-1 (陛下 2026-10-03 裁决①): settle 时把"预留−实际"的退回额补记账本,
+        # 使 Σreserve == Σsettle + Σsettle_return + Σrelease + Σ未结算预留 恒等式成立。
+        # 预算计算(_tree/_month_budget_used)只统计 reason=="settle", 本行不影响额度语义。
+        unused = row.amount - amt
+        if unused > ZERO:
+            self.s.add(BudgetLedger(
+                id=uuid4().hex, reservation_id=row.id, task_id=row.task_id,
+                delta=unused, reason="settle_return", seq=seq + 2,
+            ))
         self.audit.append(actor, "budget.settled", row.task_id, {"amount": str(amt), "reserved": str(row.amount)})
         self.s.flush()
         return row
@@ -248,6 +257,12 @@ class BudgetService:
             raise NotFound("reservation_not_found", "Reservation not found or not reserving")
         row.state = "released"
         row.released_at = utcnow()
+        # GAP-C1-1 (陛下 2026-10-03 裁决①): release 补记账本退回条目, 账本自洽
+        seq = self.s.execute(select(func.coalesce(func.max(BudgetLedger.seq), 0))).scalar() or 0
+        self.s.add(BudgetLedger(
+            id=uuid4().hex, reservation_id=row.id, task_id=row.task_id,
+            delta=row.amount, reason="release", seq=seq + 1,
+        ))
         self.audit.append(actor, "budget.released", row.task_id, {})
         self.s.flush()
         return row
@@ -286,10 +301,17 @@ class BudgetService:
                 BudgetReservation.state.in_(["reserved", "unknown"]),
             )
         ).scalars()
+        seq = self.s.execute(select(func.coalesce(func.max(BudgetLedger.seq), 0))).scalar() or 0
         for r in active:
             r.state = "cancelled"
             r.released_at = utcnow()
             released += 1
+            # GAP-C1-1 (陛下 2026-10-03 裁决①): cancel 释放补记账本退回条目, 账本自洽
+            self.s.add(BudgetLedger(
+                id=uuid4().hex, reservation_id=r.id, task_id=r.task_id,
+                delta=r.amount, reason="release", seq=seq + 1,
+            ))
+            seq += 1
         task.status = "cancelled"
         # Propagate to child tasks.
         children = self.s.execute(select(Task).where(Task.parent_task_id == task_id)).scalars()
@@ -305,6 +327,12 @@ class BudgetService:
                     r.state = "cancelled"
                     r.released_at = utcnow()
                     released += 1
+                    # GAP-C1-1: child cancel 释放同样补记账本
+                    self.s.add(BudgetLedger(
+                        id=uuid4().hex, reservation_id=r.id, task_id=r.task_id,
+                        delta=r.amount, reason="release", seq=seq + 1,
+                    ))
+                    seq += 1
         self.audit.append(actor, "task.cancelled", task_id, {"released": released})
         self.s.flush()
         return released
