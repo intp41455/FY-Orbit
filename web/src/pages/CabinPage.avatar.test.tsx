@@ -117,10 +117,11 @@ describe('W11 · 小屋有专属小人', () => {
     const [frames, palette] = stageSpy.mock.calls.at(-1)!;
     expect(frames).toHaveLength(2);              // 两帧行走机制
     for (const f of frames as readonly (readonly string[])[]) {
-      expect(f).toHaveLength(32);
+      // A2 定标后角色为 24×48（前后端 AVATAR_HEIGHT 均为 48），此处按新定标断言高度。
+      expect(f).toHaveLength(48);
       for (const row of f) expect(row).toHaveLength(24);
     }
-    expect(Object.keys(palette as Record<string, number>)).toHaveLength(19);
+    expect(Object.keys(palette as Record<string, number>)).toHaveLength(20);
   });
 
   it('展示专属小人短码', async () => {

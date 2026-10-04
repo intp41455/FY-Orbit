@@ -37,7 +37,16 @@ export const CABIN_HOUSES: readonly CabinHouseMeta[] = [
 /* 背景：5 种，渐变天空 + 程序化元素（树林/花/水面/田垄/星球+星星）      */
 /* ------------------------------------------------------------------ */
 
-export type CabinBackgroundId = 'forest' | 'garden' | 'stream' | 'field' | 'planet';
+export type CabinBackgroundId =
+  | 'forest'
+  | 'garden'
+  | 'stream'
+  | 'field'
+  | 'planet'
+  | 'magic_continent'
+  | 'scifi_planet'
+  | 'pastoral_countryside'
+  | 'peach_blossom_spring';
 
 export interface CabinBackgroundMeta {
   id: CabinBackgroundId;
@@ -50,6 +59,10 @@ export const CABIN_BACKGROUNDS: readonly CabinBackgroundMeta[] = [
   { id: 'stream', label: '小溪旁' },
   { id: 'field', label: '田野' },
   { id: 'planet', label: '宇宙星球' },
+  { id: 'magic_continent', label: '魔法大陆' },
+  { id: 'scifi_planet', label: '科幻星球' },
+  { id: 'pastoral_countryside', label: '田园乡村' },
+  { id: 'peach_blossom_spring', label: '古风桃源' },
 ] as const;
 
 /* ------------------------------------------------------------------ */

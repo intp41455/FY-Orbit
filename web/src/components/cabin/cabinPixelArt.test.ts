@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import type { CabinHouseId } from './cabinConfig';
+import { CABIN_BACKGROUNDS, type CabinBackgroundId, type CabinHouseId } from './cabinConfig';
 import {
+  BAMBOO_ROWS,
   BUSH_ROWS,
   CABIN_HOUSE_ART,
   CABIN_ROWS,
@@ -9,15 +10,28 @@ import {
   CLOUD_ROWS,
   CRYSTAL_ROWS,
   FLOWER_ROWS,
+  FRUIT_TREE_ROWS,
+  GLOW_ORE_ROWS,
+  HAYSTACK_ROWS,
   HOUSE_PERSON_RATIO,
+  LANTERN_POST_ROWS,
+  LOTUS_ROWS,
+  MAGIC_CRYSTAL_ROWS,
+  MAGIC_MUSHROOM_ROWS,
+  MAGIC_PORTAL_ROWS,
+  MECH_PLANT_ROWS,
+  PEACH_TREE_ROWS,
   PEBBLE_ROWS,
   PERSON_SCALE,
   PERSON_WALK_FRAMES,
   PINE_ROWS,
   ROCK_ROWS,
+  TECH_PYLON_ROWS,
+  THEME_ART,
   TREE_ROUND_ROWS,
   TUFT_ROWS,
   VILLA_ROWS,
+  WINDMILL_ROWS,
   houseScaleFactor,
   luma,
   planetCrystal,
@@ -129,3 +143,92 @@ describe('A3 · 场景元素精细重绘（×2 尺寸与非背景像素占比）
     }
   });
 });
+
+describe('A4 · 主题美术（5 背景深化 + 4 大主题全要素）', () => {
+  const themeElements = [
+    { name: 'MAGIC_MUSHROOM_ROWS', rows: MAGIC_MUSHROOM_ROWS, h: 16, w: 20 },
+    { name: 'MAGIC_PORTAL_ROWS', rows: MAGIC_PORTAL_ROWS, h: 36, w: 28 },
+    { name: 'MAGIC_CRYSTAL_ROWS', rows: MAGIC_CRYSTAL_ROWS, h: 24, w: 16 },
+    { name: 'TECH_PYLON_ROWS', rows: TECH_PYLON_ROWS, h: 32, w: 16 },
+    { name: 'GLOW_ORE_ROWS', rows: GLOW_ORE_ROWS, h: 16, w: 20 },
+    { name: 'MECH_PLANT_ROWS', rows: MECH_PLANT_ROWS, h: 20, w: 24 },
+    { name: 'WINDMILL_ROWS', rows: WINDMILL_ROWS, h: 40, w: 32 },
+    { name: 'FRUIT_TREE_ROWS', rows: FRUIT_TREE_ROWS, h: 36, w: 32 },
+    { name: 'HAYSTACK_ROWS', rows: HAYSTACK_ROWS, h: 16, w: 24 },
+    { name: 'PEACH_TREE_ROWS', rows: PEACH_TREE_ROWS, h: 36, w: 32 },
+    { name: 'BAMBOO_ROWS', rows: BAMBOO_ROWS, h: 40, w: 24 },
+    { name: 'LOTUS_ROWS', rows: LOTUS_ROWS, h: 12, w: 20 },
+    { name: 'LANTERN_POST_ROWS', rows: LANTERN_POST_ROWS, h: 24, w: 12 },
+  ];
+
+  for (const item of themeElements) {
+    it(`${item.name} 尺寸精确达标 (${item.h}×${item.w})`, () => {
+      expect(item.rows).toHaveLength(item.h);
+      for (const row of item.rows) {
+        expect(row).toHaveLength(item.w);
+      }
+    });
+
+    it(`${item.name} 非背景像素占比不低于 0.22`, () => {
+      const total = item.h * item.w;
+      let solid = 0;
+      for (const row of item.rows) {
+        for (const ch of row) {
+          if (ch !== '.' && ch !== ' ') solid++;
+        }
+      }
+      expect(solid / total).toBeGreaterThanOrEqual(0.22);
+    });
+  }
+
+  it('背景配置包含 4 大主题且共计 9 个场景', () => {
+    const expectedThemes: CabinBackgroundId[] = [
+      'forest',
+      'garden',
+      'stream',
+      'field',
+      'planet',
+      'magic_continent',
+      'scifi_planet',
+      'pastoral_countryside',
+      'peach_blossom_spring',
+    ];
+    const registeredIds = CABIN_BACKGROUNDS.map((b) => b.id);
+    for (const id of expectedThemes) {
+      expect(registeredIds).toContain(id);
+      expect(THEME_ART[id]).toBeDefined();
+    }
+    expect(registeredIds).toHaveLength(9);
+  });
+
+  const allBackgroundIds = Object.keys(THEME_ART) as CabinBackgroundId[];
+  for (const bgId of allBackgroundIds) {
+    it(`场景 ${bgId} 配齐分层结构：天空渐变、远景、≥3中景、≥3近景、≥2粒子、氛围光`, () => {
+      const art = THEME_ART[bgId];
+      expect(art.skyStops.length).toBeGreaterThanOrEqual(2);
+      expect(art.far).toBeDefined();
+      expect(art.far.kind).toMatch(/^(hills|dunes|ridge)$/);
+      expect(art.ground).toBeDefined();
+      expect(art.ground.speckles.length).toBeGreaterThanOrEqual(2);
+      expect(art.mid.length).toBeGreaterThanOrEqual(3);
+      expect(art.near.length).toBeGreaterThanOrEqual(3);
+      expect(art.particles.kinds.length).toBeGreaterThanOrEqual(2);
+      expect(art.ambientGlow).toBeDefined();
+    });
+
+    it(`场景 ${bgId} 的中景与近景元素调色板全覆盖（无未知字符色键）`, () => {
+      const art = THEME_ART[bgId];
+      const allElements = [...art.mid, ...art.near];
+      for (const elem of allElements) {
+        const paletteKeys = new Set(Object.keys(elem.palette));
+        for (const row of elem.rows) {
+          for (const ch of row) {
+            if (ch === '.' || ch === ' ') continue;
+            expect(paletteKeys.has(ch), `场景 ${bgId} 包含未定义色键 '${ch}'`).toBe(true);
+          }
+        }
+      }
+    });
+  }
+});
+
