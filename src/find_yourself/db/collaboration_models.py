@@ -40,6 +40,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     CheckConstraint,
+    ForeignKey,
     Index,
     Integer,
     String,
@@ -72,20 +73,19 @@ ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
 }
 
 ROLE_STATES = ("active", "revoked")
-#: 被 ``@`` 提及产生的通知。**当前唯一进白名单**的 kind。
+#: 被 ``@`` 提及产生的通知。
 NOTIFICATION_MENTION = "mention"
-#: 回复评论触发的通知。**语义已在 ``services/collaboration.py`` 定义并实现
-#: （纯函数 planner），但尚未进白名单**：扩白名单要同步扩 ``ck_notif_kind``
-#: 的 DB CHECK，属 schema 变更，必须走迁移（待 0032）。在此之前任何尝试落库
-#: 该 kind 的调用都会被服务层的白名单闸门拒绝（fail loud，不静默丢弃）。
+#: 回复评论触发的通知（回复人 → 被回复评论的作者）。
 NOTIFICATION_REPLY = "comment_reply"
 #: **当前 DB CHECK 允许**的 kind。单一真源：``ck_notif_kind`` 的表达式由它派生，
 #: 服务层也只引用这里的常量、不硬编码字面量。加一个 kind = 在此加值 + 一次迁移。
-NOTIFICATION_KINDS = (NOTIFICATION_MENTION,)
-#: ``ck_notif_kind`` 的表达式。**逐字**与 migration 0030 一致（``kind IN ('mention')``）：
+#: 当前两值由 migration ``0032_collaboration_replies`` 落盘。
+NOTIFICATION_KINDS = (NOTIFICATION_MENTION, NOTIFICATION_REPLY)
+#: ``ck_notif_kind`` 的表达式，**逐字**与已落盘迁移一致：
 #: 用 ``", ".join`` 而不是元组的 ``repr``，否则单元素元组会渲染成 ``('mention',)``，
 #: 带尾逗号 → fresh-DB 与 migrated-DB 的 CHECK 文本分叉（DDL 语义相同但文本不同，
-#: 正是迁移纪律要消除的漂移）。
+#: 正是迁移纪律要消除的漂移）。当前渲染 ``kind IN ('mention', 'comment_reply')``，
+#: 与 migration 0032 一致；迁移直接 import 本常量，两边不可能各写一份。
 NOTIFICATION_KIND_IN = "kind IN (" + ", ".join(f"'{k}'" for k in NOTIFICATION_KINDS) + ")"
 
 
@@ -131,10 +131,18 @@ class CollaborationRole(Base):
 
 
 class Comment(Base):
-    """挂在一条 record 上的一条评论。
+    """挂在一条 record 上的一条评论（可嵌套回复）。
 
     ``owner_id`` = **record 的 owner**（不是作者）。这样「一条记录上的所有评论
     都归同一个归属域」是可查询的，隔离测试可以断言「换一个 owner 就查不到」。
+
+    ``parent_comment_id`` 表达「这条评论回复的是哪条评论」，``NULL`` = 顶层评论。
+    它只指向**已存在**的评论，且只在 INSERT 时写入、没有任何接口能改它 —— 于是
+    「指向的行必然比本行先存在」，有向图严格前向，**成环在构造上不可能**（见
+    ``services/collaboration.add_reply`` 与其测试）。自引用 FK ``ON DELETE SET NULL``：
+    但由于评论是**软删**，父行并不会真被 DELETE，所以该 SET NULL 只在硬删（如运维
+    清理）时才触发；软删父评论时子回复仍保留其 ``parent_comment_id``，列表接口
+    会把这种回复标记为 ``parent_deleted=True``（占位语义），而不是隐藏它。
     """
 
     __tablename__ = "comments"
@@ -146,6 +154,10 @@ class Comment(Base):
     record_id: Mapped[str] = mapped_column(String(64), nullable=False)
     #: 作者身份（owner_id 或 service_id）。
     author_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    #: 回复的父评论；NULL = 顶层评论。仅 INSERT 时写入，无改父接口（防成环）。
+    parent_comment_id: Mapped[str | None] = mapped_column(
+        ForeignKey("comments.id", ondelete="SET NULL"), nullable=True
+    )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     #: 解析并**过滤后**的提及列表（只含对该 record 有可见权限的人）。
     mentions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
@@ -167,6 +179,7 @@ class Comment(Base):
         CheckConstraint("version >= 1", name="ck_comment_version_positive"),
         Index("ix_comment_record_created", "record_kind", "record_id", "created_at"),
         Index("ix_comment_owner_record", "owner_id", "record_kind", "record_id"),
+        Index("ix_comments_parent_comment_id", "parent_comment_id"),
     )
 
 

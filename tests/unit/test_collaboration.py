@@ -923,15 +923,19 @@ def test_plan_reply_does_not_auto_notify_record_owner(svc):
     assert [t.user_id for t in plan] == ["C"]
 
 
+#: 一个**不在**任何白名单里的 kind，用于验证落库闸门（fail loud）。
+BOGUS_KIND = "not_a_real_kind"
+
+
 # --- 落库闸门：未白名单 kind 拒写、白名单 kind 可写 ------------------- #
 def test_notify_targets_rejects_unwhitelisted_kind(svc, session, alice):
-    """comment_reply 未进白名单 → 落库被拒（fail loud），且不留半行。"""
+    """白名单外的 kind → 落库被拒（fail loud），且不留半行。"""
     _task(session, "t1", "A")
     ref = svc.resolve_record("task", "t1")
     cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="hi")["comment"]["id"]
     row = session.get(Comment, cid)
     with pytest.raises(ValidationFailed):
-        svc.notify_targets(alice, row, ref, [NotificationTarget("B", NOTIFICATION_REPLY)])
+        svc.notify_targets(alice, row, ref, [NotificationTarget("B", BOGUS_KIND)])
     assert session.query(Notification).filter_by(owner_id="B").count() == 0
 
 
@@ -946,16 +950,16 @@ def test_notify_targets_persists_every_whitelisted_kind(svc, session, alice):
         assert len(out) == 1 and out[0]["kind"] == kind
 
 
-def test_comment_reply_is_designed_but_not_yet_whitelisted():
-    assert NOTIFICATION_REPLY not in NOTIFICATION_KINDS
+def test_comment_reply_is_whitelisted_after_0032():
+    assert NOTIFICATION_REPLY in NOTIFICATION_KINDS
     assert NOTIFICATION_MENTION in NOTIFICATION_KINDS
 
 
 # --- kind 白名单单一真源 ---------------------------------------------- #
-def test_kind_whitelist_expr_is_derived_and_matches_0030():
+def test_kind_whitelist_expr_is_derived_and_matches_0032():
     from sqlalchemy import CheckConstraint
 
-    assert NOTIFICATION_KIND_IN == "kind IN ('mention')"
+    assert NOTIFICATION_KIND_IN == "kind IN ('mention', 'comment_reply')"
     exprs = [
         str(c.sqltext) for c in Notification.__table__.constraints
         if isinstance(c, CheckConstraint) and "kind IN" in str(c.sqltext)
@@ -963,12 +967,22 @@ def test_kind_whitelist_expr_is_derived_and_matches_0030():
     assert exprs == [NOTIFICATION_KIND_IN]
 
 
-def test_migration_0030_kind_check_matches_model():
-    """模型派生的 CHECK 与已落盘 0030 迁移逐字一致 → 无 fresh/migrated schema 分叉。"""
+def test_migration_0030_keeps_the_historical_kind_check():
+    """0030 是历史：它落盘的仍是单值 CHECK，不应被改写。"""
     path = Path(__file__).resolve().parents[2] / "migrations" / "versions" / "0030_collaboration.py"
+    assert "kind IN ('mention')" in path.read_text(encoding="utf-8")
+
+
+def test_migration_0032_kind_check_matches_model_by_reusing_the_constant():
+    """0032 扩宽 CHECK 时直接 import 模型派生表达式，而非手抄 → 不可能漂移。"""
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "migrations" / "versions" / "0032_collaboration_replies.py"
+    )
     text = path.read_text(encoding="utf-8")
-    assert "kind IN ('mention')" in text
-    assert NOTIFICATION_KIND_IN == "kind IN ('mention')"
+    assert "from find_yourself.db.collaboration_models import" in text
+    assert "NOTIFICATION_KIND_IN" in text
+    assert "kind IN ('mention', 'comment_reply')" not in text  # 不手抄字面量
 
 
 def _service_non_docstring_string_literals() -> list[str]:
@@ -1001,3 +1015,463 @@ def test_service_does_not_hardcode_notification_kind_literals():
     banned = set(NOTIFICATION_KINDS) | {NOTIFICATION_REPLY}
     offenders = sorted({s for s in _service_non_docstring_string_literals() if s in banned})
     assert offenders == [], f"service must reference NOTIFICATION_* constants, not literals: {offenders}"
+
+
+# ======================================================================
+# 第四切片：回复评论（0032）—— 落库通知 / 同 record 校验 / 防环 / 软删占位
+# ======================================================================
+def _reply(svc, actor, parent, *, kind="task", rid="t1", body="reply"):
+    return svc.add_reply(
+        actor, record_kind=kind, record_id=rid, parent_comment_id=parent, body=body
+    )
+
+
+def test_add_reply_creates_child_and_notifies_parent_author(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    out = _reply(svc, bob, c1, body="a")
+    assert out["comment"]["parent_comment_id"] == c1
+    assert out["comment"]["author_id"] == "B"
+    notifs = svc.list_notifications(alice)
+    assert len(notifs) == 1 and notifs[0]["kind"] == NOTIFICATION_REPLY
+
+
+def test_reply_to_own_comment_does_not_notify_self(svc, session, alice):
+    _task(session, "t1", "A")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    out = _reply(svc, alice, c1, body="self-reply")
+    assert out["notified"] == []
+    assert svc.list_notifications(alice) == []
+
+
+def test_reply_mention_creates_mention_notification(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    _assign(svc, alice, "task", "t1", "C", "viewer")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    out = _reply(svc, bob, c1, body="@C take a look")
+    assert out["comment"]["mentions"] == ["C"]
+    carol = Actor.owner("C")
+    assert [n["kind"] for n in svc.list_notifications(carol)] == [NOTIFICATION_MENTION]
+    assert [n["kind"] for n in svc.list_notifications(alice)] == [NOTIFICATION_REPLY]
+
+
+def test_reply_notification_has_no_body(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    secret = "REPLY-SECRET-zzz-should-not-leak"
+    _reply(svc, bob, c1, body=secret)
+    n = svc.list_notifications(alice)[0]
+    assert secret not in n["summary"] and "body" not in n
+
+
+def test_reply_parent_must_belong_to_the_same_record(svc, session, alice, bob):
+    """跨记录借道必须被拒：父评论属于 t1，却以 t2 的访问权去回复。"""
+    _task(session, "t1", "A")
+    _task(session, "t2", "A")
+    _assign(svc, alice, "task", "t2", "B", "manager")  # B 对 t2 有写权、对 t1 无
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="on-t1")["comment"]["id"]
+    with pytest.raises(NotFound):
+        _reply(svc, bob, c1, kind="task", rid="t2", body="borrow")
+    # owner 也不例外：A 同时拥有 t1/t2，用 t2 声明回复 t1 的评论同样被拒。
+    with pytest.raises(NotFound):
+        _reply(svc, alice, c1, kind="task", rid="t2", body="borrow")
+    assert svc.list_comments(alice, record_kind="task", record_id="t1") != []
+
+
+def test_reply_to_nonexistent_parent_is_not_found(svc, session, alice):
+    _task(session, "t1", "A")
+    with pytest.raises(NotFound):
+        _reply(svc, alice, "cm-does-not-exist", body="x")
+
+
+def test_viewer_cannot_reply(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    with pytest.raises(PermissionDenied):
+        _reply(svc, bob, c1, body="x")
+
+
+def test_non_collaborator_reply_is_not_found(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    with pytest.raises(NotFound):
+        _reply(svc, bob, c1, body="x")
+
+
+def test_reply_parents_form_a_forward_only_dag_no_cycles(svc, session, alice, bob):
+    """沿 parent 回溯必然终止于 None 且不重复 —— 无环不变量（构造性证明的可执行副本）。"""
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="c1")["comment"]["id"]
+    c2 = _reply(svc, bob, c1, body="c2")["comment"]["id"]
+    c3 = _reply(svc, alice, c2, body="c3")["comment"]["id"]
+    c4 = _reply(svc, bob, c3, body="c4")["comment"]["id"]
+    parents = {c1: None, c2: c1, c3: c2, c4: c3}
+    for start in parents:
+        seen, cur = set(), start
+        while cur is not None:
+            assert cur not in seen, "cycle detected"
+            seen.add(cur)
+            cur = parents[cur]
+    views = {
+        c["id"]: c
+        for c in svc.list_comments(alice, record_kind="task", record_id="t1", limit=100)
+    }
+    assert views[c1]["parent_comment_id"] is None
+    assert views[c2]["parent_comment_id"] == c1
+    assert views[c3]["parent_comment_id"] == c2
+
+
+def test_edit_comment_cannot_change_parent(svc, session, alice, bob):
+    """编辑只改 body；没有改父指针的入口 —— 成环因此无路可走。"""
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    c2 = _reply(svc, bob, c1, body="a")["comment"]["id"]
+    svc.edit_comment(bob, c2, "edited body")
+    views = {
+        c["id"]: c
+        for c in svc.list_comments(alice, record_kind="task", record_id="t1", limit=100)
+    }
+    assert views[c2]["parent_comment_id"] == c1
+
+
+def test_soft_deleted_parent_keeps_reply_visible_with_placeholder(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    c2 = _reply(svc, bob, c1, body="a")["comment"]["id"]
+    svc.delete_comment(alice, c1)
+    items = {
+        c["id"]: c
+        for c in svc.list_comments(alice, record_kind="task", record_id="t1", limit=100)
+    }
+    assert c1 not in items                     # 父评论已删，不再列出
+    assert c2 in items                         # 子回复仍可见（不隐藏）
+    assert items[c2]["parent_deleted"] is True  # 占位语义
+    # 删除父评论只失效父评论自己的通知；子回复给 A 的评论回复通知仍在。
+    assert any(n["comment_id"] == c2 for n in svc.list_notifications(alice))
+
+
+def test_reply_view_flags_parent_deleted_false_while_parent_alive(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    c1 = svc.add_comment(alice, record_kind="task", record_id="t1", body="q")["comment"]["id"]
+    out = _reply(svc, bob, c1, body="a")
+    assert out["comment"]["parent_deleted"] is False
+
+
+# --- 迁移 0032 真跑：升级 / 降级 / 往返 --------------------------------- #
+def _migration_0032():
+    import importlib
+
+    return importlib.import_module("migrations.versions.0032_collaboration_replies")
+
+
+def _build_0030_tables(conn):
+    _run_migration(conn, _migration_0030(), "upgrade")
+
+
+def _kind_check_sql(conn) -> str | None:
+    """按**后缀**匹配：真实 alembic 运行会经 naming_convention 展开成
+    ``ck_notifications_ck_notif_kind``，而裸 ``Operations``（无约定）下是短名
+    ``ck_notif_kind``。两者都要能命中。"""
+    for c in sa.inspect(conn).get_check_constraints("notifications"):
+        if (c.get("name") or "").endswith("ck_notif_kind"):
+            return (c.get("sqltext") or "").strip()
+    return None
+
+
+def test_migration_0032_upgrade_widens_check_and_adds_parent_column():
+    mod = _migration_0032()
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        _build_0030_tables(conn)
+        _run_migration(conn, mod, "upgrade")
+        insp = sa.inspect(conn)
+        assert "parent_comment_id" in {c["name"] for c in insp.get_columns("comments")}
+        assert any(
+            i["name"] == "ix_comments_parent_comment_id" for i in insp.get_indexes("comments")
+        )
+        fks = {fk["name"]: fk for fk in insp.get_foreign_keys("comments")}
+        assert "fk_comments_parent_comment_id_comments" in fks
+        assert fks["fk_comments_parent_comment_id_comments"]["options"].get("ondelete") == "SET NULL"
+        assert _kind_check_sql(conn) == NOTIFICATION_KIND_IN
+        # batch 重建不得弄丢其它 CHECK。
+        names = {c["name"] for c in insp.get_check_constraints("comments")}
+        assert {"ck_comment_body_nonempty", "ck_comment_kind"} <= names
+
+
+def test_migration_0032_round_trip_upgrade_downgrade_upgrade():
+    mod = _migration_0032()
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        _build_0030_tables(conn)
+        _run_migration(conn, mod, "upgrade")
+        _run_migration(conn, mod, "downgrade")
+        insp = sa.inspect(conn)
+        assert "parent_comment_id" not in {c["name"] for c in insp.get_columns("comments")}
+        assert not any(
+            i["name"] == "ix_comments_parent_comment_id" for i in insp.get_indexes("comments")
+        )
+        assert _kind_check_sql(conn) == "kind IN ('mention')"
+        # 再升一次：往返必须成功（幂等）。
+        _run_migration(conn, mod, "upgrade")
+        assert "parent_comment_id" in {c["name"] for c in sa.inspect(conn).get_columns("comments")}
+        assert _kind_check_sql(conn) == NOTIFICATION_KIND_IN
+
+
+def test_migration_0032_is_noop_without_tables():
+    mod = _migration_0032()
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        _run_migration(conn, mod, "upgrade")  # must not raise
+        _run_migration(conn, mod, "downgrade")
+
+
+def test_alembic_cli_full_chain_widens_kind_check_and_adds_parent_column(tmp_path):
+    """真实 `alembic upgrade head`（带 naming_convention）到底后，schema 与模型一致。"""
+    from alembic import command
+    from alembic.config import Config
+
+    repo_root = Path(__file__).resolve().parents[2]
+    url = "sqlite:///" + str(tmp_path / "mig.db").replace("\\", "/")
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, "head")
+
+    insp = sa.inspect(sa.create_engine(url))
+    assert _kind_check_sql_engine(url) == NOTIFICATION_KIND_IN
+    cols = {c["name"] for c in insp.get_columns("comments")}
+    assert "parent_comment_id" in cols
+    assert any(i["name"] == "ix_comments_parent_comment_id" for i in insp.get_indexes("comments"))
+    # 真实迁移下约束名经 naming_convention 展开，与 fresh create_all 一致。
+    names = {c["name"] for c in insp.get_check_constraints("notifications")}
+    assert "ck_notifications_ck_notif_kind" in names
+
+    # downgrade → 再 upgrade（往返）
+    command.downgrade(cfg, "0031_plugin_ecosystem")
+    insp = sa.inspect(sa.create_engine(url))
+    assert "parent_comment_id" not in {c["name"] for c in insp.get_columns("comments")}
+    assert _kind_check_sql_engine(url) == "kind IN ('mention')"
+    command.upgrade(cfg, "head")
+    assert _kind_check_sql_engine(url) == NOTIFICATION_KIND_IN
+
+
+def _kind_check_sql_engine(url: str) -> str | None:
+    return _kind_check_sql(sa.create_engine(url))
+
+
+# ======================================================================
+# P7 · 迁移 0032 的变异测试（2026-10-05）
+# ----------------------------------------------------------------------
+# 背景：前一位执行方留下的 0032 在**真实 alembic 全链**上 downgrade 会炸：
+#   ValueError: No such constraint:
+#   'ck_notifications_ck_notifications_ck_notif_kind'
+# 根因：把 ``sa.inspect`` 反射回来的**展开名**喂回 ``drop_constraint``，
+# 而 ``NAMING_CONVENTION['ck']`` 会把它再当 ``%(constraint_name)s`` 插值一次。
+#
+# 下面这些用例是**变异测试**：每条都断言「某个具体写法会被拒绝 / 某条不变量成立」，
+# 目的不是测当前实现，而是**确保修复不会被后人改回去**。
+# 判据统一为「断言失败即代表 bug 回归」，不接受 try/except 吞异常。
+# ======================================================================
+
+
+def _migration_0032_with_naming_convention(conn, direction: str) -> None:
+    """在**带 naming_convention** 的 MigrationContext 下跑 0032。
+
+    与 ``_run_migration`` 的区别：后者用裸 ``MigrationContext.configure(conn)``
+    （无约定），约束名不被展开，恰好绕开了这个 bug。真实 ``alembic upgrade/downgrade``
+    经 ``env.py`` 的 ``target_metadata=Base.metadata``（带约定），所以只有本函数
+    走的那条路径能复现生产行为。
+
+    这是**变异测试的载体**：若有人在 0032 里改回「传展开名」，只有本函数会红。
+    """
+    from alembic.operations import Operations
+    from alembic.runtime.migration import MigrationContext
+
+    mod = _migration_0032()
+    ctx = MigrationContext.configure(conn)
+    # env.py 注入的就是 Base.metadata；约定从它的 metadata 上取。
+    ctx.opts["target_metadata"] = Base.metadata
+    mod.op = Operations(ctx)
+    getattr(mod, direction)()
+
+
+def test_0032_downgrade_survives_naming_convention(tmp_path):
+    """变异测试①：带命名约定时，0032 downgrade 必须成功（不双重前缀）。"""
+    from alembic import command
+    from alembic.config import Config
+
+    repo_root = Path(__file__).resolve().parents[2]
+    url = "sqlite:///" + str(tmp_path / "mig.db").replace("\\", "/")
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "0032_collaboration_replies")
+    # 这一步是本用例的全部意义：修复前在此抛 ValueError。
+    command.downgrade(cfg, "0031_plugin_ecosystem")
+    insp = sa.inspect(sa.create_engine(url))
+    assert _kind_check_sql_engine(url) == "kind IN ('mention')"
+    assert "parent_comment_id" not in {c["name"] for c in insp.get_columns("comments")}
+    # 再升回来：往返必须仍然成立。
+    command.upgrade(cfg, "0032_collaboration_replies")
+    assert _kind_check_sql_engine(url) == NOTIFICATION_KIND_IN
+
+
+def test_0032_never_double_prefixes_the_constraint_name(tmp_path):
+    """变异测试②：0032 往返后，kind CHECK 的名字**不得**出现双重前缀。
+
+    直接钉住错误信息里那个具体形状 ``ck_notifications_ck_notifications_*``：
+    任何人把展开名喂回 drop_constraint，这里立刻红。
+    """
+    from alembic import command
+    from alembic.config import Config
+
+    repo_root = Path(__file__).resolve().parents[2]
+    url = "sqlite:///" + str(tmp_path / "mig.db").replace("\\", "/")
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "head")
+    for _ in range(2):  # 往返两轮：每一轮都检查
+        command.downgrade(cfg, "0032_collaboration_replies")
+        command.upgrade(cfg, "head")
+        names = {c["name"] for c in sa.inspect(sa.create_engine(url)).get_check_constraints("notifications")}
+        assert "ck_notifications_ck_notif_kind" in names
+        assert not any(n.count("ck_notifications_") > 1 for n in names), (
+            f"出现双重前缀约束名: {sorted(names)}"
+        )
+
+
+def test_0032_passes_short_name_to_drop_constraint():
+    """变异测试③：静态检查——0032 源码里 ``drop_constraint`` 只允许传短名常量。
+
+    这是「反射名不得回喂」这条规则的**唯一可执行的文档**。用 AST 读源码而不是
+    跑一遍迁移，是因为跑迁移的路径无法区分「恰好没炸」与「写法正确」。
+    """
+    mod = _migration_0032()
+    short = mod._KIND_CONSTRAINT
+    assert short == "ck_notif_kind", "短名常量被改名，会与库里已落盘的约束脱节"
+
+    src = Path(_migration_0032_path()).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    checked = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Attribute) and fn.attr == "drop_constraint"):
+            continue
+        # 只管 CHECK。FK 的 drop 传 `_PARENT_FK` 是对的：``NAMING_CONVENTION['fk']``
+        # 插值的是 column_0_name / referred_table_name（与传入名无关），天然幂等，
+        # 不存在 CHECK 那种双重前缀问题。
+        if "check" not in _const_kwarg(node, "type_"):
+            continue
+        checked += 1
+        arg = node.args[0] if node.args else None
+        assert isinstance(arg, ast.Name), (
+            "drop_constraint 的第一个参数必须是常量名（短名），不能是表达式"
+        )
+        assert arg.id == "_KIND_CONSTRAINT", (
+            f"CHECK 的 drop_constraint 传了 {arg.id!r}，必须传短名常量 _KIND_CONSTRAINT"
+        )
+    assert checked >= 2, "0032 源码里 CHECK 的 drop_constraint 少于 2 处，检查是否被误删"
+
+
+def _const_kwarg(node: ast.Call, name: str) -> str:
+    """取调用里的字面量 kwarg 值（非字面量返回 '?'）。"""
+    for kw in node.keywords:
+        if kw.arg == name:
+            return ast.unparse(kw.value)
+    return ""
+
+
+def test_0032_kind_probe_does_not_return_a_constraint_name():
+    """变异测试④：探测函数只回传 ``(存在, sqltext)``，**不得**回传反射名。
+
+    回传名字正是本次 bug 的源头（调用方会顺手把它喂回 drop_constraint）。
+    把它从接口层面去掉，比在注释里写「别这么用」可靠。
+
+    判据是**实际调用**：真跑一次 `_kind_check`，断言返回元里没有任何元素长得
+    像约束名。只看类型签名不够——把返回值塞进 ``tuple`` 一样能骗过签名检查
+    （变异体验证：签名不变、返回值多一个字符串时，本用例仍会红）。
+    """
+    mod = _migration_0032()
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        _build_0030_tables(conn)
+        found, current = mod._kind_check(conn)
+    assert found is True
+    assert current == "kind IN ('mention')", "第二个返回值应是 CHECK 的 sqltext"
+
+    # 第三个返回值 = 约束名（bug 的源头形状）
+    probe = _engine_with_0030()
+    assert len(_kind_check_tuple(mod, probe)) == 2, (
+        "_kind_check 返回了多于 2 个元素 —— 多出来的很可能是约束名"
+    )
+
+
+def _kind_check_tuple(mod, eng):
+    with eng.begin() as conn:
+        return tuple(mod._kind_check(conn))
+
+
+def _engine_with_0030():
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        _build_0030_tables(conn)
+    return eng
+
+
+def test_0032_raises_loudly_when_kind_check_missing():
+    """变异测试⑤：表在但白名单 CHECK 不在 → upgrade **必须报错**，不得静默跳过。
+
+    「静默跳过」会让「库里没有这条约束」看起来像「迁移已生效」——
+    与本仓库的诚实原则（§2-1）直接冲突。
+    """
+    mod = _migration_0032()
+    eng = sa.create_engine("sqlite://")
+    with eng.begin() as conn:
+        conn.exec_driver_sql("CREATE TABLE notifications (id VARCHAR(64) PRIMARY KEY, kind VARCHAR(24) NOT NULL)")
+        with pytest.raises(RuntimeError) as ei:
+            _run_migration(conn, mod, "upgrade")
+        assert "ck_notif_kind" in str(ei.value)
+
+
+def test_0032_is_idempotent_under_naming_convention(tmp_path):
+    """变异测试⑥：带约定时重复 upgrade 两遍不得报错，也不得叠加约束。"""
+    from alembic import command
+    from alembic.config import Config
+
+    repo_root = Path(__file__).resolve().parents[2]
+    url = "sqlite:///" + str(tmp_path / "mig.db").replace("\\", "/")
+    cfg = Config(str(repo_root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(repo_root / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", url)
+
+    command.upgrade(cfg, "0032_collaboration_replies")
+    before = {
+        c["name"] for c in sa.inspect(sa.create_engine(url)).get_check_constraints("notifications")
+    }
+    command.downgrade(cfg, "0031_plugin_ecosystem")
+    command.upgrade(cfg, "0032_collaboration_replies")
+    command.upgrade(cfg, "0032_collaboration_replies")  # 已到目标版本，应为 no-op
+    after = {
+        c["name"] for c in sa.inspect(sa.create_engine(url)).get_check_constraints("notifications")
+    }
+    assert before == after, "重复 upgrade 后约束集合变了（叠加或丢失）"
+    assert _kind_check_sql_engine(url) == NOTIFICATION_KIND_IN
+
+
+def _migration_0032_path() -> Path:
+    return Path(__file__).resolve().parents[2] / (
+        "migrations/versions/0032_collaboration_replies.py"
+    )

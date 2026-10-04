@@ -6,6 +6,7 @@
 * ``POST   /api/collaboration/roles/revoke``     —— 撤销协作角色
 * ``GET    /api/collaboration/roles``            —— 某条 record 的角色名册
 * ``POST   /api/collaboration/comments``         —— 发表评论（含 @人 → 通知）
+* ``POST   /api/collaboration/replies``          —— 回复评论（父评论须同 record）
 * ``GET    /api/collaboration/comments``         —— 某条 record 的评论（分页/排序）
 * ``PATCH  /api/collaboration/comments/{id}``    —— 编辑自己的评论
 * ``DELETE /api/collaboration/comments/{id}``    —— 删除（作者或 owner/admin，联动失效通知）
@@ -51,6 +52,13 @@ class RevokeRoleBody(BaseModel):
 class CommentBody(BaseModel):
     record_kind: str = Field(min_length=1, max_length=16)
     record_id: str = Field(min_length=1, max_length=64)
+    body: str = Field(min_length=1)
+
+
+class ReplyBody(BaseModel):
+    record_kind: str = Field(min_length=1, max_length=16)
+    record_id: str = Field(min_length=1, max_length=64)
+    parent_comment_id: str = Field(min_length=1, max_length=64)
     body: str = Field(min_length=1)
 
 
@@ -142,6 +150,28 @@ async def add_comment(
     try:
         result = _svc(svc).add_comment(
             actor, record_kind=body.record_kind, record_id=body.record_id, body=body.body
+        )
+        svc.session.commit()
+    except DomainError as exc:
+        svc.session.rollback()
+        raise _translate(exc) from exc
+    return result
+
+
+@router.post("/replies", status_code=201)
+async def add_reply(
+    body: ReplyBody,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """回复评论。父评论必须属于同一 record（服务层校验，防跨记录借道）。"""
+    try:
+        result = _svc(svc).add_reply(
+            actor,
+            record_kind=body.record_kind,
+            record_id=body.record_id,
+            parent_comment_id=body.parent_comment_id,
+            body=body.body,
         )
         svc.session.commit()
     except DomainError as exc:

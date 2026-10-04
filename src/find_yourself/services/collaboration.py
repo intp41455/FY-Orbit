@@ -334,6 +334,62 @@ class CollaborationService:
                     message_id=comment.id)
         return {"comment": self._comment_view(comment), "notified": notified}
 
+    def add_reply(
+        self,
+        actor: Actor,
+        *,
+        record_kind: str,
+        record_id: str,
+        parent_comment_id: str,
+        body: str,
+    ) -> dict[str, Any]:
+        """回复某条评论。需要 ``write`` 能力。
+
+        **同 record 校验（防「借道」）**：调用方必须声明 ``record_kind``/``record_id``，
+        且父评论必须**恰好属于该 record**。否则就能拿 A 记录的访问权去回复 B 记录
+        的评论——那就绕过了 ``_require_access`` 的边界。不一致一律按「评论不存在」
+        （``NotFound``）处理，与「父评论根本不存在」返回同一个错误。
+
+        **防环**：``parent_comment_id`` 只在 INSERT 时写入、且父评论必须**先存在**，
+        没有任何接口能改已存在评论的父指针（``edit_comment`` 只改 body）。于是每条边
+        都从「较新的行」指向「较旧的行」，有向图严格前向 —— **成环在构造上不可能**，
+        无需运行期环检测（有专门用例把这条不变量钉死）。
+        """
+        actor.require_authenticated()
+        parent = self._comment_row(parent_comment_id)
+        if (parent.record_kind, parent.record_id) != (record_kind, record_id):
+            # 借道/跨记录：与不存在同一个错误，不确认该评论是否真实存在。
+            raise NotFound("comment_not_found", "comment_not_found")
+        ref, _ = self._require_access(actor, record_kind, record_id, "write")
+        body = (body or "").strip()
+        if not body:
+            raise ValidationFailed("comment_body_required", "Comment body cannot be empty")
+        author = self._identity(actor)
+        mentions = self._parse_mentions(body, self._visible_user_ids(ref))
+        comment = Comment(
+            id=f"cm-{uuid4().hex[:12]}",
+            owner_id=ref.owner_id,
+            record_kind=ref.kind,
+            record_id=ref.id,
+            author_id=author,
+            parent_comment_id=parent.id,
+            body=body,
+            mentions=mentions,
+        )
+        self.s.add(comment)
+        self.s.flush()
+        # 回复通知：父评论作者(kind=comment_reply) + @ 到的人(kind=mention)；
+        # 自回复/自 @ 由 _merge_targets 抑制。planner 与落库闸门都已就绪。
+        targets = self.plan_reply_targets(
+            author_id=author, parent_author_id=parent.author_id, mentioned=mentions
+        )
+        notified = self.notify_targets(actor, comment, ref, targets)
+        self._audit(actor, "collaboration.comment.replied", comment.id,
+                    {"record_kind": ref.kind, "record_id": ref.id,
+                     "parent_comment_id": parent.id, "mentions": len(mentions)},
+                    message_id=comment.id)
+        return {"comment": self._comment_view(comment), "notified": notified}
+
     def edit_comment(self, actor: Actor, comment_id: str, body: str) -> dict[str, Any]:
         """编辑评论。**只有作者本人**能改。"""
         actor.require_authenticated()
@@ -732,13 +788,26 @@ class CollaborationService:
             "version": row.version,
         }
 
-    @staticmethod
-    def _comment_view(row: Comment) -> dict[str, Any]:
+    def _comment_view(self, row: Comment) -> dict[str, Any]:
+        """评论视图。
+
+        ``parent_deleted``：父评论被**软删**后，子回复**仍然可见**（不隐藏），只是
+        标记 ``parent_deleted=True`` —— 占位语义。理由：回复正文是独立的内容，
+        父评论被删不该连带让回复「消失」；而评论本就软删、可审计，故保留其
+        ``parent_comment_id``（DB 的 ``ON DELETE SET NULL`` 只在硬删时才触发）。
+        客户端据此把回复渲染成「回复给一条已删除的评论」。
+        """
+        parent_deleted = False
+        if row.parent_comment_id:
+            parent = self.s.get(Comment, row.parent_comment_id)
+            parent_deleted = parent is None or parent.deleted_at is not None
         return {
             "id": row.id,
             "record_kind": row.record_kind,
             "record_id": row.record_id,
             "author_id": row.author_id,
+            "parent_comment_id": row.parent_comment_id,
+            "parent_deleted": parent_deleted,
             "body": row.body,
             "mentions": list(row.mentions or []),
             "deleted": row.deleted_at is not None,
