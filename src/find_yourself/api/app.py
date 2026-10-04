@@ -68,6 +68,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             import find_yourself.db.hitl_models  # noqa: F401  (需求12 HITL 执行中断)
             import find_yourself.db.team_approval_models  # noqa: F401  (需求6 团队级审批)
             import find_yourself.db.artifact_gate_models  # noqa: F401  (需求7 产物版本门禁)
+            import find_yourself.db.collaboration_models  # noqa: F401  (需求15 评论/@人/通知/角色)
             import find_yourself.services.assets  # noqa: F401  (W9 个人资产库 assets 表)
             Base.metadata.create_all(engine)
         session_maker = session_factory(engine)

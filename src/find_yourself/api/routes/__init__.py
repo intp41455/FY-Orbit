@@ -54,4 +54,6 @@ from . import team_approval  # 需求6 团队级权限与审批流
 api_router.include_router(team_approval.router)  # 需求6 /api/team-approvals
 from . import artifact_gate  # 需求7 产物版本门禁
 api_router.include_router(artifact_gate.router)  # 需求7 /api/artifact-gates
+from . import collaboration  # 需求15 多人协作闭环（评论/@人/通知/角色）
+api_router.include_router(collaboration.router)  # 需求15 /api/collaboration
 
