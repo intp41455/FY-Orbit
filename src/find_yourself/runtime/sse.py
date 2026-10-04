@@ -13,7 +13,7 @@ from __future__ import annotations
 import asyncio
 import itertools
 from collections import defaultdict, deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import AsyncIterator
 
 
@@ -27,6 +27,41 @@ class TaskEvent:
         import json
         payload = json.dumps(self.data, ensure_ascii=False, sort_keys=True, default=str)
         return f"id: {self.seq}\nevent: {self.event_type}\ndata: {payload}\n\n"
+
+
+def inject_message_id(frame: str, message_id: str) -> str:
+    """Return ``frame`` with ``message_id`` merged into its JSON ``data`` field.
+
+    Used to attribute every SSE frame of one question to the same
+    ``message_id`` so the client can group a received stream and jump from a
+    question to its trace (and back). Comment/heartbeat frames (``: ...``) and
+    frames without a ``data:`` line are passed through untouched.
+    """
+    import json
+
+    if not frame or frame.startswith(":"):
+        return frame
+    out_lines: list[str] = []
+    for line in frame.split("\n"):
+        if not line.startswith("data:"):
+            out_lines.append(line)
+            continue
+        raw = line[len("data:"):].strip()
+        try:
+            obj = json.loads(raw)
+        except (ValueError, TypeError):
+            out_lines.append(line)
+            continue
+        if isinstance(obj, dict):
+            obj.setdefault("message_id", message_id)
+        out_lines.append("data: " + json.dumps(obj, ensure_ascii=False))
+    return "\n".join(out_lines)
+
+
+async def stamp_stream(frames: AsyncIterator[str], message_id: str) -> AsyncIterator[str]:
+    """Yield ``frames`` with ``message_id`` stamped onto every data frame."""
+    async for frame in frames:
+        yield inject_message_id(frame, message_id)
 
 
 class TaskEventBus:
