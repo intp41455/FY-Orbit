@@ -1,0 +1,251 @@
+{
+  "_note": "后端 cabin_life 真实快照；字段名与 web/src/components/cabin/gameplay/lifeApi.ts 契约对应，两端由测试锁定",
+  "save": {
+    "owner": "owner-fixture",
+    "theme": "ink",
+    "clock": {
+      "day": 3,
+      "minute": 549,
+      "part": "morning",
+      "part_label": "上午"
+    },
+    "weather": {
+      "id": "clear",
+      "label": "晴",
+      "icon": "☀",
+      "light": 0.82,
+      "yield_pct": 100,
+      "pace_pct": 100,
+      "demand_pct": 105,
+      "blocks_gather": false
+    },
+    "bag": {
+      "tea_leaf": 2
+    },
+    "coins": 180,
+    "skill_exp": 35,
+    "affinity": {
+      "ink_apothecary": 150,
+      "ink_embroidery": 150,
+      "ink_fisher": 150,
+      "ink_hermit": 0,
+      "ink_kid": 0,
+      "ink_lantern": 0,
+      "ink_painter": 0,
+      "ink_poet": 0,
+      "ink_scholar": 0,
+      "ink_tea_master": 0
+    },
+    "gifts_today": {
+      "ink_apothecary": 1
+    },
+    "shop": {
+      "kind": "grocery",
+      "level": 1,
+      "stock": {
+        "mushroom": 0,
+        "vegetable": 0,
+        "wood": 0,
+        "herb": 0,
+        "bread": 6
+      },
+      "ask_prices": {
+        "mushroom": 7,
+        "vegetable": 12,
+        "wood": 12,
+        "herb": 19
+      }
+    },
+    "quest_log": {
+      "day": 3,
+      "entries": [
+        {
+          "quest_id": "main_ink_1",
+          "progress": 5,
+          "done": true,
+          "claimed": false
+        }
+      ]
+    },
+    "gather_counts": {
+      "ink_tea": 1
+    },
+    "version": 1
+  },
+  "hud_line": "第3天 上午 晴 · 180 金币",
+  "npc_rows": [
+    {
+      "id": "ink_apothecary",
+      "name": "百草堂",
+      "role": "药铺主",
+      "place": "shop",
+      "activity": "晒药",
+      "awake": true,
+      "hearts": 1,
+      "hearts_display": "♥♡♡♡♡♡♡♡♡♡",
+      "marker": "?"
+    },
+    {
+      "id": "ink_embroidery",
+      "name": "绣娘",
+      "role": "绣娘",
+      "place": "workshop",
+      "activity": "配色",
+      "awake": true,
+      "hearts": 1,
+      "hearts_display": "♥♡♡♡♡♡♡♡♡♡",
+      "marker": ""
+    },
+    {
+      "id": "ink_fisher",
+      "name": "棹歌",
+      "role": "渔夫",
+      "place": "river",
+      "activity": "撑船",
+      "awake": true,
+      "hearts": 1,
+      "hearts_display": "♥♡♡♡♡♡♡♡♡♡",
+      "marker": ""
+    }
+  ],
+  "shop_rows": [
+    {
+      "id": "mushroom",
+      "label": "蘑菇",
+      "unlocked": true,
+      "buy_price": 3,
+      "fair_price": 7,
+      "ask_price": 7,
+      "stock": 0,
+      "taste": 1.0
+    },
+    {
+      "id": "vegetable",
+      "label": "蔬菜",
+      "unlocked": true,
+      "buy_price": 6,
+      "fair_price": 12,
+      "ask_price": 12,
+      "stock": 0,
+      "taste": 1.0
+    },
+    {
+      "id": "wood",
+      "label": "木材",
+      "unlocked": true,
+      "buy_price": 6,
+      "fair_price": 12,
+      "ask_price": 12,
+      "stock": 0,
+      "taste": 1.0
+    }
+  ],
+  "craft_rows": [
+    {
+      "id": "bread",
+      "label": "面包",
+      "category": "food",
+      "unlocked": true,
+      "required_level": 1,
+      "current_level": 2,
+      "need_level": null
+    },
+    {
+      "id": "jam",
+      "label": "果酱",
+      "category": "food",
+      "unlocked": true,
+      "required_level": 1,
+      "current_level": 2,
+      "need_level": null
+    },
+    {
+      "id": "bamboo_basket",
+      "label": "竹器",
+      "category": "craft",
+      "unlocked": true,
+      "required_level": 2,
+      "current_level": 2,
+      "need_level": null
+    }
+  ],
+  "gather_rows": [
+    {
+      "id": "ink_tea",
+      "label": "茶垄",
+      "action": "harvest",
+      "action_label": "收割",
+      "animation": "anim_harvest",
+      "material": "tea_leaf",
+      "qty_range": [
+        2,
+        3
+      ],
+      "minutes": 9,
+      "tile": [
+        24,
+        61
+      ],
+      "distance": 0,
+      "in_range": true
+    },
+    {
+      "id": "ink_peach",
+      "label": "桃林",
+      "action": "pick",
+      "action_label": "拾取",
+      "animation": "anim_pick",
+      "material": "peach_blossom",
+      "qty_range": [
+        2,
+        4
+      ],
+      "minutes": 8,
+      "tile": [
+        33,
+        63
+      ],
+      "distance": 11,
+      "in_range": false
+    },
+    {
+      "id": "ink_bamboo",
+      "label": "竹林",
+      "action": "dig",
+      "action_label": "挖掘",
+      "animation": "anim_dig",
+      "material": "bamboo_shoot",
+      "qty_range": [
+        1,
+        2
+      ],
+      "minutes": 12,
+      "tile": [
+        41,
+        60
+      ],
+      "distance": 18,
+      "in_range": false
+    }
+  ],
+  "settlement": {
+    "day": 3,
+    "weather": "clear",
+    "theme": "ink",
+    "lines": [
+      {
+        "good_id": "bread",
+        "label": "面包",
+        "unit_price": 16,
+        "sold": 6,
+        "revenue": 96,
+        "leftover": 0
+      }
+    ],
+    "total_revenue": 96,
+    "cost_of_goods_sold": 48,
+    "profit": 48,
+    "coins_after": 228,
+    "next_day": 4
+  }
+}
