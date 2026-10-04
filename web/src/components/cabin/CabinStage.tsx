@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createCabinScene, type CabinScene } from './cabinScene';
+import { observeViewport, resolveViewport } from './cabinViewport';
 import type { CabinConfig, DialogueSpeaker } from './cabinConfig';
 import type { PixelPalette } from './cabinPixels';
 
@@ -110,8 +111,20 @@ function CabinStageCanvas({
     canvas.className = 'cabin-canvas';
     canvas.setAttribute('aria-hidden', 'true');
     host.appendChild(canvas);
+    /**
+     * I3 · 双形态：视口取自**宿主元素**而非 window。
+     *
+     * 内嵌工作台形态下 canvas 宿主可能远小于窗口（如挂进一个 1280×720 的容器），
+     * 若仍按 window 渲染，PixiJS 会把画面按整窗尺寸铺满并被 CSS 裁切 —— 相机、
+     * 视差、点击反投影全部按错误视口计算。这里改为：创建时传 host，
+     * 之后用 observeViewport 同时监听「宿主尺寸变化（ResizeObserver）」与
+     * 「window resize」，两者都重新量宿主。
+     *
+     * 宿主未布局（0 尺寸）时 resolveViewport 自动回退 window，行为与改造前一致。
+     */
     void createCabinScene({
       canvas,
+      host,
       config: configRef.current,
       callbacks: { onSpeak: (s) => onSpeakRef.current?.(s) },
       personWalkFrames,
@@ -124,11 +137,12 @@ function CabinStageCanvas({
         }
         sceneRef.current = scene;
         scene.setConfig(configRef.current);
-        const onResize = () => scene.resize(window.innerWidth, window.innerHeight);
-        window.addEventListener('resize', onResize);
-        onResize();
+        const stopObserve = observeViewport(host, (size) => scene.resize(size.width, size.height));
+        // 首帧立刻定标一次（ResizeObserver 首次回调异步，不能等）。
+        const initial = resolveViewport(host);
+        scene.resize(initial.width, initial.height);
         cleanup = () => {
-          window.removeEventListener('resize', onResize);
+          stopObserve();
           scene.destroy();
           sceneRef.current = null;
         };

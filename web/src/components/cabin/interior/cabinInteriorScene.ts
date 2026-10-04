@@ -880,13 +880,10 @@ export async function createCabinInteriorScene(
   layoutStatic();
   syncFurnitureNodes();
 
-  const onResize = () => {
-    viewW = window.innerWidth;
-    viewH = window.innerHeight;
-    app.renderer.resize(viewW, viewH);
-    applyScale();
-  };
-  window.addEventListener('resize', onResize);
+  // I3 · 双形态：**不再**自挂 window resize。
+  // 视口完全由宿主层（InteriorStage）经 observeViewport 驱动 —— 内嵌形态下
+  // 容器尺寸可能远小于窗口，若此处再按 window.innerWidth 自算，会把画面顶回整窗。
+  // 宿主层在 scene 就绪后立即调用一次 resize() 完成首帧定标。
 
   return {
     resize(w, h) {
@@ -950,7 +947,6 @@ export async function createCabinInteriorScene(
     },
     destroy() {
       disposed = true;
-      window.removeEventListener('resize', onResize);
       options.canvas.removeEventListener('pointerdown', onPointerDown);
       options.canvas.removeEventListener('pointermove', onPointerMove);
       options.canvas.removeEventListener('pointerup', onPointerUp);
