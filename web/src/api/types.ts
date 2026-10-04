@@ -37,6 +37,33 @@ export interface MeResponse {
   service_id: string;
   service_kind: string;
   csrf_token: string;
+  // W8 account tiers. `is_guest` is true only for a local guest account
+  // (status=guest, email ...@local); `plan` is "unknown" when this owner has
+  // no users row (legacy bootstrap owner) rather than a claimed tier.
+  is_guest?: boolean;
+  plan?: 'free' | 'pro' | 'unknown' | string;
+}
+export interface GuestResponse {
+  // Always "owner": the session this endpoint mints IS an owner session, it is
+  // merely a guest-tier one. Mirrors MeResponse so the client has a single
+  // "is this an owner session?" rule (see AuthContext.applyIdentity).
+  subject_type: 'owner';
+  status: string;
+  owner_id: string;
+  is_guest: boolean;
+  plan: string;
+  email: string;
+  display_name: string;
+  csrf_token: string;
+}
+export interface AccountInfo {
+  email: string;
+  is_guest: boolean;
+  plan: 'free' | 'pro' | 'unknown' | string;
+  display_name: string;
+  status: string;
+  // v1 ships no payment channel; the UI must not pretend otherwise.
+  payment_enabled: boolean;
 }
 export interface LoginRedirectResponse {
   redirect_url: string;

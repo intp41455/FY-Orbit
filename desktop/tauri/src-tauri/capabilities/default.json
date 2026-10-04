@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capabilities for the Find Yourself desktop window. Deliberately minimal: the frontend talks to the backend over HTTP on loopback, so the shell itself grants no filesystem, http or arbitrary-command access beyond spawning the sidecar.",
+  "windows": ["main", "pet"],
+  "permissions": [
+    "core:default",
+    "shell:allow-spawn",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [{ "name": "binaries/find-yourself-backend", "sidecar": true }]
+    }
+  ]
+}

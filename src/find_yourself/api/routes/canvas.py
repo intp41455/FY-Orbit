@@ -95,6 +95,7 @@ class HarnessCancelRequest(BaseModel):
 
 @router.get("/templates")
 async def list_templates(
+    actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     return {"items": svc.canvas.list_templates()}
@@ -102,8 +103,11 @@ async def list_templates(
 
 @router.get("/connectors")
 async def probe_connectors(
+    actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
+    # Authenticated: this probe discloses server-side binaries/paths and spawns
+    # version-check subprocesses — never anonymous-reachable.
     return {"items": svc.canvas.probe_connectors()}
 
 

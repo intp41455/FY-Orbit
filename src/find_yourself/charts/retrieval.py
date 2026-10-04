@@ -96,10 +96,10 @@ class DualPathRetrievalService:
 
         try:
             memories = self.memory.search(
-                actor=actor,
+                consumer_domain=domain,
                 query=query,
-                domain=domain,
                 limit=limit,
+                owner_id=actor.owner_id,
             )
             return [
                 {

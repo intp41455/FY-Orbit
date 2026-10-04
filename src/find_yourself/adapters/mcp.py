@@ -19,6 +19,7 @@ declared ``privileged=True`` requires the caller's injected scope to include it.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator
 
@@ -261,6 +262,146 @@ class McpClient:
             "params": {"requestId": str(request_id)},
         }
         self._exchange(req)
+
+
+# --- tool-registry assembly (P2 MCP ecosystem integration) ---------------------
+
+logger = logging.getLogger(__name__)
+
+
+def assemble_mcp_tools(
+    *,
+    registry: Any | None = None,
+    settings: Any | None = None,
+    clients: dict[str, "McpClient"] | None = None,
+) -> list[dict[str, Any]]:
+    """Wire configured MCP servers into the dynamic tool registry (P1-05).
+
+    Server sources: ``settings.mcp_servers`` (``FY_MCP_SERVERS`` JSON, e.g.
+    ``{"demo": {"command": ["python", "-m", "find_yourself.adapters.mcp"],
+    "env": {}}}``) plus any pre-built clients passed via ``clients`` (in-process
+    hosting / tests; a key present in both wins the injected client).
+
+    For each server key:
+
+    1. Take or build a :class:`McpClient` (stdio subprocess from the config)
+       and run ``initialize`` + ``list_tools``.
+    2. Register every remote tool as ``<server_key>.<tool_name>`` — the
+       server-key prefix prevents cross-server name collisions — with entry
+       ``{"type": "mcp", "server": ..., "remote_tool": ...}`` and the remote
+       ``inputSchema`` (or a permissive ``{"type": "object"}`` fallback when
+       the remote schema is not a plain object schema; argument validation
+       still enforces the object constraint).
+    3. Attach the live client so ``registry.invoke`` can bridge calls.
+
+    Failure semantics — honest, never silently fake success:
+
+    * an unreachable / uninitializable server is logged at WARNING and skipped;
+    * a misconfigured server (no valid ``command``) is logged and skipped;
+    * a remote tool whose prefixed name / metadata cannot be registered is
+      logged and skipped;
+    * a prefixed name that would overwrite a *different* existing registration
+      is logged and skipped (idempotent re-assembly of the same entry is fine).
+
+    Returns a per-server status report so callers keep evidence of what was
+    actually registered.
+    """
+    if registry is None:
+        from ..services.tool_registry import tool_registry as registry
+    from ..services.errors import NotFound
+    from ..services.tool_registry import TOOL_NAME_RE
+
+    statuses: list[dict[str, Any]] = []
+    configured: dict[str, dict[str, Any]] = {}
+    if settings is not None:
+        raw = getattr(settings, "mcp_servers", None) or {}
+        if isinstance(raw, dict):
+            configured.update(raw)
+    injected = clients or {}
+
+    for key in sorted(set(configured) | set(injected)):
+        cfg = configured.get(key) or {}
+        status: dict[str, Any] = {
+            "server": key,
+            "ok": False,
+            "error": None,
+            "mode": "injected" if key in injected else "subprocess",
+            "registered": [],
+            "skipped": [],
+        }
+        statuses.append(status)
+
+        client = injected.get(key)
+        if client is None:
+            cmd = cfg.get("command")
+            if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
+                status["error"] = "invalid config: 'command' must be a non-empty list of strings"
+                logger.warning("MCP server %r misconfigured, skipping: %s", key, status["error"])
+                continue
+            env = cfg.get("env") if isinstance(cfg.get("env"), dict) else None
+            client = McpClient.from_subprocess(cmd, env=env)
+
+        try:
+            client.initialize()
+            tools = client.list_tools()
+        except Exception as exc:  # noqa: BLE001 — one flaky server must not block boot
+            status["error"] = f"{type(exc).__name__}: {exc}"
+            logger.warning("MCP server %r unreachable, skipping: %s", key, status["error"])
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001 — best-effort teardown
+                pass
+            continue
+
+        registry.attach_mcp_client(key, client)
+        if not isinstance(tools, list):
+            status["error"] = "tools/list returned a non-list payload"
+            logger.warning("MCP server %r returned a malformed tool list, skipping", key)
+            continue
+
+        for tool in tools:
+            if not isinstance(tool, dict) or not isinstance(tool.get("name"), str) or not tool["name"]:
+                status["skipped"].append({"tool": None, "reason": "malformed tool entry"})
+                continue
+            remote = tool["name"]
+            name = f"{key}.{remote}"
+            if not TOOL_NAME_RE.fullmatch(name):
+                reason = f"prefixed name '{name}' does not match {TOOL_NAME_RE.pattern}"
+                status["skipped"].append({"tool": name, "reason": reason})
+                logger.warning("MCP server %r tool skipped: %s", key, reason)
+                continue
+            entry = {"type": "mcp", "server": key, "remote_tool": remote}
+            try:
+                existing = registry.get_tool(name)
+            except NotFound:
+                existing = None
+            if existing is not None and existing.get("entry") != entry:
+                reason = f"name collision: '{name}' already registered with a different entry"
+                status["skipped"].append({"tool": name, "reason": reason})
+                logger.warning("MCP server %r tool skipped: %s", key, reason)
+                continue
+            schema = tool.get("inputSchema")
+            if not isinstance(schema, dict) or schema.get("type") != "object":
+                schema = {"type": "object"}
+            description = tool.get("description") or f"Remote MCP tool '{remote}' on server '{key}'"
+            try:
+                registry.register(
+                    name=name, description=description, parameters=schema, entry=entry,
+                )
+            except Exception as exc:  # noqa: BLE001 — skip the bad tool, keep the server
+                status["skipped"].append({"tool": name, "reason": str(exc)})
+                logger.warning(
+                    "MCP server %r tool %r failed registration, skipping: %s", key, remote, exc,
+                )
+                continue
+            status["registered"].append(name)
+
+        status["ok"] = True
+        logger.info(
+            "MCP server %r assembled: %d tool(s) registered, %d skipped",
+            key, len(status["registered"]), len(status["skipped"]),
+        )
+    return statuses
 
 
 def main():

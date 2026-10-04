@@ -1,0 +1,25 @@
+[package]
+name = "find-yourself-desktop"
+version = "0.1.0"
+description = "Find Yourself desktop shell (Tauri v2)"
+authors = ["Find Yourself"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "find_yourself_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# This feature is used for production builds where `devUrl` points to the
+# bundled frontend instead of the vite dev server.
+custom-protocol = ["tauri/custom-protocol"]

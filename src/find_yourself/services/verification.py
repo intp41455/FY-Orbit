@@ -46,7 +46,11 @@ class TrustedVerificationRunner:
         else:
             files_to_hash = [
                 p for p in ws_path.rglob("*")
-                if p.is_file() and not any(part.startswith((".", "__pycache__", "venv", ".venv")) for part in p.parts)
+                if p.is_file()
+                and not any(
+                    part.startswith(".") or part in {"__pycache__", "venv"}
+                    for part in p.relative_to(ws_path).parts
+                )
             ]
 
         hasher = hashlib.sha256()

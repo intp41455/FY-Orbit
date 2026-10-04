@@ -1,0 +1,273 @@
+{
+  "sample_set_id": "pmi-sample-set-20261003-v1",
+  "generated_at": "2026-10-03T00:00:00+00:00",
+  "generator": "opencode_pmi_trace_samples_build.py",
+  "schema_ref": "opencode_pmi_trace_schema_v1.0.schema.json",
+  "derived_from": {
+    "path": "C:\\Users\\intpj\\Documents\\Codex\\2026-09-29\\agent\\outputs\\find-yourself\\evidence\\process-traces\\06-canvas-hermes-roundtrip.json",
+    "title": "CanvasService → Hermes CLI 本地往返",
+    "recorded_at_utc": "2026-10-01T03:03:02.078563+00:00",
+    "canvas_instance_id": "canv-b0ee8910e569",
+    "root_task_id": "task-live-root-01",
+    "local_execution_id": "exec-local-59cc9b80c7fd",
+    "agent": "Hermes",
+    "agent_version": "Hermes Agent vgit.a40c3d2 (2026.9.24) · upstream a40c3d2e",
+    "model": "agnes-2.5-flash",
+    "note": "本样例集的三个事件由上述真实往返 trace 派生，锚点字段均为原值，未凭空构造。"
+  },
+  "layer_coverage": {
+    "L1": "规则层：AGENTS.md 为唯一规则源，只读（writeback.action=none）",
+    "L2": "记忆层：检索 + 写回 + 冷数据外传（裁决 4A showcase）",
+    "L3": "资料层：SourceSegment 原始资料段检索"
+  },
+  "trace_events": [
+    {
+      "trace_version": "1.0",
+      "trace_id": "783de07618ef21e12bb25bfce84f665b",
+      "seq": 1,
+      "ts": "2026-10-03T00:00:00+00:00",
+      "layer": "L1",
+      "actor": {
+        "actor_id": "owner-local",
+        "actor_kind": "owner",
+        "conversation_id": null,
+        "task_id": "task-live-root-01"
+      },
+      "query_target": {
+        "kind": "rule",
+        "record_id": "AGENTS.md#4.7",
+        "record_kind": "rule",
+        "domain": "personal",
+        "locator": "AGENTS.md §4.7 统一档案区铁律"
+      },
+      "query_method": {
+        "mode": "exact",
+        "index_tier": "none",
+        "cache_hit": false,
+        "authorization": {
+          "predicate": "grants.is_authorized",
+          "grant_id": null,
+          "consumer_domain": "personal"
+        },
+        "online": true
+      },
+      "hits": [
+        {
+          "record_id": "AGENTS.md#4.7",
+          "record_kind": "rule",
+          "domain": "personal",
+          "score": 1.0,
+          "content_hash": "c4e78d841eea8a60073084a58e05295ad8d1f142c70d3f7830719a7cb83933db",
+          "hypothesis_status": null,
+          "tier": "hot",
+          "excerpt_redacted": false
+        }
+      ],
+      "agent": {
+        "agent_id": "Hermes",
+        "agent_version": "Hermes Agent vgit.a40c3d2 (2026.9.24) · upstream a40c3d2e",
+        "role": "center",
+        "model": null,
+        "provider": null
+      },
+      "writeback": {
+        "action": "none",
+        "target_ids": []
+      },
+      "egress": {
+        "authorized": false,
+        "grant_id": null,
+        "destination": "none",
+        "cipher": "none",
+        "key_id": "fy-local-key-2026-09",
+        "key_escrow": "local_only",
+        "plaintext_egress": false,
+        "audit_seq": 101
+      },
+      "redaction": {
+        "blacklist_version": null,
+        "matched": false,
+        "redacted_fields": []
+      },
+      "integrity": {
+        "prev_trace_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+        "audit_chain_verified": true,
+        "trace_hash": "32ab32dd7643bdc71c8b69cd3a6b2a2c259847aca98149bd3f68d84fd707f1cf"
+      }
+    },
+    {
+      "trace_version": "1.0",
+      "trace_id": "783de07618ef21e12bb25bfce84f665b",
+      "seq": 2,
+      "ts": "2026-10-03T00:00:00+00:00",
+      "layer": "L3",
+      "actor": {
+        "actor_id": "owner-local",
+        "actor_kind": "owner",
+        "conversation_id": null,
+        "task_id": "task-live-root-01"
+      },
+      "query_target": {
+        "kind": "source_segment",
+        "record_id": "seg-b0ee8910e569",
+        "record_kind": "source_segment",
+        "domain": "personal",
+        "locator": "L1"
+      },
+      "query_method": {
+        "mode": "fts",
+        "index_tier": "hot_local",
+        "cache_hit": false,
+        "authorization": {
+          "predicate": "grants.is_authorized",
+          "grant_id": null,
+          "consumer_domain": "personal"
+        },
+        "online": true
+      },
+      "hits": [
+        {
+          "record_id": "seg-b0ee8910e569",
+          "record_kind": "source_segment",
+          "domain": "personal",
+          "score": 1.0,
+          "content_hash": "b71025ef7e08411352266dc5580d25499f7d944285527e98103db55d96b7e986",
+          "tier": "hot",
+          "excerpt_redacted": false
+        }
+      ],
+      "agent": {
+        "agent_id": "Hermes",
+        "agent_version": "Hermes Agent vgit.a40c3d2 (2026.9.24) · upstream a40c3d2e",
+        "role": "worker",
+        "model": "agnes-2.5-flash",
+        "provider": "hermes_local_provider"
+      },
+      "writeback": {
+        "action": "none",
+        "target_ids": []
+      },
+      "egress": {
+        "authorized": false,
+        "grant_id": null,
+        "destination": "none",
+        "cipher": "none",
+        "key_id": "fy-local-key-2026-09",
+        "key_escrow": "local_only",
+        "plaintext_egress": false,
+        "audit_seq": 102
+      },
+      "redaction": {
+        "blacklist_version": null,
+        "matched": false,
+        "redacted_fields": []
+      },
+      "integrity": {
+        "prev_trace_hash": "32ab32dd7643bdc71c8b69cd3a6b2a2c259847aca98149bd3f68d84fd707f1cf",
+        "audit_chain_verified": true,
+        "trace_hash": "05a4859088b0cb912d795114e6e298264831bec34f6cf2964893115759928f7e"
+      }
+    },
+    {
+      "trace_version": "1.0",
+      "trace_id": "783de07618ef21e12bb25bfce84f665b",
+      "seq": 3,
+      "ts": "2026-10-03T00:00:00+00:00",
+      "layer": "L2",
+      "actor": {
+        "actor_id": "owner-local",
+        "actor_kind": "owner",
+        "conversation_id": null,
+        "task_id": "task-live-root-01"
+      },
+      "query_target": {
+        "kind": "memory",
+        "record_id": "mem-783de07618ef",
+        "record_kind": "memory",
+        "domain": "shared",
+        "locator": null
+      },
+      "query_method": {
+        "mode": "vector",
+        "index_tier": "hot_local",
+        "cache_hit": true,
+        "authorization": {
+          "predicate": "grants.is_authorized",
+          "grant_id": "grant-3f8a21c9d4e70b56",
+          "consumer_domain": "shared"
+        },
+        "online": true
+      },
+      "hits": [
+        {
+          "record_id": "mem-783de07618ef",
+          "record_kind": "memory",
+          "domain": "shared",
+          "score": 0.91,
+          "content_hash": "fa5047908e1947f769547a772283038f6ca591bcf5da51f8411904ab9c369e73",
+          "hypothesis_status": "fact",
+          "tier": "hot",
+          "excerpt_redacted": false
+        },
+        {
+          "record_id": "mem-21e12bb25bfc",
+          "record_kind": "memory",
+          "domain": "shared",
+          "score": 0.74,
+          "content_hash": "2ea20c5c87e566d28de9c5ee6dfa3ed75a0d5aa37bbe0f9ccd8fea5e1b3bab99",
+          "hypothesis_status": "hypothesis",
+          "tier": "cold",
+          "excerpt_redacted": false
+        }
+      ],
+      "agent": {
+        "agent_id": "Hermes",
+        "agent_version": "Hermes Agent vgit.a40c3d2 (2026.9.24) · upstream a40c3d2e",
+        "role": "worker",
+        "model": "agnes-2.5-flash",
+        "provider": "hermes_local_provider"
+      },
+      "writeback": {
+        "action": "memory.upsert",
+        "target_ids": [
+          "mem-783de07618ef"
+        ],
+        "revision": 2,
+        "source_relations": [
+          {
+            "source_id": "seg-b0ee8910e569",
+            "derived_id": "mem-783de07618ef",
+            "relation_type": "derives",
+            "permission_snapshot": {
+              "record_domain": "shared",
+              "active": true
+            }
+          }
+        ],
+        "audit_seq": 201,
+        "audit_hash": "b3be413dc8c3b0fb4e729c11344eeb38dde266bf77de96e2e4cc815e4e1b8e70"
+      },
+      "egress": {
+        "authorized": true,
+        "grant_id": "grant-3f8a21c9d4e70b56",
+        "destination": "gdrive",
+        "cipher": "aes-256-gcm",
+        "key_id": "fy-local-key-2026-09",
+        "key_escrow": "local_only",
+        "plaintext_egress": false,
+        "cloud_searchable": false,
+        "audit_seq": 202
+      },
+      "redaction": {
+        "blacklist_version": "secrets-v1",
+        "matched": false,
+        "redacted_fields": []
+      },
+      "integrity": {
+        "prev_trace_hash": "05a4859088b0cb912d795114e6e298264831bec34f6cf2964893115759928f7e",
+        "audit_chain_verified": true,
+        "trace_hash": "14d445cc5d52432747ca15b24e8de079d211474d530b78d11f2e7b853930040f"
+      }
+    }
+  ]
+}

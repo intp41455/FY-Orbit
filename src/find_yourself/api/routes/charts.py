@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from ..deps import get_actor, get_db, get_services, Services
+from ..deps import csrf_protected, get_db, get_services, Services
 from ...charts.engine import ChartImporter, DeterministicChartEngine
 from ...charts.interpreter import ChartInterpreter
 from ...charts.models import (
@@ -29,7 +29,7 @@ _CHART_CACHE: dict[str, ChartResult] = {}
 @router.post("/compute", response_model=ChartResult, status_code=status.HTTP_200_OK)
 def compute_chart(
     body: ChartRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
 ) -> ChartResult:
     """Compute an astrological or bazi chart using the authoritative deterministic engine."""
     actor.require_owner()
@@ -51,7 +51,7 @@ def compute_chart(
 @router.post("/import", response_model=ChartResult, status_code=status.HTTP_200_OK)
 def import_external_chart(
     body: ExternalChartImportRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
 ) -> ChartResult:
     """Import an externally generated or scanned chart faithfully without fabrication."""
     actor.require_owner()
@@ -63,7 +63,7 @@ def import_external_chart(
 @router.post("/interpret", response_model=InterpretationResult, status_code=status.HTTP_200_OK)
 def interpret_chart(
     body: InterpretRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     services: Services = Depends(get_services),
 ) -> InterpretationResult:
     """Produce a four-layer interpretation separating computed facts, public citations, and hypotheses."""

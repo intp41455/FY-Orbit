@@ -19,7 +19,7 @@ def test_work_cannot_read_personal_without_grant(session, owner):
     mem, grants = _svc(session)
     personal = mem.upsert(owner, owner_id="owner-1", domain="personal", category="self_report",
                           content="my secret salary number", source_ids=[])
-    hits = mem.search("work", "salary")
+    hits = mem.search("work", "salary", owner_id="owner-1")
     assert all(h["id"] != personal.id for h in hits)
 
 
@@ -31,7 +31,7 @@ def test_explicit_grant_opens_only_named_record(session, owner):
                     content="salary secret beta", source_ids=[])
     grants.create(owner, source_domain="personal", consumer_domain="work",
                   record_ids=[p1.id], expires_at=utcnow() + timedelta(days=5))
-    hits = mem.search("work", "salary")
+    hits = mem.search("work", "salary", owner_id="owner-1")
     ids = {h["id"] for h in hits}
     assert p1.id in ids
     assert p2.id not in ids

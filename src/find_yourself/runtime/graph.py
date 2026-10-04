@@ -124,14 +124,19 @@ def node_research(state: TaskGraphState) -> dict:
     """Route 2: Provenance-preserving source research.
 
     Enforces outbound privacy checks and records evidence citations.
+    With no granted sources the output is explicitly marked unverified —
+    citations are never fabricated.
     """
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
     domain = state.get("domain", "personal")
     spent = 0.002
 
-    citations = [f"src:{sid}" for sid in granted] if granted else ["src:public_corpus_2026"]
-    findings = f"Research findings for '{goal}' grounded in verified citations: {citations}."
+    citations = [f"src:{sid}" for sid in granted]
+    if citations:
+        findings = f"Research findings for '{goal}', grounded in the granted sources listed in citations."
+    else:
+        findings = f"unverified: no authorized sources were granted for '{goal}'; no findings are claimed."
 
     return {
         "stage": "validate",
@@ -139,6 +144,7 @@ def node_research(state: TaskGraphState) -> dict:
             "mode": "research",
             "findings": findings,
             "citations": citations,
+            "verified": bool(citations),
         },
         "spent_usd": state.get("spent_usd", 0.0) + spent,
         "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
@@ -147,7 +153,11 @@ def node_research(state: TaskGraphState) -> dict:
 
 
 def node_tool_step(state: TaskGraphState) -> dict:
-    """Route 3: Guarded tool execution through budget middleware."""
+    """Route 3: Tool-execution slot.
+
+    No tool is wired into this node yet — the output must never claim a
+    successful execution or fabricate an execution receipt.
+    """
     subtasks = state.get("subtasks", [])
     tool_name = "data_analysis_tool"
     spent = 0.005
@@ -155,15 +165,16 @@ def node_tool_step(state: TaskGraphState) -> dict:
     output = {
         "mode": "tool",
         "tool_used": tool_name,
-        "status": "success",
-        "result": f"Execution output for task {state.get('task_id')}",
+        "status": "not_executed",
+        "result": None,
+        "detail": "Tool execution is not wired into this node yet; no execution result is claimed.",
     }
     return {
         "stage": "validate",
         "output": output,
         "spent_usd": state.get("spent_usd", 0.0) + spent,
         "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
-        "evidence_refs": state.get("evidence_refs", []) + [f"ev:tool:{tool_name}"],
+        "evidence_refs": state.get("evidence_refs", []),
     }
 
 

@@ -14,6 +14,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
+from fastapi import Request
 from sqlalchemy.orm import Session
 
 from find_yourself.api.oidc import pkce_pair, new_nonce, new_state
@@ -52,6 +53,11 @@ def test_o01_local_dev_token_rejects_non_loopback(session: Session):
 
 def test_o01_production_cookie_and_pkce_invariants():
     """O01: Cookie security flags and PKCE generation meet production OAuth specifications."""
+    # Minimal ASGI scopes so request.url.scheme works without a server.
+    http_request = Request({"type": "http", "scheme": "http", "server": ("testserver", 80),
+                            "path": "/", "headers": []})
+    https_request = Request({"type": "http", "scheme": "https", "server": ("testserver", 443),
+                             "path": "/", "headers": []})
     prod_settings = Settings(
         environment="production",
         session_secret="prod-secret-must-be-at-least-32-chars-long",
@@ -70,9 +76,11 @@ def test_o01_production_cookie_and_pkce_invariants():
     )
 
     # In production, cookie must be secure (HTTPS only)
-    assert _cookie_secure(prod_settings) is True
+    assert _cookie_secure(prod_settings, http_request) is True
     # In local/test, loopback HTTP is permitted
-    assert _cookie_secure(dev_settings) is False
+    assert _cookie_secure(dev_settings, http_request) is False
+    # P2-18: non-production must still be secure when the request is https
+    assert _cookie_secure(dev_settings, https_request) is True
 
     # PKCE verifier has high entropy and challenge is base64url encoded
     verifier, challenge = pkce_pair()

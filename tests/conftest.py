@@ -14,6 +14,11 @@ from sqlalchemy.pool import StaticPool
 
 from find_yourself.db.base import Base
 from find_yourself.db import models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
 from find_yourself.services.audit import AuditService
 from find_yourself.services.actor import Actor
 

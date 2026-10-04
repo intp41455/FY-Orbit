@@ -90,9 +90,45 @@ def test_u07_fourdim_exploratory_labels_and_disclaimer():
 # 3. U08: Listen-Only Mode (No Unsolicited Diagnosis / Forced Tasks)
 # ============================================================================
 
+class _CountingProvider:
+    """Deterministic fake provider recording every prompt it receives."""
+
+    def __init__(self):
+        from decimal import Decimal
+        self._decimal = Decimal
+        self.calls: list[str] = []
+
+    def complete(self, *, model: str, prompt: str, max_tokens: int = 1024,
+                 timeout_seconds: float = 30.0):
+        from find_yourself.runtime.gateway import CallResult
+
+        self.calls.append(prompt)
+        n = len(self.calls)
+        return CallResult(
+            text=f"（模型回复 #{n}）我在听，请继续说。",
+            usage={"prompt_tokens": 10, "completion_tokens": 8, "total_tokens": 18},
+            settled_amount=self._decimal("0"),
+            provider_request_id=f"fake-{n}",
+        )
+
+
+def _model_backed_companion(session, audit, provider: _CountingProvider | None = None):
+    from find_yourself.config import Settings
+    from find_yourself.runtime.gateway import ModelGateway
+
+    provider = provider or _CountingProvider()
+    settings = Settings(
+        session_secret="x" * 32,
+        model_api_key="test-key",
+        model_base_url="http://127.0.0.1:9",
+    )
+    gateway = ModelGateway(settings, provider=provider)
+    return CompanionService(session, audit, settings=settings, model_gateway=gateway), provider
+
+
 def test_u08_listen_only_mode_no_forced_diagnosis(session, owner):
     audit = AuditService(session)
-    companion = CompanionService(session, audit)
+    companion, provider = _model_backed_companion(session, audit)
     conv = Conversation(id="c-listen-1", owner_id=owner.owner_id, title="Silent Walk", domain="personal", mode="listen")
 
     user_msg = "最近工作压力很大，我只想倾听，请不要给我做测评或者下心理诊断。"
@@ -103,7 +139,12 @@ def test_u08_listen_only_mode_no_forced_diagnosis(session, owner):
     assert resp["is_diagnosis"] is False
     assert resp["assessment_triggered"] is False
     assert resp["prescribed_tasks"] == []
-    assert "不会擅自为你下任何心理诊断" in resp["content"]
+    assert resp["generated_by"] == "model"
+    # U08 constraints actually reached the model prompt
+    assert "只倾听模式" in provider.calls[-1]
+    assert "绝不擅自做心理诊断" in provider.calls[-1]
+    # and the old hardcoded template is gone
+    assert "不会擅自为你下任何心理诊断" not in resp["content"]
 
 
 # ============================================================================
@@ -112,7 +153,7 @@ def test_u08_listen_only_mode_no_forced_diagnosis(session, owner):
 
 def test_u09_metaphysical_subconscious_perspective_framing(session, owner):
     audit = AuditService(session)
-    companion = CompanionService(session, audit)
+    companion, provider = _model_backed_companion(session, audit)
     conv = Conversation(id="c-meta-1", owner_id=owner.owner_id, title="Dream Reflection", domain="personal", mode="explore")
 
     user_msg = "我昨晚做梦梦见大蛇和高塔，这在荣格精神分析或塔罗潜意识里预示着我的什么宿命？"
@@ -123,10 +164,42 @@ def test_u09_metaphysical_subconscious_perspective_framing(session, owner):
     assert resp["perspective"] == "exploratory_metaphor"
     assert resp["profile_facts_mutated"] is False
 
-    # Mandatory perspective disclaimer banner
+    # Mandatory perspective disclaimer banner (service-side, not model-dependent)
     assert PERSPECTIVE_DISCLAIMER in resp["content"]
     assert "不构成医学/精神科诊断" in resp["content"]
     assert "非既定人生因果或宿命判定" in resp["content"]
+    # U09 constraints actually reached the model prompt
+    assert "潜意识/玄学/精神分析探讨" in provider.calls[-1]
+
+
+# ============================================================================
+# 4b. Model-backed honesty: no key -> explicit 503; distinct inputs -> distinct replies
+# ============================================================================
+
+def test_companion_without_provider_raises_honest_error(session, owner):
+    from find_yourself.runtime.gateway import ModelNotConfigured
+
+    audit = AuditService(session)
+    companion = CompanionService(session, audit)
+    conv = Conversation(id="c-nomodel", owner_id=owner.owner_id, title="T", domain="personal", mode="chat")
+
+    with pytest.raises(ModelNotConfigured) as exc:
+        companion.respond(owner, conv, "今天天气不错，我去公园散步了")
+    assert "FY_MODEL_API_KEY" in str(exc.value)
+
+
+def test_companion_distinct_inputs_get_distinct_replies(session, owner):
+    audit = AuditService(session)
+    companion, provider = _model_backed_companion(session, audit)
+    conv = Conversation(id="c-distinct", owner_id=owner.owner_id, title="T", domain="personal", mode="chat")
+
+    replies = [
+        companion.respond(owner, conv, "我最近很焦虑，总觉得哪里不对")["content"],
+        companion.respond(owner, conv, "今天天气不错，我去公园散步了")["content"],
+        companion.respond(owner, conv, "asdkjh 12345 @@@ ###random###")["content"],
+    ]
+    assert len(set(replies)) == 3
+    assert len(provider.calls) == 3
 
 
 # ============================================================================

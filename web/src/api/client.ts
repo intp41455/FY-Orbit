@@ -45,6 +45,11 @@ export function setCsrfToken(t: string | null): void {
   csrfToken = t;
 }
 
+/** P1-19: 当前 CSRF token（模块态优先，meta 兜底），供非 client.ts 的请求方复用。 */
+export function getCsrfToken(): string | null {
+  return readCsrfToken();
+}
+
 function readCsrfToken(): string | null {
   if (csrfToken) return csrfToken;
   if (typeof document === 'undefined') return null;
@@ -117,6 +122,14 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     throw new ApiError(res.status, body, `Request failed with status ${res.status}`);
   }
   return parsed as T;
+}
+
+/**
+ * P1-A: build an API URL honouring VITE_API_BASE_URL for callers that bypass
+ * the JSON `request` wrapper (e.g. the preview-content blob fetch).
+ */
+export function buildApiUrl(path: string, query?: RequestOptions['query']): string {
+  return buildUrl(path, query);
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']): string {

@@ -192,10 +192,17 @@ class MemoryService:
             for r in revs
         ]
 
-    def search(self, consumer_domain: str, query: str, limit: int = 8) -> list[dict]:
-        """Authorization-first retrieval (BUG-11) with cache invalidation (M04)."""
+    def search(self, consumer_domain: str, query: str, limit: int = 8, *, owner_id: str) -> list[dict]:
+        """Authorization-first retrieval (BUG-11) with cache invalidation (M04).
+
+        ``owner_id`` is mandatory: memories are never searchable across users —
+        domain grants authorize cross-domain visibility for the SAME owner, not
+        cross-tenant access.
+        """
+        if not owner_id:
+            raise ValidationFailed("owner_required", "memory.search requires an owner_id")
         norm_query = query.strip().lower()
-        cache_key = (consumer_domain, norm_query, limit, self._cache_version)
+        cache_key = (owner_id, consumer_domain, norm_query, limit, self._cache_version)
         with self._cache_lock:
             cached = self._cache.get(cache_key)
             if cached is not None:
@@ -211,9 +218,10 @@ class MemoryService:
                     return [dict(x) for x in cached]
 
             now = utcnow()
-            # Candidate set: only active, non-deleted memories.
+            # Candidate set: only this owner's active, non-deleted memories.
             candidates = list(self.s.execute(
-                select(Memory).where(Memory.active.is_(True), Memory.deleted_at.is_(None))
+                select(Memory).where(Memory.active.is_(True), Memory.deleted_at.is_(None),
+                                     Memory.owner_id == owner_id)
             ).scalars())
 
             scored: list[tuple[int, Memory]] = []

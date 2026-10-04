@@ -28,6 +28,11 @@ class AuthMe(BaseModel):
     service_id: str = ""
     service_kind: str = ""
     csrf_token: str = ""
+    # W8 account tiers. Both carry honest defaults: a service identity or the
+    # legacy bootstrap owner is never a guest, and "unknown" plan means "this
+    # owner has no users row" rather than a silently claimed "free" tier.
+    is_guest: bool = False
+    plan: str = "unknown"
 
 
 # --- conversations / messages -----------------------------------------------

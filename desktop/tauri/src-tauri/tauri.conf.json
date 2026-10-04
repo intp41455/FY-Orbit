@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Find Yourself",
+  "version": "0.1.0",
+  "identifier": "app.findyourself.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix ../../web run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm --prefix ../../web run build",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Find Yourself",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 1280,
+        "minHeight": 720,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:*"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.ico"
+    ],
+    "resources": [],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "shortDescription": "本地优先的桌面端 AI 超级工作台",
+    "longDescription": "Find Yourself —— 本地优先的桌面端 AI 超级工作台、个人数字空间与数码小屋。数据全部保存在你自己的电脑上；工作台免登录即可使用。"
+  },
+  "plugins": {
+    "shell": {
+      "open": false
+    }
+  }
+}

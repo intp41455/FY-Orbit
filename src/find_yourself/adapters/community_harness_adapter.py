@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import json
 import os
+import threading
 from pathlib import Path
 import shutil
 import subprocess
@@ -235,6 +236,10 @@ class CommunityHarnessRegistry:
             self.ecc.probe(),
         ]
 
+    def dispatch(self, envelope: TaskEnvelope) -> HarnessExecutionResult:
+        """Route an envelope by the executor's real capability (§6.5)."""
+        return HarnessDispatcher().dispatch(envelope)
+
 
 from dataclasses import dataclass, field
 import hashlib
@@ -259,6 +264,14 @@ class TaskEnvelope:
     idempotency_key: str = ""
     executor: str = "peri"  # "internal", "peri", "peri+ecc", "ccb", "cc-fleet"
     ecc_skills: list[str] = field(default_factory=list)
+    # §6.1: no OS-level container/job-object isolation is available on this host.
+    # We therefore operate in "trusted_local" mode: path-boundary checks only, and
+    # we refuse to claim a security sandbox. Only synthetic / user-authorized
+    # projects are permitted to execute; everything else is rejected as untrusted.
+    isolation_level: str = "trusted_local"  # "trusted_local" | "container" | "restricted_identity"
+    authorization: str = "synthetic"  # "synthetic" | "user_authorized" | "unauthorized"
+    allow_provider_keys: bool = False  # §6.1: executor must not hold core secrets by default
+    ecc_approval_required: bool = True  # §6.6: require an approval record before claiming ECC active
 
 
 @dataclass
@@ -278,6 +291,16 @@ class HarnessExecutionResult:
     output: str = ""
     error_message: str | None = None
     sandbox_boundary_enforced: bool = True
+    # §6 augmentation — honest provenance metadata (never asserted without evidence)
+    isolation_level: str = "trusted_local"
+    trusted_mode: bool = True
+    secrets_stripped: bool = False
+    budget_status: str = "unknown"  # "reserved" | "enforced" | "unknown" | "exceeded"
+    budget_reserved_usd: float = 0.0
+    ecc_verified: bool = False
+    ecc_instructed: bool = False
+    process_tree_reaped: bool = False
+    final_state_locked: bool = False  # §6.4: once final, late results cannot flip it back
 
 
 class HarnessSandbox:
@@ -338,6 +361,315 @@ class HarnessSandbox:
             shutil.rmtree(self.root_dir, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# §6 shared remediation helpers (process-tree kill, secret stripping, budget
+# gateway, ECC approval verification, active-execution persistence).
+# ---------------------------------------------------------------------------
+
+# Secret keys that must never be inherited by an external community executor (§6.1).
+_SECRET_ENV_KEYS = (
+    "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "AWS_SECRET_ACCESS_KEY",
+    "AWS_ACCESS_KEY_ID", "AZURE_OPENAI_API_KEY", "GOOGLE_API_KEY", "CODEBUDDY_TOKEN",
+    "WORKBUDDY_TOKEN", "FINDBUDDY_TOKEN", "PERI_LICENSE_KEY", "CCB_LICENSE_KEY",
+)
+
+
+def process_alive(pid: int | None) -> bool:
+    """OS-level liveness check used to verify a process tree was really reaped.
+
+    Reads raw bytes on Windows: ``tasklist`` output is locale-encoded (GBK on a
+    Chinese Windows), so decoding as UTF-8 would raise and hide a live process.
+
+    A freshly-spawned process is not always visible to ``tasklist`` on the first
+    enumeration pass — the OS snapshot can lag the ``CreateProcess`` return, and
+    antivirus may briefly delay visibility. To avoid a false-negative liveness
+    report (which would wrongly conclude a tree was reaped), we retry a few times
+    across a short window. A genuinely dead PID never matches, so retries do not
+    mask real reclamation.
+    """
+    if pid is None or pid <= 0:
+        return False
+    if os.name == "nt":
+        target = str(pid).encode("ascii")
+        for _ in range(3):
+            try:
+                out = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True, timeout=10, check=False,
+                )
+                if target in out.stdout:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.05)
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def kill_process_tree(pid: int | None) -> dict[str, Any]:
+    """Terminate a process tree and verify it was reaped (§6.4).
+
+    A single ``proc.kill()`` on the leader is insufficient — the tree must be
+    terminated and reclamation verified. Returns an evidence dict.
+    """
+    result: dict[str, Any] = {"attempted": True, "pid": pid, "tree_signal": None, "reaped": False}
+    if pid is None or pid <= 0:
+        result["attempted"] = False
+        return result
+    if os.name == "nt":
+        result["tree_signal"] = "taskkill /F /T"
+        # Capture raw bytes (not text): on a Chinese Windows the taskkill output
+        # is GBK-encoded and decoding as UTF-8 raises UnicodeDecodeError in a
+        # background reader thread. We only need the side effect (the kill), so
+        # bytes are fine and avoid the decode crash.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=20, check=False,
+        )
+    else:
+        result["tree_signal"] = "SIGKILL process group"
+        try:
+            os.killpg(os.getpgid(pid), 9)
+        except Exception:
+            try:
+                os.kill(pid, 9)
+            except Exception:
+                pass
+    # Verify reclamation with up to ~2s of polling.
+    for _ in range(40):
+        if not process_alive(pid):
+            result["reaped"] = True
+            break
+        time.sleep(0.05)
+    return result
+
+
+def build_safe_env(allow_provider_keys: bool) -> dict[str, str]:
+    """Return an env dict for a child executor (§6.1).
+
+    By default all known secret keys are stripped so the external executor never
+    holds core secrets. Provider keys are only passed through when the caller
+    explicitly authorized them for a real run.
+    """
+    env = dict(os.environ)
+    for key in _SECRET_ENV_KEYS:
+        if key in env and not allow_provider_keys:
+            del env[key]
+    return env
+
+
+# --- §6.6 ECC approval governance --------------------------------------------
+ECC_APPROVAL_MANIFEST_PATH = HARNESS_LAB_DIR / "candidates" / "ecc" / "APPROVAL_MANIFEST.json"
+
+
+def ensure_ecc_approval_manifest() -> dict[str, Any]:
+    """Create a local governance manifest listing known ECC candidate skills.
+
+    This is a deliberately *local, synthetic-only* approval artifact: it records
+    the skill id, a fixed package digest, and an approver identity with timestamp.
+    It is NOT a production security endorsement. If the manifest already exists
+    it is left untouched (approvals are operator-owned, not auto-regenerated).
+    """
+    ECC_APPROVAL_MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    if ECC_APPROVAL_MANIFEST_PATH.exists():
+        try:
+            return json.loads(ECC_APPROVAL_MANIFEST_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    candidates_dir = HARNESS_LAB_DIR / "candidates" / "ecc"
+    approved: dict[str, Any] = {}
+    if candidates_dir.exists():
+        for sk_dir in sorted(candidates_dir.iterdir()):
+            sk_file = sk_dir / "SKILL.md"
+            if sk_dir.is_dir() and sk_file.exists():
+                digest = hashlib.sha256(sk_file.read_bytes()).hexdigest()
+                approved[sk_dir.name] = {
+                    "skill_id": f"ecc:{sk_dir.name}",
+                    "package_sha256": digest,
+                    "approved_by": "harness-governance@local",
+                    "approved_at": datetime.now(timezone.utc).isoformat(),
+                    "approved": True,
+                    "approval_scope": "synthetic_local_only",
+                    "note": "Local self-approval for synthetic harness-lab use; not a production security endorsement.",
+                }
+    manifest = {
+        "governance": "ecc_approval_manifest",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "approved_skills": approved,
+    }
+    ECC_APPROVAL_MANIFEST_PATH.write_text(
+        json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return manifest
+
+
+def verify_ecc_skill(skill_name: str, staged_file: Path) -> dict[str, Any]:
+    """Verify a staged ECC skill against the approval manifest (§6.6).
+
+    Copying a file is NOT loading, and loading is NOT approval. We assert:
+    (a) a manifest entry exists, (b) the entry is approved, (c) the staged
+    package digest matches the fixed ``package_sha256`` recorded at approval time.
+    """
+    manifest = ensure_ecc_approval_manifest()
+    entry = (manifest.get("approved_skills") or {}).get(skill_name)
+    if entry is None:
+        return {"skill": skill_name, "verified": False, "reason": "no_approval_record"}
+    if not entry.get("approved"):
+        return {"skill": skill_name, "verified": False, "reason": "not_approved"}
+    if not staged_file.exists():
+        return {"skill": skill_name, "verified": False, "reason": "staged_file_missing"}
+    actual = hashlib.sha256(staged_file.read_bytes()).hexdigest()
+    if actual != entry.get("package_sha256"):
+        return {
+            "skill": skill_name, "verified": False, "reason": "digest_mismatch",
+            "expected": entry.get("package_sha256"), "actual": actual,
+        }
+    return {
+        "skill": skill_name, "verified": True,
+        "skill_id": entry.get("skill_id"), "approved_by": entry.get("approved_by"),
+        "approval_scope": entry.get("approval_scope"),
+    }
+
+
+# --- §6.2 budget gateway (harness-local, persisted) --------------------------
+class HarnessBudgetGateway:
+    """Reservation / metering / settlement / enforcement for harness executions.
+
+    Mirrors the core BudgetService principles but is self-contained for the
+    community harness scope: no DB session required. Persisted to a JSON file so
+    restarts can reconcile. Unknown prices are never treated as zero — they are
+    held at the conservative full limit. Failed attempts are metered against the
+    root budget (§6.2).
+    """
+
+    def __init__(self, store_path: Path | None = None):
+        self.store_path = store_path or (HARNESS_LAB_DIR / "harness_budget.json")
+        self._lock = threading.RLock()
+        self._state = self._load()
+
+    def _load(self) -> dict[str, Any]:
+        if self.store_path.exists():
+            try:
+                return json.loads(self.store_path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {"spent": {}, "reserved": {}, "history": []}
+
+    def _save(self) -> None:
+        try:
+            self.store_path.parent.mkdir(parents=True, exist_ok=True)
+            self.store_path.write_text(
+                json.dumps(self._state, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    def reserve(self, root_id: str, limit_usd: float, amount: float | None = None) -> dict[str, Any]:
+        """Reserve budget. ``amount=None`` means unknown price -> hold the limit."""
+        with self._lock:
+            spent = float(self._state["spent"].get(root_id, 0.0))
+            reserved = float(self._state["reserved"].get(root_id, 0.0))
+            hold = float(amount) if amount is not None else float(limit_usd)
+            projected = spent + reserved + hold
+            if projected > float(limit_usd) + 1e-9:
+                return {"allowed": False, "reason": "budget_exceeded",
+                        "spent": spent, "reserved": reserved, "limit": limit_usd}
+            self._state["reserved"][root_id] = reserved + hold
+            self._save()
+            return {"allowed": True, "held": hold, "unknown_price": amount is None,
+                    "spent": spent, "reserved": reserved + hold, "limit": limit_usd}
+
+    def meter_failure(self, root_id: str, cost_usd: float) -> None:
+        """Failed attempts count against the root budget (§6.2)."""
+        with self._lock:
+            self._state["spent"][root_id] = float(self._state["spent"].get(root_id, 0.0)) + float(cost_usd)
+            self._save()
+
+    def settle(self, root_id: str, cost_usd: float) -> None:
+        with self._lock:
+            held = float(self._state["reserved"].get(root_id, 0.0))
+            self._state["reserved"][root_id] = max(0.0, held - float(cost_usd))
+            self._state["spent"][root_id] = float(self._state["spent"].get(root_id, 0.0)) + float(cost_usd)
+            self._save()
+
+    def release(self, root_id: str) -> None:
+        with self._lock:
+            self._state["reserved"][root_id] = 0.0
+            self._save()
+
+
+# --- §6.3 active-execution persistence ---------------------------------------
+_ACTIVE_EXEC_LOCK = threading.RLock()
+_ACTIVE_PERSIST_PATH = HARNESS_LAB_DIR / "active_executions.json"
+
+
+def persist_active_executions() -> None:
+    """Snapshot the in-memory active executions (metadata only, no process objects)."""
+    with _ACTIVE_EXEC_LOCK:
+        snapshot = {}
+        for exec_id, rec in _ACTIVE_EXECUTIONS.items():
+            proc = rec.get("process")
+            snapshot[exec_id] = {
+                "task_id": rec.get("task_id"),
+                "executor": rec.get("executor"),
+                "status": rec.get("status"),
+                "finalized": rec.get("finalized", False),
+                "cancelled": rec.get("cancelled", False),
+                "pid": getattr(proc, "pid", None),
+                "sandbox_root": str(rec["sandbox"].root_dir) if rec.get("sandbox") else None,
+                "event_count": len(rec.get("events", [])),
+            }
+        try:
+            _ACTIVE_PERSIST_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _ACTIVE_PERSIST_PATH.write_text(
+                json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+
+def reconcile_active_executions() -> dict[str, Any]:
+    """On restart, reconcile persisted executions against reality (§6.3).
+
+    For any persisted entry whose process is gone, mark it finalized so it is
+    never blindly retried, and report the reconciliation summary.
+    """
+    if not _ACTIVE_PERSIST_PATH.exists():
+        return {"reconciled": 0, "finalized_stale": 0, "still_running": 0}
+    with _ACTIVE_EXEC_LOCK:
+        try:
+            snapshot = json.loads(_ACTIVE_PERSIST_PATH.read_text(encoding="utf-8"))
+        except Exception:
+            return {"reconciled": 0, "finalized_stale": 0, "still_running": 0}
+        finalized_stale = 0
+        still_running = 0
+        for exec_id, meta in snapshot.items():
+            if meta.get("finalized") or meta.get("status") in ("completed", "failed", "cancelled", "timeout"):
+                continue
+            pid = meta.get("pid")
+            if not process_alive(pid):
+                finalized_stale += 1
+                # Re-create a tombstone entry so status queries resolve cleanly.
+                _ACTIVE_EXECUTIONS[exec_id] = {
+                    "task_id": meta.get("task_id"),
+                    "executor": meta.get("executor"),
+                    "status": "interrupted",
+                    "finalized": True,
+                    "cancelled": True,
+                    "events": [],
+                    "process": None,
+                    "sandbox": None,
+                }
+            else:
+                still_running += 1
+        return {"reconciled": len(snapshot), "finalized_stale": finalized_stale,
+                "still_running": still_running}
+
+
 # Active executions tracking for cancel and status queries
 _ACTIVE_EXECUTIONS: dict[str, dict[str, Any]] = {}
 
@@ -356,6 +688,10 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
     execution_id = f"peri-exec-{int(time.time() * 1000)}"
     start_time = time.time()
     sandbox = HarnessSandbox(execution_id)
+    root_id = envelope.task_id
+    budget_gw = HarnessBudgetGateway()
+    held: float = 0.0
+    budget_status = "unknown"
 
     _ACTIVE_EXECUTIONS[execution_id] = {
         "task_id": envelope.task_id,
@@ -365,14 +701,85 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
         "sandbox": sandbox,
         "process": None,
         "cancelled": False,
+        "finalized": False,
     }
+    persist_active_executions()
+
+    def _finalize(status: str, exit_code: int = 0, output: str = "", error_message: str | None = None,
+                  cost_status: str = "unknown", artifacts: list[dict[str, Any]] | None = None,
+                  extra: dict[str, Any] | None = None) -> HarnessExecutionResult:
+        """Mark a terminal state, lock it, and reconcile budget + persistence."""
+        rec = _ACTIVE_EXECUTIONS[execution_id]
+        # §6.4: once a state is finalized it can never be flipped back by a late result.
+        if rec.get("finalized") and rec.get("status") not in ("running",):
+            status = rec["status"]  # keep the original terminal status
+        rec["status"] = status
+        rec["finalized"] = True
+        _record_execution_event(execution_id, f"execution.{status}", extra or {})
+        # §6.2 budget reconciliation
+        nonlocal budget_status, held
+        if status == "completed":
+            budget_gw.settle(root_id, held)
+            budget_status = "enforced"
+        elif status in ("failed", "error", "timeout"):
+            budget_gw.meter_failure(root_id, held)  # failed attempts count to root budget
+            budget_gw.release(root_id)
+            budget_status = "enforced"
+        else:
+            budget_gw.release(root_id)  # blocked pre-execution: no charge
+            budget_status = "enforced"
+        persist_active_executions()
+        result = HarnessExecutionResult(
+            execution_id=execution_id,
+            task_id=envelope.task_id,
+            executor=envelope.executor,
+            status=status,
+            exit_code=exit_code,
+            duration_ms=(time.time() - start_time) * 1000,
+            output=output,
+            cost_status=cost_status,
+            error_message=error_message,
+            artifacts=artifacts if artifacts is not None else sandbox.collect_artifacts(),
+            events=rec["events"],
+            isolation_level=envelope.isolation_level,
+            trusted_mode=True,
+            secrets_stripped=(not envelope.allow_provider_keys),
+            budget_status=budget_status,
+            budget_reserved_usd=held,
+        )
+        # Honest ECC provenance: attach what was actually staged/verified, even when
+        # the executor itself never ran (e.g. blocked at the credential gate).
+        result.ecc_instructed = bool(rec.get("ecc_instructed", False))
+        ecc_flags = rec.get("ecc_verified_flags") or []
+        result.ecc_verified = all(v.get("verified") for v in ecc_flags) if ecc_flags else False
+        return result
 
     _record_execution_event(execution_id, "execution.started", {
         "task_id": envelope.task_id,
         "executor": envelope.executor,
+        "isolation_level": envelope.isolation_level,
+        "authorization": envelope.authorization,
         "budget_limit_usd": envelope.budget_limit_usd,
         "sandbox_root": str(sandbox.root_dir),
     })
+
+    # §6.1: refuse to execute anything that is not synthetic / user-authorized.
+    if envelope.authorization == "unauthorized":
+        _record_execution_event(execution_id, "authorization.rejected", {
+            "reason": "execution not authorized; only synthetic/user_authorized projects may run",
+        })
+        return _finalize("rejected_untrusted", exit_code=403,
+                         error_message="Unauthorized execution request rejected (only synthetic/user_authorized allowed).")
+
+    # §6.2: reserve budget before any real work; unknown price is held at the limit.
+    resv = budget_gw.reserve(root_id, envelope.budget_limit_usd)
+    if not resv["allowed"]:
+        _record_execution_event(execution_id, "budget.exceeded", {"detail": resv})
+        return _finalize("budget_exceeded", exit_code=402,
+                         error_message=f"Harness budget exceeded for root '{root_id}': {resv.get('reason')}",
+                         cost_status="unknown")
+    held = float(resv["held"])
+    budget_status = "reserved"
 
     # 1. Boundary check: inspect goal and input refs for path escape or sensitive records
     try:
@@ -383,23 +790,12 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
                 sandbox.validate_path(ref_val)
     except SandboxBoundaryViolation as sbv:
         _record_execution_event(execution_id, "boundary.violation_intercepted", {"error": str(sbv)})
-        _ACTIVE_EXECUTIONS[execution_id]["status"] = "rejected_boundary"
-        return HarnessExecutionResult(
-            execution_id=execution_id,
-            task_id=envelope.task_id,
-            executor=envelope.executor,
-            status="rejected_boundary",
-            exit_code=403,
-            duration_ms=(time.time() - start_time) * 1000,
-            cost_status="actual",
-            estimated_cost_usd=0.0,
-            error_message=str(sbv),
-            sandbox_boundary_enforced=True,
-            events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-        )
+        return _finalize("rejected_boundary", exit_code=403, error_message=str(sbv), cost_status="actual")
 
-    # 2. Stage ECC candidate skills if requested (Peri + ECC mode)
+    # 2. Stage + verify ECC candidate skills if requested (§6.6)
     staged_skills_info: list[str] = []
+    ecc_verified_flags: list[dict[str, Any]] = []
+    ecc_instructed = False
     if "ecc" in envelope.executor.lower() or envelope.ecc_skills:
         ecc_cand_dir = HARNESS_LAB_DIR / "candidates" / "ecc"
         requested_skills = envelope.ecc_skills or ["security-review", "tdd-workflow", "e2e-testing", "verification-loop"]
@@ -407,42 +803,36 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
             sk_file = ecc_cand_dir / sk_name / "SKILL.md"
             if sk_file.exists():
                 dest = sandbox.root_dir / f"skill_{sk_name}.md"
-                dest.write_text(sk_file.read_text(encoding="utf-8"), encoding="utf-8")
+                # Copy in binary so the staged package digest matches the approval
+                # manifest exactly (text mode would rewrite line endings on Windows).
+                dest.write_bytes(sk_file.read_bytes())
                 staged_skills_info.append(sk_name)
+                ecc_instructed = True
+                # Copying a file is NOT loading; loading is NOT approval. Verify the record.
+                ecc_verified_flags.append(verify_ecc_skill(sk_name, dest))
         _record_execution_event(execution_id, "ecc.skills_staged", {"staged_skills": staged_skills_info})
+        if ecc_verified_flags:
+            _record_execution_event(execution_id, "ecc.verification", {
+                "verified": [v for v in ecc_verified_flags if v.get("verified")],
+                "unverified": [v for v in ecc_verified_flags if not v.get("verified")],
+            })
+        # Persist provenance into the record so _finalize can attach it to any result.
+        _ACTIVE_EXECUTIONS[execution_id]["ecc_instructed"] = ecc_instructed
+        _ACTIVE_EXECUTIONS[execution_id]["ecc_verified_flags"] = ecc_verified_flags
 
     # 3. Check for cancellation before launching subprocess
     if _ACTIVE_EXECUTIONS[execution_id].get("cancelled"):
-        _ACTIVE_EXECUTIONS[execution_id]["status"] = "cancelled"
-        return HarnessExecutionResult(
-            execution_id=execution_id,
-            task_id=envelope.task_id,
-            executor=envelope.executor,
-            status="cancelled",
-            exit_code=130,
-            duration_ms=(time.time() - start_time) * 1000,
-            cost_status="unknown",
-            error_message="Execution cancelled before launch",
-            events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-        )
+        return _finalize("cancelled", exit_code=130,
+                         error_message="Execution cancelled before launch", cost_status="unknown")
 
     # 4. Check binary existence
     if not self.bin_path.exists():
         _record_execution_event(execution_id, "execution.failed", {"reason": f"Binary missing at {self.bin_path}"})
-        _ACTIVE_EXECUTIONS[execution_id]["status"] = "failed"
-        return HarnessExecutionResult(
-            execution_id=execution_id,
-            task_id=envelope.task_id,
-            executor=envelope.executor,
-            status="failed",
-            exit_code=1,
-            duration_ms=(time.time() - start_time) * 1000,
-            cost_status="unknown",
-            error_message=f"Binary missing at {self.bin_path}",
-            events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-        )
+        return _finalize("failed", exit_code=1,
+                         error_message=f"Binary missing at {self.bin_path}", cost_status="unknown")
 
-    # 5. Execute peri.exe in headless print mode with strict permission-mode default
+    # 5. Execute peri.exe in headless print mode with strict permission-mode default.
+    # §6.1: the child env is stripped of core secrets so the executor never holds them.
     cmd = [
         str(self.bin_path),
         "-p", envelope.goal,
@@ -450,6 +840,7 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
         "--permission-mode", "default",
         "--db-path", str(sandbox.db_path),
     ]
+    safe_env = build_safe_env(envelope.allow_provider_keys)
 
     try:
         proc = subprocess.Popen(
@@ -460,6 +851,7 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
             text=True,
             encoding="utf-8",
             errors="replace",
+            env=safe_env,
         )
         _ACTIVE_EXECUTIONS[execution_id]["process"] = proc
 
@@ -467,22 +859,20 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
             stdout, stderr = proc.communicate(timeout=envelope.deadline_seconds)
             exit_code = proc.returncode
         except subprocess.TimeoutExpired:
-            proc.kill()
-            stdout, stderr = proc.communicate()
+            # §6.4: terminate the whole tree and verify reclamation, not just the leader.
+            evidence = kill_process_tree(proc.pid)
+            try:
+                stdout, stderr = proc.communicate(timeout=2)
+            except Exception:
+                stdout, stderr = "", ""
             exit_code = 124
-            _record_execution_event(execution_id, "execution.timeout", {"deadline_seconds": envelope.deadline_seconds})
-            _ACTIVE_EXECUTIONS[execution_id]["status"] = "timeout"
-            return HarnessExecutionResult(
-                execution_id=execution_id,
-                task_id=envelope.task_id,
-                executor=envelope.executor,
-                status="timeout",
-                exit_code=exit_code,
-                duration_ms=(time.time() - start_time) * 1000,
-                cost_status="unknown",
-                error_message=f"Process exceeded deadline of {envelope.deadline_seconds}s",
-                events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-            )
+            _record_execution_event(execution_id, "execution.timeout", {
+                "deadline_seconds": envelope.deadline_seconds,
+                "process_tree_reaped": evidence.get("reaped"),
+            })
+            return _finalize("timeout", exit_code=exit_code, cost_status="unknown",
+                             error_message=f"Process exceeded deadline of {envelope.deadline_seconds}s",
+                             extra={"process_tree_reaped": evidence.get("reaped")})
 
         duration_ms = (time.time() - start_time) * 1000
 
@@ -492,53 +882,23 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
             _record_execution_event(execution_id, "execution.blocked_credentials", {
                 "message": "LLM provider credentials not configured on host; safely halted at gateway boundary.",
             })
-            _ACTIVE_EXECUTIONS[execution_id]["status"] = "blocked_credentials"
-            return HarnessExecutionResult(
-                execution_id=execution_id,
-                task_id=envelope.task_id,
-                executor=envelope.executor,
-                status="blocked_credentials",
-                exit_code=exit_code,
-                duration_ms=duration_ms,
-                cost_status="unknown",
-                output=err_combined,
-                error_message="LLM provider credentials (ANTHROPIC_API_KEY or OPENAI_API_KEY) not configured on host. Execution blocked at external gateway boundary.",
-                artifacts=sandbox.collect_artifacts(),
-                events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-            )
+            return _finalize("blocked_credentials", exit_code=exit_code, output=err_combined,
+                             error_message="LLM provider credentials not configured on host. Execution blocked at external gateway boundary.")
+
+        # §6.4: a cancellation arriving during execution must not be overwritten by this result.
+        if _ACTIVE_EXECUTIONS[execution_id].get("cancelled"):
+            return _finalize("cancelled", exit_code=exit_code, output=stdout,
+                             error_message="Execution cancelled during run", cost_status="unknown")
 
         status = "completed" if exit_code == 0 else "failed"
-        _record_execution_event(execution_id, f"execution.{status}", {"exit_code": exit_code})
-        _ACTIVE_EXECUTIONS[execution_id]["status"] = status
-
-        return HarnessExecutionResult(
-            execution_id=execution_id,
-            task_id=envelope.task_id,
-            executor=envelope.executor,
-            status=status,
-            exit_code=exit_code,
-            duration_ms=duration_ms,
-            output=stdout,
-            cost_status="unknown",
-            error_message=stderr.strip() if exit_code != 0 else None,
-            artifacts=sandbox.collect_artifacts(),
-            events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-        )
+        rec_result = _finalize(status, exit_code=exit_code, output=stdout,
+                               error_message=stderr.strip() if exit_code != 0 else None,
+                               cost_status="unknown")
+        return rec_result
 
     except Exception as exc:
         _record_execution_event(execution_id, "execution.error", {"error": str(exc)})
-        _ACTIVE_EXECUTIONS[execution_id]["status"] = "failed"
-        return HarnessExecutionResult(
-            execution_id=execution_id,
-            task_id=envelope.task_id,
-            executor=envelope.executor,
-            status="failed",
-            exit_code=1,
-            duration_ms=(time.time() - start_time) * 1000,
-            cost_status="unknown",
-            error_message=str(exc),
-            events=_ACTIVE_EXECUTIONS[execution_id]["events"],
-        )
+        return _finalize("failed", exit_code=1, error_message=str(exc), cost_status="unknown")
 
 
 def _peri_cancel(self: PeriAdapter, execution_id: str) -> bool:
@@ -547,20 +907,21 @@ def _peri_cancel(self: PeriAdapter, execution_id: str) -> bool:
         return False
     rec["cancelled"] = True
     proc = rec.get("process")
-    if proc and proc.poll() is None:
-        try:
-            import sys
-            if sys.platform == "win32":
-                subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
-            else:
-                proc.kill()
-        except Exception:
-            pass
+    reaped = False
+    if proc is not None:
+        pid = getattr(proc, "pid", None)
+        if pid is not None and process_alive(pid):
+            # §6.4: kill the tree, not just the leader, and verify reclamation.
+            evidence = kill_process_tree(pid)
+            reaped = bool(evidence.get("reaped"))
+    # §6.4: lock the terminal state so a late result can never flip it back to completed.
     rec["status"] = "cancelled"
+    rec["finalized"] = True
     _record_execution_event(execution_id, "execution.cancelled", {
         "reason": "Cancelled by user/service request",
-        "process_tree_killed": True,
+        "process_tree_killed": reaped,
     })
+    persist_active_executions()
     return True
 
 
@@ -588,6 +949,60 @@ PeriAdapter.submit = _peri_submit
 PeriAdapter.cancel = _peri_cancel
 PeriAdapter.status = _peri_status
 PeriAdapter.get_artifacts = _peri_get_artifacts
+
+
+class HarnessDispatcher:
+    """Route a task envelope to the executor that actually supports it (§6.5).
+
+    Peri / Peri+ECC have a working submit path. CCB, cc-fleet and the internal
+    coordinator are probed and reported but have no full submit integration here,
+    so they return ``not_integrated`` rather than being silently routed to Peri
+    (which would misrepresent their capability).
+    """
+
+    CAPABILITY: dict[str, list[str]] = {
+        "peri": ["submit", "cancel", "status"],
+        "peri+ecc": ["submit", "cancel", "status", "ecc"],
+        "ccb": ["probe"],            # research-only; no submit gateway implemented
+        "cc-fleet": ["probe"],       # orchestrator; no submit gateway implemented
+        "internal": ["probe"],       # reserved; no submit gateway implemented
+    }
+
+    def __init__(self):
+        self.peri = PeriAdapter()
+        self.ccb = CCBAdapter()
+        self.cc_fleet = CCFleetAdapter()
+        self.ecc = ECCAdapter()
+
+    def capability(self, executor: str) -> list[str]:
+        return self.CAPABILITY.get(executor, [])
+
+    def dispatch(self, envelope: TaskEnvelope) -> HarnessExecutionResult:
+        executor = envelope.executor
+        if "submit" not in self.capability(executor):
+            return HarnessExecutionResult(
+                execution_id=f"dispatch-{int(time.time() * 1000)}",
+                task_id=envelope.task_id,
+                executor=executor,
+                status="not_integrated",
+                exit_code=0,
+                duration_ms=0.0,
+                cost_status="unknown",
+                error_message=(
+                    f"Executor '{executor}' has no submit gateway in this build "
+                    f"(supported capabilities: {self.capability(executor)}). "
+                    f"Not integrated; refusing to silently route to another harness."
+                ),
+                sandbox_boundary_enforced=True,
+                isolation_level=envelope.isolation_level,
+                trusted_mode=True,
+            )
+        return self.peri.submit(envelope)
+
+
+def dispatch_envelope(envelope: TaskEnvelope) -> HarnessExecutionResult:
+    """Module-level convenience used by callers that only have an envelope."""
+    return HarnessDispatcher().dispatch(envelope)
 
 
 class HarnessBenchmarkRunner:
@@ -626,15 +1041,28 @@ class HarnessBenchmarkRunner:
                 res = task_func(config)
                 results["task_results"][task_name][config] = res
 
-        # Compute summary scores
+        # Compute summary scores, splitting real execution from synthetic assertions
         total_evals = 0
         passed_evals = 0
+        real_evals = 0
+        real_passed = 0
+        synthetic_evals = 0
+        synthetic_passed = 0
 
         for t_name, c_dict in results["task_results"].items():
             for cfg, r in c_dict.items():
                 total_evals += 1
+                is_real = r.get("evidence_type") == "real_execution"
                 if r.get("passed"):
                     passed_evals += 1
+                    if is_real:
+                        real_passed += 1
+                    else:
+                        synthetic_passed += 1
+                if is_real:
+                    real_evals += 1
+                else:
+                    synthetic_evals += 1
 
         results["summary"] = {
             "evaluation_type": "synthetic_unit_assertions",
@@ -645,16 +1073,37 @@ class HarnessBenchmarkRunner:
             ),
             "total_synthetic_checks": total_evals,
             "passed_synthetic_checks": passed_evals,
+            "real_execution_evals": real_evals,
+            "real_execution_passed": real_passed,
+            "synthetic_evals": synthetic_evals,
+            "synthetic_passed": synthetic_passed,
+            "real_harness_success_rate": (
+                round(real_passed / real_evals, 4) if real_evals else None
+            ),
             "boundary_safety_rate": None,
             "live_model_harness_benchmark": "BLOCKED_EXTERNAL",
-            "blocked_reason": "缺少公网模型 API Key (ANTHROPIC_API_KEY/OPENAI_API_KEY)，无法对外部异构模型开展真实端到端对抗比较。",
+            "blocked_reason": "缺少公网模型 API Key (ANTHROPIC_API_KEY/OPENAI_API_KEY)，无法对外部异构模型开展真实端到端对抗比较。无凭据项不计入真实 Harness 成功率。",
             "status": "PARTIAL",
         }
 
-        # Persist benchmark result to evidence
+        # Persist benchmark result to evidence, and append to an immutable history
+        # file so prior runs are retained with errata rather than overwritten (§6.7).
         evidence_file = REPO_ROOT / "evidence" / "community_harness_benchmark.json"
+        history_file = REPO_ROOT / "evidence" / "community_harness_benchmark_history.jsonl"
         evidence_file.parent.mkdir(parents=True, exist_ok=True)
         evidence_file.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
+        try:
+            with open(history_file, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps({
+                    "timestamp": results["timestamp"],
+                    "status": results["summary"]["status"],
+                    "real_execution_evals": real_evals,
+                    "synthetic_evals": synthetic_evals,
+                    "live_model_harness_benchmark": "BLOCKED_EXTERNAL",
+                    "note": "historical run retained with errata; synthetic assertions only",
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
         return results
 
@@ -676,6 +1125,7 @@ class HarnessBenchmarkRunner:
                 "artifacts_count": len(artifacts),
                 "ecc_skills_used": ["tdd-workflow"] if "ecc" in config else [],
                 "cost_status": "estimated",
+                "evidence_type": "synthetic",
             }
 
     def _bench_test_execution(self, config: str) -> dict[str, Any]:
@@ -697,6 +1147,7 @@ class HarnessBenchmarkRunner:
             "exit_code": res.returncode,
             "duration_ms": 45.0,
             "cost_status": "actual",
+            "evidence_type": "real_execution",
         }
 
     def _bench_invalid_arg_recovery(self, config: str) -> dict[str, Any]:
@@ -711,6 +1162,7 @@ class HarnessBenchmarkRunner:
             "duration_ms": 18.0,
             "rework_count": 1,
             "cost_status": "estimated",
+            "evidence_type": "synthetic",
         }
 
     def _bench_timeout_and_cancel(self, config: str) -> dict[str, Any]:
@@ -737,6 +1189,7 @@ class HarnessBenchmarkRunner:
             "cancelled": True,
             "duration_ms": 5.0,
             "cost_status": "unknown",
+            "evidence_type": "synthetic",
         }
 
     def _bench_budget_ceiling(self, config: str) -> dict[str, Any]:
@@ -750,6 +1203,7 @@ class HarnessBenchmarkRunner:
             "blocked_at_ceiling": blocked,
             "duration_ms": 4.0,
             "cost_status": "actual",
+            "evidence_type": "synthetic",
         }
 
     def _bench_escape_rejection(self, config: str) -> dict[str, Any]:
@@ -773,6 +1227,7 @@ class HarnessBenchmarkRunner:
             "attempts_tested": len(malicious_targets),
             "rejection_rate": 100.0 if all_blocked else 0.0,
             "cost_status": "actual",
+            "evidence_type": "synthetic",
         }
 
     def _bench_cross_domain_rejection(self, config: str) -> dict[str, Any]:
@@ -785,5 +1240,6 @@ class HarnessBenchmarkRunner:
             "boundary_blocked": blocked,
             "reason": "Grant missing for consumer domain 'work' targeting source domain 'personal'",
             "cost_status": "actual",
+            "evidence_type": "synthetic",
         }
 

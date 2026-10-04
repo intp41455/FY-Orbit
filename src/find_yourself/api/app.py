@@ -14,6 +14,7 @@ run on an isolated in-memory SQLite database without touching env/network.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import asyncio
 import os
 from pathlib import Path
 
@@ -58,11 +59,35 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             import find_yourself.db.profile_models  # noqa: F401
             import find_yourself.db.canvas_models  # noqa: F401
             import find_yourself.db.sync_models  # noqa: F401
+            import find_yourself.db.workbench_models  # noqa: F401
+            import find_yourself.db.team_models  # noqa: F401
+            import find_yourself.db.prompt_models  # noqa: F401  (P1-06 prompt template library)
+            import find_yourself.db.staging_models  # noqa: F401  (P1-04 work stash)
+            import find_yourself.db.session_state_models  # noqa: F401  (P1-21 session-state snapshots)
+            import find_yourself.db.kb_models  # noqa: F401  (W3 本地知识库 kb_documents/kb_chunks)
+            import find_yourself.services.assets  # noqa: F401  (W9 个人资产库 assets 表)
             Base.metadata.create_all(engine)
         session_maker = session_factory(engine)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        # Fail closed on dangling tool references before serving traffic.
+        from ..skills.harness import attach_tool_consistency_guard
+
+        attach_tool_consistency_guard(app.state.session_maker)
+        # W10-B: register the GUI-automation tools onto the governed gateway.
+        # They default to off; this only makes the tools exist (permission-gated).
+        from ..services.automation.registry import wire_automation_tools
+        wire_automation_tools()
+        # P2 MCP integration: wire configured MCP servers (FY_MCP_SERVERS) into
+        # the dynamic tool registry. Unreachable servers are logged and skipped;
+        # the empty default config makes this a no-op. Off the event loop so a
+        # slow stdio handshake cannot block boot.
+        from ..adapters.mcp import assemble_mcp_tools
+
+        app.state.mcp_status = await asyncio.to_thread(
+            assemble_mcp_tools, settings=settings
+        )
         tr = temporal if temporal is not None else TemporalRuntime.disabled()
         app.state.temporal = tr
         if settings.temporal_address:

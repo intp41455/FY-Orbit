@@ -4,13 +4,34 @@ version = "0.1.0"
 description = "Private companion and governed agent runtime"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "pydantic-settings>=2.8,<3",
-  "sqlalchemy>=2.0,<3", "psycopg[binary]>=3.2,<4", "pgvector>=0.3,<1",
-  "authlib>=1.5,<2", "itsdangerous>=2.2,<3", "httpx>=0.28,<1",
-  "temporalio>=1.10,<2", "langgraph>=1,<2", "deepagents>=0.4,<1",
-  "langchain-openai>=1,<2", "boto3>=1.38,<2", "pyyaml>=6,<7", "alembic>=1.14,<2",
-  "prometheus-client>=0.21,<1", "opentelemetry-sdk>=1.30,<2",
-  "opentelemetry-exporter-otlp-proto-http>=1.30,<2", "cryptography>=44,<50"
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.34,<1",
+  "pydantic-settings>=2.8,<3",
+  "sqlalchemy>=2.0,<3",
+  "psycopg[binary]>=3.2,<4",
+  "pgvector>=0.3,<1",
+  "authlib>=1.5,<2",
+  "itsdangerous>=2.2,<3",
+  "httpx>=0.28,<1",
+  "temporalio>=1.10,<2",
+  "langgraph>=1,<2",
+  "langchain-openai>=1,<2",
+  "boto3>=1.38,<2",
+  "pyyaml>=6,<7",
+  "alembic>=1.14,<2",
+  "prometheus-client>=0.21,<1",
+  "opentelemetry-sdk>=1.30,<2",
+  "opentelemetry-exporter-otlp-proto-http>=1.30,<2",
+  "cryptography>=44,<50",
+  # 18 工程代码工作台：真实交互终端。Windows 走 ConPTY；不可用时降级为管道并
+  # 明确标注为「命令日志」，不冒充可调整尺寸的交互终端。
+  "pywinpty>=3,<4",
+  "argon2-cffi>=25.1.0",
+  "pypdf>=5,<7",
+  "python-docx>=1.1,<2",
+  "mss>=10.2.0",
+  "pyautogui>=0.9.54",
+  "pygetwindow>=0.0.9",
 ]
 
 [dependency-groups]
@@ -22,6 +43,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/find_yourself"]
+
+[[tool.uv.index]]
+url = "https://mirrors.aliyun.com/pypi/simple"
+default = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -24,12 +24,12 @@ def test_personal_derived_shared_memory_inert_until_approved(session, owner):
     assert derived.active is False, "cross-domain derived memory must start inactive"
 
     # work consumer must NOT see it in search before approval.
-    hits = mem.search("work", "finances")
+    hits = mem.search("work", "finances", owner_id="owner-1")
     assert all(h["id"] != derived.id for h in hits)
 
     # After owner approval it becomes visible.
     mem.activate_approved(owner, derived.id)
-    hits = mem.search("work", "finances")
+    hits = mem.search("work", "finances", owner_id="owner-1")
     assert any(h["id"] == derived.id for h in hits)
 
 

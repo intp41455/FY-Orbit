@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..deps import get_actor, get_session
+from ..deps import csrf_protected, get_actor, get_session
 from ...services.actor import Actor
 from ...services.sync import SyncService
 
@@ -74,7 +74,7 @@ def get_sync_status(
 @router.post("/config")
 def update_sync_config(
     body: SyncConfigUpdateRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Update synchronization mode, opt-in categories or pause status."""
@@ -99,7 +99,7 @@ def update_sync_config(
 @router.post("/push", status_code=status.HTTP_200_OK)
 def push_sync_changes(
     body: SyncPushRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Push versioned local changes to remote sync store."""
@@ -108,8 +108,18 @@ def push_sync_changes(
     return service.push(actor, raw_items, client_device_id=body.client_device_id)
 
 
+def _pull_impl(
+    actor: Actor,
+    session: Session,
+    since: str | None,
+    limit: int,
+) -> dict[str, Any]:
+    """Shared read-only pull logic for the GET and POST variants."""
+    service = SyncService(session)
+    return service.pull(actor, since_iso=since, limit=limit)
+
+
 @router.get("/pull")
-@router.post("/pull")
 def pull_sync_changes(
     since: str | None = Query(default=None, description="ISO timestamp cursor for incremental changes"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -117,8 +127,18 @@ def pull_sync_changes(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Pull incremental server mutations for enabled categories."""
-    service = SyncService(session)
-    return service.pull(actor, since_iso=since, limit=limit)
+    return _pull_impl(actor, session, since, limit)
+
+
+@router.post("/pull")
+def pull_sync_changes_post(
+    since: str | None = Query(default=None, description="ISO timestamp cursor for incremental changes"),
+    limit: int = Query(default=100, ge=1, le=500),
+    actor: Actor = Depends(csrf_protected),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """POST variant of pull (same read semantics; CSRF applies to owner sessions)."""
+    return _pull_impl(actor, session, since, limit)
 
 
 @router.get("/conflicts")
@@ -136,7 +156,7 @@ def list_sync_conflicts(
 def resolve_sync_conflict(
     conflict_id: str,
     body: ConflictResolutionRequest,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     """Resolve a divergent synchronization conflict."""

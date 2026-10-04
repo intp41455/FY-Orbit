@@ -13,7 +13,7 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db.models import Grant, Memory
+from ..db.models import GRANT_DESTINATIONS, Grant, Memory
 from ..db.types import utcnow
 from .actor import Actor
 from .errors import NotFound, ValidationFailed
@@ -39,6 +39,7 @@ class GrantService:
         consumer_domain: str,
         record_ids: list[str],
         expires_at: datetime,
+        destination: str = "internal",
     ) -> Grant:
         actor.require_owner()
         now = utcnow()
@@ -48,7 +49,14 @@ class GrantService:
             raise ValidationFailed("grant_expiry", "Grant expiry must be in the future and <= 30 days")
         if not record_ids or not isinstance(record_ids, list):
             raise ValidationFailed("grant_scope", "Explicit record IDs required; wildcard is prohibited")
-        if source_domain == consumer_domain:
+        if destination not in GRANT_DESTINATIONS:
+            raise ValidationFailed(
+                "grant_destination", f"Unknown grant destination {destination!r}"
+            )
+        # grant_self only applies to cross-domain reads. An egress grant
+        # legitimately has source_domain == consumer_domain (owner's own data
+        # to owner's own Drive); rejecting it would make ruling 4A impossible.
+        if destination == "internal" and source_domain == consumer_domain:
             raise ValidationFailed("grant_self", "Grant is only needed across domains")
         # Every referenced record must actually live in the source domain.
         for rid in record_ids:
@@ -58,13 +66,16 @@ class GrantService:
         g = Grant(
             id=uuid4().hex, source_domain=source_domain, consumer_domain=consumer_domain,
             record_ids=record_ids, expires_at=expires_at, state="active",
+            destination=destination,
             scope_hash=digest({"source": source_domain, "consumer": consumer_domain,
-                               "records": sorted(record_ids), "exp": expires_at}),
+                               "records": sorted(record_ids), "exp": expires_at,
+                               "destination": destination}),
         )
         self.s.add(g)
         self.s.flush()
         self.audit.append(actor, "grant.created", g.id,
-                          {"source": source_domain, "consumer": consumer_domain, "n": len(record_ids)})
+                          {"source": source_domain, "consumer": consumer_domain,
+                           "n": len(record_ids), "destination": destination})
         if self.on_change:
             self.on_change()
         return g
@@ -92,8 +103,38 @@ class GrantService:
         rows = self.s.execute(
             select(Grant).where(
                 Grant.state == "active",
+                Grant.destination == "internal",
                 Grant.source_domain == record_domain,
                 Grant.consumer_domain == consumer_domain,
+                Grant.expires_at > now,
+            )
+        ).scalars()
+        for g in rows:
+            if record_id in (g.record_ids or []):
+                return True
+        return False
+
+
+    def is_egress_authorized(
+        self, *, record_domain: str, record_id: str, destination: str
+    ) -> bool:
+        """Egress authorization: judged separately, and it NEVER short-circuits
+        on same-domain (ruling 4A).
+
+        Ruling 4A makes the cloud drive an explicitly-authorized destination, so
+        even the owner's own ``personal`` records need a real, explicit,
+        per-record, unrevoked, unexpired grant to leave the machine. Inheriting
+        ``is_authorized``'s same-domain shortcut would silently allow
+        un-authorized export.
+        """
+        if destination not in GRANT_DESTINATIONS or destination == "internal":
+            return False
+        now = utcnow()
+        rows = self.s.execute(
+            select(Grant).where(
+                Grant.state == "active",
+                Grant.destination == destination,
+                Grant.source_domain == record_domain,
                 Grant.expires_at > now,
             )
         ).scalars()

@@ -1,0 +1,4 @@
+docs/guide.md
+extra.log
+notes.txt
+old-module.js

@@ -1,4 +1,5 @@
 .venv/
+.venv-clean-*/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
@@ -11,3 +12,31 @@ test-results/
 playwright-report/
 *.egg-info/
 dist-desktop/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# --- 2026-10-04 入库加固（主控补，闭合校验驱动）---
+# 理由：.env 规则只匹配名为 .env 的文件，不匹配 *.env。
+# evidence/p1-05-tool-registry/csrf.env 正是 *.env 形状，
+# 且 .gitignore:7 的裸 .env 规则对它是无效的。
+*.env
+.env.*
+!.env.example
+!.env.template
+# 例外：这一份已脱敏（值替换为 REDACTED_0…0，2026-10-04 主控实测确认无 64 位十六进制残留），
+# 它是 P1-05 工具注册验收的证据，丢了就无法复现该批次结论。
+!evidence/p1-05-tool-registry/csrf.env
+
+# 私钥与证书一律不入库（2026-10-04 全仓扫描 0 命中，此为预防性规则）
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+
+# 本地临时输出（不入库，避免污染基线）
+regress3.txt
+full_unit.txt
+full_api.txt
+cj3.txt

@@ -49,15 +49,21 @@ PROPOSAL_OPS = (
     "agent.register", "agent.drain", "skill.stage", "skill.promote",
     "skill.disable", "config.model", "conversation.delete",
     "task.merge", "task.release",
+    # P1-06 prompt template library governance
+    "prompt.stage", "prompt.activate", "prompt.disable",
 )
 PROPOSAL_STATUSES = (
     "pending", "approved_pending_execution", "executing", "executed",
     "failed", "unknown", "rejected", "expired",
 )
 GRANT_STATES = ("active", "revoked", "expired")
+GRANT_DESTINATIONS = ("internal", "gdrive")
 HYPOTHESIS_STATES = ("fact", "hypothesis", "theory", "unverified")
 SERVICE_KINDS = ("worker", "agent", "tool_gateway", "executor", "release")
 IDENTITY_STATES = ("active", "revoked")
+USER_STATUSES = ("active", "deleted", "guest")
+# W8 account tiers: 会员位. v1 只留位不接支付 (no payment channel wired).
+USER_PLANS = ("free", "pro")
 AGENT_STATES = (
     "candidate", "registered", "healthy", "enabled", "draining", "offline", "revoked",
 )
@@ -84,11 +90,59 @@ class AuthSession(Base):
     id: Mapped[str] = mapped_column(ID, primary_key=True)
     owner_id: Mapped[str] = mapped_column(String(200), index=True)
     csrf_secret: Mapped[str] = mapped_column(HASH64)
+    # sha256 of the opaque cookie token; NULL for legacy plaintext-id sessions.
+    token_hash: Mapped[str | None] = mapped_column(HASH64, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     expires_at: Mapped[datetime] = mapped_column(TZDateTime)
     revoked_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     rotation_version: Mapped[int] = mapped_column(Integer, default=1)
     version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class User(Base):
+    """A real end user (Route B multi-tenant). ``id`` is the ``owner_id`` used
+    across all ownership-scoped tables; the legacy single-owner rows map to the
+    bootstrap user backfilled by migration 0011."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    email: Mapped[str] = mapped_column(String(200), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    display_name: Mapped[str] = mapped_column(String(120), default="")
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    # W8: membership slot. free/pro only; v1 has no payment channel, so every
+    # account is born "free" and nothing but an explicit admin/ops write flips it.
+    #
+    # `server_default` is NOT redundant with the ORM `default`. Migration 0001
+    # builds every table from this metadata via `create_all`, so the column is
+    # created NOT NULL from the very first migration — and migration 0011 then
+    # backfills the legacy bootstrap owner with a *raw* INSERT that does not name
+    # `plan`. An ORM-side default cannot help there, so a fresh
+    # `alembic upgrade head` died with "NOT NULL constraint failed: users.plan"
+    # before reaching 0021. The database-level default is what makes the column
+    # safe for every writer, ORM or not.
+    plan: Mapped[str] = mapped_column(String(16), default="free", server_default="free")
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+    __table_args__ = (
+        CheckConstraint(_in("status", USER_STATUSES), name="ck_user_status"),
+        CheckConstraint(_in("plan", USER_PLANS), name="ck_user_plan"),
+    )
+
+
+class UserConsent(Base):
+    """GDPR-style consent record captured at registration (and later updates)."""
+
+    __tablename__ = "user_consents"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    doc_id: Mapped[str] = mapped_column(String(80), default="privacy-policy")
+    doc_version: Mapped[str] = mapped_column(String(40), default="v1")
+    agreed_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    ip: Mapped[str] = mapped_column(String(64), default="")
 
 
 class ServiceIdentity(Base):
@@ -248,6 +302,7 @@ class Grant(Base):
     expires_at: Mapped[datetime] = mapped_column(TZDateTime)
     state: Mapped[str] = mapped_column(String(16), default="active")
     scope_hash: Mapped[str] = mapped_column(HASH64)
+    destination: Mapped[str] = mapped_column(String(32), default="internal")
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     revoked_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -258,6 +313,7 @@ class Grant(Base):
         CheckConstraint(_in("state", GRANT_STATES), name="ck_grant_state"),
         # No wildcard / empty grants: record_ids must be a non-empty list.
         CheckConstraint("json_array_length(record_ids) > 0", name="ck_grant_nonempty_records"),
+        CheckConstraint(_in("destination", GRANT_DESTINATIONS), name="ck_grant_destination"),
     )
 
 

@@ -1,4 +1,6 @@
 from functools import lru_cache
+from typing import Any
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -20,6 +22,18 @@ class Settings(BaseSettings):
     temporal_queue: str = "find-yourself"
     model_api_key: str = ""
     model_base_url: str = ""
+    model_name: str = "gpt-4o-mini"
+    # ---- W4 模型网关多 Provider（追加字段；FY_MODEL_API_KEY / FY_MODEL_BASE_URL /
+    # FY_MODEL_NAME 的既有语义不变）----
+    # openai_compat | ollama | anthropic。留空时按旧配置推断（默认 openai_compat；
+    # 无 key 且 base_url 指向 Ollama 默认端口时推断为 ollama）。
+    model_provider: str = ""
+    # 降级链，JSON 数组，例如 [{"provider":"ollama","model":"qwen2.5:7b"}]。
+    # 每项可带 provider/model/base_url/api_key，缺省继承主配置。
+    model_fallbacks: list[dict[str, Any]] = []
+    # 未知模型按配置价：{"model-id": {"input_usd_per_1k":"0.001",
+    # "output_usd_per_1k":"0.002", "context_window":8192}}
+    model_price_overrides: dict[str, dict[str, Any]] = {}
     s3_endpoint: str = ""
     s3_bucket: str = "find-yourself"
     s3_region: str = "us-east-1"
@@ -28,6 +42,17 @@ class Settings(BaseSettings):
     artifacts_path: str = ".runtime/artifacts"
     otlp_endpoint: str = ""
     agent_endpoints: dict[str, str] = {}
+    # MCP ecosystem integration: {server_key: {"command": [...], "env": {...}}}
+    # (stdio subprocess transport, matching McpClient.from_subprocess). Empty
+    # default = MCP disabled; boot behaviour is unchanged.
+    mcp_servers: dict[str, dict[str, Any]] = {}
+    # ---- W9 多模态与个人资产库（追加字段）----
+    # 个人资产（图片/音频/音乐/文档）的本地磁盘根目录。DB 只存相对
+    # storage_path，绝对路径永不出库、永不回前端（由 /api/assets/{id}/raw 代理）。
+    assets_dir: str = ".runtime/assets"
+    # 图片生成的显式单价（美元/张）。留空时非本机端点一律拒绝调用
+    # —— 冻结契约 §7：单价未知不得按零费用放行。
+    image_price_usd: str = ""
 
     @model_validator(mode="after")
     def validate_security(self):

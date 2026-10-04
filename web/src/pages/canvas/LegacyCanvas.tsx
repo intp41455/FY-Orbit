@@ -8,10 +8,10 @@ import {
   type CanvasSnapshot,
   type CanvasTemplate,
   type ConnectorProbe,
-} from '../api/canvas';
-import { errorMessage } from '../components/ui';
+} from '../../api/canvas';
+import { errorMessage } from '../../components/ui';
 
-export function CanvasPage() {
+export function LegacyCanvas() {
   const [templates, setTemplates] = useState<CanvasTemplate[]>([]);
   const [connectors, setConnectors] = useState<ConnectorProbe[]>([]);
   const [instances, setInstances] = useState<CanvasInstance[]>([]);
@@ -103,10 +103,8 @@ export function CanvasPage() {
 
   async function handleDispatchSubtask(e: React.FormEvent) {
     e.preventDefault();
-    console.log('[Canvas] handleDispatchSubtask invoked', { activeInstance: activeInstance?.id, dispatchWorker, dispatchGoal, dispatchBudget });
     const targetWorker = dispatchWorker || activeInstance?.orchestrator_id || activeTemplate?.workers?.[0] || 'Hermes';
     if (!activeInstance || !dispatchGoal.trim() || !targetWorker) {
-      console.warn('[Canvas] early return: missing params', { hasInst: !!activeInstance, goal: dispatchGoal.trim(), targetWorker });
       return;
     }
     if (dispatchBudget > 0.50) {
@@ -115,20 +113,17 @@ export function CanvasPage() {
     }
     setDispatching(true);
     try {
-      console.log('[Canvas] calling dispatchSubtask API...', { instId: activeInstance.id, targetWorker, goal: dispatchGoal.trim() });
-      const res = await canvasApi.dispatchSubtask(activeInstance.id, {
+      await canvasApi.dispatchSubtask(activeInstance.id, {
         root_task_id: `root-${activeInstance.id}`,
         worker_id: targetWorker,
         goal: dispatchGoal.trim(),
         budget_slice: dispatchBudget,
       });
-      console.log('[Canvas] dispatchSubtask success', res);
       setShowDispatch(false);
       setDispatchGoal('');
       // Refresh snapshot
       await selectInstance(activeInstance);
     } catch (err) {
-      console.error('[Canvas] dispatchSubtask error', err);
       setError(errorMessage(err));
     } finally {
       setDispatching(false);

@@ -21,15 +21,13 @@ def test_companion_api_listen_mode(client: TestClient):
         "client_message_id": "u-msg-1",
     }, headers=headers)
 
-    # Companion reply
+    # Companion reply: no model provider configured in test settings -> the API
+    # must fail honestly (503 model_not_configured), never fall back to templates.
     r = client.post(f"/api/conversations/{c['id']}/reply", headers=headers)
-    assert r.status_code == 200
+    assert r.status_code == 503
     data = r.json()
-    assert data["role"] == "assistant"
-    assert "不会擅自为你下任何心理诊断" in data["content"]
-    assert data["metadata"]["is_diagnosis"] is False
-    assert data["metadata"]["assessment_triggered"] is False
-    assert data["metadata"]["prescribed_tasks"] == []
+    assert data["error"]["code"] == "model_not_configured"
+    assert "不会擅自为你下任何心理诊断" not in data["error"]["message"]
 
 
 def test_companion_api_crisis_reality_hotlines(client: TestClient):
@@ -59,12 +57,11 @@ def test_companion_api_metaphysical_disclaimer(client: TestClient):
         "mode": "explore",
     }, headers=headers).json()
 
+    # Without a configured provider the reply path is an honest 503 — the
+    # disclaimer-only template reply is retired.
     r = client.post(f"/api/conversations/{c['id']}/reply", json={
         "message": "我昨晚梦见在深海里潜意识下坠，这在荣格心理学里预示着什么宿命？",
     }, headers=headers)
-    assert r.status_code == 200
+    assert r.status_code == 503
     data = r.json()
-    assert "【探索视角标注】" in data["content"]
-    assert "非既定人生因果或宿命判定" in data["content"]
-    assert data["metadata"]["perspective"] == "exploratory_metaphor"
-    assert data["metadata"]["profile_facts_mutated"] is False
+    assert data["error"]["code"] == "model_not_configured"

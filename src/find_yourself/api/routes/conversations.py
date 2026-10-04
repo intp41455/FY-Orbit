@@ -15,7 +15,8 @@ from sqlalchemy import select
 
 from ...db.models import Conversation, Message
 from ...db.types import utcnow
-from ..deps import csrf_protected, get_actor, get_services, Services
+from ..deps import csrf_protected, get_actor, get_services, get_settings, Services
+from ...config import Settings
 from ..schemas import ConversationCreate, MessageCreate
 from ...services.actor import Actor
 from ...services.errors import NotFound, PermissionDenied, Conflict
@@ -117,7 +118,8 @@ async def list_messages(conversation_id: str, actor: Actor = Depends(get_actor),
 async def generate_reply(conversation_id: str,
                          body: dict | None = None,
                          actor: Actor = Depends(csrf_protected),
-                         svc: Services = Depends(get_services)) -> dict:
+                         svc: Services = Depends(get_services),
+                         settings: Settings = Depends(get_settings)) -> dict:
     from ...services.companion import CompanionService
     c = _get_owned(svc, actor, conversation_id)
     user_text = (body or {}).get("message")
@@ -128,7 +130,7 @@ async def generate_reply(conversation_id: str,
         ).scalars().first()
         user_text = last_user.content if last_user else ""
 
-    companion = CompanionService(svc.session, svc.audit)
+    companion = CompanionService(svc.session, svc.audit, settings=settings, budget=svc.budget)
     resp = companion.respond(actor, c, user_text)
 
     m = Message(

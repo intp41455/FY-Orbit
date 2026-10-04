@@ -11,7 +11,7 @@ from ...adapters.a2a import (
     build_agent_card,
 )
 from ...db.models import Task
-from ..deps import Services, get_actor, get_services, get_settings
+from ..deps import Services, csrf_protected, get_services, get_settings
 from ...config import Settings
 from ...services.actor import Actor
 
@@ -33,7 +33,7 @@ async def agent_card(settings: Settings = Depends(get_settings)) -> dict:
 
 @router.post(JSONRPC_PATH)
 async def a2a_jsonrpc(request: Request,
-                       actor: Actor = Depends(get_actor),
+                       actor: Actor = Depends(csrf_protected),
                        svc: Services = Depends(get_services),
                        settings: Settings = Depends(get_settings)) -> dict:
     body = await request.json()

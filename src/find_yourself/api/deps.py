@@ -34,6 +34,14 @@ from ..services.skill import SkillService
 from ..services.profile import ProfileService
 from ..services.canvas import CanvasService
 from ..services.sync import SyncService
+from ..services.workspace import WorkspaceService
+from ..services.terminal import TerminalService
+from ..services.git_service import GitService
+from ..services.preview import PreviewService
+from ..services.preview_sources import PreviewSourceService
+from ..services.orchestrator_lease import OrchestratorLeaseService
+from ..services.agent_teams import AgentTeamService
+from ..services.model_catalog import ModelCatalog
 
 SESSION_COOKIE = "fy_session"
 CSRF_HEADER = "x-csrf-token"
@@ -56,6 +64,15 @@ class Services:
     profiles: ProfileService
     canvas: CanvasService
     sync: SyncService
+    # 18 工程代码工作台
+    workspaces: WorkspaceService
+    terminals: TerminalService
+    git: GitService
+    previews: PreviewService
+    preview_sources: PreviewSourceService
+    orchestrator_leases: OrchestratorLeaseService
+    # 19 单Agent内部团队与逐节点模型配置
+    teams: AgentTeamService
 
 
 def get_settings(request: Request) -> Settings:
@@ -77,6 +94,10 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
     audit = AuditService(db)
     grants = GrantService(db, audit)
     budget_svc = BudgetService(db, audit)
+    # A single WorkspaceService instance is shared by the terminal, Git and
+    # preview services so they all consult the same authorization boundary.
+    workspaces = WorkspaceService(db, audit)
+    previews = PreviewService(db, workspaces)
     return Services(
         session=db,
         audit=audit,
@@ -92,6 +113,16 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         profiles=ProfileService(db, audit),
         canvas=CanvasService(db, audit, budget=budget_svc, grants=grants),
         sync=SyncService(db),
+        workspaces=workspaces,
+        terminals=TerminalService(db, workspaces),
+        git=GitService(db, workspaces),
+        previews=previews,
+        preview_sources=PreviewSourceService(db, workspaces, previews, audit=audit),
+        orchestrator_leases=OrchestratorLeaseService(db, audit),
+        teams=AgentTeamService(
+            db, audit, budget=budget_svc, settings=settings,
+            catalog=ModelCatalog(settings=settings),
+        ),
     )
 
 
@@ -108,14 +139,26 @@ def get_actor(request: Request, svc: Services = Depends(get_services)) -> Actor:
 
     A present-but-invalid bearer token is an authentication failure; we do not
     silently fall back to the session cookie.
+
+    After the identity check the (read) transaction opened by these dependency
+    queries is committed immediately. SQLAlchemy keeps that transaction open
+    for the rest of the request, and upgrading a SQLite/WAL *snapshot* to a
+    write fails right away with ``database is locked`` (the busy handler is not
+    invoked for a stale-snapshot upgrade) whenever another request committed in
+    between — which surfaced as sporadic 500s on /tree and /git/status. Ending
+    the auth transaction here means the handler starts a fresh transaction
+    after all dependency reads.
     """
     token = _bearer_token(request)
     if token:
-        return svc.auth.service_actor(token)
+        actor = svc.auth.service_actor(token)
+        svc.session.commit()
+        return actor
 
     session_id = request.cookies.get(SESSION_COOKIE)
     if session_id:
         row = svc.auth.verify_session(session_id)
+        svc.session.commit()
         return Actor.owner(row.owner_id, csrf_token=row.csrf_secret)
 
     raise Unauthenticated("unauthenticated", "Authentication required")

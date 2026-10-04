@@ -167,3 +167,152 @@ def test_harness_benchmark_runner_full_suite() -> None:
     assert summary["live_model_harness_benchmark"] == "BLOCKED_EXTERNAL"
     assert summary["status"] == "PARTIAL"
 
+    # §6.7: each task is labeled with an evidence type and real vs synthetic are split
+    for task_name, configs in report["task_results"].items():
+        for cfg, res in configs.items():
+            assert "evidence_type" in res
+    assert summary["real_execution_evals"] >= 1  # test_execution is a real subprocess run
+    assert summary["synthetic_evals"] >= 1
+    # No-credential items must NOT be counted as real Harness success.
+    assert summary["real_harness_success_rate"] is not None or summary["real_execution_evals"] == 0
+
+
+def test_s6_authorization_gate_rejects_unauthorized() -> None:
+    from find_yourself.adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
+
+    adapter = PeriAdapter()
+    env = TaskEnvelope(
+        task_id="s6-auth", goal="anything", workspace_dir="",
+        executor="peri", authorization="unauthorized",
+    )
+    result = adapter.submit(env)
+    assert result.status == "rejected_untrusted"
+    assert result.exit_code == 403
+    # trusted mode must be clearly flagged; we never claim an OS security sandbox.
+    assert result.trusted_mode is True
+    assert result.isolation_level == "trusted_local"
+
+
+def test_s6_budget_gateway_enforces_ceiling() -> None:
+    from find_yourself.adapters.community_harness_adapter import (
+        HarnessBudgetGateway, PeriAdapter, TaskEnvelope,
+    )
+
+    root = f"s6-budget-{int(__import__('time').time() * 1000)}"
+    # Pre-reserve the full limit so a second reserve must exceed it (§6.2).
+    gw = HarnessBudgetGateway()
+    first = gw.reserve(root, 0.05)
+    assert first["allowed"] is True
+
+    adapter = PeriAdapter()
+    env = TaskEnvelope(
+        task_id=root, goal="g", workspace_dir="", executor="peri",
+        budget_limit_usd=0.05,
+    )
+    result = adapter.submit(env)
+    assert result.status == "budget_exceeded"
+    assert result.budget_status == "enforced"
+    # cleanup reservation
+    gw.release(root)
+
+
+def test_s6_dispatcher_routes_by_capability() -> None:
+    from find_yourself.adapters.community_harness_adapter import (
+        CommunityHarnessRegistry, HarnessDispatcher, TaskEnvelope,
+    )
+
+    d = HarnessDispatcher()
+    for executor in ("ccb", "cc-fleet", "internal"):
+        res = d.dispatch(TaskEnvelope(task_id="s6", goal="g", workspace_dir="", executor=executor))
+        assert res.status == "not_integrated", executor
+        # The harness must refuse to silently route unsupported executors to Peri.
+        assert "no submit gateway" in (res.error_message or "")
+
+    # Peri (and Peri+ECC) are the only executors with a real submit path.
+    assert "submit" in d.capability("peri")
+    assert "submit" in d.capability("peri+ecc")
+
+    registry = CommunityHarnessRegistry()
+    r2 = registry.dispatch(TaskEnvelope(task_id="s6", goal="g", workspace_dir="", executor="ccb"))
+    assert r2.status == "not_integrated"
+
+
+def test_s6_ecc_verification_records_approval() -> None:
+    from find_yourself.adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
+
+    adapter = PeriAdapter()
+    env = TaskEnvelope(
+        task_id="s6-ecc", goal="review", workspace_dir="",
+        executor="peri+ecc", ecc_skills=["security-review", "tdd-workflow"],
+    )
+    result = adapter.submit(env)
+    # Staging occurred and an approval manifest was consulted.
+    staged = [e for e in result.events if e["event_type"] == "ecc.skills_staged"]
+    verified = [e for e in result.events if e["event_type"] == "ecc.verification"]
+    assert staged, "expected ecc.skills_staged event"
+    assert verified, "expected ecc.verification event (copying != approval)"
+    # The result must honestly report whether the model was *instructed* vs *proven*.
+    assert result.ecc_instructed is True
+    # With a valid local approval manifest the skills verify True.
+    assert result.ecc_verified is True
+
+
+def test_s6_process_tree_kill_and_reclamation() -> None:
+    import subprocess as _sp
+    import sys as _sys
+    import time as _time
+    from find_yourself.adapters.community_harness_adapter import kill_process_tree, process_alive
+
+    # Spawn a child that outlives its parent on its own (a detached tree).
+    # Use the real interpreter (sys.executable) instead of the bare "python"
+    # name: on some Windows installs "python" resolves to the launcher (py.exe),
+    # which can exit immediately after spawning the real interpreter, making the
+    # returned PID already dead and the test's premise invalid.
+    proc = _sp.Popen(
+        [_sys.executable, "-c", "import time; time.sleep(30)"],
+        stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+    )
+    pid = proc.pid
+    # The OS process table / tasklist may not enumerate a just-spawned PID on the
+    # first pass (snapshot lag, AV scan). Give the child a short grace window and
+    # confirm it is genuinely running — via BOTH the Popen handle and the
+    # production liveness check — before we test reclamation.
+    alive_seen = False
+    for _ in range(100):
+        if proc.poll() is None and process_alive(pid):
+            alive_seen = True
+            break
+        _time.sleep(0.02)
+    assert alive_seen, f"child pid={pid} never reported alive (handle poll + tasklist)"
+    evidence = kill_process_tree(pid)
+    assert evidence["attempted"] is True
+    assert evidence["reaped"] is True, f"process tree not reaped: {evidence}"
+    assert process_alive(pid) is False
+
+
+def test_s6_active_executions_persist_and_reconcile() -> None:
+    import json as _json
+    from find_yourself.adapters.community_harness_adapter import (
+        _ACTIVE_EXECUTIONS, persist_active_executions, reconcile_active_executions,
+        HARNESS_LAB_DIR,
+    )
+
+    exec_id = f"s6-persist-{int(__import__('time').time() * 1000)}"
+    _ACTIVE_EXECUTIONS[exec_id] = {
+        "task_id": "s6-task", "executor": "peri", "status": "running",
+        "events": [], "cancelled": False, "finalized": False,
+        "process": None, "sandbox": None,
+    }
+    persist_active_executions()
+    snap_path = HARNESS_LAB_DIR / "active_executions.json"
+    assert snap_path.exists()
+    snap = _json.loads(snap_path.read_text(encoding="utf-8"))
+    assert exec_id in snap
+
+    # Reconcile: an entry whose process is gone and not finalized is tombstoned.
+    summary = reconcile_active_executions()
+    assert summary["reconciled"] >= 1
+    # cleanup test entry
+    _ACTIVE_EXECUTIONS.pop(exec_id, None)
+
+

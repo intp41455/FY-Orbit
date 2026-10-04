@@ -1,0 +1,178 @@
+{
+  "title": "CanvasService → Hermes CLI 本地往返",
+  "recorded_at_utc": "2026-10-01T03:03:02.078563+00:00",
+  "canvas_instance_id": "canv-b0ee8910e569",
+  "root_task_id": "task-live-root-01",
+  "subtask_id": "sub-live-hermes-01",
+  "local_execution_id": "exec-local-59cc9b80c7fd",
+  "external_session_id": "20261001_110249_806d5f",
+  "agent": "Hermes",
+  "agent_version": "Hermes Agent vgit.a40c3d2 (2026.9.24) · upstream a40c3d2e",
+  "goal": "请用一句简短中文回答并包含'多智能体'关键词：你作为协调代理的核心职责是什么？",
+  "acceptance_criteria": "多智能体",
+  "validation_passed": true,
+  "budget_slice_usd": 0.25,
+  "estimated_cost_usd": 0.0,
+  "cost_status": "unknown",
+  "settled_cost_usd": null,
+  "budget_settlement": {
+    "status": "held_unknown",
+    "reserved_amount_usd": 0.25,
+    "settled_amount_usd": null,
+    "cost_status": "unknown",
+    "tokens": 16970,
+    "model": "agnes-2.5-flash",
+    "provider": "hermes_local_provider",
+    "note": "Provider pricing is unknown; reservation retained in 'unknown' state to prevent unbudgeted token consumption until reconciliation."
+  },
+  "duration_ms": 17317,
+  "tokens": 16970,
+  "model": "agnes-2.5-flash",
+  "output": "协调多智能体协作以高效完成任务。",
+  "output_sha256": "5c28a5be28bfa6b41314fe21da8225e1076ea6e468bed36bb144e6f4ff160fce",
+  "state": "completed",
+  "stage_transitions": [
+    {
+      "stage": "submitted",
+      "timestamp": "2026-10-01T03:02:44.738633+00:00",
+      "local_execution_id": "exec-local-59cc9b80c7fd"
+    },
+    {
+      "stage": "running",
+      "timestamp": "2026-10-01T03:02:44.738633+00:00"
+    },
+    {
+      "stage": "execution_succeeded",
+      "timestamp": "2026-10-01T03:03:02.056148+00:00",
+      "external_session_id": "20261001_110249_806d5f",
+      "tokens": 16970,
+      "model": "agnes-2.5-flash"
+    },
+    {
+      "stage": "accepted_by_validator",
+      "timestamp": "2026-10-01T03:03:02.056148+00:00"
+    }
+  ],
+  "timeline_events": [
+    {
+      "seq": 1,
+      "event_type": "canvas.instance.created",
+      "task_id": null,
+      "agent_id": null,
+      "details": {
+        "project": "Hermes真实端到端派发验证",
+        "template": "personal"
+      },
+      "created_at": "2026-10-01T03:02:41.621830+00:00"
+    },
+    {
+      "seq": 2,
+      "event_type": "agent.node_registered",
+      "task_id": null,
+      "agent_id": "Hermes",
+      "details": {
+        "role": "center",
+        "stage": "本机握手通过",
+        "healthy": true
+      },
+      "created_at": "2026-10-01T03:02:41.621830+00:00"
+    },
+    {
+      "seq": 3,
+      "event_type": "agent.connected",
+      "task_id": null,
+      "agent_id": "Hermes",
+      "details": {
+        "role": "center",
+        "stage": "本机握手通过"
+      },
+      "created_at": "2026-10-01T03:02:41.623339+00:00"
+    },
+    {
+      "seq": 4,
+      "event_type": "agent.node_registered",
+      "task_id": null,
+      "agent_id": "WorkBuddy",
+      "details": {
+        "role": "worker",
+        "stage": "仅设计",
+        "healthy": false
+      },
+      "created_at": "2026-10-01T03:02:41.623339+00:00"
+    },
+    {
+      "seq": 5,
+      "event_type": "agent.node_registered",
+      "task_id": null,
+      "agent_id": "豆包",
+      "details": {
+        "role": "worker",
+        "stage": "仅设计",
+        "healthy": false
+      },
+      "created_at": "2026-10-01T03:02:41.623339+00:00"
+    },
+    {
+      "seq": 6,
+      "event_type": "agent.node_registered",
+      "task_id": null,
+      "agent_id": "ResearchAgent",
+      "details": {
+        "role": "worker",
+        "stage": "发现接口",
+        "healthy": true
+      },
+      "created_at": "2026-10-01T03:02:41.624350+00:00"
+    },
+    {
+      "seq": 7,
+      "event_type": "agent.connected",
+      "task_id": null,
+      "agent_id": "ResearchAgent",
+      "details": {
+        "role": "worker",
+        "stage": "合成任务往返"
+      },
+      "created_at": "2026-10-01T03:02:41.624350+00:00"
+    },
+    {
+      "seq": 8,
+      "event_type": "task.dispatched",
+      "task_id": "sub-live-hermes-01",
+      "agent_id": "Hermes",
+      "details": {
+        "goal": "请用一句简短中文回答并包含'多智能体'关键词：你作为协调代理的核心职责是什么？",
+        "orchestrator": "Hermes",
+        "budget_slice": 0.25,
+        "adapter_status": "connected",
+        "local_execution_id": "exec-local-59cc9b80c7fd"
+      },
+      "created_at": "2026-10-01T03:02:43.211594+00:00"
+    },
+    {
+      "seq": 9,
+      "event_type": "agent.task_submitted",
+      "task_id": "sub-live-hermes-01",
+      "agent_id": "Hermes",
+      "details": {
+        "local_execution_id": "exec-local-59cc9b80c7fd"
+      },
+      "created_at": "2026-10-01T03:03:02.064997+00:00"
+    },
+    {
+      "seq": 10,
+      "event_type": "agent.task_completed",
+      "task_id": "sub-live-hermes-01",
+      "agent_id": "Hermes",
+      "details": {
+        "local_execution_id": "exec-local-59cc9b80c7fd",
+        "external_session_id": "20261001_110249_806d5f",
+        "output_preview": "协调多智能体协作以高效完成任务。",
+        "duration_ms": 17317,
+        "model": "agnes-2.5-flash",
+        "tokens": 16970
+      },
+      "created_at": "2026-10-01T03:03:02.066505+00:00"
+    }
+  ]
+}

@@ -35,6 +35,71 @@ def find_free_port(preferred: int = 8088) -> int:
         return s.getsockname()[1]
 
 
+def load_env_file(path: Path) -> dict[str, str]:
+    """Parse a simple KEY=VALUE env file with the stdlib only.
+
+    Comments (starting with '#'), blank lines and entries without '=' are
+    ignored; optional surrounding quotes are stripped. This mirrors the
+    subset of dotenv syntax the backend's pydantic Settings relies on.
+    """
+    values: dict[str, str] = {}
+    if not path.is_file():
+        return values
+    for raw in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            values[key] = value
+    return values
+
+
+def require_desktop_secrets(env: dict[str, str], env_file: Path) -> None:
+    """Resolve FY_SESSION_SECRET / FY_LOCAL_TOKEN from environment or .env.
+
+    P1-14: no hardcoded fallback. The previous built-in defaults shipped
+    guessable credentials and, worse, shadowed the user's own .env values
+    (process env vars take precedence over env_file in pydantic Settings).
+    Missing values abort startup with configuration instructions instead.
+    """
+    file_values = load_env_file(env_file)
+    problems: list[str] = []
+    session_secret = env.get("FY_SESSION_SECRET") or file_values.get("FY_SESSION_SECRET") or ""
+    local_token = env.get("FY_LOCAL_TOKEN") or file_values.get("FY_LOCAL_TOKEN") or ""
+    if not session_secret:
+        problems.append(
+            "FY_SESSION_SECRET is not configured.\n"
+            "  Set it as an environment variable or add it to\n"
+            f"  {env_file}:\n"
+            "      FY_SESSION_SECRET=<at least 32 random characters>\n"
+            '  Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+        )
+    elif len(session_secret) < 32:
+        problems.append(
+            "FY_SESSION_SECRET is shorter than 32 characters; the backend\n"
+            "  rejects it. Replace it with at least 32 random characters in\n"
+            f"  the environment or {env_file}."
+        )
+    if not local_token:
+        problems.append(
+            "FY_LOCAL_TOKEN is not configured; the desktop login window\n"
+            "  cannot authenticate without it.\n"
+            "  Set it as an environment variable or add it to\n"
+            f"  {env_file}:\n"
+            "      FY_LOCAL_TOKEN=<any long random string>\n"
+            '  Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    if problems:
+        print("[FindYourself Error] Missing required secret configuration:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        print("[FindYourself Error] Startup aborted; no insecure default is applied.", file=sys.stderr)
+        raise SystemExit(2)
+
+
 def find_edge_path() -> Path | None:
     """Find Microsoft Edge executable for Standalone App Mode."""
     candidates = [
@@ -71,17 +136,22 @@ def main() -> int:
     print(f"[FindYourself Desktop] Initializing on 127.0.0.1:{port}...")
     print(f"[FindYourself Desktop] Database: {db_path}")
 
+    project_root = Path(__file__).resolve().parents[2]
+
     # Set local environment variables
     env = os.environ.copy()
     env["FY_ENVIRONMENT"] = "local"
     env["FY_OFFLINE_MODE"] = "1"
     env["FY_LOCAL_ONLY"] = "1"
-    env["FY_SESSION_SECRET"] = env.get("FY_SESSION_SECRET", "desktop-session-secret-local-32chars-min-key!")
+    # Secrets (P1-14): must come from the environment or the project .env.
+    # They are not injected here — the backend's pydantic Settings loads the
+    # same .env (uvicorn runs with cwd=project_root) and process env vars
+    # keep their natural precedence over env_file values.
+    require_desktop_secrets(env, project_root / ".env")
     env["FY_DATABASE_URL"] = f"sqlite:///{db_path.as_posix()}"
     env["FY_PUBLIC_URL"] = f"http://127.0.0.1:{port}"
 
     # Locate static assets if built
-    project_root = Path(__file__).resolve().parents[2]
     dist_dir = project_root / "web" / "dist"
     if dist_dir.exists():
         env["FY_STATIC_DIR"] = str(dist_dir)
@@ -141,7 +211,19 @@ def main() -> int:
                     f"--app=http://127.0.0.1:{port}",
                     "--window-size=1280,840",
                     f"--user-data-dir={webview_dir}",
+                    # Keep the app window the ONLY window: without these Edge
+                    # shows the first-run "OneTab" page and/or lingers in
+                    # background mode after the app window is closed, so the
+                    # window-close -> service-shutdown lifecycle never fires.
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--disable-background-mode",
                 ]
+                # Optional extra Edge flags (e.g. --remote-debugging-port so
+                # acceptance automation can drive the *real* window). Off by default.
+                extra = os.environ.get("FY_EDGE_EXTRA_ARGS", "").strip()
+                if extra:
+                    win_cmd.extend(extra.split())
                 window_proc = subprocess.Popen(win_cmd)
             else:
                 print("[FindYourself Desktop] Edge runtime not found, opening default browser as fallback...")

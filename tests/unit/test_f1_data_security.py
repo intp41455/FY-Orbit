@@ -52,8 +52,8 @@ def test_m04_grant_revocation_cache_invalidation_and_concurrency(session, audit,
     )
 
     # Search from work without grant -> both blocked
-    assert mem_svc.search(consumer_domain="work", query="allergies") == []
-    assert mem_svc.search(consumer_domain="work", query="balance") == []
+    assert mem_svc.search(consumer_domain="work", query="allergies", owner_id=owner.owner_id) == []
+    assert mem_svc.search(consumer_domain="work", query="balance", owner_id=owner.owner_id) == []
 
     # 2. Grant m1 to work domain for 1 hour
     exp = utcnow() + timedelta(hours=1)
@@ -64,16 +64,16 @@ def test_m04_grant_revocation_cache_invalidation_and_concurrency(session, audit,
     mem_svc.invalidate_cache()
 
     # Search from work -> m1 found, m2 still blocked
-    res1 = mem_svc.search(consumer_domain="work", query="allergies")
+    res1 = mem_svc.search(consumer_domain="work", query="allergies", owner_id=owner.owner_id)
     assert len(res1) == 1
     assert res1[0]["id"] == m1.id
-    assert mem_svc.search(consumer_domain="work", query="balance") == []
+    assert mem_svc.search(consumer_domain="work", query="balance", owner_id=owner.owner_id) == []
 
     # 3. Revoke grant -> cache invalidated -> search from work immediately empty
     grants.revoke(owner, g.id)
     mem_svc.invalidate_cache()
 
-    res_revoked = mem_svc.search(consumer_domain="work", query="allergies")
+    res_revoked = mem_svc.search(consumer_domain="work", query="allergies", owner_id=owner.owner_id)
     assert res_revoked == []
 
     # 4. Concurrency check: multiple concurrent searches during grant lifecycle
@@ -85,7 +85,7 @@ def test_m04_grant_revocation_cache_invalidation_and_concurrency(session, audit,
     mem_svc.invalidate_cache()
 
     def do_search():
-        return mem_svc.search(consumer_domain="work", query="allergies")
+        return mem_svc.search(consumer_domain="work", query="allergies", owner_id=owner.owner_id)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         results = list(ex.map(lambda _: do_search(), range(16)))
@@ -120,11 +120,11 @@ def test_m05_unapproved_candidate_isolated_from_search(session, audit, owner):
     session.flush()
 
     # Search should NOT find unapproved candidate
-    assert mem_svc.search(consumer_domain="personal", query="introverted") == []
+    assert mem_svc.search(consumer_domain="personal", query="introverted", owner_id=owner.owner_id) == []
 
     # Activate candidate
     mem_svc.activate_approved(owner, cand.id)
-    res = mem_svc.search(consumer_domain="personal", query="introverted")
+    res = mem_svc.search(consumer_domain="personal", query="introverted", owner_id=owner.owner_id)
     assert len(res) == 1
     assert res[0]["id"] == cand.id
 
@@ -144,7 +144,7 @@ def test_m07_hypothesis_denial_stops_injection_and_keeps_source_trace(session, a
     )
 
     # Initially searchable
-    assert len(mem_svc.search(consumer_domain="personal", query="avoidance")) == 1
+    assert len(mem_svc.search(consumer_domain="personal", query="avoidance", owner_id=owner.owner_id)) == 1
 
     # 2. User denies the hypothesis
     msg_id = uuid4().hex
@@ -156,7 +156,7 @@ def test_m07_hypothesis_denial_stops_injection_and_keeps_source_trace(session, a
     assert not denied.endorsed
 
     # 3. Denied hypothesis immediately disappears from search
-    assert mem_svc.search(consumer_domain="personal", query="avoidance") == []
+    assert mem_svc.search(consumer_domain="personal", query="avoidance", owner_id=owner.owner_id) == []
 
     # 4. Verify immutable source trace
     edges = list(session.query(SourceRelation).filter_by(derived_id=hyp.id).all())

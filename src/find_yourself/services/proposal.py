@@ -29,6 +29,9 @@ IMMEDIATE_OPS = {
     "agent.register", "agent.drain", "skill.stage", "skill.promote",
     "skill.disable", "skill.rollback", "config.model", "conversation.delete",
     "profile.update",
+    # P1-06 prompt template library governance (executed by
+    # services/prompt.py::PromptService.apply_approved after owner decision)
+    "prompt.stage", "prompt.activate", "prompt.disable",
 }
 
 _ALLOWED = {

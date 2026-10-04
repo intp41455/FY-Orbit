@@ -39,8 +39,13 @@ test.describe('End-to-End User Journey (Step 1 Local Verification)', () => {
     await tokenInput.fill('dev-token-secret');
     await page.getByRole('button', { name: /本地口令直接登录/ }).click();
     await expect(page).toHaveURL(/\/chat/);
-    await expect(page.getByRole('link', { name: '多维画像' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '协作画布' })).toBeVisible();
+    // 21 号 shell: the rail is split into two spaces, and /chat opens the
+    // personal space, so only its entries are visible until we switch.
+    await expect(page.getByRole('link', { name: /多维画像/ })).toBeVisible();
+    await page.getByRole('button', { name: '工作台空间' }).click();
+    await expect(page.getByRole('link', { name: /协作画布/ })).toBeVisible();
+    await page.getByRole('button', { name: '个人空间' }).click();
+    await expect(page.getByRole('link', { name: /多维画像/ })).toBeVisible();
     await page.screenshot({ path: path.join(EVIDENCE_DIR, '02_authenticated_shell.png'), fullPage: true });
 
     // -------------------------------------------------------------------------
@@ -49,15 +54,20 @@ test.describe('End-to-End User Journey (Step 1 Local Verification)', () => {
     await page.goto('/profiles');
     await expect(page.getByRole('heading', { name: /个人与对象多维画像/ })).toBeVisible();
 
-    // Click "+ 新建档案对象"
+    // Click "+ 新建档案对象". The label is unique per run so the journey stays
+    // idempotent against a reused backend database (a fixed name would make
+    // the subject tab ambiguous on the second run).
+    const subjectName = `李明 (产品架构师 ${Date.now().toString(36)})`;
     await page.getByRole('button', { name: '+ 新建档案对象' }).click();
-    await page.locator('#new-label').fill('李明 (产品架构师)');
+    await page.locator('#new-label').fill(subjectName);
     await page.locator('#new-kind').selectOption('person');
     await page.locator('#new-desc').fill('自我探索与跨智能体协作能力画像评估');
     await page.getByRole('button', { name: '确认创建' }).click();
 
     // Wait for the subject tab to appear and be active
-    await expect(page.getByRole('button', { name: /李明 \(产品架构师\)/ })).toBeVisible();
+    const subjectTab = page.getByRole('button', { name: subjectName });
+    await expect(subjectTab).toBeVisible();
+    await expect(subjectTab).toHaveClass(/active/);
     await page.screenshot({ path: path.join(EVIDENCE_DIR, '03_subject_created.png'), fullPage: true });
 
     // -------------------------------------------------------------------------
@@ -112,14 +122,18 @@ test.describe('End-to-End User Journey (Step 1 Local Verification)', () => {
     // Step 8 & 9: Create Canvas Instance & View Probes (08 & 09)
     // -------------------------------------------------------------------------
     await page.goto('/canvas');
+    // 21 号 shell puts the 19 号 team designer first; the 05 号 topology canvas
+    // this journey drives (新建画布项目 / 探针 / 事件) is the second tab.
+    await page.getByRole('tab', { name: /协作拓扑与派发记录/ }).click();
     await expect(page.getByRole('heading', { name: /多.*Agent.*协作/ })).toBeVisible();
 
+    const instanceName = `产品架构多智能体推演 ${Date.now().toString(36)}`;
     await page.getByRole('button', { name: '+ 新建画布项目' }).click();
-    await page.locator('#new-inst-name').fill('产品架构多智能体推演');
+    await page.locator('#new-inst-name').fill(instanceName);
     await page.locator('#new-inst-tmpl').selectOption('personal');
     await page.getByRole('button', { name: '立即创建' }).click();
 
-    await expect(page.getByRole('button', { name: /产品架构多智能体推演/ })).toBeVisible();
+    await expect(page.getByRole('button', { name: instanceName })).toBeVisible();
     await expect(page.getByText(/主控 Agent:/)).toBeVisible();
 
     // Verify machine connectors & probe ladder

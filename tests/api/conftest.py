@@ -42,6 +42,9 @@ import find_yourself.db.models  # noqa: F401
 import find_yourself.db.profile_models  # noqa: F401
 import find_yourself.db.canvas_models  # noqa: F401
 import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+
 
 # --- Test-only SQLite TZ shim (see module docstring; Core defect noted) -------
 def _tz_result_value(self, value, dialect):

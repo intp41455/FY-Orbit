@@ -1,0 +1,4 @@
+2	1	docs/guide.md
+2	0	extra.log
+2	1	notes.txt
+0	3	old-module.js

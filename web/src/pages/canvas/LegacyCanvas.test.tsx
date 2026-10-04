@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { CanvasPage } from './CanvasPage';
+import { LegacyCanvas } from './LegacyCanvas';
 import type {
   CanvasInstance,
   CanvasSnapshot,
   CanvasTemplate,
   ConnectorProbe,
-} from '../api/canvas';
+} from '../../api/canvas';
 
-vi.mock('../api/canvas', () => ({
+vi.mock('../../api/canvas', () => ({
   canvasApi: {
     templates: vi.fn(),
     connectors: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('../api/canvas', () => ({
   },
 }));
 
-import { canvasApi } from '../api/canvas';
+import { canvasApi } from '../../api/canvas';
 
 const mockTemplates: CanvasTemplate[] = [
   {
@@ -130,7 +130,7 @@ const mockSnapshot: CanvasSnapshot = {
   ],
 };
 
-describe('CanvasPage (05 功能规格)', () => {
+describe('LegacyCanvas (05 功能规格)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -141,7 +141,7 @@ describe('CanvasPage (05 功能规格)', () => {
     vi.mocked(canvasApi.listInstances).mockResolvedValue({ items: [mockInstance], count: 1 });
     vi.mocked(canvasApi.getSnapshot).mockResolvedValue(mockSnapshot);
 
-    render(<CanvasPage />);
+    render(<LegacyCanvas />);
 
     expect(await screen.findByText('协作拓扑: 个人探索项目')).toBeInTheDocument();
     expect(screen.getByText('使用者 (Owner)')).toBeInTheDocument();
@@ -170,7 +170,7 @@ describe('CanvasPage (05 功能规格)', () => {
     });
 
     const user = userEvent.setup();
-    render(<CanvasPage />);
+    render(<LegacyCanvas />);
 
     const openDispatchBtn = await screen.findByRole('button', { name: '派发子任务' });
     await user.click(openDispatchBtn);
@@ -197,7 +197,7 @@ describe('CanvasPage (05 功能规格)', () => {
     vi.mocked(canvasApi.getSnapshot).mockResolvedValue(mockSnapshot);
 
     const user = userEvent.setup();
-    render(<CanvasPage />);
+    render(<LegacyCanvas />);
 
     const openDispatchBtn = await screen.findByRole('button', { name: '派发子任务' });
     await user.click(openDispatchBtn);

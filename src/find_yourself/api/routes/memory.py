@@ -31,7 +31,7 @@ async def search_memory(
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict:
-    results = svc.memory.search(consumer_domain=domain, query=q, limit=limit)
+    results = svc.memory.search(consumer_domain=domain, query=q, limit=limit, owner_id=actor.owner_id)
     return {"results": results, "consumer_domain": domain, "count": len(results)}
 
 

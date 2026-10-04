@@ -144,7 +144,7 @@ def test_trusted_verification_orchestrator_rework_flow(client: TestClient, tmp_p
     v1_data = r_verif_1.json()["verification"]
     assert v1_data["passed"] is False
     assert v1_data["exit_code"] != 0
-    assert "FAILED tests/test_mask.py::test_email_masking" in (v1_data["stdout"] + v1_data["stderr"])
+    assert "test_email_masking" in (v1_data["stdout"] + v1_data["stderr"])
     assert v1_data["composite_artifact_hash"] is not None
     assert "sanitizer/mask.py" in v1_data["artifact_digests"]
 

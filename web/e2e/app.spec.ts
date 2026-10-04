@@ -65,13 +65,21 @@ test.describe('authenticated flows', () => {
     await loginViaDevToken(page);
     await page.goto('/chat');
 
-    // Authenticated shell: sidebar navigation present.
-    await expect(page.getByRole('link', { name: '审批中心' })).toBeVisible();
-    await expect(page.getByRole('link', { name: '设置与数据' })).toBeVisible();
+    // Authenticated shell: the approved rail splits into two spaces, and the
+    // active space follows the route. /chat is a personal-space route.
+    const personalSpace = page.getByRole('button', { name: /个人空间/ });
+    const workbenchSpace = page.getByRole('button', { name: /工作台空间/ });
+    await expect(personalSpace).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
 
     // Navigate across pages without a hard crash.
     await page.getByRole('link', { name: '历史' }).click();
     await expect(page).toHaveURL(/\/history/);
+
+    // Switching to the workbench space keeps its entries reachable.
+    await workbenchSpace.click();
+    await expect(page.getByRole('link', { name: '审批中心' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '设置与数据' })).toBeVisible();
     await page.getByRole('link', { name: '设置与数据' }).click();
     await expect(page).toHaveURL(/\/settings/);
 
@@ -95,14 +103,14 @@ test.describe('authenticated flows', () => {
     await loginViaDevToken(page);
     await page.goto('/chat');
     // Primary nav (wrapped row on mobile) is reachable.
-    await expect(page.getByRole('navigation', { name: 'Primary' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
     await expect(page.getByRole('button', { name: /发送/ })).toBeAttached();
   });
 
   test('offline: composer disabled and offline notice shown', async ({ page, context }) => {
     await loginViaDevToken(page);
     await page.goto('/chat');
-    await expect(page.getByRole('link', { name: '审批中心' })).toBeVisible();
+    await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible();
     await context.setOffline(true);
     // OfflineBadge reacts to the browser 'offline' event; no reload (which would
     // itself fail with ERR_INTERNET_DISCONNECTED).
@@ -164,7 +172,11 @@ test.describe('authenticated flows', () => {
 
   test('navigation to canvas and profiles works without errors', async ({ page }) => {
     await loginViaDevToken(page);
+    // /canvas now opens the 19 号 team designer; the 05 号 read-only topology
+    // canvas stays reachable as the second tab rather than being deleted.
     await page.goto('/canvas');
+    await expect(page.getByRole('tab', { name: /内部团队/ })).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('tab', { name: /协作拓扑与派发记录/ }).click();
     await expect(page.getByText('多 Agent 协作可视化画布')).toBeVisible();
 
     await page.goto('/profiles');

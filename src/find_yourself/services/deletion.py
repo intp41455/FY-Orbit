@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..db.models import (
     Artifact, Memory, MemoryRevision, Proposal, SearchDocument, SourceRelation, Tombstone,
+    User, UserConsent,
 )
 from ..db.types import utcnow
 from .actor import Actor
@@ -131,6 +132,53 @@ class DeletionService:
         self.audit.append(actor, "deletion.tombstoned", target_id,
                           {"kind": target_kind, "derived": len(plan["derived_memory_ids"])})
         return tomb
+
+    def delete_account(self, actor: Actor, *, ip: str = "") -> dict:
+        """Self-service full account deletion (GDPR erasure).
+
+        Cascades to every memory the user owns (reusing per-record tombstoning),
+        revokes all sessions, anonymizes the user row, and KEEPS consent records
+        (compliance proof requires retaining the fact of consent, decoupled from
+        the erased identity).
+        """
+        actor.require_owner()
+        owner_id = actor.owner_id
+
+        user = self.s.get(User, owner_id)
+        if user is None:
+            raise NotFound("user_not_found", "No user account exists for this identity")
+
+        memory_ids = [m.id for m in self.s.execute(
+            select(Memory).where(Memory.owner_id == owner_id, Memory.deleted_at.is_(None))
+        ).scalars()]
+        for mid in memory_ids:
+            self.delete(actor, mid, "memory", "account_deletion")
+
+        from .auth import AuthService  # local import: auth imports nothing from deletion
+        auth = AuthService(self.s, self.audit)
+        revoked = auth.revoke_owner_sessions(owner_id)
+
+        # Consent records are retained on purpose (see docstring); list them before
+        # anonymizing so the response can state the count.
+        consents = list(self.s.execute(
+            select(UserConsent).where(UserConsent.user_id == owner_id)
+        ).scalars())
+
+        user.status = "deleted"
+        user.password_hash = "$locked$"
+        user.email = f"deleted-{user.id}@invalid"
+        user.display_name = ""
+
+        self.audit.append(actor, "account.deleted", owner_id,
+                          {"memories": len(memory_ids), "sessions_revoked": revoked,
+                           "consents_retained": len(consents), "ip": (ip or "")[:64]})
+        self.s.flush()
+        return {
+            "owner_id": owner_id,
+            "memories_deleted": len(memory_ids),
+            "sessions_revoked": revoked,
+            "consents_retained": len(consents),
+        }
 
     def replay_tombstones(self) -> list[str]:
         """On restore: re-assert tombstones before opening service traffic."""

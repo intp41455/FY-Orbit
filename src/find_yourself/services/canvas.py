@@ -549,6 +549,14 @@ class CanvasService:
                 raise ValidationFailed(f"Grant {grant_id} is not active (state: {grant.state})")
             if grant.expires_at <= utcnow():
                 raise ValidationFailed(f"Grant {grant_id} has expired at {grant.expires_at.isoformat()}")
+            # An egress grant authorizes export to an external destination, not
+            # cross-domain ingestion. Without this filter an egress grant could be
+            # replayed here to widen cross-domain read authority.
+            if grant.destination != "internal":
+                raise ValidationFailed(
+                    "grant_destination",
+                    f"Grant {grant_id} destination '{grant.destination}' is not valid for cross-domain ingestion",
+                )
             if grant.consumer_domain != inst.domain:
                 raise ValidationFailed(
                     f"Grant {grant_id} consumer domain '{grant.consumer_domain}' does not match canvas domain '{inst.domain}'"

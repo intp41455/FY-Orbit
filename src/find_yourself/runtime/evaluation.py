@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional
 
 from ..db.types import utcnow
 from ..services.actor import Actor
-from .deep_agents import DeepAgentsHarness, DeepAgentConfig
+from .local_agents import LocalAgentsHarness, LocalAgentsConfig
 from .delegation import DelegationCoordinator, SubtaskFailed
 from .gateway import CallResult, MockModelProvider, ModelGateway, ModelRequest
 from .graph import TaskGraphState, compile_task_graph
@@ -132,7 +132,7 @@ class UnifiedEvaluator:
 
     def __init__(self, sandbox_root: str = ".runtime/sandbox_eval", artifacts_root: str = ".runtime/artifacts_eval"):
         self.sandbox_runner = IsolatedScriptRunner(SandboxConfig(sandbox_root=sandbox_root, timeout_seconds=2.0))
-        self.deep_harness = DeepAgentsHarness(DeepAgentConfig(artifacts_path=artifacts_root, max_depth=2))
+        self.local_harness = LocalAgentsHarness(LocalAgentsConfig(artifacts_path=artifacts_root, max_depth=2))
 
     def evaluate_run(
         self,
@@ -239,7 +239,7 @@ class UnifiedEvaluator:
                     steps = 2
                     cost = 0.015
                 else:
-                    trace = self.deep_harness.run_subagent_task(
+                    trace = self.local_harness.run_subagent_task(
                         actor,
                         parent_task_id=f"eval-harness-{sample.sample_id}",
                         goal=sample.prompt,

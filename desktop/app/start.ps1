@@ -198,7 +198,7 @@ if (-not $NoBrowser) {
     if ($edgeExe) {
         Write-Host " [Find Yourself Desktop] Launching standalone application window (Edge App Mode)..." -ForegroundColor Cyan
         $winProc = Start-Process -FilePath $edgeExe `
-            -ArgumentList "--app=http://127.0.0.1:$Port", "--window-size=1280,840", "--user-data-dir=`"$webviewDataDir`"" `
+            -ArgumentList "--app=http://127.0.0.1:$Port", "--window-size=1280,840", "--user-data-dir=`"$webviewDataDir`"", "--no-first-run", "--no-default-browser-check", "--disable-background-mode" `
             -PassThru
         Write-Host " [Find Yourself Desktop] Standalone window launched (PID: $($winProc.Id))." -ForegroundColor Green
     } else {
