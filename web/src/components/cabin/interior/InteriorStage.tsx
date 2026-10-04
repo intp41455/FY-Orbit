@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createCabinInteriorScene, type InteriorScene } from './cabinInteriorScene';
+import { observeViewport, resolveViewport, type ViewportSize } from '../cabinViewport';
 import type { CabinHouseId } from '../cabinConfig';
 import type { InteriorCallbacks } from './cabinInteriorScene';
 import type { PixelPalette } from '../cabinPixels';
@@ -71,6 +72,7 @@ export function InteriorStage({
     host.appendChild(canvas);
     void createCabinInteriorScene({
       canvas,
+      host,
       houseId: initialRef.current.houseId,
       layout: initialRef.current.layout,
       editMode: initialRef.current.editMode,
@@ -90,11 +92,12 @@ export function InteriorStage({
           return;
         }
         sceneRef.current = scene;
-        const onResize = () => scene.resize(window.innerWidth, window.innerHeight);
-        window.addEventListener('resize', onResize);
-        onResize();
+        // I3：视口取自宿主元素（内嵌形态），宿主尺寸变化或窗口 resize 都重算。
+        const stopObserve = observeViewport(host, (size: ViewportSize) => scene.resize(size.width, size.height));
+        const initial = resolveViewport(host);
+        scene.resize(initial.width, initial.height);
         cleanup = () => {
-          window.removeEventListener('resize', onResize);
+          stopObserve();
           scene.destroy();
           sceneRef.current = null;
         };
