@@ -27,6 +27,12 @@ export interface MatrixSpriteOptions {
   /** 自动 1px 描边色：矩阵外扩 1px 的空隙里，凡与不透明像素 4-邻接处填该色。 */
   autoOutline?: number;
   label?: string;
+  /**
+   * G1-8b：矩阵出现调色板里没有的字符时是否直接抛错（默认 false = 只告警）。
+   * 像素矩阵是静态资产，未知字符=打错字/漏色键；静默透明白会制造
+   * 「改完画面全没、但测试全绿」的假成功，因此至少 console.warn。
+   */
+  strict?: boolean;
 }
 
 /** Bayer 4×4 有序抖动表（0..15），像素风细腻渐变的基础。 */
@@ -77,15 +83,29 @@ export function matrixToRgba(
     data[i + 3] = 255;
   };
 
+  const unknown = new Set<string>();
   for (let my = 0; my < h; my++) {
     const row = rows[my];
     for (let mx = 0; mx < row.length; mx++) {
       const ch = row[mx];
       if (ch === '.' || ch === ' ') continue;
       const color = palette[ch];
-      if (color === undefined) continue; // 未知字符宽容处理为透明
+      if (color === undefined) {
+        // G1-8b：不再静默 —— 记录未知色键，循环后统一告警/抛错
+        unknown.add(ch);
+        continue;
+      }
       write(mx + pad, my + pad, color);
     }
+  }
+  if (unknown.size > 0) {
+    const msg =
+      `cabinPixels.matrixToRgba: 矩阵用了调色板没有的色键 ` +
+      `[${[...unknown].map((c) => JSON.stringify(c)).join(', ')}]` +
+      (options.label ? `（精灵 ${options.label}）` : '') +
+      '，这些像素会被画成透明（画面缺块）。';
+    if (options.strict) throw new Error(msg);
+    console.warn(msg);
   }
 
   if (pad === 1 && options.autoOutline !== undefined) {

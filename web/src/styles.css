@@ -1129,6 +1129,16 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
   overflow: hidden;
   background: linear-gradient(180deg, #9bd7ff 0%, #dff6ff 58%, #7cc47f 58.2%, #5da562 100%);
 }
+/* CabinStage 自建 canvas 的宿主容器：每个 effect 运行一个独立 canvas，
+   避免 React StrictMode(dev) 双挂载下两个场景共用同一 React <canvas>，
+   导致先弃场景 destroy() 时销毁共享 WebGL 上下文并移除 canvas（画面只剩工具条）。 */
+.cabin-canvas-host {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 .cabin-canvas {
   position: absolute;
   inset: 0;
@@ -1136,8 +1146,8 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
   width: 100%;
   height: 100%;
   /* 像素风：Canvas 以 1x 分辨率渲染，CSS 放大时保持硬边 */
+  /* G4-7：只保留 pixelated 单声明 —— crisp-edges 在 WebKit 系会做边缘平滑导致像素画糊化 */
   image-rendering: pixelated;
-  image-rendering: crisp-edges;
 }
 .cabin-fallback {
   position: absolute;

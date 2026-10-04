@@ -758,7 +758,7 @@ def _build_colors(palette: dict[str, Any], hair_tone: str, cape: str, element: s
         "cape", "cape_shadow",
         "trim", "legwear", "shoe",
         "eye_ink", "eye_highlight", "blush",
-        "hand_item", "rim_light", "emblem_bg",
+        "hand_item", "rim_light", "emblem_bg", "ground_shadow",
     ]
     colors_list = [
         skin,
@@ -780,6 +780,7 @@ def _build_colors(palette: dict[str, Any], hair_tone: str, cape: str, element: s
         trim,                                    # hand_item
         _shade(trim, 1.30),                      # rim_light（比 trim 更亮的轮廓光）
         str(palette["bg"]),                      # emblem_bg
+        _shade(base, 0.55),                      # ground_shadow（脚下椭圆影：主色深版，替代近白 emblem_bg）
     ]
     # 画布相邻色明度差自检：只检查真实贴邻的键对，冲突色自动提亮，避免像素「脏色」
     return dict(check_palette_harmony(dict(zip(keys, colors_list, strict=True)))["adjusted"])
@@ -840,6 +841,7 @@ CHAR_KEYS: dict[str, str] = {
     "e": "eye_ink", "E": "eye_highlight", "b": "blush",
     "t": "trim", "g": "hand_item", "w": "shoe", "L": "legwear",
     "x": "rim_light", "a": "emblem_bg",
+    "z": "ground_shadow",
 }
 
 #: 头部几何（**单一真源**）：脸本体椭圆 = 挖脸洞用的同一个椭圆。
@@ -980,8 +982,10 @@ class PixelCanvas:
 def _draw_shadow() -> list[str]:
     """层 1：地面椭圆影（11 号文档 DNA-5 硬要求：地面椭圆影）。"""
     c = PixelCanvas()
-    c.ellipse(FACE_CX, 30.0, 6.5, 1.7, "a")
-    c.ellipse(FACE_CX, 30.0, 3.5, 0.9, "a")
+    # G1-6：过去用 "a"(emblem_bg，木主题近白 #eef7ec) 当阴影色 → 脚下像踩了亮色地砖。
+    # 改用 "z"(ground_shadow = shade(base, 0.55))，角色主色的深版，视觉上读作影子。
+    c.ellipse(FACE_CX, 30.0, 6.5, 1.7, "z")
+    c.ellipse(FACE_CX, 30.0, 3.5, 0.9, "z")
     return c.rows()
 
 

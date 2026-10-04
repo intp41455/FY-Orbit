@@ -25,8 +25,12 @@ describe('petRenderer · 矩阵复用', () => {
     );
   });
 
-  it('frameSize 返回包围盒', () => {
-    expect(frameSize(PET_FRAMES[0]).height).toBeGreaterThan(10);
+  it('frameSize 返回包围盒，且达到评分卡硬标准 ≥16×24（G1-8a 重绘，非拉伸）', () => {
+    const s0 = frameSize(PET_FRAMES[0]);
+    expect(s0.width).toBeGreaterThanOrEqual(16);
+    expect(s0.height).toBeGreaterThanOrEqual(24);
+    // 两帧都达标
+    expect(frameSize(PET_FRAMES[1]).height).toBeGreaterThanOrEqual(24);
   });
 
   it('colorToCss 产出合法 css 色', () => {

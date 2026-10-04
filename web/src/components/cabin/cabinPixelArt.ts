@@ -356,33 +356,47 @@ export const PERSON_WALK_FRAMES: readonly (readonly string[])[] = [
   [...PERSON_TOP, ...PERSON_LEGS_B],
 ];
 
-/* ------------------------------ 宠物（20×14，两帧，调色板换色） ------------------------------ */
-/* 猫/犬通用形：b 本色 / d 暗部 / l 亮部 / i 无 / e 眼 / n 鼻。换 palette 即换宠物颜色。 */
+/* ------------------------------ 宠物（20×24，两帧，调色板换色） ------------------------------ */
+/* 猫/犬通用形：b 本色 / d 暗部 / l 亮部 / e 眼 / n 鼻。换 palette 即换宠物颜色。
+ *
+ * G1-8a：旧版仅 20×14（上 11 行 + 腿 3 行），低于评分卡硬标准 ≥16×24。
+ * 本版为**逐行重绘**（非把旧矩阵按 Y 轴拉伸——拉伸必然失真）：
+ *   头（含双耳/双眼/鼻）+ 躯干 + 亮色肚腹 = 21 行，腿 3 行，合计 24 行、宽 20，近方形比例。 */
 
 const PET_TOP: readonly string[] = [
-  '..d.................',
-  '.dd..........d....d.',
-  '..d..........dbbbbd.',
-  '..d.........lbbbbbbb',
-  '..dbbbbbbbbbbbbbbbbb',
-  '...bbbbbbbbbbbbbebbb',
-  '...bbbbbbbbbbbbbbbbn',
-  '...bbbbbbbbbbbbbbbb.',
-  '....bbbbbbbbbbbbbb..',
-  '....bblllllllbbbb...',
-  '.....bbbbbbbbbbb....',
+  '...dd..........dd...',
+  '..dbbd........dbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '.dbbbbbbbbbbbbbbbbd.',
+  '.dbbbbbbbbbbbbbbbbd.',
+  '.dbbbeebbbbbbeebbd..',
+  '.dbbbeebbbbbbeebbd..',
+  '.dbbbbbbbnnbbbbbbd..',
+  '.dbbbbbbbbbbbbbbbbd.',
+  '..dbbbbbbbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '...dbbbbbbbbbbbbd...',
+  '...dbbllllllbbbdd...',
+  '..dbbbllllllbbbbd...',
+  '..dbbbbbbbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '..dbbbbbbbbbbbbbbd..',
+  '...dbbbbbbbbbbbbd...',
+  '....dbbbbbbbbbbd....',
 ];
 
 const PET_LEGS_A: readonly string[] = [
-  '....dd...dd...dd....',
-  '....dd...dd...dd....',
-  '...ddd...ddd..ddd...',
+  '.....dd.....dd......',
+  '.....dd.....dd......',
+  '....ddd....ddd......',
 ];
 
 const PET_LEGS_B: readonly string[] = [
-  '....dd...dd....dd...',
-  '....dd...dd....dd...',
-  '...ddd...ddd...ddd..',
+  '.....dd.....dd......',
+  '.....dd......dd.....',
+  '....ddd.....ddd.....',
 ];
 
 export function petPalette(base: number): PixelPalette {
@@ -795,7 +809,10 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
     far: { kind: 'ridge', back: 0x4a3a78, front: 0x372a5c, spires: 8, treeColor: 0x2c2148 },
     mid: [
       { rows: CRYSTAL_ROWS, palette: planetCrystal, count: 4, scale: 2, baseYMin: 34, baseYMax: 48 },
+      { rows: CRYSTAL_ROWS, palette: planetCrystal, count: 2, scale: 3, baseYMin: 30, baseYMax: 44 },
       { rows: ROCK_ROWS, palette: planetRock, count: 3, scale: 2, baseYMin: 40, baseYMax: 49 },
+      // G2-17：补第 3 类中景 —— 异星紫晶灌木，避免 planet 中景元素层只有 2 个、远景密度不足
+      { rows: BUSH_ROWS, palette: { l: 0xc9b6f2, m: 0x9b8ade, d: 0x6a58b0 }, count: 3, scale: 2, baseYMin: 40, baseYMax: 49 },
     ],
     ground: { top: 0x9b8ade, base: 0x816fd0, bottom: 0x5f4da8, speckles: [0xc4b2f2, 0x6a58b0] },
     near: [

@@ -59,12 +59,33 @@ describe('cabinPixels matrixToRgba：矩阵 → RGBA 快照', () => {
     expect(Array.from(snap.data.slice(4, 8))).toEqual([0xfe, 0xfe, 0xdc, 255]);
   });
 
-  it("'.' 与空格透明；未知字符宽容处理为透明", () => {
-    const snap = matrixToRgba(['.a x'], { a: 0x112233 });
-    expect(snap.data[3]).toBe(0); // '.'
-    expect(snap.data[7]).toBe(255); // 'a'
-    expect(snap.data[11]).toBe(0); // ' '
-    expect(snap.data[15]).toBe(0); // 未知 'x'
+  it("'.' 与空格透明；未知字符仍透明但会告警（G1-8b 不再静默）", () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const snap = matrixToRgba(['.a x'], { a: 0x112233 });
+      expect(snap.data[3]).toBe(0); // '.'
+      expect(snap.data[7]).toBe(255); // 'a'
+      expect(snap.data[11]).toBe(0); // ' '
+      expect(snap.data[15]).toBe(0); // 未知 'x' 仍透明
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(String(spy.mock.calls[0][0])).toContain('色键');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('G1-8b：strict 模式下未知色键直接抛错（静态资产不该带错色键）', () => {
+    expect(() => matrixToRgba(['aq'], { a: 0x112233 }, { strict: true })).toThrow(/未知色键|调色板/);
+  });
+
+  it('无未知字符时不告警', () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      matrixToRgba(['ab'], { a: 1, b: 2 });
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('autoOutline：画布宽高各 +2，边框像素为描边色，内部镂空也被描边', () => {
