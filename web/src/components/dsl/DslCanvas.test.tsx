@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event';
 import { DslCanvas } from './DslCanvas';
 
 vi.mock('../../api/dslCanvas', () => ({
-  dslCanvasApi: { run: vi.fn(), validate: vi.fn(), schema: vi.fn(), getRun: vi.fn() },
+  dslCanvasApi: {
+    run: vi.fn(), validate: vi.fn(), schema: vi.fn(), getRun: vi.fn(),
+    validateIr: vi.fn(), // P1 · 收集式 IR 校验
+  },
 }));
 
 import { dslCanvasApi } from '../../api/dslCanvas';
@@ -18,6 +21,10 @@ const delBtn = (type: string) =>
 describe('DslCanvas 拖拽生成 DSL → 执行', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // P1 · 默认 IR 校验通过（个别用例自行覆盖返回值）
+    vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
+      valid: true, diagnostics: [],
+    });
     vi.mocked(dslCanvasApi.run).mockResolvedValue({
       run_id: 'run-1',
       status: 'succeeded',
@@ -117,5 +124,110 @@ describe('DslCanvas 拖拽生成 DSL → 执行', () => {
     const dsl = JSON.parse(screen.getByTestId('dsl-json').textContent ?? '{}');
     expect(dsl.nodes).toHaveLength(1);
     expect(dsl.edges).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P1 · 收集式 IR 诊断的前端消费（红点 / 字段定位 / 一次全量显示）
+// ---------------------------------------------------------------------------
+
+const DIAG_A = {
+  node_id: 'input1', field_path: 'params.value', code: 'extra_field',
+  message: 'Extra inputs are not permitted',
+};
+const DIAG_B = {
+  node_id: 'transform1', field_path: 'params.template', code: 'string_type',
+  message: 'Input should be a valid string',
+};
+
+describe('DslCanvas 消费 IR 诊断（P1）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(dslCanvasApi.run).mockResolvedValue({
+      run_id: 'run-1', status: 'succeeded',
+      dsl: { version: '1', nodes: [], edges: [] },
+      output: '', error: null, execution_id: null,
+      created_at: '2026-10-05T00:00:00Z', logs: [],
+    });
+  });
+
+  it('两个节点各带一个非法字段 → 诊断面板一次显示 2 条（绝不只报第一条）', async () => {
+    vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
+      valid: false, diagnostics: [DIAG_A, DIAG_B],
+    });
+    const user = userEvent.setup();
+    render(<DslCanvas />);
+    await user.click(screen.getByTestId('palette-input'));
+    await user.click(screen.getByTestId('palette-transform'));
+
+    // 防抖后调用后端 IR 校验
+    await waitFor(() => expect(dslCanvasApi.validateIr).toHaveBeenCalled());
+    const items = await screen.findAllByTestId('dsl-ir-item');
+    expect(items).toHaveLength(2);           // 一次全量：2 条全部可见
+    items.forEach((el) => expect(el).toBeVisible());
+    expect(screen.getByTestId('dsl-ir-count').textContent).toBe('2');
+    // 每条都带 code 与 message（悬停 title 亦然）
+    expect(items[0].getAttribute('title')).toContain('extra_field');
+    expect(items[1].getAttribute('title')).toContain('string_type');
+    expect(screen.getByTestId('dsl-ir-diagnostics').textContent)
+      .toContain('params.template');
+  });
+
+  it('有诊断的节点画布上打红点，悬停 title 含 code+message', async () => {
+    // 节点 id 跨测试递增：诊断按 validateIr 收到的真实文档节点 id 生成。
+    vi.mocked(dslCanvasApi.validateIr).mockImplementation(async (doc) => ({
+      valid: false,
+      diagnostics: [
+        { node_id: doc.nodes[0].id, field_path: 'params.value',
+          code: 'extra_field', message: 'Extra inputs are not permitted' },
+        { node_id: doc.nodes[1].id, field_path: 'params.template',
+          code: 'string_type', message: 'Input should be a valid string' },
+      ],
+    }));
+    const user = userEvent.setup();
+    render(<DslCanvas />);
+    await user.click(screen.getByTestId('palette-input'));
+    await user.click(screen.getByTestId('palette-transform'));
+
+    const dots = await screen.findAllByTestId(/^dsl-node-diag-/);
+    expect(dots).toHaveLength(2);           // 两个节点各一枚红点
+    expect(dots[0].textContent).toContain('1');
+    const titles = dots.map((d) => d.getAttribute('title') ?? '');
+    const all = titles.join('|');
+    expect(all).toContain('params.value');
+    expect(all).toContain('extra_field');
+    expect(all).toContain('string_type');
+    expect(screen.getByTestId('dsl-ir-diagnostics').getAttribute('role')).toBe('alert');
+  });
+
+  it('校验通过时面板显示 0 条诊断（绿色态，无 alert 角色）', async () => {
+    vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
+      valid: true, diagnostics: [],
+    });
+    const user = userEvent.setup();
+    render(<DslCanvas />);
+    await user.click(screen.getByTestId('palette-input'));
+
+    await waitFor(() => expect(dslCanvasApi.validateIr).toHaveBeenCalled());
+    await waitFor(() => {
+      expect(screen.getByTestId('dsl-ir-count').textContent).toBe('0');
+    });
+    expect(screen.getByTestId('dsl-ir-diagnostics').textContent)
+      .toContain('类型校验通过');
+    expect(screen.queryAllByTestId('dsl-ir-item')).toHaveLength(0);
+    expect(screen.getByTestId('dsl-ir-diagnostics').getAttribute('role')).toBeNull();
+  });
+
+  it('编辑节点参数后（模型变化）会重新发起 IR 校验', async () => {
+    vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
+      valid: true, diagnostics: [],
+    });
+    const user = userEvent.setup();
+    render(<DslCanvas />);
+    await user.click(screen.getByTestId('palette-transform'));
+
+    await waitFor(() => expect(dslCanvasApi.validateIr).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByTestId('palette-output'));
+    await waitFor(() => expect(dslCanvasApi.validateIr).toHaveBeenCalledTimes(2));
   });
 });

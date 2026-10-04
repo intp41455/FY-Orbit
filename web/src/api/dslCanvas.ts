@@ -112,10 +112,34 @@ export interface DslCodeExport {
   verbs: DslTransformVerb[];
 }
 
+/**
+ * P1 · 后端类型化 IR 的一条诊断（与 `services/dsl_ir.py::Diagnostic` 逐字对齐）。
+ * `field_path` 是点分路径（如 `params.op`）；文档级错误 `node_id` 为空串、
+ * 无具体字段时 `field_path` 为空串。
+ */
+export interface DslDiagnostic {
+  node_id: string;
+  field_path: string;
+  code: string;
+  message: string;
+}
+
+export interface DslIrValidation {
+  valid: boolean;
+  /** 收集式：一次给出**全部**诊断（绝不只报第一条）。 */
+  diagnostics: DslDiagnostic[];
+}
+
 export const dslCanvasApi = {
   schema: () => request<DslSchemaResponse>('/api/dsl-canvas/schema'),
   validate: (dsl: DslDocument) => request<{ valid: boolean; topological_order: string[] }>(
     '/api/dsl-canvas/validate', { method: 'POST', body: { dsl } }),
+  /**
+   * P1 · 收集式 IR 校验：一次返回全部 `DslDiagnostic`（不 fail-fast）。
+   * 画布红点 / 属性面板字段级错误都以此为准。
+   */
+  validateIr: (dsl: DslDocument) => request<DslIrValidation>(
+    '/api/dsl-canvas/validate-ir', { method: 'POST', body: { dsl } }),
   run: (dsl: DslDocument) => request<DslRunResult>('/api/dsl-canvas/runs', {
     method: 'POST', body: { dsl } }),
   /**

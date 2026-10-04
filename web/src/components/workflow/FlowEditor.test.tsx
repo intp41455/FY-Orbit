@@ -5,7 +5,7 @@ import userEvent from '@testing-library/user-event';
 // FlowEditor 依赖两个 API 模块。schema 决定左侧面板的节点类型（动态取自
 // 后端），validate 是载入 DSL 的权威校验，exportScript 是导出出口。
 vi.mock('../../api/dslCanvas', () => ({
-  dslCanvasApi: { validate: vi.fn(), schema: vi.fn() },
+  dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn() },
 }));
 vi.mock('../../api/workflowGen', () => ({
   workflowGenApi: { exportScript: vi.fn() },
@@ -63,6 +63,8 @@ beforeEach(() => {
     output_formats: ['json', 'text'],
   });
   vi.mocked(dslCanvasApi.validate).mockResolvedValue({ valid: true, topological_order: ['in1', 'tf1', 'out1'] });
+  // P1 · IR 校验默认通过（防抖 effect 会调用）
+  vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({ valid: true, diagnostics: [] });
 });
 
 // =========================================================================== //

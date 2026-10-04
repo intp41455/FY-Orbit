@@ -38,6 +38,7 @@ from ...services.dsl_canvas import (
     verb_catalog,
 )
 from ...services.dsl_code_export import export_dsl_code, parse_dsl_code
+from ...services.dsl_ir import validate_ir  # P1 · 收集式 IR 校验（只读调用，禁改 dsl_ir）
 
 router = APIRouter(prefix="/api/dsl-canvas", tags=["dsl-canvas"])
 
@@ -90,6 +91,25 @@ async def validate(request: Request, actor: Actor = Depends(get_actor)) -> dict:
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"valid": True, "topological_order": plan.order}
+
+
+@router.post("/validate-ir")
+async def validate_ir_route(request: Request, actor: Actor = Depends(get_actor)) -> dict:
+    """P1 · 收集式 IR 校验（ADR-02）。
+
+    与 ``POST /validate`` 的区别：**不 fail-fast**——一次返回全部
+    :class:`~find_yourself.services.dsl_ir.Diagnostic`（node_id + field_path +
+    code + message），供前端画布按节点打红点、按字段高亮。合法时
+    ``diagnostics`` 为空数组。
+    """
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="请求体不是合法 JSON") from exc
+    doc = _extract_doc(payload)
+    diagnostics = validate_ir(doc)
+    return {"valid": not diagnostics,
+            "diagnostics": [d.to_dict() for d in diagnostics]}
 
 
 @router.post("/runs")

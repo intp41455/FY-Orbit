@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   dslCanvasApi,
+  type DslDiagnostic,
   type DslDocument,
   type DslEdge,
   type DslNode,
@@ -290,6 +291,8 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
   const [schemaTypes, setSchemaTypes] = useState<DslNodeType[]>(FLOW_NODE_TYPES);
   const [dslText, setDslText] = useState('');
   const [exported, setExported] = useState<WorkflowExportResponse | null>(null);
+  /** P1 · 后端收集式 IR 校验的全部诊断（按 field_path 落到属性面板字段）。 */
+  const [irDiagnostics, setIrDiagnostics] = useState<DslDiagnostic[]>([]);
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -297,6 +300,17 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
   const doc = useMemo(() => serializeGraph(nodes, edges), [nodes, edges]);
   const dslTextValue = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
   const selected = useMemo(() => nodes.find((n) => n.id === selectedId) ?? null, [nodes, selectedId]);
+
+  // P1 · 文档一变就防抖调收集式 IR 校验；请求失败不阻塞编辑
+  // （权威拦截仍在执行路径与「载入」的 validate 调用上）。
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      dslCanvasApi.validateIr(doc)
+        .then((r) => setIrDiagnostics(r.diagnostics))
+        .catch(() => undefined);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [doc]);
 
   const loadDoc = useCallback((next: DslDocument) => {
     const parsed = graphFromDsl(next);
@@ -549,6 +563,7 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
       <div className="fy-flow-side">
         <PropertyPanel
           node={selected}
+          diagnostics={irDiagnostics}
           onChange={(patch) => selected && updateNode(selected.id, patch)}
           onChangeParams={(patch) =>
             selected && updateNode(selected.id, { params: { ...selected.params, ...patch } })}

@@ -81,3 +81,52 @@ def test_submit_invalid_dsl_422(client: TestClient):
                     json={"dsl": {"version": "9", "nodes": [], "edges": []}},
                     headers=headers)
     assert r.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# P1 · 收集式 IR 校验端点（POST /validate-ir）
+# ---------------------------------------------------------------------------
+
+def test_validate_ir_ok_returns_empty_diagnostics(client: TestClient):
+    """合法文档 → valid=true 且 diagnostics 为空数组。"""
+    headers = login_owner(client)
+    r = client.post("/api/dsl-canvas/validate-ir", json={"dsl": _THREE_NODE_DOC},
+                    headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body == {"valid": True, "diagnostics": []}
+
+
+def test_validate_ir_collects_all_diagnostics_at_once(client: TestClient):
+    """核心价值（相对旧 fail-fast）：两个节点各带一个非法字段 → 一次返回 2 条诊断。
+
+    旧 ``POST /validate`` 只报第一个错；本端点必须把 a、b 两处都报出来，
+    且 field_path 精确到具体字段。
+    """
+    headers = login_owner(client)
+    doc = {"version": "1",
+           "nodes": [
+               {"id": "a", "type": "transform", "verb": "template",
+                "params": {"template": "x", "bogus": 1}},
+               {"id": "b", "type": "output", "params": {"format": "json", "nope": 2}},
+           ],
+           "edges": []}
+    r = client.post("/api/dsl-canvas/validate-ir", json={"dsl": doc}, headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["valid"] is False
+    diags = body["diagnostics"]
+    assert len(diags) == 2  # 一次全量，绝不只报第一条
+    assert {(d["node_id"], d["field_path"], d["code"]) for d in diags} == {
+        ("a", "params.bogus", "extra_field"),
+        ("b", "params.nope", "extra_field"),
+    }
+    for d in diags:
+        assert set(d) == {"node_id", "field_path", "code", "message"}
+
+
+def test_validate_ir_bad_payload_422(client: TestClient):
+    headers = login_owner(client)
+    r = client.post("/api/dsl-canvas/validate-ir", json={"nonsense": True},
+                    headers=headers)
+    assert r.status_code == 422

@@ -10,9 +10,10 @@
  *  - 「生成 DSL」实时显示 JSON；「执行」调后端真实执行并回显逐步日志；
  *    「导出代码」把画布导出成受限 Python（`dslCanvasApi.exportCode`）。
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   dslCanvasApi,
+  type DslDiagnostic,
   type DslDocument,
   type DslEdge,
   type DslNode,
@@ -22,6 +23,10 @@ import {
   type LayoutState,
 } from '../../api/dslCanvas';
 import { paramsForVerb } from '../workflow/FlowEditor';
+import { DslDiagnostics, diagnosticsForNode, nodeDiagnosticTitle } from './DslDiagnostics';
+
+/** 编辑后防抖再调后端 IR 校验的间隔（ms）；测试里可用真实定时器 + waitFor。 */
+export const IR_CHECK_DEBOUNCE_MS = 300;
 
 let seq = 0;
 function nextId(prefix: string): string {
@@ -93,12 +98,36 @@ export function DslCanvas() {
   const [run, setRun] = useState<DslRunResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** P1 · 后端收集式 IR 校验的全部诊断（画布红点 + 诊断面板共用）。 */
+  const [irDiagnostics, setIrDiagnostics] = useState<DslDiagnostic[]>([]);
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(
     () => nodes.find((n) => n.id === selectedId) ?? null, [nodes, selectedId]);
+
+  /** 生成 DSL：只序列化语义模型，layout 坐标不参与。 */
+  const buildDsl = useCallback((): DslDocument => ({
+    version: '1',
+    nodes: nodes.map((n) => ({
+      id: n.id, type: n.type,
+      ...(n.type === 'transform' ? { verb: n.verb } : {}),
+      ...(n.params ? { params: n.params } : {}),
+    })),
+    edges: edges.map((e) => ({ from: e.from, to: e.to })),
+  }), [nodes, edges]);
+
+  // P1 · 模型一变就防抖调收集式 IR 校验。校验请求失败不阻塞编辑
+  // （权威拦截仍在执行路径：后端 compile_dsl 内 assert_ir_valid）。
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      dslCanvasApi.validateIr(buildDsl())
+        .then((r) => setIrDiagnostics(r.diagnostics))
+        .catch(() => undefined);
+    }, IR_CHECK_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+  }, [buildDsl]);
 
   const addNode = useCallback((type: DslNodeType, at?: { x: number; y: number }) => {
     const id = nextId(type);
@@ -176,17 +205,6 @@ export function DslCanvas() {
     updateSelected({ params: { ...selected.params, ...patch } });
   };
 
-  /** 生成 DSL：只序列化语义模型，layout 坐标不参与。 */
-  const buildDsl = (): DslDocument => ({
-    version: '1',
-    nodes: nodes.map((n) => ({
-      id: n.id, type: n.type,
-      ...(n.type === 'transform' ? { verb: n.verb } : {}),
-      ...(n.params ? { params: n.params } : {}),
-    })),
-    edges: edges.map((e) => ({ from: e.from, to: e.to })),
-  });
-
   const generate = () => {
     setError(null);
     setDslText(JSON.stringify(buildDsl(), null, 2));
@@ -260,11 +278,14 @@ export function DslCanvas() {
 
         {nodes.map((n) => {
           const p = pos(n.id);
+          const nodeDiags = diagnosticsForNode(irDiagnostics, n.id);
           return (
             <div
               key={n.id}
               style={{ ...styles.node, left: p.x, top: p.y,
-                outline: selectedId === n.id ? '2px solid #3a5f8a' : undefined }}
+                outline: selectedId === n.id
+                  ? '2px solid #3a5f8a'
+                  : nodeDiags.length > 0 ? '2px solid #c0392b' : undefined }}
               data-testid={`dsl-node-${n.id}`}
             >
               <div
@@ -272,6 +293,14 @@ export function DslCanvas() {
                 onPointerDown={(e) => onNodePointerDown(e, n.id)}
               >
                 {n.type}{n.verb ? ` · ${n.verb}` : ''}
+                {nodeDiags.length > 0 && (
+                  <span
+                    className="fy-ir-dot"
+                    data-testid={`dsl-node-diag-${n.id}`}
+                    title={nodeDiagnosticTitle(nodeDiags)}
+                    aria-label={`节点 ${n.id} 有 ${nodeDiags.length} 条类型诊断`}
+                  >● {nodeDiags.length}</span>
+                )}
               </div>
               <div style={styles.nodeBody}>
                 {n.id}
@@ -462,6 +491,10 @@ export function DslCanvas() {
               data-testid="dsl-generate">生成 DSL</button>
             <button onClick={() => void execute()} disabled={busy || !nodes.length}
               data-testid="dsl-run">{busy ? '执行中…' : '执行'}</button>
+          </div>
+          {/* P1 · 后端 IR 的全部类型诊断：一次全量显示（含每条的 code/message）。 */}
+          <div style={{ marginTop: 8 }}>
+            <DslDiagnostics diagnostics={irDiagnostics} />
           </div>
           {error && <div className="error-text" role="alert">{error}</div>}
           {dslText && (

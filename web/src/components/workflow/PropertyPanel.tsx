@@ -7,8 +7,12 @@
  * 枚举取值与后端 `services/dsl_canvas.py` 的受限动词集严格一致：
  * ``MAP_OPS`` / ``FILTER_OPS`` / ``CONDITION_OPS`` / ``INPUT_KINDS`` /
  * ``OUTPUT_FORMATS``——写错一个字符后端就会422，所以前端只提供合法选项。
+ *
+ * P1（ADR-02）：可选传入后端收集式 IR 校验的 `DslDiagnostic[]`；
+ * 命中本节点某 `field_path` 的诊断会让该字段显示**红框 + 内联错误文案**
+ * （`fy-field-invalid` / `role="alert"`），多字段同时出错时每个字段各自标错。
  */
-import type { DslNodeType, DslTransformVerb } from '../../api/dslCanvas';
+import type { DslDiagnostic, DslNodeType, DslTransformVerb } from '../../api/dslCanvas';
 import type { EditorNode } from './FlowEditor';
 import { paramsForVerb } from './FlowEditor';
 
@@ -32,19 +36,68 @@ export interface PropertyPanelProps {
   node: EditorNode | null;
   onChange: (patch: Partial<EditorNode>) => void;
   onChangeParams: (patch: Record<string, unknown>) => void;
+  /** P1 · 该画布全部 IR 诊断（可选；按 node_id + field_path 匹配到字段）。 */
+  diagnostics?: DslDiagnostic[];
+}
+
+/** 取本节点某字段路径上的第一条诊断；无则 undefined。 */
+export function diagForField(
+  diagnostics: DslDiagnostic[] | undefined,
+  nodeId: string,
+  fieldPath: string,
+): DslDiagnostic | undefined {
+  return diagnostics?.find((d) => d.node_id === nodeId && d.field_path === fieldPath);
+}
+
+interface ParamFieldProps {
+  label: string;
+  /** IR 诊断的字段路径（如 `params.op` / `verb`）。 */
+  path: string;
+  nodeId: string;
+  diagnostics?: DslDiagnostic[];
+  children: React.ReactNode;
+}
+
+/**
+ * 字段壳：label + 控件 + 该字段的内联错误文案。
+ * 有诊断时整字段加 `fy-field-invalid`（红框由 CSS 提供）。
+ */
+function ParamField({ label, path, nodeId, diagnostics, children }: ParamFieldProps) {
+  const diag = diagForField(diagnostics, nodeId, path);
+  return (
+    <label
+      className={`fy-flow-field${diag ? ' fy-field-invalid' : ''}`}
+      data-field-path={path}
+    >
+      {label}
+      {children}
+      {diag && (
+        <span className="fy-field-error-text" role="alert" data-testid={`field-error-${path}`}>
+          {diag.code}: {diag.message}
+        </span>
+      )}
+    </label>
+  );
 }
 
 /** JSON 值编辑：编辑过程中允许暂时不合法（不阻塞输入），失焦时才尝试解析。 */
 function JsonValueField({
-  label, value, onCommit, testId,
+  label, value, onCommit, testId, path, nodeId, diagnostics,
 }: {
   label: string;
   value: unknown;
   onCommit: (v: unknown) => void;
   testId?: string;
+  path: string;
+  nodeId: string;
+  diagnostics?: DslDiagnostic[];
 }) {
+  const diag = diagForField(diagnostics, nodeId, path);
   return (
-    <label className="fy-flow-field">
+    <label
+      className={`fy-flow-field${diag ? ' fy-field-invalid' : ''}`}
+      data-field-path={path}
+    >
       {label}
       <input
         defaultValue={JSON.stringify(value ?? null)}
@@ -54,11 +107,16 @@ function JsonValueField({
         }}
         data-testid={testId}
       />
+      {diag && (
+        <span className="fy-field-error-text" role="alert" data-testid={`field-error-${path}`}>
+          {diag.code}: {diag.message}
+        </span>
+      )}
     </label>
   );
 }
 
-export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelProps) {
+export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: PropertyPanelProps) {
   if (!node) {
     return (
       <div className="card" data-testid="flow-properties">
@@ -69,6 +127,8 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
   }
 
   const p = node.params ?? {};
+  const f = (path: string) => diagForField(diagnostics, node.id, path);
+  void f;
 
   return (
     <div className="card" data-testid="flow-properties">
@@ -81,8 +141,7 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
       <div className="fy-flow-fields">
         {node.type === 'input' && (
           <>
-            <label className="fy-flow-field">
-              数据类型
+            <ParamField label="数据类型" path="params.kind" nodeId={node.id} diagnostics={diagnostics}>
               <select
                 value={String(p.kind ?? 'literal')}
                 onChange={(e) => onChangeParams({ kind: e.target.value })}
@@ -90,23 +149,25 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
               >
                 {INPUT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
-            </label>
+            </ParamField>
             {p.kind === 'text_lines' ? (
-              <label className="fy-flow-field">
-                文本（每行一条）
+              <ParamField label="文本（每行一条）" path="params.value" nodeId={node.id} diagnostics={diagnostics}>
                 <textarea
                   rows={3}
                   value={String(p.value ?? '')}
                   onChange={(e) => onChangeParams({ value: e.target.value })}
                   data-testid="prop-input-text"
                 />
-              </label>
+              </ParamField>
             ) : (
               <JsonValueField
                 label="JSON 值"
                 value={p.value}
                 onCommit={(v) => onChangeParams({ value: v })}
                 testId="prop-input-value"
+                path="params.value"
+                nodeId={node.id}
+                diagnostics={diagnostics}
               />
             )}
           </>
@@ -114,8 +175,7 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
 
         {node.type === 'transform' && (
           <>
-            <label className="fy-flow-field">
-              动词
+            <ParamField label="动词" path="verb" nodeId={node.id} diagnostics={diagnostics}>
               <select
                 value={node.verb ?? 'template'}
                 onChange={(e) => {
@@ -127,23 +187,21 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
               >
                 {VERBS.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
-            </label>
+            </ParamField>
 
             {node.verb === 'template' && (
-              <label className="fy-flow-field">
-                模板（{'{field}'} 插值）
+              <ParamField label="模板（{'{field}'} 插值）" path="params.template" nodeId={node.id} diagnostics={diagnostics}>
                 <input
                   value={String(p.template ?? '')}
                   onChange={(e) => onChangeParams({ template: e.target.value })}
                   data-testid="prop-template"
                 />
-              </label>
+              </ParamField>
             )}
 
             {node.verb === 'map' && (
               <>
-                <label className="fy-flow-field">
-                  操作
+                <ParamField label="操作" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
                   <select
                     value={String(p.op ?? 'set')}
                     onChange={(e) => onChangeParams({ op: e.target.value })}
@@ -151,25 +209,23 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                   >
                     {MAP_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
-                </label>
+                </ParamField>
                 {p.op === 'set' && (
                   <>
-                    <label className="fy-flow-field">
-                      目标字段
+                    <ParamField label="目标字段" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
                       <input
                         value={String(p.field ?? '')}
                         onChange={(e) => onChangeParams({ field: e.target.value })}
                         data-testid="prop-map-field"
                       />
-                    </label>
-                    <label className="fy-flow-field">
-                      新值（支持 {'{field}'} 插值）
+                    </ParamField>
+                    <ParamField label="新值（支持 {'{field}'} 插值）" path="params.value" nodeId={node.id} diagnostics={diagnostics}>
                       <input
                         value={String(p.value ?? '')}
                         onChange={(e) => onChangeParams({ value: e.target.value })}
                         data-testid="prop-map-value"
                       />
-                    </label>
+                    </ParamField>
                   </>
                 )}
               </>
@@ -177,16 +233,14 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
 
             {node.verb === 'filter' && (
               <>
-                <label className="fy-flow-field">
-                  字段
+                <ParamField label="字段" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.field ?? '')}
                     onChange={(e) => onChangeParams({ field: e.target.value })}
                     data-testid="prop-filter-field"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  比较
+                </ParamField>
+                <ParamField label="比较" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
                   <select
                     value={String(p.op ?? 'eq')}
                     onChange={(e) => onChangeParams({ op: e.target.value })}
@@ -194,28 +248,29 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                   >
                     {FILTER_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
-                </label>
+                </ParamField>
                 <JsonValueField
                   label="阈值（JSON）"
                   value={p.value}
                   onCommit={(v) => onChangeParams({ value: v })}
                   testId="prop-filter-value"
+                  path="params.value"
+                  nodeId={node.id}
+                  diagnostics={diagnostics}
                 />
               </>
             )}
 
             {node.verb === 'branch' && (
               <>
-                <label className="fy-flow-field">
-                  字段
+                <ParamField label="字段" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.field ?? '')}
                     onChange={(e) => onChangeParams({ field: e.target.value })}
                     data-testid="prop-branch-field"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  比较
+                </ParamField>
+                <ParamField label="比较" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
                   <select
                     value={String(p.op ?? 'eq')}
                     onChange={(e) => onChangeParams({ op: e.target.value })}
@@ -223,36 +278,36 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                   >
                     {FILTER_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
-                </label>
+                </ParamField>
                 <JsonValueField
                   label="阈值（JSON）"
                   value={p.value}
                   onCommit={(v) => onChangeParams({ value: v })}
                   testId="prop-branch-value"
+                  path="params.value"
+                  nodeId={node.id}
+                  diagnostics={diagnostics}
                 />
-                <label className="fy-flow-field">
-                  命中标签
+                <ParamField label="命中标签" path="params.then_label" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.then_label ?? '')}
                     onChange={(e) => onChangeParams({ then_label: e.target.value })}
                     data-testid="prop-branch-then"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  未命中标签
+                </ParamField>
+                <ParamField label="未命中标签" path="params.else_label" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.else_label ?? '')}
                     onChange={(e) => onChangeParams({ else_label: e.target.value })}
                     data-testid="prop-branch-else"
                   />
-                </label>
+                </ParamField>
               </>
             )}
 
             {node.verb === 'aggregate' && (
               <>
-                <label className="fy-flow-field">
-                  聚合算子
+                <ParamField label="聚合算子" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
                   <select
                     value={String(p.op ?? 'count')}
                     onChange={(e) => onChangeParams({ op: e.target.value })}
@@ -260,29 +315,26 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                   >
                     {AGGREGATE_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
-                </label>
-                <label className="fy-flow-field">
-                  字段（sum/min/max/avg 必填）
+                </ParamField>
+                <ParamField label="字段（sum/min/max/avg 必填）" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.field ?? '')}
                     onChange={(e) => onChangeParams({ field: e.target.value })}
                     data-testid="prop-aggregate-field"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  连接符（join 用）
+                </ParamField>
+                <ParamField label="连接符（join 用）" path="params.sep" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.sep ?? ',')}
                     onChange={(e) => onChangeParams({ sep: e.target.value })}
                     data-testid="prop-aggregate-sep"
                   />
-                </label>
+                </ParamField>
               </>
             )}
 
             {node.verb === 'merge' && (
-              <label className="fy-flow-field">
-                汇聚策略
+              <ParamField label="汇聚策略" path="params.mode" nodeId={node.id} diagnostics={diagnostics}>
                 <select
                   value={String(p.mode ?? 'concat')}
                   onChange={(e) => onChangeParams({ mode: e.target.value })}
@@ -290,18 +342,17 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                 >
                   {MERGE_OPS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
-              </label>
+              </ParamField>
             )}
 
             {node.verb === 'agent' && (
-              <label className="fy-flow-field">
-                Agent 名
+              <ParamField label="Agent 名" path="params.agent" nodeId={node.id} diagnostics={diagnostics}>
                 <input
                   value={String(p.agent ?? '')}
                   onChange={(e) => onChangeParams({ agent: e.target.value })}
                   data-testid="prop-agent-name"
                 />
-              </label>
+              </ParamField>
             )}
 
             {node.verb === 'confirm' && (
@@ -309,59 +360,54 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                 <p className="muted">
                   人工确认动词位：HITL 中断/恢复尚未接入，执行时该节点必定失败。
                 </p>
-                <label className="fy-flow-field">
-                  确认话术
+                <ParamField label="确认话术" path="params.prompt" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.prompt ?? '')}
                     onChange={(e) => onChangeParams({ prompt: e.target.value })}
                     data-testid="prop-confirm-prompt"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  角色
+                </ParamField>
+                <ParamField label="角色" path="params.role" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.role ?? '')}
                     onChange={(e) => onChangeParams({ role: e.target.value })}
                     data-testid="prop-confirm-role"
                   />
-                </label>
+                </ParamField>
               </>
             )}
 
             {node.verb === 'artifact' && (
               <>
-                <label className="fy-flow-field">
-                  产物名
+                <ParamField label="产物名" path="params.name" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.name ?? '')}
                     onChange={(e) => onChangeParams({ name: e.target.value })}
                     data-testid="prop-artifact-name"
                   />
-                </label>
-                <label className="fy-flow-field">
-                  产物类型
+                </ParamField>
+                <ParamField label="产物类型" path="params.kind" nodeId={node.id} diagnostics={diagnostics}>
                   <input
                     value={String(p.kind ?? 'generic')}
                     onChange={(e) => onChangeParams({ kind: e.target.value })}
                     data-testid="prop-artifact-kind"
                   />
-                </label>
+                </ParamField>
               </>
             )}
           </>
         )}
 
         {node.type === 'output' && (
-          <label className="fy-flow-field">
-            输出格式
+          <ParamField label="输出格式" path="params.format" nodeId={node.id} diagnostics={diagnostics}>
             <select
               value={String(p.format ?? 'text')}
               onChange={(e) => onChangeParams({ format: e.target.value })}
               data-testid="prop-output-format"
             >
-              {OUTPUT_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+              {OUTPUT_FORMATS.map((fm) => <option key={fm} value={fm}>{fm}</option>)}
             </select>
-          </label>
+          </ParamField>
         )}
       </div>
     </div>
