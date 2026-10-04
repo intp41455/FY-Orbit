@@ -25,10 +25,12 @@ import {
   screenToWorldX,
   snapToGrid,
   worldToScreenX,
+  TIME_OF_DAY_LIST,
   type CabinBackgroundId,
   type CabinConfig,
   type CabinHouseId,
   type DialogueSpeaker,
+  type TimeOfDay,
 } from './cabinConfig';
 import {
   PixelBuffer,
@@ -277,6 +279,19 @@ function stampElements(buf: PixelBuffer, defs: readonly ElementDefLike[], prng: 
     }
   }
   placements.sort((a, b) => a.y + a.snap.height * a.scale - (b.y + b.snap.height * b.scale));
+  // A5 光影体系：统一左上光源，为每个物体先盖一层柔和半透明向右下方微偏的地面阴影
+  for (const p of placements) {
+    const elemW = p.snap.width * p.scale;
+    const baseY = p.y + p.snap.height * p.scale;
+    // 阴影中心微偏右（左上光源投射）
+    const cx = p.x + Math.round(elemW * 0.5) + Math.max(1, Math.round(p.scale * 1.5));
+    const cy = baseY - Math.max(1, Math.round(p.scale * 0.5));
+    const rx = Math.max(4, Math.round(elemW * 0.44));
+    const ry = Math.max(2, Math.round(Math.min(7, elemW * 0.16)));
+    for (const dx of [-buf.width, 0, buf.width]) {
+      buf.radialEllipse(cx + dx, cy, rx, ry, 0x0f172a, 0.35, 1.4);
+    }
+  }
   for (const p of placements) buf.stampTiled(p.snap, buf.width, p.x, p.y, p.scale);
 }
 
@@ -521,6 +536,9 @@ export interface CabinSceneCallbacks {
 export interface CabinScene {
   resize(width: number, height: number): void;
   setConfig(config: CabinConfig): void;
+  /** A5 昼夜色温控制 */
+  setTimeOfDay(time: TimeOfDay): void;
+  getTimeOfDay(): TimeOfDay;
   /** 在指定角色头顶弹出气泡（含「虚拟演绎」角标），约 3.6s 自动消失。 */
   speak(speaker: DialogueSpeaker, text: string): void;
   destroy(): void;
@@ -698,7 +716,9 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   const person = new Container();
   const personShadow = new Sprite(getShadowTexture().texture);
   personShadow.anchor.set(0.5, 0.5);
-  personShadow.alpha = 0.28;
+  // A5 光影体系：统一左上光源，投影微偏右下
+  personShadow.position.set(2, 0);
+  personShadow.alpha = 0.32;
   const personBody = new Sprite();
   personBody.anchor.set(0.5, 1);
   personBody.roundPixels = true;
@@ -722,7 +742,9 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   const pet = new Container();
   const petShadow = new Sprite(getShadowTexture().texture);
   petShadow.anchor.set(0.5, 0.5);
-  petShadow.alpha = 0.24;
+  // A5 光影体系：统一左上光源，投影微偏右下
+  petShadow.position.set(2, 0);
+  petShadow.alpha = 0.28;
   const petBody = new Sprite();
   petBody.anchor.set(0.5, 1);
   petBody.roundPixels = true;
@@ -773,7 +795,23 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   bubbleRoot.visible = false;
   bubbleLayer.addChild(bubbleRoot);
 
-  app.stage.addChild(bgLayer, houseC, actorLayer, particleLayer, edgeLayer, bubbleLayer);
+  /* ---- A5 昼夜色温叠加层 ---- */
+  const timeOverlay = new Sprite(Texture.WHITE);
+  timeOverlay.eventMode = 'none';
+  timeOverlay.blendMode = 'multiply';
+
+  const applyTimeOfDay = (time: TimeOfDay = config.timeOfDay ?? 'day') => {
+    const meta = TIME_OF_DAY_LIST.find((t) => t.id === time) ?? TIME_OF_DAY_LIST[1];
+    if (meta.alpha <= 0) {
+      timeOverlay.visible = false;
+    } else {
+      timeOverlay.visible = true;
+      timeOverlay.tint = meta.tint;
+      timeOverlay.alpha = meta.alpha;
+    }
+  };
+
+  app.stage.addChild(bgLayer, houseC, actorLayer, particleLayer, edgeLayer, timeOverlay, bubbleLayer);
   app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
 
@@ -903,6 +941,10 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     edgeR.position.set(width, 0);
     edgeR.width = fadeW; // Pixi `_setWidth` 保留 scale.x 的符号，这里镜像仍为负
     edgeR.height = height;
+    timeOverlay.position.set(0, 0);
+    timeOverlay.width = width;
+    timeOverlay.height = height;
+    applyTimeOfDay();
   };
 
   const layoutHouse = () => {
@@ -986,9 +1028,10 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
     const shadow = new Sprite(getShadowTexture().texture);
     shadow.anchor.set(0.5, 0.5);
-    shadow.position.set(0, 1);
+    // A5 光影体系：统一左上光源，阴影微偏右下
+    shadow.position.set(4, 2);
     shadow.scale.set((W * 0.92) / 48, 11 / 14);
-    shadow.alpha = 0.22;
+    shadow.alpha = 0.26;
 
     const body = new Sprite(tex.texture);
     body.anchor.set(0.5, 1);
@@ -1331,6 +1374,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       height = h;
       app.renderer.resize(w, h);
       app.stage.hitArea = app.screen;
+      timeOverlay.width = w;
+      timeOverlay.height = h;
       redraw();
       bindParticles();
     },
@@ -1354,6 +1399,17 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
         petBody.texture = petFrame(m.id, hexToNumber(m.hex), 0);
       }
       if (houseChanged) bindParticles(); // 雪洞小屋切换飘雪
+      if (prev.timeOfDay !== next.timeOfDay) {
+        applyTimeOfDay(next.timeOfDay ?? 'day');
+      }
+    },
+    setTimeOfDay(time: TimeOfDay) {
+      if (destroyed) return;
+      config.timeOfDay = time;
+      applyTimeOfDay(time);
+    },
+    getTimeOfDay(): TimeOfDay {
+      return config.timeOfDay ?? 'day';
     },
     speak(speaker: DialogueSpeaker, text: string) {
       if (destroyed) return;

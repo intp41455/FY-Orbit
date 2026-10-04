@@ -100,6 +100,26 @@ export const PERSONALITIES: readonly PersonalityMeta[] = [
 ] as const;
 
 /* ------------------------------------------------------------------ */
+/* A5 光影体系：昼夜时段与色温映射                                      */
+/* ------------------------------------------------------------------ */
+
+export type TimeOfDay = 'dawn' | 'day' | 'dusk' | 'night';
+
+export interface TimeOfDayMeta {
+  id: TimeOfDay;
+  label: string;
+  tint: number;
+  alpha: number;
+}
+
+export const TIME_OF_DAY_LIST: readonly TimeOfDayMeta[] = [
+  { id: 'dawn', label: '清晨', tint: 0xffeedb, alpha: 0.18 },
+  { id: 'day', label: '白天', tint: 0xffffff, alpha: 0 },
+  { id: 'dusk', label: '黄昏', tint: 0xffaa66, alpha: 0.28 },
+  { id: 'night', label: '夜晚', tint: 0x334466, alpha: 0.45 },
+] as const;
+
+/* ------------------------------------------------------------------ */
 /* 配置对象 + 持久化                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -111,6 +131,8 @@ export interface CabinConfig {
   /** 小人性格同样参与台词挑选；工具条提供下拉（v1 与宠物共用性格集）。 */
   personPersonality: PersonalityId;
   personName: string;
+  /** A5 昼夜色温，默认白天 */
+  timeOfDay?: TimeOfDay;
 }
 
 export const DEFAULT_CABIN_CONFIG: CabinConfig = {
@@ -120,6 +142,7 @@ export const DEFAULT_CABIN_CONFIG: CabinConfig = {
   petPersonality: 'lively',
   personPersonality: 'chatty',
   personName: '小寻',
+  timeOfDay: 'day',
 };
 
 function pickWhitelisted<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
@@ -134,6 +157,7 @@ export function sanitizeCabinConfig(raw: unknown): CabinConfig {
   const bgIds = CABIN_BACKGROUNDS.map((b) => b.id);
   const colorIds = PET_COLORS.map((c) => c.id);
   const personalityIds = PERSONALITIES.map((p) => p.id);
+  const timeIds = TIME_OF_DAY_LIST.map((t) => t.id);
   const name = typeof r.personName === 'string' ? r.personName.trim().slice(0, 16) : '';
   return {
     house: pickWhitelisted(r.house, houseIds, DEFAULT_CABIN_CONFIG.house),
@@ -142,6 +166,7 @@ export function sanitizeCabinConfig(raw: unknown): CabinConfig {
     petPersonality: pickWhitelisted(r.petPersonality, personalityIds, DEFAULT_CABIN_CONFIG.petPersonality),
     personPersonality: pickWhitelisted(r.personPersonality, personalityIds, DEFAULT_CABIN_CONFIG.personPersonality),
     personName: name || DEFAULT_CABIN_CONFIG.personName,
+    timeOfDay: pickWhitelisted(r.timeOfDay, timeIds, DEFAULT_CABIN_CONFIG.timeOfDay ?? 'day'),
   };
 }
 
