@@ -234,7 +234,8 @@ def test_sync_source_rejects_hub_source_without_credentials(kb, session, owner_a
 def test_no_hub_connection_leaves_native_list_untouched(kb, session, owner_actor):
     """hub 侧一条连接都没有 → 列表只剩原生两条，语义与 W3 完全一致。"""
     cards = kb.list_sources(owner_actor, owner_id="owner-1")
-    assert [c["source_id"] for c in cards] == ["baidu_pan", "ima"]
+    # P3 备轨上线：原生卡片清单扩为三源（与 W3 注册表一致）。
+    assert [c["source_id"] for c in cards] == ["baidu_pan", "ima", "local_files"]
 
 
 def test_missing_hub_connection_raises_not_found(session, owner_actor):

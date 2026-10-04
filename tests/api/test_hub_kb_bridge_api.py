@@ -105,8 +105,9 @@ def test_kb_sources_api_without_any_hub_connection_is_unchanged(client, owner):
     """hub 一条连接都没有 → 只剩原生两条，count 不变。"""
     c, _ = owner
     body = c.get("/api/kb/sources").json()
-    assert body["count"] == 2
-    assert [s["source_id"] for s in body["sources"]] == ["baidu_pan", "ima"]
+    assert body["count"] == 3  # P3 备轨上线：三源
+    # P3 备轨上线：/api/kb/sources 原生清单扩为三源。
+    assert [s["source_id"] for s in body["sources"]] == ["baidu_pan", "ima", "local_files"]
 
 
 def test_kb_sources_api_reports_unconfigured_hub_source_honestly(client, app, owner):
