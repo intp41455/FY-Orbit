@@ -34,7 +34,7 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..db.collaboration_models import (
@@ -57,6 +57,12 @@ MENTION_RE = re.compile(r"@([A-Za-z0-9_.\-]+)")
 
 #: 通知定位串的最大长度。它**不含**评论正文，这里只是给字符串一个上界。
 SUMMARY_MAX = 200
+
+#: 评论分页。**默认必须有界**：不设默认上限就等于「一次拉全量」，在大记录上
+#: 既是性能问题，也让「分页」形同虚设。调用方只能请求更小的页，不能请求无限。
+COMMENT_DEFAULT_LIMIT = 50
+COMMENT_MAX_LIMIT = 200
+COMMENT_ORDERS = ("asc", "desc")
 
 
 @dataclass(frozen=True)
@@ -329,10 +335,13 @@ class CollaborationService:
         comment.edited_at = utcnow()
         comment.version += 1
         self.s.flush()
+        # 编辑可能**去掉**某个 @：陈旧通知必须一并回收，否则被取消提及的人
+        # 仍会看到一个指向「已经不再提到他」的评论的通知。
+        stale = self._reconcile_notifications(comment)
         notified = self._notify_mentions(actor, comment, ref)
         self._audit(actor, "collaboration.comment.edited", comment.id,
                     {"record_kind": ref.kind, "record_id": ref.id,
-                     "mentions": len(comment.mentions)},
+                     "mentions": len(comment.mentions), "stale_notifications": stale},
                     message_id=comment.id)
         return {"comment": self._comment_view(comment), "notified": notified}
 
@@ -351,25 +360,101 @@ class CollaborationService:
         comment.deleted_at = utcnow()
         comment.version += 1
         self.s.flush()
+        # 联动：评论没了，指向它的通知必须一并失效，否则收件人会点进一条
+        # 已经不存在的评论，且未读计数永远清不掉。通知是派生数据，直接删行
+        # （评论本身仍是软删、可审计；通知不需要一条「已失效」的历史）。
+        invalidated = self._delete_notifications_for_comment(comment.id)
         self._audit(actor, "collaboration.comment.deleted", comment.id,
-                    {"record_kind": ref.kind, "record_id": ref.id},
+                    {"record_kind": ref.kind, "record_id": ref.id,
+                     "invalidated_notifications": invalidated},
                     message_id=comment.id)
         return self._comment_view(comment)
 
     def list_comments(
-        self, actor: Actor, *, record_kind: str, record_id: str
+        self,
+        actor: Actor,
+        *,
+        record_kind: str,
+        record_id: str,
+        limit: int | None = None,
+        offset: int = 0,
+        order: str = "asc",
     ) -> list[dict[str, Any]]:
+        """列出评论。分页与排序**在隔离谓词之内**完成（见 ``_comments_query``）。"""
+        return self.list_comments_page(
+            actor, record_kind=record_kind, record_id=record_id,
+            limit=limit, offset=offset, order=order,
+        )["items"]
+
+    def list_comments_page(
+        self,
+        actor: Actor,
+        *,
+        record_kind: str,
+        record_id: str,
+        limit: int | None = None,
+        offset: int = 0,
+        order: str = "asc",
+    ) -> dict[str, Any]:
+        """评论分页视图：``{items, limit, offset, order, count, has_more}``。
+
+        授权与切片**不可分离**：``_require_access`` 先跑，隔离谓词进 WHERE，
+        ``LIMIT/OFFSET`` 只作用在**已经被隔离过滤过**的结果集上。谁也无权
+        通过 ``offset`` 翻到别人的记录里——翻页参数既不改变 FROM，也不改变
+        WHERE，越权在切片之前就已经是 ``NotFound``。
+        """
         ref, _ = self._require_access(actor, record_kind, record_id, "read")
-        rows = self.s.execute(
+        limit, offset, order = self._normalize_page(limit, offset, order)
+        stmt = (
             select(Comment)
             .where(
                 Comment.record_kind == ref.kind,
                 Comment.record_id == ref.id,
                 Comment.deleted_at.is_(None),
             )
-            .order_by(Comment.created_at)
-        ).scalars()
-        return [self._comment_view(c) for c in rows]
+            .order_by(
+                Comment.created_at.desc() if order == "desc" else Comment.created_at.asc(),
+                # 稳定次序：同一时间戳下按 id 再定序，否则翻页会漏/重。
+                Comment.id.desc() if order == "desc" else Comment.id.asc(),
+            )
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = [self._comment_view(c) for c in self.s.execute(stmt).scalars()]
+        # has_more：多取一条判断是否还有下一页，避免调用方误以为「到底了」。
+        stmt_more = (
+            select(Comment.id)
+            .where(
+                Comment.record_kind == ref.kind,
+                Comment.record_id == ref.id,
+                Comment.deleted_at.is_(None),
+            )
+            .limit(1)
+            .offset(offset + limit)
+        )
+        has_more = self.s.execute(stmt_more).first() is not None
+        return {
+            "items": rows,
+            "limit": limit,
+            "offset": offset,
+            "order": order,
+            "count": len(rows),
+            "has_more": has_more,
+        }
+
+    @staticmethod
+    def _normalize_page(limit: int | None, offset: int, order: str) -> tuple[int, int, str]:
+        if order not in COMMENT_ORDERS:
+            raise ValidationFailed("bad_order", f"order must be one of {list(COMMENT_ORDERS)}")
+        if limit is None:
+            limit = COMMENT_DEFAULT_LIMIT
+        if not isinstance(limit, int) or limit < 1 or limit > COMMENT_MAX_LIMIT:
+            raise ValidationFailed(
+                "bad_limit", f"limit must be between 1 and {COMMENT_MAX_LIMIT}"
+            )
+        if not isinstance(offset, int) or offset < 0:
+            raise ValidationFailed("bad_offset", "offset must be >= 0")
+        return limit, offset, order
 
     # ------------------------------------------------------------------
     # @人 与通知
@@ -440,6 +525,45 @@ class CollaborationService:
                          "comment_id": comment.id, "contains_private_text": False},
                         message_id=comment.id)
         return [self._notification_view(n) for n in created]
+
+    def _delete_notifications_for_comment(self, comment_id: str) -> int:
+        """硬删指向某条评论的通知，返回删除行数。"""
+        res = self.s.execute(
+            delete(Notification).where(Notification.comment_id == comment_id)
+        )
+        self.s.flush()
+        return int(res.rowcount or 0)
+
+    def _reconcile_notifications(self, comment: Comment) -> int:
+        """回收「评论仍存在、但已不再提及该人」的通知，返回删除行数。"""
+        keep = list(comment.mentions or [])
+        stmt = delete(Notification).where(
+            Notification.comment_id == comment.id,
+            Notification.kind == "mention",
+        )
+        if keep:
+            stmt = stmt.where(Notification.owner_id.not_in(keep))
+        res = self.s.execute(stmt)
+        self.s.flush()
+        return int(res.rowcount or 0)
+
+    def unread_count(self, actor: Actor) -> int:
+        """当前身份的未读通知数。**不区分 kind**（kind 多类型后此式仍正确），
+        也**不携带任何正文**——它只是一个整数。"""
+        actor.require_authenticated()
+        ident = self._identity(actor)
+        if not ident:
+            return 0
+        return int(
+            self.s.execute(
+                select(func.count())
+                .select_from(Notification)
+                .where(
+                    Notification.owner_id == ident,
+                    Notification.read_at.is_(None),
+                )
+            ).scalar_one()
+        )
 
     @staticmethod
     def _summary(ref: Record, comment: Comment) -> str:

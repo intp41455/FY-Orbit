@@ -42,7 +42,11 @@ from find_yourself.db.models import Artifact, AuditEvent, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
-from find_yourself.services.collaboration import CollaborationService
+from find_yourself.services.collaboration import (
+    COMMENT_DEFAULT_LIMIT,
+    COMMENT_MAX_LIMIT,
+    CollaborationService,
+)
 from find_yourself.services.errors import NotFound, PermissionDenied, ValidationFailed
 from find_yourself.services.grant import MAX_GRANT_SECONDS, GrantService
 
@@ -681,3 +685,195 @@ def test_migration_0030_downgrade_drops_tables_and_is_idempotent():
         for table in ("collaboration_roles", "comments", "notifications"):
             assert not insp.has_table(table)
         _run_migration(conn, mod, "downgrade")  # 再降一次也不得报错
+
+
+# ======================================================================
+# 第二切片：未读计数 / 评论分页排序 / 删除评论联动通知
+# ======================================================================
+def _raw_comment(session, cid, owner, record_id, body, *, offset_seconds=0):
+    """直接落一条评论行（可控 created_at），用于确定性地测排序/分页。"""
+    created = utcnow() + timedelta(seconds=offset_seconds)
+    session.add(
+        Comment(
+            id=cid, owner_id=owner, record_kind="task", record_id=record_id,
+            author_id=owner, body=body, mentions=[], created_at=created, updated_at=created,
+        )
+    )
+    session.flush()
+    return cid
+
+
+# --- 未读计数 --------------------------------------------------------- #
+def test_unread_count_starts_zero(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    assert svc.unread_count(bob) == 0
+
+
+def test_unread_count_increments_on_mention(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")
+    assert svc.unread_count(bob) == 1
+
+
+def test_unread_count_clears_after_mark_read(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")
+    nid = svc.list_notifications(bob)[0]["id"]
+    svc.mark_notification_read(bob, nid)
+    assert svc.unread_count(bob) == 0
+
+
+def test_unread_count_is_per_identity(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")
+    assert svc.unread_count(bob) == 1
+    assert svc.unread_count(alice) == 0  # A 没有收到任何通知
+
+
+def test_unread_count_counts_all_unread_kinds(svc, session, alice, bob):
+    """未读数只由 read_at 决定，不按 kind 过滤（kind 多类型后此式仍正确）。"""
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B one")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B two")
+    assert svc.unread_count(bob) == 2
+    svc.mark_notification_read(bob, svc.list_notifications(bob)[0]["id"])
+    assert svc.unread_count(bob) == 1
+
+
+def test_unread_count_needs_no_body(svc, session, alice, bob):
+    """未读数是整数，接口/服务层都不返回任何通知正文。"""
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    svc.add_comment(alice, record_kind="task", record_id="t1", body="@B secret-payload")
+    assert isinstance(svc.unread_count(bob), int)
+
+
+# --- 评论分页与排序 --------------------------------------------------- #
+def test_default_limit_is_bounded(svc, session, alice):
+    _task(session, "t1", "A")
+    for i in range(COMMENT_DEFAULT_LIMIT + 5):
+        _raw_comment(session, f"cm-{i:03d}", "A", "t1", f"c{i}", offset_seconds=i)
+    items = svc.list_comments(alice, record_kind="task", record_id="t1")
+    assert len(items) == COMMENT_DEFAULT_LIMIT  # 默认有界，不是全量
+
+
+def test_limit_offset_and_page_metadata(svc, session, alice):
+    _task(session, "t1", "A")
+    for i in range(5):
+        _raw_comment(session, f"cm-{i}", "A", "t1", f"c{i}", offset_seconds=i)
+    page0 = svc.list_comments_page(alice, record_kind="task", record_id="t1", limit=2, offset=0)
+    assert [c["body"] for c in page0["items"]] == ["c0", "c1"]
+    assert page0["count"] == 2 and page0["has_more"] is True
+    page2 = svc.list_comments_page(alice, record_kind="task", record_id="t1", limit=2, offset=4)
+    assert [c["body"] for c in page2["items"]] == ["c4"]
+    assert page2["has_more"] is False
+
+
+def test_order_desc_reverses(svc, session, alice):
+    _task(session, "t1", "A")
+    for i in range(4):
+        _raw_comment(session, f"cm-{i}", "A", "t1", f"c{i}", offset_seconds=i)
+    items = svc.list_comments(alice, record_kind="task", record_id="t1", order="desc")
+    assert [c["body"] for c in items] == ["c3", "c2", "c1", "c0"]
+
+
+def test_offset_beyond_end_is_empty_not_wrapped(svc, session, alice):
+    _task(session, "t1", "A")
+    _raw_comment(session, "cm-0", "A", "t1", "only", offset_seconds=0)
+    page = svc.list_comments_page(alice, record_kind="task", record_id="t1", limit=10, offset=50)
+    assert page["items"] == [] and page["has_more"] is False
+
+
+def test_limit_over_max_rejected(svc, session, alice):
+    _task(session, "t1", "A")
+    with pytest.raises(ValidationFailed):
+        svc.list_comments(alice, record_kind="task", record_id="t1", limit=COMMENT_MAX_LIMIT + 1)
+
+
+def test_limit_zero_or_negative_rejected(svc, session, alice):
+    _task(session, "t1", "A")
+    with pytest.raises(ValidationFailed):
+        svc.list_comments(alice, record_kind="task", record_id="t1", limit=0)
+
+
+def test_negative_offset_rejected(svc, session, alice):
+    _task(session, "t1", "A")
+    with pytest.raises(ValidationFailed):
+        svc.list_comments(alice, record_kind="task", record_id="t1", offset=-1)
+
+
+def test_bad_order_rejected(svc, session, alice):
+    _task(session, "t1", "A")
+    with pytest.raises(ValidationFailed):
+        svc.list_comments(alice, record_kind="task", record_id="t1", order="sideways")
+
+
+def test_pagination_only_returns_the_requested_record(svc, session, alice):
+    _task(session, "t1", "A")
+    _task(session, "t2", "A")
+    _raw_comment(session, "cm-a", "A", "t1", "on-t1", offset_seconds=0)
+    _raw_comment(session, "cm-b", "A", "t2", "on-t2", offset_seconds=1)
+    items = svc.list_comments(alice, record_kind="task", record_id="t1", limit=100)
+    assert [c["body"] for c in items] == ["on-t1"]
+
+
+def test_non_collaborator_pagination_is_not_found(svc, session, bob):
+    """越权分页必须与不存在一致 —— 分页参数不得成为绕过隔离的手段。"""
+    _task(session, "t1", "A")
+    _raw_comment(session, "cm-0", "A", "t1", "secret", offset_seconds=0)
+    with pytest.raises(NotFound):
+        svc.list_comments(bob, record_kind="task", record_id="t1", limit=1, offset=0)
+
+
+# --- 删除评论联动通知 ------------------------------------------------- #
+def test_delete_comment_invalidates_its_notifications(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")["comment"]["id"]
+    assert len(svc.list_notifications(bob)) == 1
+    svc.delete_comment(alice, cid)
+    assert svc.list_notifications(bob) == []
+    assert svc.unread_count(bob) == 0
+
+
+def test_delete_comment_only_invalidates_its_own_notifications(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    keep = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B keep")["comment"]["id"]
+    drop = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B drop")["comment"]["id"]
+    svc.delete_comment(alice, drop)
+    remaining = svc.list_notifications(bob)
+    assert len(remaining) == 1 and remaining[0]["comment_id"] == keep
+
+
+def test_deleted_comment_notification_cannot_be_marked_read(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")["comment"]["id"]
+    nid = svc.list_notifications(bob)[0]["id"]
+    svc.delete_comment(alice, cid)
+    with pytest.raises(NotFound):
+        svc.mark_notification_read(bob, nid)
+
+
+def test_edit_removing_mention_invalidates_notification(svc, session, alice, bob):
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "viewer")
+    cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B hi")["comment"]["id"]
+    assert len(svc.list_notifications(bob)) == 1
+    svc.edit_comment(alice, cid, "never mind")
+    assert svc.list_notifications(bob) == []
+
+
+def test_delete_requires_author_or_delete_any_still_enforced(svc, session, alice, bob):
+    """联动删除不得成为越权删除的旁路：manager 仍不能删他人评论。"""
+    _task(session, "t1", "A")
+    _assign(svc, alice, "task", "t1", "B", "manager")
+    cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="@B x")["comment"]["id"]
+    with pytest.raises(PermissionDenied):
+        svc.delete_comment(bob, cid)
+    assert len(svc.list_notifications(bob)) == 1  # 越权删除被拒，通知原封不动

@@ -6,10 +6,11 @@
 * ``POST   /api/collaboration/roles/revoke``     —— 撤销协作角色
 * ``GET    /api/collaboration/roles``            —— 某条 record 的角色名册
 * ``POST   /api/collaboration/comments``         —— 发表评论（含 @人 → 通知）
-* ``GET    /api/collaboration/comments``         —— 某条 record 的评论
+* ``GET    /api/collaboration/comments``         —— 某条 record 的评论（分页/排序）
 * ``PATCH  /api/collaboration/comments/{id}``    —— 编辑自己的评论
-* ``DELETE /api/collaboration/comments/{id}``    —— 删除（作者或 owner/admin）
+* ``DELETE /api/collaboration/comments/{id}``    —— 删除（作者或 owner/admin，联动失效通知）
 * ``GET    /api/collaboration/notifications``    —— 我的通知
+* ``GET    /api/collaboration/notifications/unread-count`` —— 我的未读数（不含正文）
 * ``POST   /api/collaboration/notifications/{id}/read`` —— 标记已读
 
 写操作一律 ``csrf_protected``；全部授权在服务层做（复用 ``grant.py``，见
@@ -153,14 +154,21 @@ async def add_comment(
 async def list_comments(
     record_kind: str,
     record_id: str,
+    limit: int | None = None,
+    offset: int = 0,
+    order: str = "asc",
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict:
+    """分页列出评论。``limit`` 默认有界（≤200）；隔离在服务层 WHERE 内完成。"""
     try:
-        items = _svc(svc).list_comments(actor, record_kind=record_kind, record_id=record_id)
+        page = _svc(svc).list_comments_page(
+            actor, record_kind=record_kind, record_id=record_id,
+            limit=limit, offset=offset, order=order,
+        )
     except DomainError as exc:
         raise _translate(exc) from exc
-    return {"count": len(items), "items": items}
+    return page
 
 
 @router.patch("/comments/{comment_id}")
@@ -207,6 +215,17 @@ async def list_notifications(
     items = _svc(svc).list_notifications(actor)
     svc.session.commit()
     return {"count": len(items), "items": items}
+
+
+@router.get("/notifications/unread-count")
+async def unread_count(
+    actor: Actor = Depends(get_actor),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """当前身份的未读通知数。返回一个整数，不含任何通知正文。"""
+    count = _svc(svc).unread_count(actor)
+    svc.session.commit()
+    return {"unread": count}
 
 
 @router.post("/notifications/{notification_id}/read")
