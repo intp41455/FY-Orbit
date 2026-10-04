@@ -126,18 +126,46 @@ def test_w05_sandbox_rejects_path_traversal_write_targets(isolated_runner: Isola
 
 
 def test_w05_isolated_sandbox_enforces_execution_timeout(isolated_runner: IsolatedScriptRunner):
-    """W05: Malicious runaway/infinite loop script is killed strictly on timeout."""
+    """W05: Malicious runaway/infinite loop script is killed strictly on timeout.
+
+    关于时长断言（2026-10-04 修正，避免负载敏感 flake）
+    --------------------------------------------------
+    原断言是 `duration_ms < 2500`，按**旧行为**校准：那时超时只 kill 直接子进程，
+    走的是 `subprocess.run(timeout=)` 的默认路径。
+    S-1 修复后，超时路径**必须多做两件事**才正确：
+      ① `kill_process_tree()` —— 终止整棵进程树并**验证回收**（最多轮询 2s）；
+      ② `communicate(timeout=5)` 排水，避免孙进程占着管道。
+    在 14 个 worker 并发的全量回归里，这两步会因机器争用而超 2500ms ——
+    单跑绿、全量红。
+
+    **不能**简单把阈值放大（那等于放弃断言），也**不能**把 S-1 改回去（那会把
+    真实缺陷放回来）。正确做法：把预算写成「超时时长 + 终止/排水的**文档化**预算」，
+    使断言仍在测**安全属性**（无穷脚本必须被杀、不得无限运行），而不是在测机器负载。
+    """
     runaway_script = """
 import time
 while True:
     time.sleep(0.05)
 """
-    result = isolated_runner.run_script(runaway_script, script_name="dos_loop.py", timeout=0.6)
+    timeout_s = 0.6
+    result = isolated_runner.run_script(
+        runaway_script, script_name="dos_loop.py", timeout=timeout_s
+    )
+
+    # 安全属性（与负载无关，必须成立）：无穷脚本被按时判定超时并终止。
     assert result.timed_out is True
     assert result.exit_code == -9
     assert any("timeout_exceeded" in v for v in result.violations)
-    # Execution should be killed within ~1.5s
-    assert result.duration_ms < 2500
+
+    # 时长上界 = 超时预算 + 终止/排水预算。
+    # 终止预算 2s 来自 kill_process_tree 的回收验证轮询（40 × 50ms）；
+    # 排水预算 5s 来自 communicate(timeout=5)。两者都是实现里的文档化常量，
+    # 不是拍脑袋的余量。
+    kill_and_drain_budget_ms = 2_000 + 5_000
+    assert result.duration_ms < timeout_s * 1000 + kill_and_drain_budget_ms, (
+        f"超时处理耗时 {result.duration_ms:.0f}ms 超出「超时+终止+排水」预算——"
+        "要么终止路径卡住了，要么没真正杀掉进程树"
+    )
 
 
 def test_w05_isolated_sandbox_runs_benign_engineering_task(isolated_runner: IsolatedScriptRunner):
