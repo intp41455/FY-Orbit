@@ -552,7 +552,7 @@ class TestEveryVerbExecutes:
 # 3. 代码导出往返一致（画布 → 代码 → 画布）
 # =========================================================================== #
 def _kitchen_sink_doc() -> dict:
-    """一张覆盖全部 9 个动词 + 条件边 + 各种参数类型的画布。"""
+    """一张覆盖全部注册动词 + 条件边 + 各种参数类型的画布。"""
     return _doc(
         [
             {"id": "src", "type": "input",
@@ -570,6 +570,8 @@ def _kitchen_sink_doc() -> dict:
             _xf("art", "artifact", name="报表", kind="table"),
             _xf("ag", "agent", agent="reviewer"),
             _xf("cf", "confirm", prompt="确认发布？", role="owner"),
+            _xf("ap", "approval", op="memory.upsert", target_id="mem-1",
+                reason="归档报表", rollback="删除产物"),
             _out(fmt="json"),
         ],
         [
@@ -578,7 +580,8 @@ def _kitchen_sink_doc() -> dict:
             {"from": "br", "to": "agg"}, {"from": "br", "to": "agg2"},
             {"from": "agg", "to": "mrg"}, {"from": "agg2", "to": "mrg"},
             {"from": "mrg", "to": "art"}, {"from": "art", "to": "ag"},
-            {"from": "ag", "to": "cf"}, {"from": "cf", "to": "out"},
+            {"from": "ag", "to": "cf"}, {"from": "cf", "to": "ap"},
+            {"from": "ap", "to": "out"},
         ],
     )
 

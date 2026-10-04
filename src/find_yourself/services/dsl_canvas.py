@@ -25,6 +25,7 @@
 流程控制      ``merge``                  并行汇聚（多路入边收敛成一路）
 Agent      ``agent``                   调用已注册 Agent/工具（需注入解析器）
 人机协作      ``confirm``                挂起等人确认（抛 :class:`DslSuspended`）
+治理        ``approval``               委托 proposal.py 发起治理操作后挂起等裁决（ADR-04）
 输出        ``artifact``                产出带名字的产物信封
 ==========  ==========================  ============================================
 
@@ -45,7 +46,6 @@ import hashlib
 import json
 import os
 import re
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -77,6 +77,22 @@ class DslValidationError(ValueError):
     """DSL 文档不合法（结构 / 拓扑 / 参数 / 解析导出代码失败）。"""
 
 
+class DslFieldError(DslValidationError):
+    """编译期错误，且能定位到具体字段（供 IR 生成逐字段诊断）。
+
+    :class:`DslValidationError` 只是「一句话错误」；:mod:`dsl_ir` 需要把错误落到
+    ``params.op`` 这样的字段路径上。本类在**不改变既有异常层级**（仍是
+    ``DslValidationError``，既有 ``except`` 一律照常命中）的前提下补一个可选
+    ``field_path``。未携带 ``field_path`` 的错误回落到 ``params``。
+    """
+
+    def __init__(self, message: str, *, node_id: str = "",
+                 field_path: str = "") -> None:
+        super().__init__(message)
+        self.node_id = node_id
+        self.field_path = field_path
+
+
 # ---------------------------------------------------------------------------
 # 确定性动词执行上下文与注册表
 # ---------------------------------------------------------------------------
@@ -91,6 +107,13 @@ AgentResolver = Callable[[str, Any, dict[str, Any]], Any]
 #: 刻意**不**传 graph / payload / dsl_digest：让「读取器自己算一个顺眼的 digest
 #: 再放行」这个后门在签名上就不存在。TOCTOU 校验归应用层编排。
 ConfirmDecisionReader = Callable[[str, str | None], "str | None"]
+
+#: 注入「审批信号读取器」的签名：``(node_id, execution_id) -> str | None``。
+#: 返回 ``"approve"`` / ``"reject"`` / ``None``（尚无裁决）。与
+#: :data:`ConfirmDecisionReader` 同源同理：信号只能来自**受信任的治理层**
+#: （services/proposal.py 裁决后落库的状态），DSL 只**读**信号、绝不产生信号，
+#: 更不自己批。``approval`` 动词据此在提案被裁决后原样续跑或明确失败。
+ApprovalSignal = Callable[[str, str | None], "str | None"]
 
 
 class DslSuspended(Exception):
@@ -147,6 +170,8 @@ class VerbContext:
     agent_resolver: AgentResolver | None
     #: 人工裁决读取器 + 挂起所需的稳定标识；``confirm`` 动词专用。
     confirm_decision: ConfirmDecisionReader | None = None
+    #: 审批信号读取器；``approval`` 动词专用（ADR-04：信号来自治理层 proposal.py）。
+    approval_signal: ApprovalSignal | None = None
     execution_id: str | None = None
     dsl_digest: str = ""
 
@@ -378,6 +403,61 @@ def _exec_confirm(ctx: VerbContext) -> Any:
     )
 
 
+# -- 治理类 -----------------------------------------------------------------
+
+
+def _exec_approval(ctx: VerbContext) -> Any:
+    """审批挂起点（ADR-04）：**DSL 是编排层，不是治理层**。
+
+    本函数**不实现任何审批逻辑**：不重算 canonical digest、不做双向 digest 比对、
+    不执行条件 ``UPDATE ... WHERE status='pending'`` 防并发、不写任何状态、不消费
+    ``idempotency_key``、不建 outbox —— 这些全部是
+    :mod:`find_yourself.services.proposal`（治理**唯一**入口）的职责，DSL 绝不重写。
+
+    它只做一件事：把「要一次治理决策」的意图（``op`` / ``target_id`` / ``reason`` /
+    ``rollback`` / ``payload``）随 :class:`DslSuspended` 交给上层编排；由编排层调
+    ``ProposalService.create(...)`` 建提案，人裁决（proposal 落库）后带
+    ``approval_signal`` 重开一轮 :func:`run_dsl` 续跑：
+
+    * **尚无信号** → 抛 :class:`DslSuspended`（控制流信号，非失败）。
+    * **approve** → 载荷原样放行（op 的实际执行已由 proposal 在裁决时完成）。
+    * **reject** → 明确失败，绝不静默跳过。
+
+    挂起点与 ``confirm`` 同一条（``DslSuspended``，对齐
+    :attr:`~find_yourself.workflows.models.Stage.awaiting_approval`）：DSL 层
+    **不新增任何 DB 状态推进**。
+    """
+    if ctx.approval_signal is not None:
+        signal = ctx.approval_signal(ctx.node_id, ctx.execution_id)
+        if signal == "approve":
+            return ctx.payload
+        if signal == "reject":
+            raise DslValidationError(
+                f"节点 {ctx.node_id} 的审批被驳回"
+                f"（signal=reject，op={ctx.params['op']}）")
+        # None：尚无裁决 → 仍挂起，绝不猜成 approve。
+
+    raise DslSuspended(
+        checkpoint=f"{ctx.execution_id or '-'}#{ctx.node_id}",
+        dsl_digest=ctx.dsl_digest,
+        context={
+            # 「创建提案」的意图，字段名对齐 ProposalService.create 的入参；
+            # 治理层的实际 create 由上层编排完成（DSL 不握有 session/actor）。
+            "approval": {
+                "operation": ctx.params["op"],
+                "target_id": ctx.params.get("target_id"),
+                "reason": ctx.params.get("reason", ""),
+                "rollback": ctx.params.get("rollback", ""),
+                "payload": ctx.payload,
+            },
+            "node_id": ctx.node_id,
+        },
+        options=[{"value": "approve", "label": "批准"},
+                 {"value": "reject", "label": "驳回"}],
+        node_id=ctx.node_id,
+    )
+
+
 # -- 输出类 -----------------------------------------------------------------
 
 
@@ -400,6 +480,34 @@ def _check_aggregate(node_id: str, params: dict[str, Any]) -> None:
     if params["op"] in NUMERIC_AGGREGATE_OPS and not isinstance(params.get("field"), str):
         raise DslValidationError(
             f"节点 {node_id} aggregate.op={params['op']} 需要 field")
+
+
+def allowed_approval_ops() -> frozenset[str]:
+    """``approval`` 动词允许的 ``op`` 全集：``IMMEDIATE_OPS ∪ EXTERNAL_OPS``。
+
+    **唯一真源是** :mod:`find_yourself.services.proposal` —— 本模块绝不另抄一份
+    白名单：抄一份就等于给契约 §6 的治理入口开了一条旁路。惰性导入（而非模块级）
+    是因为 proposal 依赖 SQLAlchemy 模型，模块级导入会把重量级依赖带进 DSL 编译器，
+    且可能成环。
+    """
+    from .proposal import EXTERNAL_OPS, IMMEDIATE_OPS  # 惰性：避免重量级/循环依赖
+    return frozenset(IMMEDIATE_OPS) | frozenset(EXTERNAL_OPS)
+
+
+def _check_approval(node_id: str, params: dict[str, Any]) -> None:
+    """编译期安全边界：``op`` 必须落在 proposal 的治理白名单内。
+
+    ``op`` 不在 ``IMMEDIATE_OPS ∪ EXTERNAL_OPS`` 内即**编译错误**（不是运行期
+    才失败），错误信息点名具体 op。DSL 只允许「发起一次既有治理操作」，绝不允许
+    凭空发明一个可以绕过 :mod:`~find_yourself.services.proposal` 的操作。
+    """
+    op = params.get("op")
+    if op not in allowed_approval_ops():
+        raise DslFieldError(
+            f"节点 {node_id} 的 approval.op={op!r} 不被支持；"
+            "op 必须是 services/proposal.py 治理白名单"
+            "（IMMEDIATE_OPS ∪ EXTERNAL_OPS）的成员",
+            node_id=node_id, field_path="params.op")
 
 
 def _obj(properties: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
@@ -489,6 +597,20 @@ VERB_REGISTRY: dict[str, VerbSpec] = {
             "kind": {"type": "string", "minLength": 1},
         }, required=("name",)),
         execute=_exec_artifact,
+    ),
+    "approval": VerbSpec(
+        name="approval", category="治理",
+        summary="委托 proposal.py 发起一次治理操作，挂起等待人工裁决（ADR-04）",
+        # op 的白名单**不在此硬编码**（否则与 proposal 漂移）：schema 只约束它是
+        # 非空字符串，真正的安全边界由 _check_approval 惰性读取 proposal 白名单执行，
+        # 因此 DSL_JSON_SCHEMA 与 IR 派生模型无需在导入期依赖 SQLAlchemy。
+        params_schema=_obj({
+            "op": {"type": "string", "minLength": 1},
+            "target_id": {"type": "string", "minLength": 1},
+            "reason": {"type": "string"},
+            "rollback": {"type": "string"},
+        }, required=("op",)),
+        execute=_exec_approval, check=_check_approval,
     ),
 }
 
@@ -788,6 +910,7 @@ def execute_node(node: dict[str, Any], payload: Any, *,
                  upstreams: list[Any] | None = None,
                  agent_resolver: AgentResolver | None = None,
                  confirm_decision: ConfirmDecisionReader | None = None,
+                 approval_signal: ApprovalSignal | None = None,
                  execution_id: str | None = None,
                  dsl_digest: str = "") -> Any:
     """执行单个节点。payload 为所有入边数据的合并（None 表示无输入）。
@@ -821,7 +944,8 @@ def execute_node(node: dict[str, Any], payload: Any, *,
         return spec.execute(VerbContext(
             node_id=node["id"], payload=payload, params=params,
             upstreams=list(upstreams or []), agent_resolver=agent_resolver,
-            confirm_decision=confirm_decision, execution_id=execution_id,
+            confirm_decision=confirm_decision, approval_signal=approval_signal,
+            execution_id=execution_id,
             dsl_digest=dsl_digest))
 
     if ntype == "output":
@@ -882,13 +1006,14 @@ class RunResult:
             "output": self.output, "error": self.error,
             "execution_id": self.execution_id,
             "created_at": self.created_at,
-            "logs": [l.to_dict() for l in self.logs],
+            "logs": [log.to_dict() for log in self.logs],
         }
 
 
 def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
             agent_resolver: AgentResolver | None = None,
             confirm_decision: ConfirmDecisionReader | None = None,
+            approval_signal: ApprovalSignal | None = None,
             execution_id: str | None = None) -> RunResult:
     """编译并执行一份 DSL 文档，返回带逐步日志的运行结果。
 
@@ -902,6 +1027,9 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     :param confirm_decision: :func:`ConfirmDecisionReader`。``confirm`` 节点据此
         查询人工裁决：有approve/reject 就放行/驳回，没有就抛
         :class:`DslSuspended`。
+    :param approval_signal: :func:`ApprovalSignal`。``approval`` 节点据此读取
+        **治理层**（services/proposal.py）裁决后的信号：approve 放行、reject 驳回、
+        尚无裁决则抛 :class:`DslSuspended`。DSL 只读信号，绝不自己产生信号。
     :param execution_id: **由调用方显式传入**的稳定执行标识（不要用 ``run_id``：
         它每次运行重新生成且只在内存里，重启后恢复链会断）。它进入
         :attr:`DslSuspended.checkpoint`，供上层把 HITL interrupt 与本执行关联。
@@ -959,6 +1087,7 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                     out = execute_node(node, payload, upstreams=upstreams,
                                        agent_resolver=agent_resolver,
                                        confirm_decision=confirm_decision,
+                                       approval_signal=approval_signal,
                                        execution_id=execution_id,
                                        dsl_digest=digest)
                     outputs[nid] = out

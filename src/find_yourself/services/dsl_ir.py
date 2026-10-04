@@ -298,7 +298,10 @@ def _validate_node_params(node: DslNode, diags: list[Diagnostic]) -> None:
             try:
                 check(node.id, node.params)
             except DslValidationError as exc:
-                diags.append(Diagnostic(node.id, "params", "cross_field", str(exc)))
+                # 带字段路径的编译错误（如 approval.op 白名单）精确落到该字段；
+                # 其余跨字段错误（如 aggregate.op=sum 需要 field）回落到 params。
+                field = getattr(exc, "field_path", "") or "params"
+                diags.append(Diagnostic(node.id, field, "cross_field", str(exc)))
         return
 
     # input / output：params 可省略或为空 dict。
