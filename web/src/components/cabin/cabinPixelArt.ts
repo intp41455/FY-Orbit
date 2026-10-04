@@ -30,6 +30,32 @@ export function lighten(color: number, factor = 1.3): number {
   return shade(color, factor);
 }
 
+/* ------------------------------ 色彩 / 比例工具 ------------------------------ */
+
+/** 相对亮度（Rec.709），用于色阶 / 明度顺序断言（G2-2）。 */
+export function luma(color: number): number {
+  const r = (color >> 16) & 0xff;
+  const g = (color >> 8) & 0xff;
+  const b = color & 0xff;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** 小人屏显缩放系数（G2-3 基准）。与 cabinScene.layoutActors 共用，保证比例锁定一致。 */
+export const PERSON_SCALE = 1.6;
+
+/** 房屋屏显高度 : 小人屏显高度的目标比值（G2-3：解决「房屋矮胖」，目标 1.8-2.2）。 */
+export const HOUSE_PERSON_RATIO = 2.0;
+
+/**
+ * G2-3：按房屋矩阵高度归一化缩放，使任意房屋的屏显高度恰好 = 小人屏显高度 × HOUSE_PERSON_RATIO。
+ * 各房屋矩阵高度不同（22~32 行），统一固定缩放会让矮房屋比小人还小；改为按高度反推缩放系数，
+ * 保证比例恒定达标，且不受分辨率 / 窗口高度影响。
+ */
+export function houseScaleFactor(houseId: CabinHouseId): number {
+  const personWorldH = PERSON_WALK_FRAMES[0].length * PERSON_SCALE;
+  return (personWorldH * HOUSE_PERSON_RATIO) / CABIN_HOUSE_ART[houseId].rows.length;
+}
+
 /* ------------------------------ 房屋（6 种） ------------------------------ */
 /* 约定：矩阵底部即房屋落地面，场景里以 (0.5, 1) 锚点贴地。 */
 
@@ -525,7 +551,7 @@ export const FENCE_ROWS: readonly string[] = [
 ];
 
 export const CRYSTAL_ROWS: readonly string[] = [
-  '.....cc.....',
+  '.....ll.....',
   '....cCCc....',
   '....cCCc....',
   '...cCCCCc...',
@@ -569,6 +595,21 @@ export interface ThemeElementDef {
 
 export type FarKind = 'hills' | 'dunes' | 'ridge';
 
+/**
+ * G2-4：粒子共享池上限。两类粒子合计实例数 ≤ PARTICLE_POOL（不是各 60）。
+ * 放在纯数据模块（无 pixi 依赖）以便任意测试环境直接锁定；cabinScene 复用此常量。
+ */
+export const PARTICLE_POOL = 60;
+
+/** G2-4：单类环境粒子的定义。多类共享一个定长对象池（见 PARTICLE_POOL）。 */
+export interface ParticleKindDef {
+  kind: 'firefly' | 'petal' | 'sparkle' | 'seed' | 'stardust' | 'snow';
+  count: number;
+  color: number;
+  centerColor?: number;
+  additive?: boolean;
+}
+
 export interface ThemeArt {
   skyStops: readonly GradientStop[];
   clouds?: { palette: PixelPalette; count: number; scale: number };
@@ -593,11 +634,8 @@ export interface ThemeArt {
   };
   near: readonly ThemeElementDef[];
   particles: {
-    kind: 'firefly' | 'petal' | 'sparkle' | 'seed' | 'stardust';
-    count: number;
-    color: number;
-    centerColor?: number;
-    additive?: boolean;
+    /** G2-4：两类粒子从【同一共享池】取，count_a + count_b ≤ PARTICLE_POOL(60)，不是各 60。 */
+    kinds: readonly ParticleKindDef[];
   };
   /** 屏幕比例坐标的氛围光（加法混合大光晕）。 */
   ambientGlow?: { fx: number; fy: number; rx: number; ry: number; color: number; alpha: number };
@@ -611,7 +649,7 @@ const gardenFlowerD: PixelPalette = { P: 0x9ecbff, Y: 0xfff9e0, t: 0x4e9d58, l: 
 const fieldWheat: PixelPalette = { Y: 0xf2d06b, s: 0xb99a4e };
 const streamReed: PixelPalette = { P: 0xc9a26b, s: 0x5f9459 };
 const streamRock: PixelPalette = { l: 0xc9cfc4, m: 0x9aa598, d: 0x74807a };
-const planetCrystal: PixelPalette = { c: 0x9be7ff, C: 0x63c7e8, d: 0x3f92b8 };
+export const planetCrystal: PixelPalette = { l: 0xdaf6ff, c: 0x9be7ff, C: 0x63c7e8, d: 0x3f92b8 };
 const planetRock: PixelPalette = { l: 0xb9a8e8, m: 0x8d7bd8, d: 0x6a58b0 };
 
 export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
@@ -635,7 +673,12 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
       { rows: PEBBLE_ROWS, palette: { l: 0xd9dfd2, m: 0xb0b8a8, d: 0x8b9484 }, count: 6, scale: 1, baseYMin: 14, baseYMax: 25 },
       { rows: FLOWER_ROWS, palette: forestFlower, count: 3, scale: 1, baseYMin: 12, baseYMax: 24 },
     ],
-    particles: { kind: 'firefly', count: 10, color: 0xfff3a8, centerColor: 0xfffbd9, additive: true },
+    particles: {
+      kinds: [
+        { kind: 'firefly', count: 36, color: 0xfff3a8, centerColor: 0xfffbd9, additive: true },
+        { kind: 'seed', count: 24, color: 0xfff3c4 },
+      ],
+    },
     ambientGlow: { fx: 0.22, fy: 0.14, rx: 0.38, ry: 0.32, color: 0xfff7d9, alpha: 0.35 },
   },
   garden: {
@@ -663,7 +706,12 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
       { rows: FLOWER_ROWS, palette: gardenFlowerD, count: 2, scale: 1, baseYMin: 12, baseYMax: 24 },
       { rows: PEBBLE_ROWS, palette: { l: 0xe3e0d2, m: 0xbdb8a4, d: 0x948f7c }, count: 4, scale: 1, baseYMin: 14, baseYMax: 25 },
     ],
-    particles: { kind: 'petal', count: 14, color: 0xf8b9cd },
+    particles: {
+      kinds: [
+        { kind: 'petal', count: 36, color: 0xf8b9cd },
+        { kind: 'sparkle', count: 24, color: 0xffffff, centerColor: 0xe8f9ff, additive: true },
+      ],
+    },
     ambientGlow: { fx: 0.5, fy: 0.1, rx: 0.52, ry: 0.34, color: 0xfff0c9, alpha: 0.4 },
   },
   stream: {
@@ -691,7 +739,12 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
       { rows: TUFT_ROWS, palette: { l: 0x9fd793, d: 0x4f9459 }, count: 8, scale: 1, baseYMin: 12, baseYMax: 24 },
       { rows: REED_ROWS, palette: streamReed, count: 3, scale: 1, baseYMin: 8, baseYMax: 20 },
     ],
-    particles: { kind: 'sparkle', count: 12, color: 0xffffff, centerColor: 0xe8f9ff, additive: true },
+    particles: {
+      kinds: [
+        { kind: 'sparkle', count: 36, color: 0xffffff, centerColor: 0xe8f9ff, additive: true },
+        { kind: 'seed', count: 24, color: 0xfff3c4 },
+      ],
+    },
     ambientGlow: { fx: 0.3, fy: 0.1, rx: 0.42, ry: 0.3, color: 0xe8f9ff, alpha: 0.3 },
   },
   field: {
@@ -714,7 +767,12 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
       { rows: WHEAT_ROWS, palette: fieldWheat, count: 6, scale: 1, baseYMin: 10, baseYMax: 22 },
       { rows: PEBBLE_ROWS, palette: { l: 0xe8dcc0, m: 0xc4b490, d: 0x9a8c6a }, count: 5, scale: 1, baseYMin: 14, baseYMax: 25 },
     ],
-    particles: { kind: 'seed', count: 12, color: 0xfff3c4 },
+    particles: {
+      kinds: [
+        { kind: 'seed', count: 36, color: 0xfff3c4 },
+        { kind: 'firefly', count: 24, color: 0xfff3a8, centerColor: 0xfffbd9, additive: true },
+      ],
+    },
     ambientGlow: { fx: 0.8, fy: 0.3, rx: 0.42, ry: 0.44, color: 0xffdf9e, alpha: 0.5 },
   },
   planet: {
@@ -745,7 +803,12 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
       { rows: PEBBLE_ROWS, palette: planetRock, count: 6, scale: 1, baseYMin: 14, baseYMax: 25 },
       { rows: TUFT_ROWS, palette: { l: 0xb9a8e8, d: 0x6a58b0 }, count: 8, scale: 1, baseYMin: 12, baseYMax: 24 },
     ],
-    particles: { kind: 'stardust', count: 16, color: 0xcfe3ff, centerColor: 0xffffff, additive: true },
+    particles: {
+      kinds: [
+        { kind: 'stardust', count: 36, color: 0xcfe3ff, centerColor: 0xffffff, additive: true },
+        { kind: 'sparkle', count: 24, color: 0xffffff, centerColor: 0xe8f9ff, additive: true },
+      ],
+    },
     ambientGlow: { fx: 0.35, fy: 0.25, rx: 0.46, ry: 0.36, color: 0x7d5fd6, alpha: 0.3 },
   },
 };

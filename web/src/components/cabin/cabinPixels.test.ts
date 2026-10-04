@@ -218,4 +218,24 @@ describe('cabinPixels vGradient：三通道各自 clamp255（G1-4 回归守卫�
       }
     }
   });
+
+  it('G2-1：全宽缓冲激活横向 2D 抖动，1px 缓冲退化成均匀横条（亮带根因）', () => {
+    const stops = [
+      { t: 0, color: 0x808080 },
+      { t: 1, color: 0x808080 },
+    ];
+    const rowDistinct = (buf: PixelBuffer, y: number): number => {
+      const set = new Set<number>();
+      for (let x = 0; x < buf.width; x++) set.add(buf.data[(y * buf.width + x) * 4]);
+      return set.size;
+    };
+    // 1px 宽（旧实现）：每行只有 1 个像素 → 横向拉伸后整行同值 → 水平亮带。
+    const one = new PixelBuffer(1, 8);
+    one.vGradient(0, 0, 1, 8, stops, 22);
+    expect(rowDistinct(one, 0)).toBe(1);
+    // 全宽（≥4，对齐 bayer 周期）：每行跨 x 出现多种取值（2D 抖动）→ 细颗粒、无亮带。
+    const full = new PixelBuffer(16, 8);
+    full.vGradient(0, 0, 16, 8, stops, 22);
+    expect(rowDistinct(full, 0)).toBeGreaterThan(1);
+  });
 });
