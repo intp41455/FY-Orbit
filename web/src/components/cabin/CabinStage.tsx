@@ -83,7 +83,7 @@ function CabinStageCanvas({
   personWalkFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
 }) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CabinScene | null>(null);
   const onSpeakRef = useRef(onSpeak);
   onSpeakRef.current = onSpeak;
@@ -92,10 +92,24 @@ function CabinStageCanvas({
   const [initError, setInitError] = useState(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
+    const host = hostRef.current;
+    if (!host) return undefined;
     let disposed = false;
     let cleanup: (() => void) | null = null;
+    /**
+     * 每次 effect 运行都**新建独立 canvas**（而不是渲染一个 React <canvas> 复用）。
+     *
+     * 为什么必须这样：React StrictMode（dev）会对 effect 双调用 —— 先建一个场景、立刻
+     * cleanup、再建一个。若两者共用同一个 React <canvas>，先建后弃的那个 `destroy()`
+     * （Pixi `app.destroy(true, …)`）会**销毁共享的 WebGL 上下文并把 canvas 从 DOM 移除**，
+     * 于是活着的场景上下文失效：Pixi 报 `Could not initialize shader (WebGL context may be lost)`，
+     * 画面完全不渲染，只剩 HTML 工具条（线上表现为「小屋是最粗糙的草稿」）。
+     * 独立 canvas ⇒ 每个场景各自独立上下文，StrictMode 安全。
+     */
+    const canvas = document.createElement('canvas');
+    canvas.className = 'cabin-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    host.appendChild(canvas);
     void createCabinScene({
       canvas,
       config: configRef.current,
@@ -119,13 +133,17 @@ function CabinStageCanvas({
           sceneRef.current = null;
         };
       })
-      .catch(() => {
+      .catch((err) => {
         // WebGL 不可用等初始化失败：不白屏，工具条仍可用，画布区给出明确提示。
+        // 诚实：把真实错误打到控制台便于排障（过去静默吞掉，线上问题无从定位）。
+        console.error('[cabin] 场景初始化失败：', err);
         setInitError(true);
       });
     return () => {
       disposed = true;
       cleanup?.();
+      // 本 effect 运行自建的 canvas 由本清理负责移除（React 不再持有它）
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
     };
   }, []);
 
@@ -139,7 +157,7 @@ function CabinStageCanvas({
 
   return (
     <>
-      <canvas ref={canvasRef} className="cabin-canvas" data-testid="cabin-canvas" aria-hidden="true" />
+      <div ref={hostRef} className="cabin-canvas-host" data-testid="cabin-canvas" aria-hidden="true" />
       {initError && (
         <div className="cabin-fallback" role="alert">
           图形引擎初始化失败：当前环境可能不支持 WebGL。装扮设置仍可正常使用与保存。

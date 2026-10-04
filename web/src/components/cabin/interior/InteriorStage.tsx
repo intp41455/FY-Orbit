@@ -45,7 +45,7 @@ export function InteriorStage({
   personWalkFrames,
   personPalette,
 }: InteriorStageProps) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<InteriorScene | null>(null);
   const [initError, setInitError] = useState(false);
 
@@ -59,10 +59,16 @@ export function InteriorStage({
   const lastPersonRef = useRef(0);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return undefined;
+    const host = hostRef.current;
+    if (!host) return undefined;
     let disposed = false;
     let cleanup: (() => void) | null = null;
+    // 每次 effect 运行新建独立 canvas（与 CabinStage 同修）：避免 React StrictMode(dev) 双挂载
+    // 下两个场景共用同一 React <canvas>，先弃场景 destroy() 会销毁共享 WebGL 上下文并移除 canvas。
+    const canvas = document.createElement('canvas');
+    canvas.className = 'cabin-canvas cabin-canvas-interior';
+    canvas.setAttribute('aria-hidden', 'true');
+    host.appendChild(canvas);
     void createCabinInteriorScene({
       canvas,
       houseId: initialRef.current.houseId,
@@ -100,6 +106,7 @@ export function InteriorStage({
     return () => {
       disposed = true;
       cleanup?.();
+      if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
     };
   }, []);
 
@@ -146,9 +153,9 @@ export function InteriorStage({
 
   return (
     <>
-      <canvas
-        ref={canvasRef}
-        className="cabin-canvas cabin-canvas-interior"
+      <div
+        ref={hostRef}
+        className="cabin-canvas-host"
         data-testid="cabin-interior-canvas"
         aria-hidden="true"
       />
