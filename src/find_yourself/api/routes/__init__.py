@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from . import a2a, agent_dispatch, agent_teams, agents, assessments, auth, avatar, butler, cabin, cabin_gameplay, canvas, catalog, charts, conversations, dsl_canvas, export, git_repo, guest, health, inference, knowledge, media, memory, profiles, prompts, proposals, session_state, skills, stash, streaming, sync, tasks, tools, workbench, workflow_gen
+from . import a2a, agent_dispatch, agent_teams, agents, assessments, auth, avatar, butler, cabin, cabin_gameplay, canvas, catalog, charts, conversations, dsl_canvas, export, git_repo, guest, health, inference, knowledge, media, memory, plugins, profiles, prompts, proposals, session_state, skills, stash, streaming, sync, tasks, tools, workbench, workflow_gen  # plugins: P5 追加
 
 api_router = APIRouter()
 api_router.include_router(health.router)
@@ -57,3 +57,5 @@ api_router.include_router(artifact_gate.router)  # 需求7 /api/artifact-gates
 from . import collaboration  # 需求15 多人协作闭环（评论/@人/通知/角色）
 api_router.include_router(collaboration.router)  # 需求15 /api/collaboration
 
+# P5 · 插件市场路由（追加挂载；只许追加形态）
+api_router.include_router(plugins.router)
