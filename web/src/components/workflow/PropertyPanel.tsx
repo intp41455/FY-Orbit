@@ -16,7 +16,17 @@ const MAP_OPS = ['set', 'upper', 'lower'] as const;
 const FILTER_OPS = ['eq', 'ne', 'gt', 'lt', 'contains'] as const;
 const INPUT_KINDS = ['literal', 'text_lines'] as const;
 const OUTPUT_FORMATS = ['json', 'text'] as const;
-const VERBS: DslTransformVerb[] = ['map', 'filter', 'template'];
+const AGGREGATE_OPS = ['count', 'sum', 'min', 'max', 'avg', 'first', 'last', 'join', 'unique'] as const;
+const MERGE_OPS = ['concat', 'first', 'last'] as const;
+/**
+ * 受限动词白名单（与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY`逐字对齐）。
+ * 顺序即注册表顺序，前端不做增删——多一个后端就 422，少一个则画布表达力缺失。
+ */
+const VERBS: DslTransformVerb[] = [
+  'map', 'filter', 'template',
+  'branch', 'aggregate', 'merge',
+  'agent', 'confirm', 'artifact',
+];
 
 export interface PropertyPanelProps {
   node: EditorNode | null;
@@ -191,6 +201,151 @@ export function PropertyPanel({ node, onChange, onChangeParams }: PropertyPanelP
                   onCommit={(v) => onChangeParams({ value: v })}
                   testId="prop-filter-value"
                 />
+              </>
+            )}
+
+            {node.verb === 'branch' && (
+              <>
+                <label className="fy-flow-field">
+                  字段
+                  <input
+                    value={String(p.field ?? '')}
+                    onChange={(e) => onChangeParams({ field: e.target.value })}
+                    data-testid="prop-branch-field"
+                  />
+                </label>
+                <label className="fy-flow-field">
+                  比较
+                  <select
+                    value={String(p.op ?? 'eq')}
+                    onChange={(e) => onChangeParams({ op: e.target.value })}
+                    data-testid="prop-branch-op"
+                  >
+                    {FILTER_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+                <JsonValueField
+                  label="阈值（JSON）"
+                  value={p.value}
+                  onCommit={(v) => onChangeParams({ value: v })}
+                  testId="prop-branch-value"
+                />
+                <label className="fy-flow-field">
+                  命中标签
+                  <input
+                    value={String(p.then_label ?? '')}
+                    onChange={(e) => onChangeParams({ then_label: e.target.value })}
+                    data-testid="prop-branch-then"
+                  />
+                </label>
+                <label className="fy-flow-field">
+                  未命中标签
+                  <input
+                    value={String(p.else_label ?? '')}
+                    onChange={(e) => onChangeParams({ else_label: e.target.value })}
+                    data-testid="prop-branch-else"
+                  />
+                </label>
+              </>
+            )}
+
+            {node.verb === 'aggregate' && (
+              <>
+                <label className="fy-flow-field">
+                  聚合算子
+                  <select
+                    value={String(p.op ?? 'count')}
+                    onChange={(e) => onChangeParams({ op: e.target.value })}
+                    data-testid="prop-aggregate-op"
+                  >
+                    {AGGREGATE_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </label>
+                <label className="fy-flow-field">
+                  字段（sum/min/max/avg 必填）
+                  <input
+                    value={String(p.field ?? '')}
+                    onChange={(e) => onChangeParams({ field: e.target.value })}
+                    data-testid="prop-aggregate-field"
+                  />
+                </label>
+                <label className="fy-flow-field">
+                  连接符（join 用）
+                  <input
+                    value={String(p.sep ?? ',')}
+                    onChange={(e) => onChangeParams({ sep: e.target.value })}
+                    data-testid="prop-aggregate-sep"
+                  />
+                </label>
+              </>
+            )}
+
+            {node.verb === 'merge' && (
+              <label className="fy-flow-field">
+                汇聚策略
+                <select
+                  value={String(p.mode ?? 'concat')}
+                  onChange={(e) => onChangeParams({ mode: e.target.value })}
+                  data-testid="prop-merge-mode"
+                >
+                  {MERGE_OPS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </label>
+            )}
+
+            {node.verb === 'agent' && (
+              <label className="fy-flow-field">
+                Agent 名
+                <input
+                  value={String(p.agent ?? '')}
+                  onChange={(e) => onChangeParams({ agent: e.target.value })}
+                  data-testid="prop-agent-name"
+                />
+              </label>
+            )}
+
+            {node.verb === 'confirm' && (
+              <>
+                <p className="muted">
+                  人工确认动词位：HITL 中断/恢复尚未接入，执行时该节点必定失败。
+                </p>
+                <label className="fy-flow-field">
+                  确认话术
+                  <input
+                    value={String(p.prompt ?? '')}
+                    onChange={(e) => onChangeParams({ prompt: e.target.value })}
+                    data-testid="prop-confirm-prompt"
+                  />
+                </label>
+                <label className="fy-flow-field">
+                  角色
+                  <input
+                    value={String(p.role ?? '')}
+                    onChange={(e) => onChangeParams({ role: e.target.value })}
+                    data-testid="prop-confirm-role"
+                  />
+                </label>
+              </>
+            )}
+
+            {node.verb === 'artifact' && (
+              <>
+                <label className="fy-flow-field">
+                  产物名
+                  <input
+                    value={String(p.name ?? '')}
+                    onChange={(e) => onChangeParams({ name: e.target.value })}
+                    data-testid="prop-artifact-name"
+                  />
+                </label>
+                <label className="fy-flow-field">
+                  产物类型
+                  <input
+                    value={String(p.kind ?? 'generic')}
+                    onChange={(e) => onChangeParams({ kind: e.target.value })}
+                    data-testid="prop-artifact-kind"
+                  />
+                </label>
               </>
             )}
           </>

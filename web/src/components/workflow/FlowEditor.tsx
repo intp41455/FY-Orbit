@@ -236,11 +236,25 @@ export function defaultParams(type: DslNodeType): Record<string, unknown> {
   return { format: 'text' };
 }
 
-/** 切换 transform 动词时的配套参数（避免留下上一个动词的残留字段）。 */
+/**
+ * 切换 transform 动词时的配套参数（避免留下上一个动词的残留字段）。
+ *
+ * 每个分支都必须给出**能过后端参数契约**的完整参数：动词集是封闭的，
+ * 少一个必填字段就是 422，所以这里宁可多给一个合法的默认值。
+ */
 export function paramsForVerb(verb: DslTransformVerb): Record<string, unknown> {
-  if (verb === 'map') return { op: 'set', field: 'tag', value: '已处理' };
-  if (verb === 'filter') return { field: 'value', op: 'contains', value: '示例' };
-  return { template: '处理：{value}' };
+  switch (verb) {
+    case 'map': return { op: 'set', field: 'tag', value: '已处理' };
+    case 'filter': return { field: 'value', op: 'contains', value: '示例' };
+    case 'template': return { template: '处理：{value}' };
+    case 'branch':
+      return { field: 'value', op: 'eq', value: '示例', then_label: '是', else_label: '否' };
+    case 'aggregate': return { op: 'count', field: 'value' };
+    case 'merge': return { mode: 'concat' };
+    case 'agent': return { agent: 'summarizer' };
+    case 'confirm': return { prompt: '请确认是否继续', role: 'owner' };
+    case 'artifact': return { name: '产物', kind: 'generic' };
+  }
 }
 
 // --------------------------------------------------------------------------- //

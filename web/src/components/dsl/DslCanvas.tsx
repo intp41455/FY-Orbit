@@ -4,9 +4,11 @@
  * 蓝本（claw-dialogue-extraction §1.2/§1.3）：
  *  - 视图/模型分离：DslDocument（语义模型）与 LayoutState（坐标）是两个
  *    独立的 state；生成 DSL 时只序列化模型，坐标永不进入 DSL。
- *  - 受限动词集：input / transform(map|filter|template) / output，节点面板
- *    只暴露这三类；连线表示数据流（from → to）。
- *  - 「生成 DSL」实时显示 JSON；「执行」调后端真实执行并回显逐步日志。
+ *  - 受限动词集：input / transform(9 个受限 verb) / output，节点面板只暴露
+ *    这三类；连线表示数据流（from → to）。动词清单以
+ *    `api/dslCanvas.ts` 的 `DslTransformVerb` 为准（与后端注册表逐字对齐）。
+ *  - 「生成 DSL」实时显示 JSON；「执行」调后端真实执行并回显逐步日志；
+ *    「导出代码」把画布导出成受限 Python（`dslCanvasApi.exportCode`）。
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -16,8 +18,10 @@ import {
   type DslNode,
   type DslNodeType,
   type DslRunResult,
+  type DslTransformVerb,
   type LayoutState,
 } from '../../api/dslCanvas';
+import { paramsForVerb } from '../workflow/FlowEditor';
 
 let seq = 0;
 function nextId(prefix: string): string {
@@ -348,19 +352,22 @@ export function DslCanvas() {
                     <select
                       value={selected.verb ?? 'template'}
                       onChange={(e) => {
-                        const verb = e.target.value as 'map' | 'filter' | 'template';
-                        const base: Record<string, Record<string, unknown>> = {
-                          map: { op: 'set', field: 'greeting', value: '你好，{name}！' },
-                          filter: { field: 'age', op: 'gt', value: 30 },
-                          template: { template: '你好，{name}！你今年 {age} 岁。' },
-                        };
-                        updateSelected({ verb, params: { ...base[verb] } });
+                        // 动词集是后端封闭白名单；下拉项与paramsForVerb 一一对应，
+                        // 切换时整体替换 params，绝不残留上一个动词的字段。
+                        const verb = e.target.value as DslTransformVerb;
+                        updateSelected({ verb, params: paramsForVerb(verb) });
                       }}
                       data-testid="prop-verb"
                     >
                       <option value="template">template（模板插值）</option>
                       <option value="map">map（逐条映射）</option>
                       <option value="filter">filter（条件过滤）</option>
+                      <option value="branch">branch（条件分支）</option>
+                      <option value="aggregate">aggregate（循环聚合）</option>
+                      <option value="merge">merge（并行汇聚）</option>
+                      <option value="artifact">artifact（产出产物）</option>
+                      <option value="agent">agent（调用 Agent，未接解析器会失败）</option>
+                      <option value="confirm">confirm（人工确认，HITL 未接入会失败）</option>
                     </select>
                   </label>
                   {selected.verb === 'template' && (

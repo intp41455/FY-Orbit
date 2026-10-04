@@ -55,7 +55,12 @@ beforeEach(() => {
   vi.clearAllMocks();
   __resetNodeIdSeq();
   vi.mocked(dslCanvasApi.schema).mockResolvedValue({
-    schema: {}, node_types: ['input', 'transform', 'output'], transform_verbs: ['map', 'filter', 'template'],
+    schema: {}, node_types: ['input', 'transform', 'output'],
+    transform_verbs: ['map', 'filter', 'template', 'branch', 'aggregate', 'merge', 'agent', 'confirm', 'artifact'],
+    verb_catalog: [],
+    aggregate_ops: ['count', 'sum', 'min', 'max', 'avg', 'first', 'last', 'join', 'unique'],
+    merge_ops: ['concat', 'first', 'last'],
+    output_formats: ['json', 'text'],
   });
   vi.mocked(dslCanvasApi.validate).mockResolvedValue({ valid: true, topological_order: ['in1', 'tf1', 'out1'] });
 });

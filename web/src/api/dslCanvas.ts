@@ -1,8 +1,38 @@
 // P1-18 受限 DSL 画布 API 客户端。
+//
+// 类型必须与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY` 逐字对齐：
+// 后端动词集是**封闭白名单**，多写一个字后端就422，所以前端只列真实存在的动词。
+// 完整契约（分类/ 参数 JSON Schema / 可执行性）走 `schema()` 拿 `verb_catalog`，
+// 不在前端另抄一份。
 import { request } from './client';
 
 export type DslNodeType = 'input' | 'transform' | 'output';
-export type DslTransformVerb = 'map' | 'filter' | 'template';
+export type DslTransformVerb =
+  | 'map' | 'filter' | 'template'      // 数据变换
+  | 'branch' | 'aggregate' | 'merge'    // 流程控制
+  | 'agent'                             // Agent / 工具调用
+  | 'confirm'                           // 人机协作（HITL 未接入，执行必定失败）
+  | 'artifact';                         // 输出产物
+
+/** 动词集元数据（后端 verb_catalog 的一项）。 */
+export interface DslVerbCatalogEntry {
+  name: DslTransformVerb;
+  category: string;
+  summary: string;
+  params_schema: Record<string, unknown>;
+  /** false 表示动词位已占但后端未接入（如 confirm），UI 应显式提示而非假装可用。 */
+  executable: boolean;
+}
+
+export interface DslSchemaResponse {
+  schema: unknown;
+  node_types: string[];
+  transform_verbs: DslTransformVerb[];
+  verb_catalog: DslVerbCatalogEntry[];
+  aggregate_ops: string[];
+  merge_ops: string[];
+  output_formats: string[];
+}
 
 export interface DslNode {
   id: string;
@@ -37,12 +67,27 @@ export interface DslRunLog {
   node_id: string;
   node_type: string;
   verb: string | null;
-  status: 'succeeded' | 'skipped' | 'failed';
+  /** suspended = 走到confirm 且尚无人工裁决（需求 12 的接入点），非失败。 */
+  status: 'succeeded' | 'skipped' | 'failed' | 'suspended';
   input: unknown;
   output: unknown;
   error: string | null;
   started_at: string;
   finished_at: string;
+}
+
+/** 挂起载荷：上层据此建 HITL interrupt，人裁决后带 execution_id 重开一轮。 */
+export interface DslSuspended {
+  checkpoint: string;
+  dsl_digest: string;
+  context: { prompt: string; role: string; node_id: string };
+  options: { value: string; label: string }[];
+  node_id: string;
+}
+
+export interface DslSuspendedResult {
+  status: 'suspended';
+  suspended: DslSuspended;
 }
 
 export interface DslRunResult {
@@ -51,16 +96,40 @@ export interface DslRunResult {
   dsl: DslDocument;
   output: unknown;
   error: string | null;
+  /** 由调用方显式传入的稳定执行标识（挂起时用于关联 interrupt）。 */
+  execution_id: string | null;
   created_at: string;
   logs: DslRunLog[];
 }
 
+export interface DslCodeExport {
+  filename: string;
+  language: string;
+  requires_python: string;
+  code: string;
+  node_count: number;
+  edge_count: number;
+  verbs: DslTransformVerb[];
+}
+
 export const dslCanvasApi = {
-  schema: () => request<{ schema: unknown; node_types: string[]; transform_verbs: string[] }>(
-    '/api/dsl-canvas/schema'),
+  schema: () => request<DslSchemaResponse>('/api/dsl-canvas/schema'),
   validate: (dsl: DslDocument) => request<{ valid: boolean; topological_order: string[] }>(
     '/api/dsl-canvas/validate', { method: 'POST', body: { dsl } }),
   run: (dsl: DslDocument) => request<DslRunResult>('/api/dsl-canvas/runs', {
     method: 'POST', body: { dsl } }),
+  /**
+   * 执行工作流。走到 `confirm` 且尚无人工裁决时后端返回 **202** +
+   * {@link DslSuspendedResult}（**不是**失败）。
+   */
+  runWithExecution: (dsl: DslDocument, executionId: string) =>
+    request<DslRunResult | DslSuspendedResult>('/api/dsl-canvas/runs', {
+      method: 'POST', body: { dsl, execution_id: executionId } }),
   getRun: (runId: string) => request<DslRunResult>(`/api/dsl-canvas/runs/${runId}`),
+  /** 画布 → 受限 Python 代码（导出物只可能由受限动词集构成）。 */
+  exportCode: (dsl: DslDocument) => request<DslCodeExport>(
+    '/api/dsl-canvas/export-code', { method: 'POST', body: { dsl } }),
+  /** 受限 Python 代码 → 画布（与 exportCode 往返无损）。 */
+  importCode: (code: string) => request<{ dsl: DslDocument; topological_order: string[] }>(
+    '/api/dsl-canvas/import-code', { method: 'POST', body: { code } }),
 };

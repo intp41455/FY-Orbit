@@ -24,6 +24,7 @@ describe('DslCanvas 拖拽生成 DSL → 执行', () => {
       dsl: { version: '1', nodes: [], edges: [] },
       output: '你好，张三！你今年 34 岁。',
       error: null,
+      execution_id: null,
       created_at: '2026-10-03T00:00:00Z',
       logs: [
         { node_id: 'input1', node_type: 'input', verb: null, status: 'succeeded',
