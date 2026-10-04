@@ -22,7 +22,9 @@ an explicit failure — the protocol never fakes a renderable preview.
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import json
 import uuid
 from typing import Any
 
@@ -47,6 +49,90 @@ STATIC_MEDIA_TYPES: dict[str, str] = {
 }
 
 _CSP_SANDBOX = "sandbox allow-scripts"
+
+
+# ---------------------------------------------------------------------------
+# P2 · Layer 4 (data → chart render spec). 图像/图表渲染层：把工作区里的
+# 结构化数据文件（.json/.csv）解析成前端可直接渲染的 render spec。
+# 诚实性规则与既有三层完全一致：不可读/不可渲染一律抛显式错误，
+# 绝不返回可被当作「成功」的空预览（铁律 1）。
+# ---------------------------------------------------------------------------
+DATA_MEDIA_TYPES: dict[str, str] = {
+    ".json": "application/json",
+    ".csv": "text/csv",
+}
+CHART_TYPES: tuple[str, ...] = ("bar", "line", "pie")
+
+
+def _spec_from_json(text: str) -> dict[str, Any]:
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON cannot be parsed as chart data: {exc}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError("JSON chart data must be an object")
+    chart = doc.get("chart")
+    if chart not in CHART_TYPES:
+        raise ValueError(
+            f"Unknown chart type {chart!r}; expected one of {list(CHART_TYPES)}"
+        )
+    series = doc.get("series")
+    if not isinstance(series, list) or not series:
+        raise ValueError('"series" must be a non-empty array of {label, value}')
+    clean: list[dict[str, Any]] = []
+    for i, item in enumerate(series):
+        if not isinstance(item, dict) or set(item) - {"label", "value"}:
+            raise ValueError(f"series[{i}] must be an object with only label/value")
+        label, value = item.get("label"), item.get("value")
+        if not isinstance(label, str):
+            raise ValueError(f"series[{i}].label must be a string")
+        # bool 是 int 的子类，显式排除——True/1 不是可作图数值。
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"series[{i}].value must be a number")
+        clean.append({"label": label, "value": value})
+    spec: dict[str, Any] = {"chart": chart, "series": clean}
+    title = doc.get("title")
+    if title is not None:
+        if not isinstance(title, str):
+            raise ValueError('"title" must be a string')
+        spec["title"] = title
+    return spec
+
+
+def _spec_from_csv(text: str) -> dict[str, Any]:
+    rows = [r for r in text.replace("\r\n", "\n").replace("\r", "\n").split("\n") if r.strip()]
+    if len(rows) < 2:
+        raise ValueError("CSV chart data needs a header row and at least one data row")
+    header = next(csv.reader([rows[0]]))
+    if len(header) < 2:
+        raise ValueError("CSV chart data needs at least two columns (label, value)")
+    series: list[dict[str, Any]] = []
+    for i, line in enumerate(rows[1:], start=2):
+        cells = next(csv.reader([line]))
+        if len(cells) < 2:
+            raise ValueError(f"CSV row {i} has fewer than two columns")
+        try:
+            value = float(cells[1])
+        except ValueError as exc:
+            raise ValueError(
+                f"CSV row {i} second column {cells[1]!r} is not numeric"
+            ) from exc
+        series.append({"label": cells[0], "value": value})
+    return {"chart": "bar", "series": series}
+
+
+def build_render_spec(text: str, rel_path: str) -> dict[str, Any]:
+    """P2 · 把结构化数据文件内容解析为 render spec（纯函数，可独立单测）。
+
+    任何不可渲染的输入都抛 :class:`ValueError`（带人类可读原因），
+    由调用方转成显式失败——协议里不存在「空预览冒充成功」。
+    """
+    lower = rel_path.lower()
+    if lower.endswith(".json"):
+        return _spec_from_json(text)
+    if lower.endswith(".csv"):
+        return _spec_from_csv(text)
+    raise ValueError(f"Unsupported data preview type: {rel_path!r}")
 
 
 def compute_file_version(st: Any) -> str:
@@ -101,6 +187,9 @@ class PreviewSourceService:
         }
         if rec.kind == "static":
             data["content_url"] = f"/api/workbench/preview-sources/{rec.id}/content"
+        elif rec.kind == "data":
+            # P2 · Layer 4：渲染规格读取地址（服务层能力；HTTP 暴露待路由授权）。
+            data["render_url"] = f"/api/workbench/preview-sources/{rec.id}/render-spec"
         else:
             data["preview_session_id"] = rec.preview_session_id
             data["url"] = url
@@ -194,6 +283,99 @@ class PreviewSourceService:
         return self._serialize(rec, url=status["url"])
 
     # ------------------------------------------------------------------
+    # P2 · Layer 4 registration / render spec (data → chart)
+    # ------------------------------------------------------------------
+    def register_data(self, actor: Actor, workspace_id: str, *, rel_path: str) -> dict[str, Any]:
+        """注册一个结构化数据预览源（kind=``data``，Layer 4）。
+
+        与 Layer 1 同源的沙箱边界（``resolve_path``）与诚实性规则：
+        不存在的文件、不支持的扩展名一律显式失败。注册时**不**解析内容
+        （文件随后仍会变化），解析发生在读取渲染规格时。
+        """
+        actor.require_owner()
+        ws = self.workspaces.get_workspace(actor, workspace_id)
+
+        raw = (rel_path or "").strip()
+        if not raw:
+            raise ValidationFailed("Preview source path is required")
+        path = self.workspaces.resolve_path(ws, raw)
+        if not path.is_file():
+            raise ValidationFailed(f"Preview source is not a file inside the workspace: {raw}")
+
+        media_type = DATA_MEDIA_TYPES.get(path.suffix.lower())
+        if media_type is None:
+            raise ValidationFailed(
+                f"Unsupported data preview type {path.suffix!r}; "
+                "only .json/.csv can be registered as chart data (Layer 4)"
+            )
+
+        version = compute_file_version(path.stat())
+        rel_norm = path.relative_to(self.workspaces._root(ws)).as_posix()
+        rec = PreviewSourceRecord(
+            id=f"psrc-{uuid.uuid4().hex[:12]}",
+            workspace_id=ws.id,
+            kind="data",
+            rel_path=rel_norm,
+            media_type=media_type,
+            version=version,
+            state="active",
+            created_by=f"owner/{actor.owner_id}",
+        )
+        self.session.add(rec)
+        self.session.flush()
+        self._audit(actor, "preview_source.register", rec.id, {"kind": "data", "path": rec.rel_path})
+        return self._serialize(rec)
+
+    def read_render_spec(self, actor: Actor, source_id: str) -> dict[str, Any]:
+        """读取 Layer 4 数据源的**图表渲染规格**（诚实失败，绝不空预览）。
+
+        文件消失/不可读/不可渲染（坏 JSON、非数值列、未知图型……）分别抛
+        ``NotFound`` / ``ValidationFailed``——每个失败原因都直接来自
+        :func:`build_render_spec` 的解析器。
+        """
+        rec = self._get_source(actor, source_id)
+        if rec.kind != "data":
+            raise ValidationFailed(
+                "Render specs are only available for data (Layer 4) preview sources"
+            )
+        if rec.state != "active":
+            raise NotFound(f"Preview source is offline: {rec.id}")
+
+        ws = self.workspaces.get_workspace(actor, rec.workspace_id)
+        path = self.workspaces.resolve_path(ws, rec.rel_path)
+        if not path.is_file():
+            raise NotFound(f"Preview source file no longer exists: {rec.rel_path}")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise ValidationFailed(
+                f"Preview source file cannot be read: {rec.rel_path} ({exc})"
+            ) from exc
+        except UnicodeDecodeError as exc:
+            raise ValidationFailed(
+                f"Preview source file is not valid UTF-8 text: {rec.rel_path} ({exc})"
+            ) from exc
+
+        try:
+            spec = build_render_spec(text, rec.rel_path)
+        except ValueError as exc:
+            raise ValidationFailed(
+                f"Preview source cannot be rendered as a chart: {rec.rel_path} ({exc})"
+            ) from exc
+
+        # 版本随内容变化（mtime+size 已足够触发前端重拉）。
+        fresh = compute_file_version(path.stat())
+        if fresh != rec.version:
+            rec.version = fresh
+            self.session.flush()
+        return {
+            "id": rec.id,
+            "path": rec.rel_path,
+            "version": rec.version,
+            "spec": spec,
+        }
+
+    # ------------------------------------------------------------------
     # Listing / version probe
     # ------------------------------------------------------------------
     def list_sources(self, actor: Actor, workspace_id: str) -> list[dict[str, Any]]:
@@ -210,9 +392,10 @@ class PreviewSourceService:
         if rec.state != "active":
             return {"id": rec.id, "kind": rec.kind, "version": rec.version, "state": rec.state}
 
-        if rec.kind == "static":
+        if rec.kind in ("static", "data"):
             # Recompute from the live file. A vanished file is reported, never
-            # papered over with a stale version.
+            # papered over with a stale version. (P2: Layer 4 data sources
+            # follow the exact same version probe semantics as Layer 1 static.)
             path = self.workspaces.resolve_path(
                 self.workspaces.get_workspace(actor, rec.workspace_id), rec.rel_path
             )

@@ -205,7 +205,7 @@ class ReviewDecisionRecord(Base):
 class PreviewSourceRecord(Base):
     """Unified preview source registry (P1-A 实时预览窗).
 
-    Two source kinds share one registry protocol:
+    Three source kinds share one registry protocol:
 
     - ``static``  : a relative html/md path inside the workspace; content is
       served read-only through a dedicated endpoint with ``CSP: sandbox``.
@@ -236,7 +236,8 @@ class PreviewSourceRecord(Base):
     ended_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('static', 'process')", name="psrc_kind"),
+        # P2 · Layer 4 增补 ``data``（结构化数据图表源）；迁移 0033 同步此白名单。
+        CheckConstraint("kind IN ('static', 'process', 'data')", name="psrc_kind"),
         CheckConstraint("state IN ('active', 'offline')", name="psrc_state"),
     )
 

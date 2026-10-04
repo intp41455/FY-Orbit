@@ -112,3 +112,56 @@ describe('P1-10 PreviewPane 实时预览', () => {
     await waitFor(() => expect(screen.getByTestId('wb-preview-empty')).toBeInTheDocument());
   });
 });
+
+// ---------------------------------------------------------------------------
+// P2 · Layer 4 图表渲染（结构化数据 → SVG 图表；不可渲染显式失败）
+// ---------------------------------------------------------------------------
+
+describe('P2 PreviewPane 图表数据预览', () => {
+  it('.json 图表数据在节流后渲染为 SVG 图表', async () => {
+    const { container } = render(<PreviewPane />);
+    act(() => {
+      publishPreviewDraft({
+        path: 'data/scores.json',
+        content: '{"chart":"bar","title":"成绩","series":[{"label":"张三","value":90},{"label":"李四","value":85}]}',
+      });
+    });
+    const chart = await screen.findByTestId('wb-preview-chart', {}, { timeout: 1200 });
+    expect(chart).toBeInTheDocument();
+    expect(screen.getByTestId('wb-preview-chart-svg')).toBeInTheDocument();
+    expect(container.querySelectorAll('rect')).toHaveLength(2);
+    expect(screen.getByTestId('wb-preview-path').textContent).toContain('图表数据');
+  });
+
+  it('.csv 数据渲染为默认 bar 图表', async () => {
+    const { container } = render(<PreviewPane />);
+    act(() => {
+      publishPreviewDraft({ path: 'data/rain.csv', content: 'month,mm\n1月,12\n2月,30\n' });
+    });
+    await screen.findByTestId('wb-preview-chart', {}, { timeout: 1200 });
+    expect(container.querySelectorAll('rect')).toHaveLength(2);
+  });
+
+  it('不可渲染的 JSON → 显式错误面板（role=alert），绝不空白冒充成功', async () => {
+    render(<PreviewPane />);
+    act(() => {
+      publishPreviewDraft({ path: 'data/broken.json', content: '{"chart":"bar","series":[]}' });
+    });
+    const err = await screen.findByTestId('wb-preview-chart-error', {}, { timeout: 1200 });
+    expect(err).toHaveAttribute('role', 'alert');
+    expect(err.textContent).toContain('图表渲染失败');
+    expect(err.textContent).toContain('series');
+    // 同屏不允许出现「成功」的空图表
+    expect(screen.queryByTestId('wb-preview-chart')).not.toBeInTheDocument();
+  });
+
+  it('完全不是图表数据的 JSON（如普通配置）也显式失败并给出原因', async () => {
+    render(<PreviewPane />);
+    act(() => {
+      publishPreviewDraft({ path: 'data/config.json', content: '{"theme":"dark"}' });
+    });
+    const err = await screen.findByTestId('wb-preview-chart-error', {}, { timeout: 1200 });
+    expect(err.textContent).toContain('图表渲染失败');
+    expect(err.textContent).toContain('chart');
+  });
+});

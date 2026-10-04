@@ -21,7 +21,7 @@ from typing import Iterator
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -322,3 +322,190 @@ def test_register_process_source_returns_loopback_url(
         assert ver.json()["preview_session_id"] == src["preview_session_id"]
     finally:
         client.delete(f"/api/workbench/preview-sources/{src['id']}", headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# P2 · Layer 4（data → chart render spec）服务级直测
+# 诚实性：不可读/不可渲染 → 显式 NotFound/ValidationFailed，绝不空预览。
+# ---------------------------------------------------------------------------
+from types import SimpleNamespace
+
+from find_yourself.services.actor import Actor
+from find_yourself.services.audit import AuditService
+from find_yourself.services.errors import NotFound as SvcNotFound
+from find_yourself.services.errors import ValidationFailed as SvcValidationFailed
+from find_yourself.services.preview import PreviewService
+from find_yourself.services.preview_sources import (
+    PreviewSourceService,
+    build_render_spec,
+)
+from find_yourself.services.workspace import WorkspaceService
+
+
+@pytest.fixture()
+def p2(session_maker, tmp_path):
+    session = session_maker()
+    audit = AuditService(session)
+    workspaces = WorkspaceService(session, audit)
+    previews = PreviewService(session, workspaces)
+    sources = PreviewSourceService(session, workspaces, previews, audit=audit)
+    root = tmp_path / "p2-data"
+    root.mkdir()
+    (root / "scores.json").write_text(
+        '{"chart":"bar","title":"成绩","series":[{"label":"张三","value":90},{"label":"李四","value":85}]}',
+        encoding="utf-8",
+    )
+    (root / "rain.csv").write_text("month,mm\n1月,12\n2月,30\n", encoding="utf-8")
+    (root / "broken.json").write_text('{"chart":"bar","series":[]}', encoding="utf-8")
+    actor = Actor.owner("owner-p2")
+    ws = workspaces.register_workspace(actor, project_name="P2 数据预览", authorized_root=str(root))
+    yield SimpleNamespace(
+        session=session, sources=sources, workspaces=workspaces,
+        actor=actor, ws=ws, root=root,
+    )
+    session.close()
+
+
+def test_register_data_source_ok(p2):
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="scores.json")
+    assert res["kind"] == "data"
+    assert res["media_type"] == "application/json"
+    assert res["path"] == "scores.json"
+    assert res["state"] == "active"
+    assert res["render_url"].endswith("/render-spec")
+    listed = p2.sources.list_sources(p2.actor, p2.ws.id)
+    assert [s["kind"] for s in listed] == ["data"]
+
+
+def test_register_data_unsupported_extension_rejected(p2):
+    (p2.root / "notes.txt").write_text("x", encoding="utf-8")
+    with pytest.raises(SvcValidationFailed, match="Unsupported data preview type"):
+        p2.sources.register_data(p2.actor, p2.ws.id, rel_path="notes.txt")
+
+
+def test_register_data_missing_file_rejected(p2):
+    with pytest.raises(SvcValidationFailed, match="not a file"):
+        p2.sources.register_data(p2.actor, p2.ws.id, rel_path="ghost.json")
+
+
+def test_render_spec_json_ok(p2):
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="scores.json")
+    spec = p2.sources.read_render_spec(p2.actor, res["id"])
+    assert spec["spec"]["chart"] == "bar"
+    assert spec["spec"]["title"] == "成绩"
+    assert [p["label"] for p in spec["spec"]["series"]] == ["张三", "李四"]
+
+
+def test_render_spec_csv_ok(p2):
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="rain.csv")
+    spec = p2.sources.read_render_spec(p2.actor, res["id"])
+    assert spec["spec"]["chart"] == "bar"
+    assert spec["spec"]["series"][1] == {"label": "2月", "value": 30.0}
+
+
+def test_render_spec_unrenderable_is_explicit_failure_not_blank(p2):
+    """门禁核心：渲染源不可读 → 显式失败（带原因），绝不返回空 spec 冒充成功。"""
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="broken.json")
+    with pytest.raises(SvcValidationFailed) as ei:
+        p2.sources.read_render_spec(p2.actor, res["id"])
+    assert "series" in str(ei.value)
+    assert "cannot be rendered" in str(ei.value)
+
+
+def test_render_spec_file_deleted_is_not_found(p2):
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="scores.json")
+    # 注册成功后再删文件（注册时只检查存在性，读取时诚实失败）
+    (p2.root / "scores.json").unlink()
+    with pytest.raises(SvcNotFound):
+        p2.sources.read_render_spec(p2.actor, res["id"])
+
+
+def test_render_spec_of_static_source_rejected(p2):
+    (p2.root / "page.html").write_text("<html></html>", encoding="utf-8")
+    res = p2.sources.register_static(p2.actor, p2.ws.id, rel_path="page.html")
+    with pytest.raises(SvcValidationFailed, match="only available for data"):
+        p2.sources.read_render_spec(p2.actor, res["id"])
+
+
+def test_data_version_probe_tracks_file_changes(p2):
+    res = p2.sources.register_data(p2.actor, p2.ws.id, rel_path="rain.csv")
+    v1 = p2.sources.version(p2.actor, res["id"])["version"]
+    import os
+    st = os.stat(p2.root / "rain.csv")
+    os.utime(p2.root / "rain.csv", ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+    v2 = p2.sources.version(p2.actor, res["id"])["version"]
+    assert v2 != v1
+
+
+def test_build_render_spec_rejects_bad_values():
+    with pytest.raises(ValueError, match="must be a number"):
+        build_render_spec('{"chart":"bar","series":[{"label":"a","value":"x"}]}', "a.json")
+    with pytest.raises(ValueError, match="Unsupported data preview type"):
+        build_render_spec("anything", "a.xlsx")
+
+
+def test_migration_0033_roundtrip(tmp_path):
+    """0033 只做**相邻一跳**往返（head → 0032 → head）。
+
+    刻意不做全链 downgrade-to-base：链上 0032 的 downgrade 在 collab agent
+    的在飞文件里有已知缺陷（约束名双重前缀），不属于本包修复范围。
+    """
+    import gc
+    import time
+
+    from alembic import command
+    from alembic.config import Config
+    from sqlalchemy import inspect as sa_inspect
+
+    ini = Path(__file__).resolve().parents[2] / "alembic.ini"
+    if not ini.is_file():  # pragma: no cover
+        pytest.skip("alembic.ini missing")
+    db_path = tmp_path / "p2mig.db"
+    cfg = Config(str(ini))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+
+    def _kind_sqltexts() -> list[str]:
+        eng = create_engine(f"sqlite:///{db_path}")
+        try:
+            with eng.connect() as conn:
+                return [
+                    str(c.get("sqltext"))
+                    for c in sa_inspect(conn).get_check_constraints("preview_sources")
+                    if "kind" in str(c.get("sqltext"))
+                ]
+        finally:
+            eng.dispose()
+
+    # 升到 head：migrated-DB 的 kind CHECK 必须已含 'data'
+    command.upgrade(cfg, "head")
+    texts = _kind_sqltexts()
+    assert texts and all("'data'" in t for t in texts), texts
+
+    # 相邻一跳降级（0033 → 0032）：白名单收回，不含 'data'
+    command.downgrade(cfg, "0032_collaboration_replies")
+    texts = _kind_sqltexts()
+    assert texts and all("'data'" not in t for t in texts), texts
+
+    # 再升级：恢复三值白名单，且 kind='data' 的行可以真实落库
+    command.upgrade(cfg, "head")
+    eng = create_engine(f"sqlite:///{db_path}")
+    try:
+        with eng.begin() as conn:
+            conn.execute(text(
+                "INSERT INTO preview_sources (id, workspace_id, kind, rel_path,"
+                " media_type, version, state, created_by, created_at)"
+                " VALUES ('psrc-roundtrip', 'ws-x', 'data', 'a.json',"
+                " 'application/json', '', 'active', 'test', CURRENT_TIMESTAMP)"
+            ))
+    finally:
+        eng.dispose()
+
+    gc.collect()
+    for _ in range(3):
+        if not db_path.exists():
+            break
+        try:
+            db_path.unlink()
+        except OSError:  # pragma: no cover
+            gc.collect()
+            time.sleep(0.2)

@@ -14,9 +14,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { subscribePreviewDraft, type PreviewDraft } from './previewBus';
 import { renderMarkdown } from './previewMarkdown';
+import { parseRenderSpec, PreviewChart } from './PreviewChart';
 import type { DispatchContext } from './DispatchDialog';
 
-type PreviewKind = 'markdown' | 'html' | 'text';
+type PreviewKind = 'markdown' | 'html' | 'text' | 'data';
 
 type Status = 'idle' | 'throttling' | 'refreshed';
 
@@ -29,6 +30,8 @@ function detectKind(path: string | null): PreviewKind {
   const lower = path.toLowerCase();
   if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'markdown';
   if (lower.endsWith('.html') || lower.endsWith('.htm')) return 'html';
+  // P2 · Layer 4：结构化数据文件 → 图表渲染（不可渲染时显式失败）。
+  if (lower.endsWith('.json') || lower.endsWith('.csv')) return 'data';
   return 'text';
 }
 
@@ -125,6 +128,27 @@ export function PreviewPane(props: {
         className="preview-html-frame"
       />
     );
+  } else if (kind === 'data') {
+    // P2 · Layer 4：结构化数据 → 图表。不可渲染**显式失败**（错误面板），
+    // 绝不回落空白预览冒充成功（铁律 1）。
+    let spec: ReturnType<typeof parseRenderSpec> | null = null;
+    let chartError: string | null = null;
+    try {
+      spec = parseRenderSpec(rendered.content, rendered.path);
+    } catch (e) {
+      chartError = e instanceof Error ? e.message : String(e);
+    }
+    body = spec ? (
+      <PreviewChart spec={spec} />
+    ) : (
+      <div
+        className="error-text"
+        role="alert"
+        data-testid="wb-preview-chart-error"
+      >
+        图表渲染失败：{chartError}
+      </div>
+    );
   } else {
     body = (
       <pre className="preview-text" data-testid="wb-preview-text">
@@ -162,7 +186,7 @@ export function PreviewPane(props: {
       </div>
       {rendered?.path && (
         <div className="muted small" data-testid="wb-preview-path" title={rendered.path}>
-          {rendered.path} · {kind === 'markdown' ? 'Markdown' : kind === 'html' ? 'HTML 沙箱' : '纯文本'}
+          {rendered.path} · {kind === 'markdown' ? 'Markdown' : kind === 'html' ? 'HTML 沙箱' : kind === 'data' ? '图表数据' : '纯文本'}
         </div>
       )}
       <div className="preview-body">{body}</div>
