@@ -132,6 +132,35 @@ def _sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
+def _target_db() -> str:
+    """P13-a · 备份/对账的目标库名，**唯一真源** = ``FY_POSTGRES_DB``（默认 findyourself）。
+
+    修复前的 bug：``pg_dump -d findyourself`` 硬编码库名——设了 ``FY_POSTGRES_DB``
+    指向别的库时，备份会**静默备错库**且不报错（sha256 校验照常通过），灾备
+    场景下要到恢复那一刻才发现。现在 dump 与对账查询统一用本函数。
+    """
+    return _env("FY_POSTGRES_DB", "findyourself")
+
+
+def _build_artifact_store():
+    """P13-b · 构造对象存储适配器；Settings 校验失败给**明确诊断**而非裸 pydantic 堆栈。
+
+    陷阱（P11 演练实测）：shell 里 export ``FY_ENVIRONMENT=recovery`` 会让
+    ``config.settings()`` 的校验器（只认 local/production/test）在 CLI 深处
+    炸出难懂的 ValueError。这里转成带修复指引的人话报错。
+    """
+    try:
+        from find_yourself.config import settings
+        from find_yourself.adapters.artifacts import build_artifact_store
+        return build_artifact_store(settings())
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"对象存储适配器构造失败：{exc}。"
+            "提示：shell 导出的 FY_ENVIRONMENT 会被 Settings 校验（只接受 local/production/test）；"
+            "restore/backup 的 --environment 请走命令行参数，不要 export 进环境变量。"
+        ) from exc
+
+
 def _host_db_url() -> str:
     """主机侧连接串；优先 FY_DATABASE_URL，否则按本地回环映射构造。口令只用于连接，绝不回显。"""
     url = _env("FY_DATABASE_URL")
@@ -318,7 +347,9 @@ def cmd_backup(args: argparse.Namespace) -> dict:
     dump_path = os.path.join(target, dump_name)
 
     with open(dump_path, "wb") as f:
-        r = subprocess.run(["docker", "exec", args.container, "pg_dump", "-U", "fy", "-d", "findyourself"],
+        # P13-a：库名取 FY_POSTGRES_DB（修硬编码——设了别的库名必须真的备那个库）。
+        r = subprocess.run(["docker", "exec", args.container, "pg_dump", "-U", "fy",
+                            "-d", _target_db()],
                            stdout=f, stderr=subprocess.PIPE)
     dump_rc = r.returncode
 
@@ -333,10 +364,12 @@ def cmd_backup(args: argparse.Namespace) -> dict:
 
     size = os.path.getsize(dump_path)
     sha = _sha256_file(dump_path)
-    _, ver = _pg(args.container, "show server_version;")
+    target_db = _target_db()
+    _, ver = _pg(args.container, "show server_version;", db=target_db)
     _, pgdver = _run(["docker", "exec", args.container, "pg_dump", "--version"])
     _, tc = _pg(args.container,
-                "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';")
+                "select count(*) from information_schema.tables where table_schema='public' and table_type='BASE TABLE';",
+                db=target_db)
     try:
         table_count = int((tc or "0").strip() or 0)
     except ValueError:
@@ -346,10 +379,7 @@ def cmd_backup(args: argparse.Namespace) -> dict:
     covers_obj = False
     if s3_ready or os.path.exists(".runtime/artifacts"):
         try:
-            from find_yourself.config import settings as get_settings
-            from find_yourself.adapters.artifacts import build_artifact_store
-            s_cfg = get_settings()
-            store = build_artifact_store(s_cfg)
+            store = _build_artifact_store()
             snap = store.backup_snapshot(target)
             obj_info = {
                 "status": "OK",
@@ -533,10 +563,7 @@ def cmd_restore(args: argparse.Namespace) -> dict:
     obj_restore_result = {"status": "SKIPPED", "detail": "not in manifest"}
     if manifest.get("covers_object_storage"):
         try:
-            from find_yourself.config import settings as get_settings
-            from find_yourself.adapters.artifacts import build_artifact_store
-            s_cfg = get_settings()
-            store = build_artifact_store(s_cfg)
+            store = _build_artifact_store()
             source_dir = db_info.get("dir") or os.path.dirname(os.path.abspath(args.manifest))
             res = store.restore_snapshot(source_dir, tombstones=tombstones_set)
             obj_restore_result = {
@@ -729,9 +756,10 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--format", choices=["json", "text"], default="text",
                          help="输出格式（默认 text；机器对接收 json）")
         sp.add_argument("--environment",
-                        default=os.environ.get("FY_ENVIRONMENT", "local"),
+                        default="local",
                         choices=["local", "test", "production", "recovery"],
-                        help="目标环境（默认取 FY_ENVIRONMENT 或 local）")
+                        help="目标环境（默认 local；**不走** FY_ENVIRONMENT 环境变量——"
+                             "该变量由 Settings 严格校验，export 非法值会破坏 Settings 消费方）")
         sp.add_argument("--container", default="fy-postgres",
                         help="Postgres 容器名（默认 fy-postgres）")
 
