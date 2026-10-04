@@ -23,6 +23,7 @@ from ..deps import csrf_protected, get_actor, get_services, Services
 from ..schemas import TaskCreate
 from ...services.actor import Actor
 from ...services.errors import Conflict, NotFound, PermissionDenied
+from ...services.task_reaper import degraded_markers
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -106,6 +107,12 @@ async def create_task(body: TaskCreate, request: Request,
                   "status": f"start_failed:{type(exc).__name__}"}
     out = _serialize(t)
     out["workflow"] = wf
+    # R-13: stop answering 200 that looks identical to "running". When Temporal is
+    # not wired the task will never start, so name that explicitly instead of
+    # leaving the client to render an eternal "进行中".
+    degraded = degraded_markers(tr.is_enabled())
+    if degraded:
+        out["degraded"] = degraded
     return out
 
 

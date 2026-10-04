@@ -677,6 +677,47 @@ def cmd_verify_deletions(args: argparse.Namespace) -> dict:
 # --------------------------------------------------------------------------- #
 # 参数解析
 # --------------------------------------------------------------------------- #
+def cmd_reap_queued(args: argparse.Namespace) -> dict:
+    """Reclaim queued tasks that will never run (C0 / R-13).
+
+    Intentionally does not consult Temporal: the only scenario this command
+    exists for is Temporal being unavailable, so a Temporal-dependent reaper
+    would be dead code exactly when it is needed.
+    """
+    from .db.session import engine_from_url, session_factory
+    from .services.task_reaper import (
+        find_stuck_queued_tasks,
+        reap_stuck_queued_tasks,
+    )
+
+    stuck_minutes = max(1, int(getattr(args, "stuck_minutes", 5)))
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    engine = engine_from_url(_host_db_url())
+    Session = session_factory(engine)
+    session = Session()
+    try:
+        if dry_run:
+            stuck = find_stuck_queued_tasks(session, stuck_minutes=stuck_minutes)
+            return {
+                "command": "reap-queued",
+                "dry_run": True,
+                "stuck_minutes": stuck_minutes,
+                "would_reap_count": len(stuck),
+                "would_reap_ids": [t.id for t in stuck][:50],
+            }
+        report = reap_stuck_queued_tasks(session, stuck_minutes=stuck_minutes)
+        return {
+            "command": "reap-queued",
+            "dry_run": False,
+            "stuck_minutes": stuck_minutes,
+            **report.as_dict(),
+        }
+    finally:
+        session.close()
+        engine.dispose()
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="find_yourself.cli",
@@ -723,6 +764,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--execute", action="store_true",
                     help="lazy 调 Core DeletionService.verify_replay")
     sp.set_defaults(func=cmd_verify_deletions)
+
+    sp = sub.add_parser("reap-queued", help="回收卡死的 queued 任务（R-13，独立于 Temporal）")
+    common(sp)
+    sp.add_argument("--stuck-minutes", type=int, default=5,
+                    help="queued 超过多少分钟视为卡死（默认 5）")
+    sp.add_argument("--dry-run", action="store_true",
+                    help="只报告不修改")
+    sp.set_defaults(func=cmd_reap_queued)
 
     return p
 

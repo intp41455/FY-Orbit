@@ -13,6 +13,7 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from sqlalchemy import text
 
 from ..deps import get_services, Services
+from ...services.task_reaper import degraded_markers
 
 router = APIRouter(tags=["health"])
 
@@ -35,6 +36,12 @@ async def ready(request: Request, svc: Services = Depends(get_services)) -> JSON
     tr = getattr(request.app.state, "temporal", None)
     temporal_status = tr.is_enabled() if tr is not None else False
     body = {"status": "ok", "temporal": "ready" if temporal_status else "disabled"}
+    # R-13 / T-3: distinguish "Temporal is down" from "Temporal was never
+    # configured". A queued task in the latter case is never picked up, so an
+    # operator must be able to see it from the readiness probe alone.
+    degraded = degraded_markers(temporal_status)
+    if degraded:
+        body["degraded"] = degraded
     return JSONResponse(body)
 
 
