@@ -123,10 +123,26 @@ if ($busy) {
 
 # ------------------------------------------------------------ reset request
 if ($ResetData) {
-    $db = Join-Path $Root ".runtime\find-yourself.db"
-    if (Test-Path $db) {
-        Remove-Item $db -Force
-        Write-Ok "removed $db (data reset)"
+    # SQLite 以 WAL 模式运行（见 db/session.py 的 PRAGMA journal_mode=WAL），
+    # 因此数据库实际由三个文件组成：.db + -wal + -shm。
+    # 只删 .db 会留下未合并的 WAL 与共享内存文件 —— 下次启动时 SQLite 可能
+    # 把旧事务重放到「已重置」的库上（状态残留），排查时表现为「重置了但数据还在」。
+    # 三个一并删，缺哪个报哪个。
+    $dbFiles = @(
+        (Join-Path $Root ".runtime\find-yourself.db"),
+        (Join-Path $Root ".runtime\find-yourself.db-wal"),
+        (Join-Path $Root ".runtime\find-yourself.db-shm")
+    )
+    $removed = 0
+    foreach ($f in $dbFiles) {
+        if (Test-Path $f) {
+            Remove-Item $f -Force
+            Write-Ok "removed $f"
+            $removed++
+        }
+    }
+    if ($removed -gt 0) {
+        Write-Ok "data reset complete ($removed file(s) removed, incl. WAL/SHM)"
     } else {
         Write-Ok "no existing database to reset"
     }
