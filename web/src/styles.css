@@ -3436,3 +3436,87 @@ html, body { overflow-x: clip; }
   .cabin-hud { flex-direction: column; align-items: stretch; }
 }
 /* ---- 本段 G4 结束 ---- */
+
+/* ==== I3 双形态外壳（内嵌工作台 / 独立全屏，共用同一游戏核心）—— 追加段，不动他人段落 ====
+   归属：I3 集成（游戏核心与外壳解耦）。段头见上，改本段只在本段内改。
+
+   机制：外壳 .cabin-shell 提供有确定尺寸的容器，游戏核心挂进去；
+   .cabin-root 由本段按 data-mode 决定「铺满视口」还是「收进容器」。
+   场景尺寸由 cabinViewport 按宿主元素测量，容器一变场景自动跟随。 */
+.cabin-shell {
+  position: relative;
+  width: 100%;
+  /* 内嵌形态：占满主内容区的可用高度，侧栏与工作台外壳围绕游戏，不再被盖住 */
+  height: calc(100vh - 6rem);
+  min-height: 420px;
+  overflow: hidden;
+}
+.cabin-shell[data-mode='embedded'] > .cabin-root {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* 独立全屏形态：外壳本身铺满视口；.cabin-root 收进外壳（避免 fixed 叠 fixed 的定位歧义） */
+.cabin-shell[data-mode='fullscreen'] {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  height: auto;
+  min-height: 0;
+  background: #0b1030;
+}
+.cabin-shell[data-mode='fullscreen'] > .cabin-root {
+  position: absolute;
+  inset: 0;
+}
+/* 形态切换按钮：右下角，避让既有 .cabin-back(左上) / .cabin-indoor-bar(右上) /
+   .cabin-enter-indoor(下中) / .w2-toggle(左上偏移)，这些位已被占。 */
+.cabin-shell-toggle {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 70;
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid rgba(186, 230, 253, 0.55);
+  background: rgba(8, 47, 73, 0.72);
+  color: #e0f2fe;
+  font-family: var(--cabin-pixel-font, ui-monospace, monospace);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.cabin-shell-toggle:hover {
+  background: rgba(14, 116, 144, 0.85);
+}
+@media (max-width: 760px) {
+  .cabin-shell { height: calc(100vh - 4rem); min-height: 320px; }
+}
+/* ---- 本段 I3 结束 ---- */
+
+/* ---- P1 DSL 类型诊断 ---- */
+/* 收集式 IR 诊断面板：错误态一次全量展示（DslDiagnostics.tsx）。 */
+.fy-ir-diagnostics { font-size: 12px; line-height: 1.5; }
+.fy-ir-diagnostics .fy-ir-list { margin: 6px 0 0; padding-left: 18px; }
+.fy-ir-diagnostics .fy-ir-item { margin: 2px 0; word-break: break-all; }
+.fy-ir-diagnostics.fy-ir-invalid {
+  border: 1px solid #c0392b; border-radius: 6px; padding: 6px 8px;
+  background: #fdf1f0;
+}
+.fy-ir-diagnostics .fy-ir-message { color: #8a2b20; }
+/* 画布节点红点：节点头右侧的「● N」诊断徽标（悬停显示 code+message）。 */
+.fy-ir-dot {
+  position: absolute; top: -8px; right: -8px;
+  background: #c0392b; color: #fff; border-radius: 10px;
+  font-size: 10px; line-height: 1; padding: 3px 6px; cursor: help;
+}
+/* 属性面板字段级错误态：红框 + 内联文案（PropertyPanel.tsx）。 */
+.fy-flow-field.fy-field-invalid > input,
+.fy-flow-field.fy-field-invalid > select,
+.fy-flow-field.fy-field-invalid > textarea {
+  border-color: #c0392b; box-shadow: 0 0 0 1px #c0392b;
+}
+.fy-field-error-text {
+  display: block; color: #c0392b; font-size: 12px; margin-top: 2px;
+}

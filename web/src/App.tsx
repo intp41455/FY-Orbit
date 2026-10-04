@@ -23,6 +23,7 @@ import { AgentDispatchPage } from './pages/AgentDispatchPage';
 import { KnowledgePage } from './pages/KnowledgePage';  // W3 本地知识库
 import { HubPage } from './pages/HubPage';  // W6 超级中台适配器中心
 import { AvatarWorkshopPage } from './pages/AvatarWorkshopPage';  // W11 角色工坊
+import { GameStandalonePage } from './pages/GameStandalonePage';  // I3 独立全屏形态（游戏核心与 /cabin 同一份，只换外壳）
 import PetPage from './pet/PetPage';  // W10 桌面宠物浮窗
 
 export default function App() {
@@ -34,6 +35,15 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/pet" element={<PetPage />} />  {/* W10 透明置顶宠物浮窗，不套 Layout/不要求登录 */}
+            {/* I3 独立全屏形态：自有路由、不套 Layout（无侧栏），游戏核心与 /cabin 共用同一份 */}
+            <Route
+              path="/game"
+              element={
+                <RequireAuth>
+                  <GameStandalonePage />
+                </RequireAuth>
+              }
+            />
             <Route
               element={
                 <RequireAuth>
