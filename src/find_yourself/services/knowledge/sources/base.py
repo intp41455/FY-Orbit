@@ -176,3 +176,61 @@ def as_datetime(value: Any) -> datetime | None:
         except ValueError:
             return None
     return None
+
+# ---------------------------------------------------------------------------
+# P3 · 能力协商（#11）：源声明「读/写/列目录/增量」等能力，调用方按能力路由。
+# 不支持的能力必须**显式抛** :class:`UnsupportedCapability`——绝不静默降级成
+# 「查不到 / 没有增量 / 空列表」（铁律 1：不用假绿灯冒充成功）。
+# ---------------------------------------------------------------------------
+
+#: 协议能力名的唯一清单。``ensure_capability`` 只认这份清单——拼错能力名
+#: 应当炸在调用点，而不是被当成「源声明支持」。
+PROTOCOL_CAPABILITIES: tuple[str, ...] = (
+    "read",        # 拉取文档（fetch_document）
+    "write",       # 写回外部源（本协议 v1 为只读，永远 False——如实声明）
+    "list",        # 列目录 / 列集合（list_sources）
+    "incremental", # 增量同步游标
+    "search",      # 服务端检索（search_metadata）
+    "full_text",   # 能拿到全文（而非 300 字预览）
+    "retryable",   # 429/5xx 值得退避重试
+)
+
+
+def capability_flags(source: KnowledgeSource) -> dict[str, bool]:
+    """P3 · 源的**完整**能力声明（含读/写/列目录），如实展示与路由用。
+
+    ``read`` / ``list`` 由抽象方法保证（实现即支持，未实现会在实例化/调用时
+    当场暴露）；``write`` 在只读协议下恒为 False——这不是「暂未实现」，
+    而是协议本身的诚实边界。
+    """
+    caps = source.capabilities
+    return {
+        "read": True,
+        "write": False,
+        "list": True,
+        "incremental": bool(caps.incremental),
+        "search": bool(caps.searchable),
+        "full_text": bool(caps.full_text),
+        "retryable": bool(caps.retryable),
+    }
+
+
+def ensure_capability(source: KnowledgeSource, capability: str) -> None:
+    """P3 · 能力协商闸门：源不支持该能力时当场抛 ``UnsupportedCapability``。
+
+    调用方在发起「按能力路由」的请求（增量同步 / 服务端检索 / 写回）之前
+    必须先过这道闸。**绝不允许**把「源不支持」静默降级为空结果。
+    ``capability`` 不在 :data:`PROTOCOL_CAPABILITIES` 里同样抛错。
+    """
+    flags = capability_flags(source)
+    if capability not in flags:
+        raise UnsupportedCapability(
+            "unknown_capability",
+            f"未知能力 {capability!r}；协议支持的能力：{sorted(flags)}",
+        )
+    if flags[capability]:
+        return
+    raise UnsupportedCapability(
+        "capability_not_supported",
+        f"知识源 {source.source_id} 不支持能力 {capability!r}（能力声明：{flags}）",
+    )

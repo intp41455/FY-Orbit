@@ -47,6 +47,7 @@ from .sources import (
     SecretStoreProtocol,
     secret_store,
 )
+from .sources.base import capability_flags  # P3 · 能力协商：卡片如实展示完整能力声明
 
 #: 知识库 source_id 里识别「这条源来自 hub」的前缀。
 HUB_SOURCE_PREFIX = "hub:"
@@ -237,6 +238,12 @@ def hub_source_card(
             "persist_restart": True,
             "capabilities": {"searchable": False, "full_text": True,
                              "incremental": False, "retryable": True},
+            # P3 · 能力协商：未映射连接没有可实例化的适配器，读/列按「不可用」
+            # 如实标注（write 在只读协议下恒 False）。
+            "negotiated_capabilities": {"read": False, "write": False,
+                                        "list": False, "incremental": False,
+                                        "search": False, "full_text": False,
+                                        "retryable": False},
             "origin": "unmapped",
             "connection_id": conn.id,
             "connection_state": conn.state,
@@ -286,6 +293,9 @@ def hub_source_card(
             "persist_restart": True,
             "origin": origin,
             "builtin_source_id": builtin,
+            # P3 · 能力协商：完整能力声明（读/写/列目录/增量/检索）来自适配器
+            # 实例本身，而非手抄——源与声明由构造保证一致。
+            "negotiated_capabilities": capability_flags(adapter),
             "connection_id": conn.id,
             "connection_state": conn.state,
             "connection_state_text": _hub_state_text(conn.state),

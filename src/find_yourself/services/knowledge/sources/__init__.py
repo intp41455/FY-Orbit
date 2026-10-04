@@ -35,6 +35,7 @@ from .base import (
     retry_call,
 )
 from .ima import ImaSource
+from .local_files import LocalFilesSource  # P3 · 备轨：本地文件目录源
 
 __all__ = [
     "KnowledgeSource",
@@ -45,6 +46,7 @@ __all__ = [
     "retry_call",
     "ImaSource",
     "BaiduPanSource",
+    "LocalFilesSource",
     "HubSecretStore",
     "InMemorySecretStore",
     "SecretStoreProtocol",
@@ -116,6 +118,12 @@ SOURCE_STATUS: dict[str, dict[str, str]] = {
         "credential_fields": "app_key,app_secret,redirect_uri",
         "hint": "v1 仅骨架，未接入",
     },
+    # P3 · 备轨：本地文件目录源（可离线自测；root_dir 走凭证存储或 FY_LOCAL_KB_ROOT）。
+    "local_files": {
+        "display_name": "本地文件知识库",
+        "credential_fields": "root_dir",
+        "hint": "配置一个本机目录，抓取其中 .md/.txt/.html 文件入库（离线可用）",
+    },
 }
 
 
@@ -133,6 +141,12 @@ def build_source(source_id: str) -> KnowledgeSource:
             app_key=creds.get("app_key", ""),
             app_secret=creds.get("app_secret", ""),
             redirect_uri=creds.get("redirect_uri", ""),
+        )
+    # P3 · 备轨：root_dir 同样「凭证存储 > 环境变量」两段式取值。
+    if source_id == "local_files":
+        creds = secret_store.get("local_files")
+        return LocalFilesSource(
+            root_dir=creds.get("root_dir", "") or os.environ.get("FY_LOCAL_KB_ROOT", ""),
         )
     raise NotFound("unknown_source", f"未知知识源：{source_id}")
 

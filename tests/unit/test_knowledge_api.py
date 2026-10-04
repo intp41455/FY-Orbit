@@ -235,7 +235,8 @@ def test_sources_endpoint_reports_ima_and_baidu_not_connected(client, headers):
     secret_store.forget("ima")
     body = client.get("/api/kb/sources").json()
     by_id = {s["source_id"]: s for s in body["sources"]}
-    assert set(by_id) == {"ima", "baidu_pan"}
+    # P3 · 备轨上线：/api/kb/sources 现在如实返回三个适配器卡片。
+    assert set(by_id) == {"ima", "baidu_pan", "local_files"}
     assert by_id["ima"]["available"] is False
     assert by_id["ima"]["configured"] is False
     assert "未接入" in by_id["ima"]["detail"]

@@ -1,7 +1,11 @@
-"""Read-only adapter for D:\\person-kb historical archive (§4.4, M12, M13).
+"""Read-only adapter for the personal-kb historical archive (§4.4, M12, M13).
 
 Strict read-only: opens SQLite with URI ``mode=ro``, never executes writes.
 Inspects stats first so users choose scope before importing.
+
+P3 · 硬编码路径治理：路径**不再**默认硬编码为某台机器的 ``D:\\person-kb\\kb.db``，
+而是「显式参数 > 环境变量 ``FY_PERSON_KB_DB``」两段式取值；两者都没有时
+适配器如实报 ``available=False``（未配置），绝不假装可读。
 """
 from __future__ import annotations
 
@@ -9,16 +13,27 @@ import os
 import sqlite3
 from typing import Any, Generator
 
+#: 环境变量名：部署时通过它注入个人知识库 SQLite 路径。
+PERSON_KB_DB_ENV = "FY_PERSON_KB_DB"
+
 
 class PersonKbAdapter:
-    def __init__(self, db_path: str = r"D:\person-kb\kb.db"):
-        self.db_path = db_path
-        if not os.path.exists(db_path):
+    def __init__(self, db_path: str | None = None):
+        # P3 · 取值顺序：显式参数 > 环境变量 > 空（未配置，如实报不可用）。
+        resolved = db_path if db_path is not None else os.environ.get(PERSON_KB_DB_ENV, "")
+        self.db_path = (resolved or "").strip()
+        if not self.db_path:
+            return
+        if not os.path.exists(self.db_path):
             # Check alternative default names if directory provided
-            if os.path.isdir(db_path):
-                candidate = os.path.join(db_path, "kb.db")
+            if os.path.isdir(self.db_path):
+                candidate = os.path.join(self.db_path, "kb.db")
                 if os.path.exists(candidate):
                     self.db_path = candidate
+
+    def is_configured(self) -> bool:
+        """P3 · 未配置路径时如实返回 False（供调用方预检，而不是打开时报错）。"""
+        return bool(self.db_path)
 
     def _get_ro_connection(self) -> sqlite3.Connection:
         # Use SQLite URI read-only mode to guarantee zero accidental modifications
@@ -30,10 +45,12 @@ class PersonKbAdapter:
 
     def inspect_stats(self) -> dict[str, Any]:
         """Read-only statistics for pre-flight review."""
-        if not os.path.exists(self.db_path):
+        if not self.db_path or not os.path.exists(self.db_path):
             return {
                 "available": False,
-                "path": self.db_path,
+                "path": self.db_path or "",
+                "detail": "" if self.db_path else
+                f"未配置个人知识库路径：请设置环境变量 {PERSON_KB_DB_ENV} 或显式传入 db_path",
                 "sessions_count": 0,
                 "messages_count": 0,
                 "platforms": [],
@@ -69,7 +86,7 @@ class PersonKbAdapter:
         limit: int | None = None,
     ) -> Generator[dict[str, Any], None, None]:
         """Yield sessions and their ordered messages in read-only stream."""
-        if not os.path.exists(self.db_path):
+        if not self.db_path or not os.path.exists(self.db_path):
             return
         conn = self._get_ro_connection()
         try:
