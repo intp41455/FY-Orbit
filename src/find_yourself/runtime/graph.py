@@ -298,6 +298,18 @@ def evaluate_route(
     return decision
 
 
+#: EXPLICIT BOUNDARY: ``TaskGraphState.stage`` is a **graph-internal milestone
+#: marker** (node names such as ``validate`` / ``finish`` / ``finished`` /
+#: ``exec_<route>``). It is NOT the persisted ``tasks.stage`` column, whose
+#: allowed values are the ``workflows.models.Stage`` enum enforced by DB CHECK
+#: ``ck_task_stage``. There is deliberately no bridge from this value into
+#: ``Task.stage``: the only DB writer is ``CorePorts.task_update_stage``, and
+#: every caller passes ``Stage.*.value``. Do not start persisting this field —
+#: if that ever happens, the graph vocabulary must first be reconciled with the
+#: ``Stage`` enum. Guarded by ``tests/unit/test_task_stage_constraint.py``.
+GRAPH_STAGE_IS_NOT_PERSISTED = True
+
+
 class TaskGraphState(TypedDict, total=False):
     task_id: str
     attempt: int

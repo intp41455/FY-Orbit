@@ -9,23 +9,31 @@
 改名，**写侧写新值、历史行与读侧仍是旧值，两边都不报错**，直到下游按 stage
 分支时行为静默改变。
 
-本文件把三件事变成 CI 门禁：
+本文件把四件事变成 CI 门禁：
 1. DB 真的拒非法 stage（不是只有模型层声明）；
 2. ``TASK_STAGES``（DB 白名单）与 ``Stage`` 枚举是**同一份真源**，派生自枚举、
    不手抄；
-3. 迁移 0029 真能升、真能降、遇到既有非法数据**显式失败**而不是静默通过。
+3. **落库侧的封闭性**：``workflow.py`` 里写 ``Task.stage`` 的实参只能是
+   ``Stage.<name>.value``，不得出现裸字符串（判据 A）；
+4. 迁移 0029 真能升、真能降、遇到既有非法数据**显式失败**而不是静默通过。
 
-关于 ``runtime/graph.py::TaskGraphState.stage``
-----------------------------------------------
+关于 ``runtime/graph.py::TaskGraphState.stage``（判据 B：边界显式）
+-----------------------------------------------------------------
 它**不是**持久化字段：graph 是 LangGraph 的 phase-internal 状态，其 ``stage``
-记的是图节点里程碑（``validate`` / ``finish`` / ``finished`` /
-``exec_<route>``），与 ``tasks.stage`` 落库的 ``Stage`` 枚举是**两套词汇**
-（见 ``test_graph_stage_vocabulary_*`` 与 file 末尾的 xfail）。本文件用
-xfail(strict) 把这个真实分歧显式钉住，而不是写一条恒真的假断言把它盖掉。
+记的是**图内节点里程碑**（``validate`` / ``finish`` / ``finished`` /
+``exec_<route>``），与 ``tasks.stage`` 落库的 ``Stage`` 枚举是**两套词汇**，
+且全仓**没有**把它写进 ``Task.stage`` 的桥（落库写入只经
+``CorePorts.task_update_stage``，实参一律 ``Stage.*.value``）。
+
+因此「graph stage ⊆ Stage」是**错的**前提，本文件不再用 xfail 含糊掩盖，而是
+用两条真判据把边界写死：``graph.py`` 必须显式声明该字段不落库
+（``GRAPH_STAGE_IS_NOT_PERSISTED``），且其词汇表必须**确实**超出 ``Stage``
+（一旦收敛，声明就过期，用例会红以提示清理）。
 """
 
 from __future__ import annotations
 
+import ast
 import gc
 import re
 import time
@@ -41,13 +49,18 @@ from sqlalchemy.orm import sessionmaker
 
 from find_yourself.db.models import TASK_STAGES, Task
 from find_yourself.db.types import utcnow
+from find_yourself.runtime import graph as graph_module
 from find_yourself.workflows.models import Stage
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 GRAPH_SOURCE = REPO_ROOT / "src" / "find_yourself" / "runtime" / "graph.py"
+WORKFLOW_SOURCE = (
+    REPO_ROOT / "src" / "find_yourself" / "workflows" / "workflow.py"
+)
 
 STAGE_VALUES = frozenset(member.value for member in Stage)
+
 # ``Base.metadata`` 的 naming_convention 把 CheckConstraint(name="ck_task_stage")
 # 解析成带表名前缀的实际存储名。
 STAGE_CHECK_DB_NAME = "ck_tasks_ck_task_stage"
@@ -280,7 +293,110 @@ def test_migration_0029_rejects_illegal_legacy_data(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 4. runtime/graph.py::TaskGraphState.stage 词汇表（钉住真实分歧）
+# 4. 判据 A：落库侧封闭性 —— Task.stage 的写入只能来自 Stage
+# ---------------------------------------------------------------------------
+# 落库写入的唯一通道是 activities 的 ``task_update_stage``；workflow.py 通过
+# ``self._act("task_update_stage", task_id, attempt, stage, ck)`` 触发它。
+# 这里静态解析 workflow.py：stage 实参要么直接是 ``Stage.<x>.value``，要么是
+# 一个「被 ``Stage.<x>.value`` 赋值过」的局部变量。任何裸字符串都会变红。
+_UPDATE_STAGE_ACTIVITY = "task_update_stage"
+
+
+def _is_stage_enum_value(node: ast.AST) -> bool:
+    """``Stage.<name>.value`` 的 AST 形状。"""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "value"
+        and isinstance(node.value, ast.Attribute)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "Stage"
+    )
+
+
+def _workflow_ast() -> ast.Module:
+    return ast.parse(WORKFLOW_SOURCE.read_text(encoding="utf-8"))
+
+
+def _stage_name_assignments(tree: ast.Module) -> dict[str, list[ast.AST]]:
+    """收集 ``stage = <expr>`` 的所有右值（按被赋值变量名分组）。"""
+    found: dict[str, list[ast.AST]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    found.setdefault(target.id, []).append(node.value)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            if node.value is not None:
+                found.setdefault(node.target.id, []).append(node.value)
+    return found
+
+
+def _update_stage_call_args(tree: ast.Module) -> list[ast.AST]:
+    """收集 ``_act("task_update_stage", ...)`` 的第 4 个位置实参（stage）。"""
+    args: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if not (isinstance(func, ast.Attribute) and func.attr in {"_act", "execute_activity"}):
+            continue
+        if not node.args:
+            continue
+        head = node.args[0]
+        if isinstance(head, ast.Constant) and head.value == _UPDATE_STAGE_ACTIVITY:
+            # _act("task_update_stage", task_id, attempt, stage, ck)
+            assert len(node.args) >= 4, "task_update_stage 调用缺少 stage 实参"
+            args.append(node.args[3])
+    return args
+
+
+def test_persisted_stage_assignments_are_stage_enum_values() -> None:
+    """workflow.py 里每个 ``stage = ...`` 都必须是 ``Stage.<name>.value``。
+
+    变异判据：把任一 ``Stage.execution.value`` 改成裸字符串 ``"execution"``，
+    本条立刻变红（防止落库值绕过枚举、只靠 DB CHECK 兜底）。
+    """
+    assignments = _stage_name_assignments(_workflow_ast())
+    assert "stage" in assignments, "workflow.py 里找不到 stage 赋值，测试可能已失效"
+    offenders = [
+        ast.dump(rhs) for rhs in assignments["stage"] if not _is_stage_enum_value(rhs)
+    ]
+    assert not offenders, (
+        "workflow.py 中存在非 Stage 枚举派生的 stage 赋值（落库值可能绕过枚举）: "
+        f"{offenders}"
+    )
+
+
+def test_task_update_stage_never_passes_bare_string_literal() -> None:
+    """``task_update_stage`` 的 stage 实参不得是裸字符串字面量。
+
+    实参要么是 ``Stage.<x>.value``，要么是一个「已被 Stage.<x>.value 赋值过」
+    的变量；除此之外一律视为漂移风险。
+    """
+    tree = _workflow_ast()
+    validated = {
+        name
+        for name, rhs_list in _stage_name_assignments(tree).items()
+        if all(_is_stage_enum_value(rhs) for rhs in rhs_list)
+    }
+    call_args = _update_stage_call_args(tree)
+    assert call_args, "workflow.py 里找不到 task_update_stage 调用，测试可能已失效"
+
+    offenders: list[str] = []
+    for arg in call_args:
+        if _is_stage_enum_value(arg):
+            continue
+        if isinstance(arg, ast.Name) and arg.id in validated:
+            continue
+        offenders.append(ast.dump(arg))
+    assert not offenders, (
+        "task_update_stage 收到了非枚举派生的 stage 实参（裸字符串/未验证变量）: "
+        f"{offenders}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# 5. 判据 B：graph stage 与持久化枚举的边界必须显式声明
 # ---------------------------------------------------------------------------
 # 从 graph.py 源码抽 ``"stage": "字面量"``（f-string 一律不匹配，单独处理）。
 _GRAPH_STAGE_LITERAL_RE = re.compile(r'"stage":\s*"([^"]+)"')
@@ -288,6 +404,34 @@ _GRAPH_STAGE_LITERAL_RE = re.compile(r'"stage":\s*"([^"]+)"')
 
 def _graph_stage_literals() -> frozenset[str]:
     return frozenset(_GRAPH_STAGE_LITERAL_RE.findall(GRAPH_SOURCE.read_text(encoding="utf-8")))
+
+
+def test_graph_declares_its_stage_is_not_persisted() -> None:
+    """graph.py 必须显式声明 ``TaskGraphState.stage`` 不落库。
+
+    没有这条声明，后人分不清「有意的两套词汇」与「没人管的漂移」。
+    """
+    assert getattr(graph_module, "GRAPH_STAGE_IS_NOT_PERSISTED", None) is True, (
+        "graph.py 缺少 GRAPH_STAGE_IS_NOT_PERSISTED = True 声明："
+        "TaskGraphState.stage 是图内里程碑、不是 tasks.stage 落库字段。"
+    )
+
+
+def test_graph_stage_vocabulary_intentionally_exceeds_enum() -> None:
+    """graph 词汇必须**确实**超出 ``Stage`` —— 否则声明已过期，应予清理。
+
+    这条把边界写死：图内里程碑（validate/finish/finished/exec_<route>）允许且
+    必须不同于持久化枚举；一旦两者收敛，说明 ``GRAPH_STAGE_IS_NOT_PERSISTED``
+    声明失效，用例变红提示删除。
+    """
+    dynamic = frozenset(
+        {"exec_single_agent", "exec_research", "exec_tool_step", "exec_delegate"}
+    )
+    outside = (_graph_stage_literals() | dynamic) - STAGE_VALUES
+    assert outside == frozenset(
+        {"validate", "finish", "finished", "exec_single_agent", "exec_research",
+         "exec_tool_step", "exec_delegate"}
+    ), f"graph stage 词汇与预期边界不符（多出/缺少非 Stage 值）: {sorted(outside)}"
 
 
 def test_graph_stage_literal_vocabulary_is_pinned() -> None:
@@ -300,17 +444,3 @@ def test_graph_stage_literal_vocabulary_is_pinned() -> None:
         {"requirements", "planning", "validate", "finish", "finished"}
     )
 
-
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "已知真实分歧：runtime/graph.py 的 TaskGraphState.stage 是图节点里程碑"
-        "（validate/finish/finished/exec_<route>），与持久化 Stage 枚举是两套词汇；"
-        "收敛需要改 graph.py（本次任务文件范围外）。此 xfail 记录该差距，"
-        "若将来 graph stage 被收敛，本用例会 XPASS(strict) 变红以提示移除。"
-    ),
-)
-def test_graph_stage_vocabulary_subset_of_enum() -> None:
-    """团队要求的最小收敛断言：图 stage 取值 ⊆ Stage 枚举。"""
-    dynamic = frozenset({"exec_single_agent", "exec_research", "exec_tool_step", "exec_delegate"})
-    assert (_graph_stage_literals() | dynamic) <= STAGE_VALUES
