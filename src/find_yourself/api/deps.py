@@ -41,6 +41,7 @@ from ..services.preview import PreviewService
 from ..services.preview_sources import PreviewSourceService
 from ..services.orchestrator_lease import OrchestratorLeaseService
 from ..services.agent_teams import AgentTeamService
+from ..services.hitl import HitlInterruptService
 from ..services.model_catalog import ModelCatalog
 
 SESSION_COOKIE = "fy_session"
@@ -73,6 +74,8 @@ class Services:
     orchestrator_leases: OrchestratorLeaseService
     # 19 单Agent内部团队与逐节点模型配置
     teams: AgentTeamService
+    # 需求12 Human-in-the-loop 执行中断/恢复（跨 Task/Agent Team/lease 三个执行面）
+    hitl: HitlInterruptService
 
 
 def get_settings(request: Request) -> Settings:
@@ -123,6 +126,8 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
             db, audit, budget=budget_svc, settings=settings,
             catalog=ModelCatalog(settings=settings),
         ),
+        # HITL 复用同一个 audit 哈希链：暂停与决策都要留痕。
+        hitl=HitlInterruptService(db, audit),
     )
 
 

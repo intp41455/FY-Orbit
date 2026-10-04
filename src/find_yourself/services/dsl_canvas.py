@@ -1,18 +1,47 @@
-"""受限 DSL 画布：模型、编译器与确定性执行引擎（工单 P1-18）。
+"""受限 DSL 画布：动词集注册表、编译器与确定性执行引擎（工单 P1-18 / 需求 5）。
 
 实现蓝本（claw-dialogue-extraction §1.2/§1.3）：
 * 模型/视图分离 —— DSL 文档（model）只包含节点/边/参数；坐标、层级等视图
   状态属于 layout，绝不进入 DSL。
 * Compiler —— 拓扑排序 + 环检测；条件分支按「节点完成后按后继边条件入队」
   动态展开（queue 驱动的调度，而非一次性静态计划）。
-* Executor —— 受限动词集（input / transform: map|filter|template / output），
+* Executor —— 受限动词集（input / transform: 见 ``VERB_REGISTRY`` / output），
   全部确定性执行，无外部 LLM 依赖；每个节点的输入输出都记入运行日志。
+
+动词集（需求 5①）
+-----------------
+:data:`VERB_REGISTRY` 是**唯一真源**：每个动词同时给出「名字 + 参数契约
+（JSON Schema + 编译期检查）+ 执行实现（确定性纯函数）」，三样缺一不可。
+分类：
+
+==========  ==========================  ============================================
+类别        动词                语义
+==========  ==========================  ============================================
+数据变换      ``map``                    逐项设字段 / 转大写 / 转小写
+数据变换      ``filter``                 按字段比较筛选
+数据变换      ``template``               ``{field}`` 插值成文本
+流程控制      ``branch``                 显式条件分支，产出 ``{branch, value}``
+流程控制      ``aggregate``              循环聚合（count/sum/min/max/avg/join/…）
+流程控制      ``merge``                  并行汇聚（多路入边收敛成一路）
+Agent      ``agent``                   调用已注册 Agent/工具（需注入解析器）
+人机协作      ``confirm``                挂起等人确认（抛 :class:`DslSuspended`）
+输出        ``artifact``                产出带名字的产物信封
+==========  ==========================  ============================================
+
+**封闭性**（ADR-003）：动词集由代码静态定义，运行时不可扩展；白名单外的动词
+在 :func:`validate_dsl` 期即抛 :class:`DslValidationError`，绝不静默忽略。
+
+**诚实边界**：``agent`` 需要调用方显式注入 ``agent_resolver``；``confirm`` 在尚无
+人工裁决时抛 :class:`DslSuspended`（控制流信号，非失败），由上层建 HITL interrupt
+并在裁决后带 ``confirm_decision`` 重开一轮。裁决**只能**来自受信任存储，DSL 文档
+自身不能声明「已批准」。
 
 执行记录只落内存 + 归档目录（env ``FY_DSL_ARCHIVE_DIR``），不写数据库迁移。
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -21,188 +50,125 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 # ---------------------------------------------------------------------------
-# 受限动词集定义
+# 受限动词集：静态封闭的枚举（运行时不可扩展）
 # ---------------------------------------------------------------------------
 
 NODE_TYPES = ("input", "transform", "output")
-TRANSFORM_VERBS = ("map", "filter", "template")
 INPUT_KINDS = ("literal", "text_lines")
 OUTPUT_FORMATS = ("json", "text")
 MAP_OPS = ("set", "upper", "lower")
 FILTER_OPS = ("eq", "ne", "gt", "lt", "contains")
 CONDITION_OPS = FILTER_OPS
+#: ``aggregate`` 的聚合算子。
+AGGREGATE_OPS = ("count", "sum", "min", "max", "avg", "first", "last", "join", "unique")
+#: ``aggregate`` 中需要数值型field 的算子。
+NUMERIC_AGGREGATE_OPS = ("sum", "min", "max", "avg")
+#: ``merge`` 的汇聚策略。
+MERGE_OPS = ("concat", "first", "last")
 
-DSL_JSON_SCHEMA: dict[str, Any] = {
-    "$id": "find-yourself:dsl-canvas:1",
-    "title": "Find Yourself 受限 DSL 画布文档",
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["version", "nodes", "edges"],
-    "properties": {
-        "version": {"const": "1"},
-        "nodes": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["id", "type"],
-                "additionalProperties": False,
-                "properties": {
-                    "id": {"type": "string", "minLength": 1, "maxLength": 64,
-                           "pattern": "^[A-Za-z0-9_-]+$"},
-                    "type": {"enum": list(NODE_TYPES)},
-                    # 仅 transform 节点使用
-                    "verb": {"enum": list(TRANSFORM_VERBS)},
-                    "params": {"type": "object"},
-                },
-            },
-        },
-        "edges": {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "required": ["from", "to"],
-                "additionalProperties": False,
-                "properties": {
-                    "from": {"type": "string"},
-                    "to": {"type": "string"},
-                    # 可选边条件：条件不满足则后继节点不入队（动态展开）
-                    "condition": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["field", "op", "value"],
-                        "properties": {
-                            "field": {"type": "string"},
-                            "op": {"enum": list(CONDITION_OPS)},
-                            "value": {},
-                        },
-                    },
-                },
-            },
-        },
-    },
-}
+#: 默认导出文件名（代码导出）。
+CODE_EXPORT_FILENAME = "flow_restricted.py"
 
 
 class DslValidationError(ValueError):
-    """DSL 文档不合法（结构 / 拓扑 / 参数）。"""
+    """DSL 文档不合法（结构 / 拓扑 / 参数 / 解析导出代码失败）。"""
 
 
 # ---------------------------------------------------------------------------
-# 编译器：校验 → 拓扑排序 → 环检测
+# 确定性动词执行上下文与注册表
 # ---------------------------------------------------------------------------
 
-
-@dataclass
-class CompiledPlan:
-    """编译产物：拓扑序 + 邻接表（供 Dispatcher 按边条件动态入队）。"""
-
-    order: list[str]
-    adjacency: dict[str, list[dict[str, Any]]]  # node_id -> [edge]
-    indegree: dict[str, int]
-    nodes: dict[str, dict[str, Any]]
-
-
-def validate_dsl(doc: Any) -> dict[str, Any]:
-    """结构校验（手写轻量校验，覆盖 JSON Schema 中的约束）。"""
-    if not isinstance(doc, dict):
-        raise DslValidationError("DSL 文档必须是 JSON 对象")
-    if doc.get("version") != "1":
-        raise DslValidationError("version 必须为 \"1\"")
-    nodes = doc.get("nodes")
-    edges = doc.get("edges")
-    if not isinstance(nodes, list) or not nodes:
-        raise DslValidationError("nodes 必须是非空数组")
-    if not isinstance(edges, list):
-        raise DslValidationError("edges 必须是数组")
-
-    ids: set[str] = set()
-    for n in nodes:
-        if not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]:
-            raise DslValidationError("每个节点必须有非空字符串 id")
-        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n["id"]):
-            raise DslValidationError(f"节点 id 不合法: {n['id']!r}")
-        if n["id"] in ids:
-            raise DslValidationError(f"节点 id 重复: {n['id']}")
-        ids.add(n["id"])
-        if n.get("type") not in NODE_TYPES:
-            raise DslValidationError(f"节点 {n['id']} type 必须是 {NODE_TYPES}")
-        if n["type"] == "transform":
-            if n.get("verb") not in TRANSFORM_VERBS:
-                raise DslValidationError(
-                    f"transform 节点 {n['id']} verb 必须是 {TRANSFORM_VERBS}")
-            params = n.get("params", {})
-            if not isinstance(params, dict):
-                raise DslValidationError(f"节点 {n['id']} params 必须是对象")
-            _validate_transform_params(n["id"], n["verb"], params)
-        elif n.get("params") is not None and not isinstance(n["params"], dict):
-            raise DslValidationError(f"节点 {n['id']} params 必须是对象")
-
-    for e in edges:
-        if not isinstance(e, dict):
-            raise DslValidationError("边必须是对象")
-        src, dst = e.get("from"), e.get("to")
-        if src not in ids or dst not in ids:
-            raise DslValidationError(f"边 {src!r}->{dst!r} 引用了未定义节点")
-        if "condition" in e and e["condition"] is not None:
-            c = e["condition"]
-            if not isinstance(c, dict) or c.get("op") not in CONDITION_OPS \
-                    or not isinstance(c.get("field"), str) or not c["field"]:
-                raise DslValidationError(
-                    f"边 {src}->{dst} condition 需要 field/op/value 且 op 属于 {CONDITION_OPS}")
-    return doc
+#: 注入 Agent 解析器的签名：``(agent_name, payload, params) -> Any``。
+AgentResolver = Callable[[str, Any, dict[str, Any]], Any]
+#: 注入「人工确认裁决读取器」的签名：``(node_id, execution_id) -> str | None``。
+#: 返回 ``"approve"`` / ``"reject"`` / ``None``（尚无裁决）。**裁决只能来自受信任
+#: 的存储（HITL 表），绝不能来自 DSL 文档本身** —— 否则任何能写画布的人都能给自己
+#: 批一个「已批准」。
+#:
+#: 刻意**不**传 graph / payload / dsl_digest：让「读取器自己算一个顺眼的 digest
+#: 再放行」这个后门在签名上就不存在。TOCTOU 校验归应用层编排。
+ConfirmDecisionReader = Callable[[str, str | None], "str | None"]
 
 
-def _validate_transform_params(node_id: str, verb: str, params: dict[str, Any]) -> None:
-    if verb == "map":
-        op = params.get("op")
-        if op not in MAP_OPS:
-            raise DslValidationError(f"节点 {node_id} map.op 必须是 {MAP_OPS}")
-        if op == "set" and not isinstance(params.get("field"), str):
-            raise DslValidationError(f"节点 {node_id} map.set 需要 field")
-    elif verb == "filter":
-        if params.get("op") not in FILTER_OPS or not isinstance(params.get("field"), str):
-            raise DslValidationError(
-                f"节点 {node_id} filter 需要 field + op({FILTER_OPS})")
-    elif verb == "template":
-        if not isinstance(params.get("template"), str) or not params["template"]:
-            raise DslValidationError(f"节点 {node_id} template 需要 template 字符串")
+class DslSuspended(Exception):
+    """工作流在 :verb:`confirm` 处挂起，等待人工裁决（需求12 的接入点）。
+
+    这是**控制流信号**，不是节点失败：:func:`run_dsl` 会原样抛出它，让上层编排
+    捕获、去建 HITL interrupt、人裁决后再开新一轮 :func:`run_dsl`（带
+    ``confirm_decision`` 读取器）续跑。
+
+    因此它**必须能穿透**执行器内部两处 ``except Exception``（节点级与run 级）——
+    见 :func:`run_dsl` 里的 ``except DslSuspended: raise``。若被当成普通异常吞掉，
+    挂起会静默退化成「节点失败」，那正是最难排查的假绿。
+
+    携带字段：
+    * ``checkpoint`` —— 稳定标识「哪个执行的哪个节点」，**跨轮次可重算**
+      （``{execution_id}#{node_id}``），恢复时据此找回裁决。
+    * ``dsl_digest`` —— 本轮 DSL 文档的规范化摘要。
+    * ``context`` / ``options`` —— 交给 HITL 的问题与可决策项。
+
+    .. note::
+       **``dsl_digest`` 只出现在本异常上，不在 ``ConfirmDecisionReader`` 的入参里**
+       （读取器签名是 ``(node_id, execution_id) -> str | None``）。这是刻意的：
+       「人所见即所批」的校验放在**应用层编排**——它手上同时握有「人要看的
+       graph」和「本轮payload」，能自己算摘要再与 ``payload["dsl_digest"]`` 比对。
+       DSL 层若把graph 交给读取器，就等于把「伪PASS」的后门重新打开（读取器可
+       自己算一个顺眼的 digest 再放行）。等上层编排接入、签名按需扩展即可。
+    """
+
+    def __init__(self, *, checkpoint: str, dsl_digest: str, context: dict[str, Any],
+                 options: list[dict[str, Any]], node_id: str) -> None:
+        super().__init__(f"工作流在节点 {node_id} 处挂起，等待人工裁决")
+        self.checkpoint = checkpoint
+        self.dsl_digest = dsl_digest
+        self.context = context
+        self.options = options
+        self.node_id = node_id
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"checkpoint": self.checkpoint, "dsl_digest": self.dsl_digest,
+                "context": self.context, "options": self.options,
+                "node_id": self.node_id}
 
 
-def compile_dsl(doc: Any) -> CompiledPlan:
-    """校验 + 拓扑排序（Kahn）+ 环检测。"""
-    validate_dsl(doc)
-    nodes = {n["id"]: n for n in doc["nodes"]}
-    adjacency: dict[str, list[dict[str, Any]]] = {nid: [] for nid in nodes}
-    indegree = {nid: 0 for nid in nodes}
-    for e in doc["edges"]:
-        adjacency[e["from"]].append(e)
-        indegree[e["to"]] += 1
-    pristine_indegree = dict(indegree)  # Kahn 会原地扣减，Dispatcher 需要原始入度
+@dataclass(frozen=True)
+class VerbContext:
+    """一次动词调用的全部输入。"""
 
-    # Kahn 拓扑排序；若无法覆盖全部节点则存在环。
-    ready = sorted(nid for nid, d in indegree.items() if d == 0)
-    order: list[str] = []
-    while ready:
-        nid = ready.pop(0)
-        order.append(nid)
-        for edge in adjacency[nid]:
-            indegree[edge["to"]] -= 1
-            if indegree[edge["to"]] == 0:
-                ready.append(edge["to"])
-        ready.sort()
-    if len(order) != len(nodes):
-        cyclic = sorted(nid for nid, d in indegree.items() if d > 0)
-        raise DslValidationError(f"DSL 存在环，涉及节点: {cyclic}")
-    return CompiledPlan(order=order, adjacency=adjacency,
-                        indegree=pristine_indegree, nodes=nodes)
+    node_id: str
+    payload: Any
+    params: dict[str, Any]
+    #: 所有入边上游的输出（按边声明顺序），供 ``merge`` 这类多路动词使用。
+    upstreams: list[Any]
+    #: Agent 解析器；未注入时为 None，``agent`` 动词据此诚实失败。
+    agent_resolver: AgentResolver | None
+    #: 人工裁决读取器 + 挂起所需的稳定标识；``confirm`` 动词专用。
+    confirm_decision: ConfirmDecisionReader | None = None
+    execution_id: str | None = None
+    dsl_digest: str = ""
 
 
-# ---------------------------------------------------------------------------
-# 确定性动词执行器
-# ---------------------------------------------------------------------------
+@dataclass(frozen=True)
+class VerbSpec:
+    """一个受限动词的完整契约：名字 + 分类 + 参数契约 + 执行实现。"""
+
+    name: str
+    category: str
+    summary: str
+    #: params 的 JSON Schema 片段（type/required/properties/enum）。
+    params_schema: dict[str, Any]
+    execute: Callable[[VerbContext], Any]
+    #: 额外的编译期检查（JSON Schema 表达不了的跨字段约束）。
+    check: Callable[[str, dict[str, Any]], None] | None = None
+
+
+def _as_items(payload: Any) -> list[Any]:
+    """列表载荷原样返回；标量载荷包成单元素列表（与既有 map/filter 语义一致）。"""
+    return payload if isinstance(payload, list) else [payload]
+
 
 _TEMPLATE_RE = re.compile(r"\{([A-Za-z0-9_.\[\]]+)\}")
 
@@ -245,8 +211,582 @@ def _compare(left: Any, op: str, right: Any) -> bool:
     return False
 
 
-def execute_node(node: dict[str, Any], payload: Any) -> Any:
-    """执行单个节点。payload 为所有入边数据的合并（None 表示无输入）。"""
+# -- 数据变换类 -------------------------------------------------------------
+
+
+def _exec_map(ctx: VerbContext) -> Any:
+    params = ctx.params
+    out = []
+    for it in _as_items(ctx.payload):
+        op = params["op"]
+        if op == "set":
+            if not isinstance(it, dict):
+                it = {"value": it}
+            it = dict(it)
+            it[params["field"]] = _interpolate(str(params.get("value", "")), it)
+        elif op == "upper":
+            it = it.upper() if isinstance(it, str) else it
+        elif op == "lower":
+            it = it.lower() if isinstance(it, str) else it
+        out.append(it)
+    return out
+
+
+def _exec_filter(ctx: VerbContext) -> Any:
+    params = ctx.params
+    return [it for it in _as_items(ctx.payload)
+            if _compare(_lookup(it, params["field"]), params["op"], params.get("value"))]
+
+
+def _exec_template(ctx: VerbContext) -> Any:
+    tpl = ctx.params["template"]
+    if isinstance(ctx.payload, list):
+        return [_interpolate(tpl, it) for it in ctx.payload]
+    return _interpolate(tpl, ctx.payload)
+
+
+# -- 流程控制类 -------------------------------------------------------------
+
+
+def _exec_branch(ctx: VerbContext) -> Any:
+    """显式条件分支：把「走哪条路」变成**数据**，从而可被边condition 路由。
+
+    与边condition 的分工：边condition 只在调度期决定「是否入队」；``branch``
+    在数据面把判定结果写进载荷（``{"branch": 标签, "value": 原始载荷}``），
+    于是同一判定结果可以被下游多个节点、乃至模板一起引用。
+    """
+    params = ctx.params
+    matched = _compare(_lookup(ctx.payload, params["field"]), params["op"],
+                       params.get("value"))
+    return {"branch": params["then_label"] if matched else params["else_label"],
+            "value": ctx.payload}
+
+
+def _exec_aggregate(ctx: VerbContext) -> Any:
+    """循环聚合：把列表载荷按field 归约成单值（或join 成的字符串/去重列表）。"""
+    params = ctx.params
+    op = params["op"]
+    items = _as_items(ctx.payload)
+    if op == "count":
+        return len(items)
+    field = params.get("field")
+    values = [_lookup(it, field) for it in items] if field else list(items)
+    if op == "first":
+        return values[0] if values else None
+    if op == "last":
+        return values[-1] if values else None
+    if op == "unique":
+        seen: list[str] = []
+        out: list[Any] = []
+        for v in values:
+            key = json.dumps(v, ensure_ascii=False, sort_keys=True, default=str)
+            if key not in seen:
+                seen.append(key)
+                out.append(v)
+        return out
+    if op == "join":
+        sep = params.get("sep", ",")
+        return sep.join("" if v is None else str(v) for v in values)
+    nums: list[float] = []
+    for v in values:
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise DslValidationError(
+                f"节点 {ctx.node_id} aggregate.op={op} 需要数值，收到 {v!r}")
+        nums.append(v)
+    if not nums:
+        raise DslValidationError(f"节点 {ctx.node_id} aggregate.op={op} 需要至少一个数值")
+    if op == "sum":
+        return sum(nums)
+    if op == "min":
+        return min(nums)
+    if op == "max":
+        return max(nums)
+    return sum(nums) / len(nums)
+
+
+def _exec_merge(ctx: VerbContext) -> Any:
+    """并行汇聚：把多路入边的输出收敛成一路（Dispatcher 语义扩展的落点）。"""
+    mode = ctx.params["mode"]
+    streams = list(ctx.upstreams) if ctx.upstreams else _as_items(ctx.payload)
+    flat: list[Any] = []
+    for s in streams:
+        if isinstance(s, list):
+            flat.extend(s)
+        else:
+            flat.append(s)
+    if mode == "concat":
+        return flat
+    if mode == "first":
+        return flat[0] if flat else None
+    return flat[-1] if flat else None
+
+
+# -- Agent 类 ---------------------------------------------------------------
+
+
+def _exec_agent(ctx: VerbContext) -> Any:
+    """调用已注册 Agent/工具。
+
+    确定性外壳 + 不受限内核：解析器由调用方**显式注入**
+    （``run_dsl(doc, agent_resolver=...)``）。未注入时诚实失败——绝不假装调用
+    成功，也绝不静默跳过。
+    """
+    if ctx.agent_resolver is None:
+        raise DslValidationError(
+            f"节点 {ctx.node_id} 的 agent 动词需要注入 Agent 解析器"
+            "（run_dsl(doc, agent_resolver=...)）；未注入时本平台不执行 Agent 调用"
+        )
+    return ctx.agent_resolver(ctx.params["agent"], ctx.payload, dict(ctx.params))
+
+
+# -- 人机协作类 -------------------------------------------------------------
+
+
+def _exec_confirm(ctx: VerbContext) -> Any:
+    """挂起等人确认（需求 12 的接入点）。
+
+    两个分支：
+
+    * **尚无裁决** →抛 :class:`DslSuspended`（控制流信号，穿透执行器向上层传播）。
+      上层捕获后建 HITL interrupt，人裁决后**重开一轮** ``run_dsl``。
+    * **已有裁决**（``confirm_decision`` 读取器返回了approve/reject）→ 直接放行
+      或明确失败，DSL 引擎保持无状态、**不需要可序列化游标**。
+
+    安全边界：裁决**只能**由注入的读取器从受信任存储（dev-hitl 的 HITL 表）取得，
+    绝不接受 DSL 文档里自带的「已批准」标记——否则任何能编辑画布的人都能给自己
+    批通行证。读取器**只拿到** ``(node_id, execution_id)``，拿不到 graph也拿不到
+    ``dsl_digest``：TOCTOU 校验归应用层编排（它手上有graph，可自算摘要比对）。
+    """
+    if ctx.confirm_decision is not None:
+        decision = ctx.confirm_decision(ctx.node_id, ctx.execution_id)
+        if decision == "approve":
+            return ctx.payload
+        if decision == "reject":
+            raise DslValidationError(
+                f"节点 {ctx.node_id} 的 confirm 被人工驳回（decision=reject）")
+        # 读取器明确说「尚无裁决」→ 仍按挂起处理，不猜。
+
+    raise DslSuspended(
+        checkpoint=f"{ctx.execution_id or '-'}#{ctx.node_id}",
+        dsl_digest=ctx.dsl_digest,
+        context={"prompt": ctx.params["prompt"], "role": ctx.params.get("role", ""),
+                 "node_id": ctx.node_id},
+        # 二元语义：这步要不要继续。多选投票属于团队审批流（需求 6），不该泛化 confirm。
+        options=[{"value": "approve", "label": "批准"},
+                 {"value": "reject", "label": "驳回"}],
+        node_id=ctx.node_id,
+    )
+
+
+# -- 输出类 -----------------------------------------------------------------
+
+
+def _exec_artifact(ctx: VerbContext) -> Any:
+    """产出带名字的产物信封：把载荷标记成可被下游/导出引用的产物。"""
+    return {"artifact": ctx.params["name"],
+            "kind": ctx.params.get("kind", "generic"),
+            "content": ctx.payload}
+
+
+# -- 编译期跨字段检查 --------------------------------------------------------
+
+
+def _check_map(node_id: str, params: dict[str, Any]) -> None:
+    if params["op"] == "set" and not isinstance(params.get("field"), str):
+        raise DslValidationError(f"节点 {node_id} map.set 需要 field")
+
+
+def _check_aggregate(node_id: str, params: dict[str, Any]) -> None:
+    if params["op"] in NUMERIC_AGGREGATE_OPS and not isinstance(params.get("field"), str):
+        raise DslValidationError(
+            f"节点 {node_id} aggregate.op={params['op']} 需要 field")
+
+
+def _obj(properties: dict[str, Any], required: tuple[str, ...] = ()) -> dict[str, Any]:
+    """构造 params 的 JSON Schema 片段（封闭：additionalProperties=False）。"""
+    return {"type": "object", "additionalProperties": False,
+            "required": list(required), "properties": properties}
+
+
+#: 受限动词注册表（顺序即 ``TRANSFORM_VERBS`` 的顺序）。**唯一真源**。
+VERB_REGISTRY: dict[str, VerbSpec] = {
+    "map": VerbSpec(
+        name="map", category="数据变换",
+        summary="逐项设置字段或转换大小写",
+        params_schema=_obj({
+            "op": {"enum": list(MAP_OPS)},
+            "field": {"type": "string"},
+            "value": {},
+        }, required=("op",)),
+        execute=_exec_map, check=_check_map,
+    ),
+    "filter": VerbSpec(
+        name="filter", category="数据变换",
+        summary="按字段与比较符筛选",
+        params_schema=_obj({
+            "field": {"type": "string"},
+            "op": {"enum": list(FILTER_OPS)},
+            "value": {},
+        }, required=("field", "op")),
+        execute=_exec_filter,
+    ),
+    "template": VerbSpec(
+        name="template", category="数据变换",
+        summary="用 {field} 插值渲染文本",
+        params_schema=_obj({"template": {"type": "string", "minLength": 1}},
+                           required=("template",)),
+        execute=_exec_template,
+    ),
+    "branch": VerbSpec(
+        name="branch", category="流程控制",
+        summary="显式条件分支，产出 {branch: 标签, value: 载荷}",
+        params_schema=_obj({
+            "field": {"type": "string"},
+            "op": {"enum": list(CONDITION_OPS)},
+            "value": {},
+            "then_label": {"type": "string", "minLength": 1},
+            "else_label": {"type": "string", "minLength": 1},
+        }, required=("field", "op", "then_label", "else_label")),
+        execute=_exec_branch,
+    ),
+    "aggregate": VerbSpec(
+        name="aggregate", category="流程控制",
+        summary="循环聚合：计数/求和/最值/均值/连接/去重",
+        params_schema=_obj({
+            "op": {"enum": list(AGGREGATE_OPS)},
+            "field": {"type": "string"},
+            "sep": {"type": "string"},
+        }, required=("op",)),
+        execute=_exec_aggregate, check=_check_aggregate,
+    ),
+    "merge": VerbSpec(
+        name="merge", category="流程控制",
+        summary="并行汇聚：多路入边收敛成一路",
+        params_schema=_obj({"mode": {"enum": list(MERGE_OPS)}}, required=("mode",)),
+        execute=_exec_merge,
+    ),
+    "agent": VerbSpec(
+        name="agent", category="Agent",
+        summary="调用已注册 Agent/工具（需注入 agent_resolver）",
+        params_schema=_obj({"agent": {"type": "string", "minLength": 1}},
+                           required=("agent",)),
+        execute=_exec_agent,
+    ),
+    "confirm": VerbSpec(
+        name="confirm", category="人机协作",
+        summary="挂起等人确认（动词位：尚未接入 HITL，执行必定失败）",
+        params_schema=_obj({
+            "prompt": {"type": "string", "minLength": 1},
+            "role": {"type": "string"},
+        }, required=("prompt",)),
+        execute=_exec_confirm,
+    ),
+    "artifact": VerbSpec(
+        name="artifact", category="输出",
+        summary="产出带名字的产物信封 {artifact, kind, content}",
+        params_schema=_obj({
+            "name": {"type": "string", "minLength": 1},
+            "kind": {"type": "string", "minLength": 1},
+        }, required=("name",)),
+        execute=_exec_artifact,
+    ),
+}
+
+#: ``transform`` 节点的合法动词白名单（由注册表派生，**封闭**）。
+TRANSFORM_VERBS: tuple[str, ...] = tuple(VERB_REGISTRY)
+
+#: ``input`` / ``output`` 节点的 params 契约（同样封闭）。
+NODE_PARAMS_SCHEMAS: dict[str, dict[str, Any]] = {
+    "input": _obj({"kind": {"enum": list(INPUT_KINDS)}, "value": {}}),
+    "output": _obj({"format": {"enum": list(OUTPUT_FORMATS)}}),
+}
+
+
+def verb_catalog() -> list[dict[str, Any]]:
+    """动词集元数据（供 ``GET /api/dsl-canvas/schema`` 与前端节点面板使用）。"""
+    return [
+        {
+            "name": spec.name,
+            "category": spec.category,
+            "summary": spec.summary,
+            "params_schema": spec.params_schema,
+            # 诚实标记：未接入的能力在执行期必定失败，不在这里假装可用。
+            "executable": spec.execute is not _exec_confirm,
+        }
+        for spec in VERB_REGISTRY.values()
+    ]
+
+
+def _verb_params_schema() -> dict[str, Any]:
+    """transform 节点的 params schema：按 verb 逐个约束（由注册表派生）。"""
+    return {
+        "allOf": [
+            {"if": {"properties": {"verb": {"const": name}}, "required": ["verb"]},
+             "then": {"properties": {"params": spec.params_schema}}}
+            for name, spec in VERB_REGISTRY.items()
+        ]
+    }
+
+
+DSL_JSON_SCHEMA: dict[str, Any] = {
+    "$id": "find-yourself:dsl-canvas:1",
+    "title": "Find Yourself 受限 DSL 画布文档",
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["version", "nodes", "edges"],
+    "properties": {
+        "version": {"const": "1"},
+        "nodes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["id", "type"],
+                "additionalProperties": False,
+                "properties": {
+                    "id": {"type": "string", "minLength": 1, "maxLength": 64,
+                           "pattern": "^[A-Za-z0-9_-]+$"},
+                    "type": {"enum": list(NODE_TYPES)},
+                    # 仅 transform 节点使用；白名单外取值会被 validate_dsl 拒绝。
+                    "verb": {"enum": list(TRANSFORM_VERBS)},
+                    "params": {"type": "object"},
+                },
+                "allOf": [
+                    {"if": {"properties": {"type": {"const": "transform"}},
+                            "required": ["type"]},
+                     "then": {"required": ["verb"],
+                              "properties": {"params": _verb_params_schema()}}},
+                    {"if": {"properties": {"type": {"const": "input"}},
+                            "required": ["type"]},
+                     "then": {"properties": {"params": NODE_PARAMS_SCHEMAS["input"]}}},
+                    {"if": {"properties": {"type": {"const": "output"}},
+                            "required": ["type"]},
+                     "then": {"properties": {"params": NODE_PARAMS_SCHEMAS["output"]}}},
+                ],
+            },
+        },
+        "edges": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["from", "to"],
+                "additionalProperties": False,
+                "properties": {
+                    "from": {"type": "string"},
+                    "to": {"type": "string"},
+                    # 可选边条件：条件不满足则后继节点不入队（动态展开）
+                    "condition": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["field", "op", "value"],
+                        "properties": {
+                            "field": {"type": "string"},
+                            "op": {"enum": list(CONDITION_OPS)},
+                            "value": {},
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# 编译器：校验 → 拓扑排序 → 环检测
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CompiledPlan:
+    """编译产物：拓扑序 + 邻接表（供 Dispatcher 按边条件动态入队）。"""
+
+    order: list[str]
+    adjacency: dict[str, list[dict[str, Any]]]  # node_id -> [edge]
+    indegree: dict[str, int]
+    nodes: dict[str, dict[str, Any]]
+
+
+def validate_dsl(doc: Any) -> dict[str, Any]:
+    """结构校验（手写轻量校验，覆盖 JSON Schema 中的约束）。"""
+    if not isinstance(doc, dict):
+        raise DslValidationError("DSL 文档必须是 JSON 对象")
+    if doc.get("version") != "1":
+        raise DslValidationError("version 必须为 \"1\"")
+    nodes = doc.get("nodes")
+    edges = doc.get("edges")
+    if not isinstance(nodes, list) or not nodes:
+        raise DslValidationError("nodes 必须是非空数组")
+    if not isinstance(edges, list):
+        raise DslValidationError("edges 必须是数组")
+
+    ids: set[str] = set()
+    for n in nodes:
+        if not isinstance(n, dict) or not isinstance(n.get("id"), str) or not n["id"]:
+            raise DslValidationError("每个节点必须有非空字符串 id")
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", n["id"]):
+            raise DslValidationError(f"节点 id 不合法: {n['id']!r}")
+        if n["id"] in ids:
+            raise DslValidationError(f"节点 id 重复: {n['id']}")
+        ids.add(n["id"])
+        if n.get("type") not in NODE_TYPES:
+            raise DslValidationError(f"节点 {n['id']} type 必须是 {NODE_TYPES}")
+        if n["type"] == "transform":
+            verb = n.get("verb")
+            # 封闭性闸门：白名单外的动词**明确报错**（并回显实际写出的动词，
+            # 便于调用方/模型自我修正），绝不静默忽略。
+            if verb not in VERB_REGISTRY:
+                raise DslValidationError(
+                    f"transform 节点 {n['id']} verb 必须是 {TRANSFORM_VERBS}，"
+                    f"实际是 {verb!r}")
+            params = n.get("params", {})
+            if not isinstance(params, dict):
+                raise DslValidationError(f"节点 {n['id']} params 必须是对象")
+            _validate_params_against(n["id"], VERB_REGISTRY[verb].params_schema, params)
+            spec = VERB_REGISTRY[verb]
+            if spec.check is not None:
+                spec.check(n["id"], params)
+        else:
+            params = n.get("params", {})
+            if params is None:
+                params = {}
+            if not isinstance(params, dict):
+                raise DslValidationError(f"节点 {n['id']} params 必须是对象")
+            _validate_params_against(n["id"], NODE_PARAMS_SCHEMAS[n["type"]], params)
+
+    for e in edges:
+        if not isinstance(e, dict):
+            raise DslValidationError("边必须是对象")
+        src, dst = e.get("from"), e.get("to")
+        if src not in ids or dst not in ids:
+            raise DslValidationError(f"边 {src!r}->{dst!r} 引用了未定义节点")
+        if "condition" in e and e["condition"] is not None:
+            c = e["condition"]
+            if not isinstance(c, dict) or c.get("op") not in CONDITION_OPS \
+                    or not isinstance(c.get("field"), str) or not c["field"]:
+                raise DslValidationError(
+                    f"边 {src}->{dst} condition 需要 field/op/value 且 op 属于 {CONDITION_OPS}")
+    return doc
+
+
+def _validate_params_against(node_id: str, schema: dict[str, Any],
+                            params: dict[str, Any]) -> None:
+    """按 params 的 JSON Schema 片段校验（封闭：多余键即错）。"""
+    props: dict[str, Any] = schema.get("properties", {})
+    for key in schema.get("required", []):
+        if key not in params:
+            raise DslValidationError(f"节点 {node_id} 缺少参数 {key}")
+    for key in params:
+        if key not in props:
+            raise DslValidationError(
+                f"节点 {node_id} 参数 {key!r} 不被支持，允许的参数是 {tuple(props)}")
+    for key, sub in props.items():
+        if key not in params:
+            continue
+        value = params[key]
+        if "enum" in sub and value not in sub["enum"]:
+            raise DslValidationError(
+                f"节点 {node_id} 参数 {key} 必须是 {tuple(sub['enum'])}")
+        expected = sub.get("type")
+        if expected == "string":
+            if not isinstance(value, str):
+                raise DslValidationError(f"节点 {node_id} 参数 {key} 必须是字符串")
+            if len(value) < sub.get("minLength", 0):
+                raise DslValidationError(f"节点 {node_id} 参数 {key} 不能为空")
+        elif expected == "integer":
+            if isinstance(value, bool) or not isinstance(value, int):
+                raise DslValidationError(f"节点 {node_id} 参数 {key} 必须是整数")
+        elif expected == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise DslValidationError(f"节点 {node_id} 参数 {key} 必须是数值")
+        elif expected == "boolean" and not isinstance(value, bool):
+            raise DslValidationError(f"节点 {node_id} 参数 {key} 必须是布尔值")
+
+
+def canonical_dsl(doc: Any) -> dict[str, Any]:
+    """规范化 DSL 文档（省略空params / 非transform 的 verb / 空 condition）。
+
+    与既有 :func:`~find_yourself.services.workflow_gen.graph_to_dsl` 的省略规则
+    一致，因此规范化结果可以直接当DSL 文档使用（等价于画布的语义层）。
+    """
+    validate_dsl(doc)
+    nodes: list[dict[str, Any]] = []
+    for n in doc["nodes"]:
+        entry: dict[str, Any] = {"id": n["id"], "type": n["type"]}
+        if n["type"] == "transform":
+            entry["verb"] = n["verb"]
+        params = n.get("params") or {}
+        if params:
+            entry["params"] = params
+        nodes.append(entry)
+    edges: list[dict[str, Any]] = []
+    for e in doc["edges"]:
+        entry = {"from": e["from"], "to": e["to"]}
+        if e.get("condition") is not None:
+            entry["condition"] = e["condition"]
+        edges.append(entry)
+    return {"version": doc["version"], "nodes": nodes, "edges": edges}
+
+
+def dsl_digest(doc: Any) -> str:
+    """DSL 文档的规范化摘要（SHA-256 前16 位）。
+
+    基于 :func:`canonical_dsl`（省略规则归一），因此「语义等价的两张画布摘要相同」。
+    用途：人工裁决的 TOCTOU 防护——人看的是某个版本的图，裁决时必须确认还是那一版
+    （对齐 dev-hitl 的 ``expected_version`` 乐观锁）。
+    """
+    canonical = canonical_dsl(doc)
+    blob = json.dumps(canonical, ensure_ascii=False, sort_keys=True,
+                      separators=(",", ":"))
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def compile_dsl(doc: Any) -> CompiledPlan:
+    """校验 + 拓扑排序（Kahn）+ 环检测。"""
+    validate_dsl(doc)
+    nodes = {n["id"]: n for n in doc["nodes"]}
+    adjacency: dict[str, list[dict[str, Any]]] = {nid: [] for nid in nodes}
+    indegree = {nid: 0 for nid in nodes}
+    for e in doc["edges"]:
+        adjacency[e["from"]].append(e)
+        indegree[e["to"]] += 1
+    pristine_indegree = dict(indegree)  # Kahn 会原地扣减，Dispatcher 需要原始入度
+
+    # Kahn 拓扑排序；若无法覆盖全部节点则存在环。
+    ready = sorted(nid for nid, d in indegree.items() if d == 0)
+    order: list[str] = []
+    while ready:
+        nid = ready.pop(0)
+        order.append(nid)
+        for edge in adjacency[nid]:
+            indegree[edge["to"]] -= 1
+            if indegree[edge["to"]] == 0:
+                ready.append(edge["to"])
+        ready.sort()
+    if len(order) != len(nodes):
+        cyclic = sorted(nid for nid, d in indegree.items() if d > 0)
+        raise DslValidationError(f"DSL 存在环，涉及节点: {cyclic}")
+    return CompiledPlan(order=order, adjacency=adjacency,
+                        indegree=pristine_indegree, nodes=nodes)
+
+
+# ---------------------------------------------------------------------------
+# 确定性动词执行器
+# ---------------------------------------------------------------------------
+# 动词实现与查表工具（_lookup/_compare/_interpolate）见文件上部VERB_REGISTRY
+# 区域：注册表必须在实现之后、执行之前，故辅助函数随注册表一起前置。
+
+
+def execute_node(node: dict[str, Any], payload: Any, *,
+                 upstreams: list[Any] | None = None,
+                 agent_resolver: AgentResolver | None = None,
+                 confirm_decision: ConfirmDecisionReader | None = None,
+                 execution_id: str | None = None,
+                 dsl_digest: str = "") -> Any:
+    """执行单个节点。payload 为所有入边数据的合并（None 表示无输入）。
+
+    ``upstreams`` 是全部入边上游的输出列表，供 :verb:`merge` 这类多路动词使用；
+    其余动词只用``payload``，语义与既有实现完全一致。
+    """
     ntype = node["type"]
     params = node.get("params", {}) or {}
 
@@ -263,34 +803,18 @@ def execute_node(node: dict[str, Any], payload: Any) -> Any:
 
     if ntype == "transform":
         verb = node["verb"]
+        spec = VERB_REGISTRY.get(verb)
+        if spec is None:
+            # 兜底闸门：validate_dsl 已拦住，这里是「不认得的动词绝不静默执行」。
+            raise DslValidationError(
+                f"transform 节点 {node['id']} 的 verb 不在受限动词集内: {verb!r}")
         if payload is None:
             raise DslValidationError(f"transform 节点 {node['id']} 无上游输入")
-        if verb == "map":
-            items = payload if isinstance(payload, list) else [payload]
-            op = params["op"]
-            out = []
-            for it in items:
-                if op == "set":
-                    if not isinstance(it, dict):
-                        it = {"value": it}
-                    it = dict(it)
-                    it[params["field"]] = _interpolate(str(params.get("value", "")), it)
-                elif op == "upper":
-                    it = it.upper() if isinstance(it, str) else it
-                elif op == "lower":
-                    it = it.lower() if isinstance(it, str) else it
-                out.append(it)
-            return out
-        if verb == "filter":
-            items = payload if isinstance(payload, list) else [payload]
-            return [it for it in items
-                    if _compare(_lookup(it, params["field"]), params["op"], params.get("value"))]
-        if verb == "template":
-            tpl = params["template"]
-            if isinstance(payload, list):
-                return [_interpolate(tpl, it) for it in payload]
-            return _interpolate(tpl, payload)
-        raise DslValidationError(f"未知的 transform verb: {verb}")
+        return spec.execute(VerbContext(
+            node_id=node["id"], payload=payload, params=params,
+            upstreams=list(upstreams or []), agent_resolver=agent_resolver,
+            confirm_decision=confirm_decision, execution_id=execution_id,
+            dsl_digest=dsl_digest))
 
     if ntype == "output":
         fmt = params.get("format", "json")
@@ -315,7 +839,7 @@ class NodeLog:
     node_id: str
     node_type: str
     verb: str | None
-    status: str  # succeeded | skipped | failed
+    status: str  # succeeded | skipped | failed | suspended
     input: Any = None
     output: Any = None
     error: str | None = None
@@ -334,11 +858,13 @@ class NodeLog:
 @dataclass
 class RunResult:
     run_id: str
-    status: str  # succeeded | failed
+    status: str  # succeeded | failed | suspended
     doc: dict[str, Any]
     logs: list[NodeLog] = field(default_factory=list)
     output: Any = None
     error: str | None = None
+    #: 由调用方显式传入的稳定执行标识（挂起时用于关联 HITL interrupt）。
+    execution_id: str | None = None
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
@@ -346,22 +872,42 @@ class RunResult:
         return {
             "run_id": self.run_id, "status": self.status, "dsl": self.doc,
             "output": self.output, "error": self.error,
+            "execution_id": self.execution_id,
             "created_at": self.created_at,
             "logs": [l.to_dict() for l in self.logs],
         }
 
 
-def run_dsl(doc: dict[str, Any], *, run_id: str | None = None) -> RunResult:
+def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
+            agent_resolver: AgentResolver | None = None,
+            confirm_decision: ConfirmDecisionReader | None = None,
+            execution_id: str | None = None) -> RunResult:
     """编译并执行一份 DSL 文档，返回带逐步日志的运行结果。
 
     调度采用「节点完成后按后继边条件入队」的动态展开：
     入度为 0 的节点先入队；节点成功后逐条评估出边条件，满足者使其
     后继节点待入队计数减一，减到 0 即入队；全部入边条件都不满足的
     后继节点记为 skipped。
+
+    :param agent_resolver: 仅被 :verb:`agent` 使用；不传时该动词明确失败
+        （平台不会在无解析器的情况下假装调用成功）。
+    :param confirm_decision: :func:`ConfirmDecisionReader`。``confirm`` 节点据此
+        查询人工裁决：有approve/reject 就放行/驳回，没有就抛
+        :class:`DslSuspended`。
+    :param execution_id: **由调用方显式传入**的稳定执行标识（不要用 ``run_id``：
+        它每次运行重新生成且只在内存里，重启后恢复链会断）。它进入
+        :attr:`DslSuspended.checkpoint`，供上层把 HITL interrupt 与本执行关联。
+
+    :raises DslSuspended: 走到 ``confirm`` 且尚无人工裁决时。**该异常穿透本函数**
+        （不被转成 ``RunResult.status="failed"``），上层编排据此建 interrupt 并在
+        人工裁决后带 ``confirm_decision`` 重开一轮。
     """
     plan = compile_dsl(doc)
     rid = run_id or f"dsl-{uuid.uuid4().hex[:12]}"
-    result = RunResult(run_id=rid, status="succeeded", doc=doc)
+    result = RunResult(run_id=rid, status="succeeded", doc=doc,
+                       execution_id=execution_id)
+    # 供confirm 裁决读取器自校验「人所见即所批」的文档摘要。
+    digest = dsl_digest(doc)
 
     outputs: dict[str, Any] = {}
     # node -> 剩余未满足的入边数（入队闸门）
@@ -389,20 +935,37 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None) -> RunResult:
                 log = NodeLog(node_id=nid, node_type=node["type"],
                               verb=node.get("verb"), status="succeeded", started_at=now())
                 result.logs.append(log)
-                # 合并所有入边上游输出（多入边取第一个非 None）
+                # 合并所有入边上游输出（payload 取第一个非 None，与既有语义一致）；
+                # upstreams 保留全部，供 merge 这类多路动词使用。
                 incoming = [e["from"] for e in doc["edges"] if e["to"] == nid]
                 payload = None
+                upstreams: list[Any] = []
                 for src in incoming:
                     up = _latest_log(result, src)
-                    if up and up.status == "succeeded" and outputs.get(src) is not None:
-                        payload = outputs[src]
-                        break
+                    if up and up.status == "succeeded":
+                        upstreams.append(outputs.get(src))
+                        if payload is None and outputs.get(src) is not None:
+                            payload = outputs[src]
                 log.input = payload
                 try:
-                    out = execute_node(node, payload)
+                    out = execute_node(node, payload, upstreams=upstreams,
+                                       agent_resolver=agent_resolver,
+                                       confirm_decision=confirm_decision,
+                                       execution_id=execution_id,
+                                       dsl_digest=digest)
                     outputs[nid] = out
                     log.output = out
                     log.finished_at = now()
+                except DslSuspended:
+                    # 控制流信号，**不是节点失败**：必须穿透，否则挂起会静默退化成
+                    # 「节点 failed + 分支终止」，上层永远等不到 interrupt。
+                    # 本节点的日志如实记为 suspended（已完成的上游日志保留在result 里，
+                    # 供上层看到「跑到哪儿了」）。
+                    log.status = "suspended"
+                    log.finished_at = now()
+                    result.status = "suspended"
+                    result.error = None
+                    raise
                 except Exception as exc:  # 节点失败 → 该分支终止
                     log.status = "failed"
                     log.error = str(exc)
@@ -447,6 +1010,9 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None) -> RunResult:
             outs = [outputs[n["id"]] for n in doc["nodes"]
                     if n["type"] == "output" and n["id"] in outputs]
             result.output = outs[-1] if outs else outputs.get(plan.order[-1])
+    except DslSuspended:
+        # 已在节点级记为 suspended；这里原样再抛一次，确保不被降级成 failed。
+        raise
     except Exception as exc:  # 编译期错误等
         result.status = "failed"
         result.error = str(exc)

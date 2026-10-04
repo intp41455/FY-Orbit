@@ -48,4 +48,10 @@ from . import assets  # W9 多模态与个人资产库（本地磁盘 + 生成�
 api_router.include_router(assets.router)  # W9 个人资产库 / 生成通道
 from . import automation  # W10-B GUI 自动化权限门（截图/点击/输入，默认关闭）
 api_router.include_router(automation.router)  # W10-B /api/automation/permissions
+from . import hitl  # 需求12 Human-in-the-loop 执行中断与恢复
+api_router.include_router(hitl.router)  # 需求12 /api/hitl/interrupts
+from . import team_approval  # 需求6 团队级权限与审批流
+api_router.include_router(team_approval.router)  # 需求6 /api/team-approvals
+from . import artifact_gate  # 需求7 产物版本门禁
+api_router.include_router(artifact_gate.router)  # 需求7 /api/artifact-gates
 

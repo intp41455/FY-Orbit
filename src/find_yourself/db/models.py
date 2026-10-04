@@ -59,6 +59,10 @@ PROPOSAL_STATUSES = (
 GRANT_STATES = ("active", "revoked", "expired")
 GRANT_DESTINATIONS = ("internal", "gdrive")
 HYPOTHESIS_STATES = ("fact", "hypothesis", "theory", "unverified")
+# 需求10 retention tiers. A LIFECYCLE axis, orthogonal to ``category``
+# (which says what kind of fact a record is). Order is meaningful: it is the
+# promotion ladder, short -> medium -> long.
+MEMORY_TIERS = ("short", "medium", "long")
 SERVICE_KINDS = ("worker", "agent", "tool_gateway", "executor", "release")
 IDENTITY_STATES = ("active", "revoked")
 USER_STATUSES = ("active", "deleted", "guest")
@@ -347,6 +351,36 @@ class Operation(Base):
 # Memory, revisions, source graph
 # ---------------------------------------------------------------------------
 class Memory(Base):
+    """A single remembered item, on a three-tier retention ladder (需求10).
+
+    Retention tiers (``tier``, migration 0026) are a **lifecycle** dimension and
+    are deliberately kept separate from ``category``, which is a **semantic**
+    dimension (what kind of fact this is). Conflating them would make
+    ``SAME_DOMAIN_CATEGORIES``-style reasoning impossible — "a preference" and
+    "a fact that outlives this session" are independent axes, and a record is
+    routinely both at once.
+
+    Tier semantics and the rules that actually move a record between tiers:
+
+    - ``short``  — session-scoped working memory. Bound to the ``session_id``
+      that produced it and carries a ``tier_expires_at`` deadline. It is
+      **evicted** once that deadline passes: reads stop returning it and
+      :meth:`MemoryService.decay` soft-deletes it. This is the only tier with a
+      hard deadline.
+    - ``medium`` — project-scoped. Survives sessions and has no hard expiry, but
+      *decays by disuse*: a medium record not reinforced within
+      ``MEDIUM_MAX_IDLE_DAYS`` is demoted back to short by ``decay()``. It is
+      the only tier that can be promoted without a human decision.
+    - ``long``  — the durable user profile. Reachable **only** through an
+      explicit owner-endorsed promotion; no timer may ever evict or demote it,
+      because silently forgetting a stated user profile is data loss.
+
+    ``session_count`` / ``reinforcement_count`` are the evidence the promotion
+    gates read, and ``tier_changed_at`` records when the last transition
+    happened. Existing rows are backfilled to ``medium`` (see migration 0026),
+    which is read-equivalent to the pre-tier behaviour.
+    """
+
     __tablename__ = "memories"
 
     id: Mapped[str] = mapped_column(ID, primary_key=True)
@@ -358,6 +392,19 @@ class Memory(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     endorsed: Mapped[bool] = mapped_column(Boolean, default=False)
     hypothesis_status: Mapped[str] = mapped_column(String(16), default="unverified")
+    # --- retention tier (需求10, migration 0026) -------------------------
+    tier: Mapped[str] = mapped_column(String(8), default="medium", server_default="medium")
+    #: Session that produced a short-tier record; NULL for medium/long.
+    session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: Hard deadline for the short tier. NULL means "no deadline" (medium/long).
+    tier_expires_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    #: Distinct sessions this record has been carried into (short->medium gate).
+    session_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Times the record was re-derived or explicitly reused (medium->long gate).
+    reinforcement_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    #: Decay clock for the medium tier: last time the record was actually used.
+    last_used_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    tier_changed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -365,6 +412,32 @@ class Memory(Base):
     __table_args__ = (
         CheckConstraint(_in("domain", DOMAINS), name="ck_mem_domain"),
         CheckConstraint(_in("hypothesis_status", HYPOTHESIS_STATES), name="ck_mem_hyp_status"),
+        CheckConstraint(_in("tier", MEMORY_TIERS), name="ck_mem_tier"),
+        # A short-tier record MUST carry a deadline, otherwise "evicted when the
+        # session ends" is unenforceable and short records would silently become
+        # immortal. ``session_id`` is deliberately NOT required here: a record
+        # demoted from medium has no originating session, and inventing one
+        # would fabricate provenance. Such a record simply is not visible to any
+        # *scoped* read (a scoped read only matches its own session id) while
+        # staying visible to the owner's unscoped read.
+        CheckConstraint(
+            "tier != 'short' OR tier_expires_at IS NOT NULL",
+            name="ck_mem_short_has_deadline",
+        ),
+        # The long tier is the user profile: it must never carry a clock, so no
+        # sweep can ever evict it.
+        CheckConstraint(
+            "tier != 'long' OR tier_expires_at IS NULL",
+            name="ck_mem_long_never_expires",
+        ),
+        CheckConstraint(
+            "session_count >= 0 AND reinforcement_count >= 0", name="ck_mem_counters_nonneg"
+        ),
+        # Tier-filtered reads are always scoped to one owner, so the two columns
+        # are always queried together. Declared here (not only in migration 0026)
+        # because a fresh database is built by ``Base.metadata.create_all`` and
+        # would otherwise never get the index.
+        Index("ix_memories_owner_tier", "owner_id", "tier"),
     )
 
 
@@ -377,6 +450,29 @@ class MemoryRevision(Base):
     content_hash: Mapped[str] = mapped_column(HASH64)
     redacted: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+
+
+class MemoryTierSession(Base):
+    """One distinct session that picked up a memory (需求10 promotion evidence).
+
+    ``memories.session_count`` is a denormalised cache of ``COUNT(*)`` here. The
+    count alone cannot express *which* sessions were involved, and without that
+    the "carried across sessions" promotion gate would be trusting a caller to
+    self-report novelty. The unique constraint makes a session count **once**,
+    so a single chatty session cannot manufacture carry-over evidence by
+    repeating itself.
+    """
+
+    __tablename__ = "memory_tier_sessions"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    memory_id: Mapped[str] = mapped_column(ForeignKey("memories.id"), index=True)
+    session_id: Mapped[str] = mapped_column(String(64), index=True)
+    first_seen_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("memory_id", "session_id", name="uq_mem_tier_session"),
+    )
 
 
 class SourceRelation(Base):

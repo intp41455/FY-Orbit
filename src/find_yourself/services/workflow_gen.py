@@ -37,13 +37,16 @@ from typing import Any
 from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .dsl_canvas import (
+    AGGREGATE_OPS,
     CONDITION_OPS,
     FILTER_OPS,
     INPUT_KINDS,
     MAP_OPS,
+    MERGE_OPS,
     NODE_TYPES,
     OUTPUT_FORMATS,
     TRANSFORM_VERBS,
+    VERB_REGISTRY,
     DslValidationError,
     compile_dsl,
     validate_dsl,
@@ -184,6 +187,42 @@ def _auto_position(index: int) -> dict[str, float]:
 # 提示词构造：把模型约束在受限动词集内
 # --------------------------------------------------------------------------- #
 
+#: 每个动词给模型的一句参数示例。
+#: 由注册表派生：新增动词只需改 dsl_canvas.VERB_REGISTRY，本表与提示词自动跟上。
+#: 花括号说明：这些串通过 :data:`_VERB_HELP_LINES` **代入** f-string，代入值不再
+#: 二次格式化，所以这里必须写**单层**花括号（与 _VERB_HELP 内联字面量的双层写法
+#: 相反——那处是被 f-string 格式化的）。
+_VERB_EXAMPLES: dict[str, str] = {
+    "map": 'params = {"op": "set", "field": "<字段名>", "value": "<模板>"}'
+           ' 或 {"op": "upper"} / {"op": "lower"}'
+           f'（map.op 只能是 {list(MAP_OPS)}）',
+    "filter": 'params = {"field": "<字段名>", "op": "<比较符>", "value": <JSON>}'
+              f'（op 只能是 {list(FILTER_OPS)}）',
+    "template": 'params = {"template": "含 {field} 插值的模板"}',
+    "branch": 'params = {"field": "<字段名>", "op": "<比较符>", "value": <JSON>, '
+              '"then_label": "<命中标签>", "else_label": "<未命中标签>"}'
+              '（产出 {"branch": 标签, "value": 载荷}，供下游边 condition 路由）',
+    "aggregate": 'params = {"op": "<聚合算子>", "field": "<字段名>", "sep": "<连接符>"}'
+                 f'（op 只能是 {list(AGGREGATE_OPS)}；sum/min/max/avg 必须给 field，'
+                 'join 用 sep 默认 ","）',
+    "merge": 'params = {"mode": "<汇聚策略>"}'
+             f'（mode 只能是 {list(MERGE_OPS)}；把多路入边收敛成一路）',
+    "agent": 'params = {"agent": "<已注册 Agent 名>"}'
+             '（需要平台注入 Agent 解析器；未接入时该节点会失败）',
+    "confirm": 'params = {"prompt": "<给人看的确认话术>", "role": "<角色>"}'
+               '（人工确认动词位，HITL 尚未接入，执行必定失败——除非任务确实需要人工）',
+    "artifact": 'params = {"name": "<产物名>", "kind": "<产物类型>"}'
+                '（产出 {"artifact": 名字, "kind": 类型, "content": 载荷}）',
+}
+
+#: 提示词里的动词段落。**只列出注册表里真实存在的动词**，不多不少。
+_VERB_HELP_LINES = "\n".join(
+    f'    - verb="{name}"：{_VERB_EXAMPLES.get(name, spec.summary)}'
+    for name, spec in VERB_REGISTRY.items()
+)
+
+#: 生成阶段的动词说明。**由注册表派生**，保证提示词与平台校验永远同一套语义
+#: （新增动词只需改 dsl_canvas.VERB_REGISTRY，提示词自动跟上）。
 _VERB_HELP = f"""受限动词集（只能使用以下类型与动词，绝不允许自创）：
 
 - 节点 type：{list(NODE_TYPES)}
@@ -191,12 +230,7 @@ _VERB_HELP = f"""受限动词集（只能使用以下类型与动词，绝不允
             或 {{"kind": "text_lines", "value": "<多行文本>"}}
             （kind 只能是 {list(INPUT_KINDS)}）
   - transform：必须带 verb，verb 只能是 {list(TRANSFORM_VERBS)}
-    - verb="map"：params = {{"op": "set", "field": "<字段名>", "value": "<模板>"}}
-                   或 {{"op": "upper"}} / {{"op": "lower"}}
-                   （map.op 只能是 {list(MAP_OPS)}）
-    - verb="filter"：params = {{"field": "<字段名>", "op": "<比较符>", "value": <JSON>}}
-                   （op 只能是 {list(FILTER_OPS)}）
-    - verb="template"：params = {{"template": "含 {{field}} 插值的模板"}}
+{_VERB_HELP_LINES}
   - output：params = {{"format": "json"}} 或 {{"format": "text"}}
             （format 只能是 {list(OUTPUT_FORMATS)}）
 - 边：{{"from": "<上游节点 id>", "to": "<下游节点 id>"}}；

@@ -1,8 +1,11 @@
-"""受限 DSL 画布 HTTP 接口（工单 P1-18）。
+"""受限 DSL 画布 HTTP 接口（工单 P1-18 / 需求 5）。
 
 * ``GET  /api/dsl-canvas/schema``        — DSL JSON Schema + 受限动词集元数据
 * ``POST /api/dsl-canvas/validate``     — 只校验（编译）不执行
+* ``POST /api/dsl-canvas/export-code``  — 画布 DSL → 受限 Python 代码
+* ``POST /api/dsl-canvas/import-code``  — 受限 Python 代码 → 画布 DSL（往返无损）
 * ``POST /api/dsl-canvas/runs``         — 提交 DSL 文本 → 立即执行 → 返回 run_id 与结果
+  （走到 ``confirm`` 且尚无人工裁决时返回 ``status="suspended"`` + 挂起载荷）
 * ``GET  /api/dsl-canvas/runs/{run_id}`` — 取回运行结果与逐步日志
 
 执行记录只落内存与归档目录（env ``FY_DSL_ARCHIVE_DIR``），不写数据库迁移。
@@ -16,18 +19,25 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 
 from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
+    AGGREGATE_OPS,
     DSL_JSON_SCHEMA,
+    MERGE_OPS,
     NODE_TYPES,
+    OUTPUT_FORMATS,
     TRANSFORM_VERBS,
     DslRunStore,
+    DslSuspended,
     DslValidationError,
     compile_dsl,
     run_dsl,
+    verb_catalog,
 )
+from ...services.dsl_code_export import export_dsl_code, parse_dsl_code
 
 router = APIRouter(prefix="/api/dsl-canvas", tags=["dsl-canvas"])
 
@@ -41,6 +51,12 @@ async def get_schema() -> dict:
         "schema": DSL_JSON_SCHEMA,
         "node_types": list(NODE_TYPES),
         "transform_verbs": list(TRANSFORM_VERBS),
+        # 需求 5①：动词集的完整元数据（名字/ 分类 / 参数契约 / 可执行性）。
+        # 前端节点面板据此渲染表单，不再硬编码枚举。
+        "verb_catalog": verb_catalog(),
+        "aggregate_ops": list(AGGREGATE_OPS),
+        "merge_ops": list(MERGE_OPS),
+        "output_formats": list(OUTPUT_FORMATS),
     }
 
 
@@ -77,17 +93,61 @@ async def validate(request: Request, actor: Actor = Depends(get_actor)) -> dict:
 
 
 @router.post("/runs")
-async def submit_run(request: Request, actor: Actor = Depends(csrf_protected)) -> dict:
+async def submit_run(request: Request, actor: Actor = Depends(csrf_protected)):
     try:
         payload = await request.json()
     except Exception as exc:
         raise HTTPException(status_code=422, detail="请求体不是合法 JSON") from exc
     doc = _extract_doc(payload)
+    # execution_id 由调用方显式传入（不要用 run_id：重启即断链）。
+    execution_id = payload.get("execution_id") if isinstance(payload, dict) else None
+    if execution_id is not None and not isinstance(execution_id, str):
+        raise HTTPException(status_code=422, detail="execution_id 必须是字符串")
     try:
-        result = run_dsl(doc)
+        result = run_dsl(doc, execution_id=execution_id)
+    except DslSuspended as susp:
+        # 挂起**不是失败**（见 DslSuspended）。返回 202 + 挂起载荷，让上层建
+        # HITL interrupt；人工裁决后带execution_id 重开一轮即可续跑。
+        # 用 JSONResponse 显式返回：直接 return (dict, 202) 会被 FastAPI 当成
+        # 「响应体是个二元组」而序列化成数组。
+        return JSONResponse(status_code=202, content={
+            "status": "suspended", "suspended": susp.to_dict()})
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _store.save(result)
+
+
+@router.post("/export-code")
+async def export_code(request: Request, actor: Actor = Depends(get_actor)) -> dict:
+    """画布 DSL → 受限 Python 代码。非法 DSL（含白名单外动词）422，绝不半成品。"""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="请求体不是合法 JSON") from exc
+    doc = _extract_doc(payload)
+    filename = (payload.get("filename") if isinstance(payload, dict) else None) or None
+    try:
+        if isinstance(filename, str) and filename:
+            return export_dsl_code(doc, filename=filename)
+        return export_dsl_code(doc)
+    except DslValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/import-code")
+async def import_code(request: Request, actor: Actor = Depends(get_actor)) -> dict:
+    """受限 Python 代码 → DSL 文档（与export-code 往返无损）。"""
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="请求体不是合法 JSON") from exc
+    if not isinstance(payload, dict) or not isinstance(payload.get("code"), str):
+        raise HTTPException(status_code=422, detail="请求体需为 {\"code\": \"<受限 DSL 代码>\"}")
+    try:
+        doc = parse_dsl_code(payload["code"])
+    except DslValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"dsl": doc, "topological_order": compile_dsl(doc).order}
 
 
 @router.get("/runs/{run_id}")
