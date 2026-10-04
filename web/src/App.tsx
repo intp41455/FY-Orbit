@@ -25,6 +25,7 @@ import { HubPage } from './pages/HubPage';  // W6 超级中台适配器中心
 import { AvatarWorkshopPage } from './pages/AvatarWorkshopPage';  // W11 角色工坊
 import { GameStandalonePage } from './pages/GameStandalonePage';  // I3 独立全屏形态（游戏核心与 /cabin 同一份，只换外壳）
 import PetPage from './pet/PetPage';  // W10 桌面宠物浮窗
+import { PluginMarketPage } from './pages/plugins/PluginMarketPage';  // P6 插件市场（追加）
 
 export default function App() {
   return (
@@ -69,6 +70,7 @@ export default function App() {
               <Route path="/cabin" element={<CabinPage />} />
               <Route path="/hub" element={<HubPage />} />  {/* W6 超级中台适配器中心 */}
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/plugins" element={<PluginMarketPage />} />  {/* P6 插件市场（追加一行） */}
             </Route>
             <Route path="*" element={<Navigate to="/chat" replace />} />
           </Routes>

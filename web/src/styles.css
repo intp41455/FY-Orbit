@@ -3958,3 +3958,19 @@ html, body { overflow-x: clip; }
   }
 }
 /* ---- 本段 A6 结束 ---- */
+
+/* ---- P6 插件市场 ---- */
+.fy-plugin-toolbar { display: flex; gap: 8px; margin: 8px 0 12px; }
+.fy-plugin-toolbar input { flex: 1 1 240px; }
+.fy-plugin-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.fy-plugin-item { padding: 10px 12px; }
+.fy-plugin-scan { font-size: 12px; color: #556; margin-top: 4px; }
+.fy-plugin-caps ul { margin: 4px 0 8px; padding-left: 20px; font-size: 13px; }
+.fy-plugin-pager { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+.fy-plugin-detail { margin-top: 14px; border-left: 4px solid #3a5f8a; padding: 10px 12px; }
+.fy-plugin-grant { display: block; margin: 8px 0; font-size: 13px; }
+.fy-plugin-grant input { display: block; width: 100%; margin-top: 4px; }
+/* 风险徽标：高风险在列表与详情都必须醒目可见（P6 门禁）。 */
+.fy-plugin-risk-low { background: #e5f3e8; color: #2f6f4f; }
+.fy-plugin-risk-medium { background: #fdf3e0; color: #9a6b1f; }
+.fy-plugin-risk-high { background: #fde3e0; color: #c0392b; border: 1px solid #c0392b; }

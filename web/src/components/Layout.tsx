@@ -35,6 +35,7 @@ const NAV: NavItem[] = [
   { to: '/skills', label: '知识与技能', sub: '原文溯源 · 能力目录', icon: '🧠', space: 'personal' },
   { to: '/approvals', label: '审批中心', sub: '提案与授权', icon: '✅', space: 'workbench' },
   { to: '/settings', label: '设置与数据', sub: '同步 · 权限', icon: '⚙️', space: 'workbench' },
+  { to: '/plugins', label: '插件市场', sub: '签名 · 扫描 · 授权安装', icon: '🛍️', space: 'workbench' },  // P6 追加一项
 ];
 
 function spaceForPath(pathname: string): Space {
