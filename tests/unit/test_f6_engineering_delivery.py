@@ -36,9 +36,15 @@ from find_yourself.services.proposal import ProposalService
 
 @pytest.fixture
 def isolated_runner(tmp_path: Path) -> IsolatedScriptRunner:
+    # protected_root MUST be pinned to tmp_path. If left to its default it
+    # resolves to Path.cwd() — i.e. the repository root — and any test that
+    # exercises the write-audit path would deposit files into the real src/.
+    protected = tmp_path / "protected"
+    protected.mkdir()
     config = SandboxConfig(
         sandbox_root=str(tmp_path / "sandbox"),
         timeout_seconds=2.0,
+        protected_root=str(protected),
     )
     return IsolatedScriptRunner(config)
 
@@ -257,3 +263,22 @@ def test_w08_alembic_migration_downgrade_and_upgrade_cycle():
                 os.remove(temp_db_path)
             except OSError:
                 pass
+
+
+def test_fixture_never_points_protected_root_at_the_repo(isolated_runner: IsolatedScriptRunner):
+    """护栏：`protected_root` 绝不能是仓库根。
+
+    这是我自己踩过的坑：fixture 若不给 `protected_root`，它默认解析为
+    `Path.cwd()`（仓库根），于是任何走「越界写入审计」路径的测试都会把文件
+    真的写进仓库 `src/`。表现为——单跑通过、全量跑失败，且在工作区留下脏文件。
+    本用例确保 fixture 永远把它钉在临时目录下。
+    """
+    repo_root = Path(__file__).resolve().parents[2].resolve()
+    protected = isolated_runner.protected_root.resolve()
+    assert protected != repo_root, (
+        "protected_root 指向了仓库根 —— 测试会污染真实 src/，请把它钉到 tmp_path"
+    )
+    # 仓库根不得是 protected 的祖先（否则写入仍会落进仓库）
+    assert repo_root not in protected.parents, (
+        f"protected_root({protected}) 位于仓库内({repo_root})，测试会污染工作区"
+    )

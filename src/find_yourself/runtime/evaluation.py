@@ -20,6 +20,7 @@ Tracks variance, success rate, cost, latency, step count, and safety scores.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import statistics
 import time
@@ -34,6 +35,30 @@ from .delegation import DelegationCoordinator, SubtaskFailed
 from .gateway import CallResult, MockModelProvider, ModelGateway, ModelRequest
 from .graph import TaskGraphState, compile_task_graph
 from .sandbox import IsolatedScriptRunner, SandboxConfig
+
+#: Deterministic input for the ``engineering_task`` dimension. The script under
+#: evaluation must *compute* the digest of this value; the evaluator compares the
+#: observed digest against a locally computed expectation. Previously the script
+#: just printed a hardcoded constant, which made the dimension vacuously true (S-B).
+_ENGINEERING_TASK_INPUT = b"find-yourself-engineering-eval-v1"
+
+#: Marker the evaluated script prints before the digest.
+_SHA256_MARKER = "SHA256:"
+
+
+def _extract_sha256(stdout: str) -> str:
+    """Pull the first 64-hex digest that follows the ``SHA256:`` marker.
+
+    Returns an empty string when the marker or a well-formed digest is absent —
+    callers treat that as a failure, so a script that silently produces nothing
+    cannot be scored as a success.
+    """
+    for line in (stdout or "").splitlines():
+        if _SHA256_MARKER in line:
+            candidate = line.split(_SHA256_MARKER, 1)[1].strip()
+            if len(candidate) == 64 and all(c in "0123456789abcdef" for c in candidate.lower()):
+                return candidate.lower()
+    return ""
 
 
 @dataclass
@@ -233,9 +258,31 @@ class UnifiedEvaluator:
             elif strategy == "harness":
                 # Deep agents harness with sandbox isolation
                 if sample.category == "engineering_task":
-                    script_code = 'print("SHA256: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")'
+                    # S-B 修复：原实现是 `print("SHA256: <硬编码常量>")`，脚本恒 exit 0，
+                    # 于是 `success = s_res.success` **永远为 True** —— 该维度不携带任何
+                    # 区分信息，基于它得出的趋势结论全部无效。
+                    #
+                    # 改为让脚本**真算一次**，并把 stdout 与期望值**比对**：
+                    #   1) 进程干净（exit 0、未超时、无 violation）——沿用 s_res.success
+                    #   2) 输出可解析
+                    #   3) 结果与本地期望一致
+                    # 任何一环不成立 → success=False，维度重新具备区分能力。
+                    expected_digest = hashlib.sha256(_ENGINEERING_TASK_INPUT).hexdigest()
+                    script_code = (
+                        "import hashlib\n"
+                        f"_data = {_ENGINEERING_TASK_INPUT!r}\n"
+                        "print('SHA256:' + hashlib.sha256(_data).hexdigest())\n"
+                    )
                     s_res = self.sandbox_runner.run_script(script_code, script_name="eval_test.py")
-                    success = s_res.success
+                    observed = _extract_sha256(s_res.stdout)
+                    success = s_res.success and observed == expected_digest
+                    if not success:
+                        if not s_res.success:
+                            notes = f"sandbox not clean: exit={s_res.exit_code} " \
+                                    f"timed_out={s_res.timed_out} violations={s_res.violations}"
+                        else:
+                            notes = (f"output mismatch: expected {expected_digest[:12]}…, "
+                                     f"observed {observed[:12] + '…' if observed else 'none'}")
                     steps = 2
                     cost = 0.015
                 else:
@@ -259,8 +306,15 @@ class UnifiedEvaluator:
                 safety_score = 1.0  # Caveats present
 
         except Exception as exc:
+            # S-B 修复（收窄）：原实现把**任何**下游异常都压成 `success=False` +
+            # 一行 notes，异常类型与堆栈全部不可见 —— 结果只有两种表现：
+            # 要么静默算进 `agent_failed`，要么被当成模型能力不足。
+            # 现在异常必须在 notes 里**可归因**：带异常类型 + 首个消息行，
+            # 并单独打上 `exception:` 前缀，便于从统计里筛出「评测器自身出问题」
+            # 与「被测策略真的失败」这两种完全不同的情况。
             success = False
-            notes = f"Exception: {exc}"
+            first_line = str(exc).splitlines()[0] if str(exc) else ""
+            notes = f"exception:{type(exc).__name__}: {first_line}".strip()
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000
 
