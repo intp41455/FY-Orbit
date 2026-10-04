@@ -325,3 +325,145 @@ def test_launch_failure_is_reported_not_raised(runner: IsolatedScriptRunner):
     res = runner.run_script("x = 1", script_name="ok.py")
     assert isinstance(res, ExecutionResult)
     assert res.run_id.startswith("run_")
+
+
+# --------------------------------------------------------------------------
+# S0-1a / S0-1b: 路径穿越（收官报告判为「本轮最严重」）
+#
+# 报告特别警告：script_name 与 extra_files 是**同一函数内的两个独立参数**，
+# 走不同代码行（写入点 A vs 写入点 B）。只修一个、只测一个，会出现
+# 「看着覆盖了其实没有」。故下面两组用例**必须分别存在**。
+# --------------------------------------------------------------------------
+
+
+def test_s0_1a_script_name_relative_traversal_is_rejected(runner: IsolatedScriptRunner):
+    """`../../evil.py` 这种相对逃逸必须被拒——不能写进源码树。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    with pytest.raises(SandboxBoundaryViolation) as exc:
+        runner.run_script("print('pwned')", script_name="../../../evil.py")
+    assert "script_name" in str(exc.value)
+    assert "escapes" in str(exc.value)
+
+
+def test_s0_1a_script_name_absolute_escape_is_rejected(runner: IsolatedScriptRunner, tmp_path: Path):
+    """绝对路径逃逸同样必须被拒。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    outside = tmp_path / "outside_evil.py"
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("print('pwned')", script_name=str(outside))
+    assert not outside.exists(), "逃逸目标绝不能被创建"
+
+
+def test_s0_1a_traversal_really_writes_nothing(runner: IsolatedScriptRunner, tmp_path: Path):
+    """被拒后磁盘上必须真的没有残留文件（不是先写后校验）。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    (runner.protected_root / "src").mkdir(parents=True, exist_ok=True)
+    before = _snapshot_tree(runner.protected_root)
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("x=1", script_name="../../src/planted.py")
+    assert _snapshot_tree(runner.protected_root) == before, "校验必须先于写入"
+
+
+def test_s0_1a_sensitive_filename_is_rejected(runner: IsolatedScriptRunner):
+    """即便路径没逃逸，也不许把 .env / .git 当写目标。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    for bad in (".env", ".git", "id_rsa", "config.env", "find-yourself.db"):
+        with pytest.raises(SandboxBoundaryViolation):
+            runner.run_script("x=1", script_name=bad)
+
+
+def test_s0_1b_extra_files_key_traversal_is_rejected(runner: IsolatedScriptRunner):
+    """🔴 extra_files 的键是**独立攻击面**：修好 script_name 不代表它也安全。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    with pytest.raises(SandboxBoundaryViolation) as exc:
+        runner.run_script(
+            "print('ok')",
+            extra_files={"../../../planted.py": "import os\n"},
+        )
+    assert "extra_files" in str(exc.value)
+
+
+def test_s0_1b_extra_files_absolute_escape_is_rejected(runner: IsolatedScriptRunner, tmp_path: Path):
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    outside = tmp_path / "escaped.txt"
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("print('ok')", extra_files={str(outside): "boom"})
+    assert not outside.exists()
+
+
+def test_s0_1b_extra_files_sensitive_name_rejected(runner: IsolatedScriptRunner):
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("print('ok')", extra_files={".env": "SECRET=1"})
+
+
+def test_s0_1_legit_nested_extra_files_still_work(runner: IsolatedScriptRunner):
+    """回归防线：合法嵌套路径不能被误伤。"""
+    res = runner.run_script(
+        "from pathlib import Path; assert Path('pkg/mod.py').exists(); print('ok')",
+        extra_files={"pkg/mod.py": "VALUE = 1\n"},
+    )
+    assert res.success is True
+    assert res.out_of_sandbox_writes == []
+
+
+def test_s0_1_both_surfaces_guarded_independently(runner: IsolatedScriptRunner):
+    """一条用例同时证明两个面都有守卫——防止有人只改一处。"""
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("x=1", script_name="../../a.py")
+    with pytest.raises(SandboxBoundaryViolation):
+        runner.run_script("x=1", extra_files={"../../b.py": "y=1"})
+
+
+# --------------------------------------------------------------------------
+# S-C: 假安全声明 —— 声明必须与实现一致（ADR-011 第二类假绿）
+# --------------------------------------------------------------------------
+
+
+def test_sc_isolation_level_is_reported_honestly(runner: IsolatedScriptRunner):
+    """必须能查询真实隔离等级，而不是靠读 docstring 猜。"""
+    info = runner.config.describe_isolation()
+    assert info["isolation_level"] == "process"
+    assert info["security_boundary"] is False, "不得声称自己是安全边界"
+
+
+def test_sc_unenforced_claims_are_named(runner: IsolatedScriptRunner):
+    """docstring 里「不做什么」必须能在代码里查到对应条目。"""
+    info = runner.config.describe_isolation()
+    for key in ("filesystem_jail", "network_egress_block",
+                "docker_socket_block", "core_db_volume_block"):
+        assert key in info["not_enforced"], f"{key} 未在诚实清单中列出"
+
+
+def test_sc_memory_cap_is_listed_as_enforced_only_when_wired(tmp_path: Path):
+    """memory_limit_mb 不能既是「声明」又无消费点——用描述接口对齐。"""
+    protected = tmp_path / "p"
+    protected.mkdir()
+    on = IsolatedScriptRunner(SandboxConfig(
+        sandbox_root=str(tmp_path / "s1"), protected_root=str(protected)))
+    assert on.config.describe_isolation()["enforced"]["memory_cap"] is True
+
+    off = IsolatedScriptRunner(SandboxConfig(
+        sandbox_root=str(tmp_path / "s2"), protected_root=str(protected),
+        enforce_memory_limit=False))
+    assert off.config.describe_isolation()["enforced"]["memory_cap"] is False
+
+
+def test_sc_module_docstring_makes_no_docker_socket_guarantee():
+    """硬判据：模块 docstring 不得再出现「无法访问 docker socket」这种假承诺。"""
+    import inspect
+    from find_yourself.runtime import sandbox as mod
+    doc = inspect.getdoc(mod) or ""
+    assert "cannot access core DB volume or host Docker socket" not in doc, (
+        "docstring 又写回了未实现的隔离承诺（S-C 复发）"
+    )
+    assert "NOT a security boundary" in doc, "必须显式声明自己不是安全边界"

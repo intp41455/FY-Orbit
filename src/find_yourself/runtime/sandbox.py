@@ -1,16 +1,30 @@
 """Engineering Sandbox Runner for untrusted script execution (Execution Manual F6, W05).
 
-Safety and Isolation Rules:
-1. Environment Sanitization: Strips all FY_*, AWS_*, DB, SECRET, TOKEN, and credential variables.
-2. Filesystem Confinement: Scripts execute in an isolated sandbox working directory.
-3. Resource Limits: Wall-clock timeout **kills the whole process tree** (S-1) and
-   memory is capped with an OS-level limit (S-2), not just a config field.
-4. Docker / Host Socket Blocking: Script runtime cannot access core DB volume or host Docker socket.
-5. Post-execution audit: filesystem writes outside the run directory and network
-   egress attempts are recorded as violations (S-3), not merely grepped from stdout.
+**Honest isolation level: ``process`` — NOT a security boundary.**
 
-S-1/S-2/S-3 fixes are C0-batch work; see
-``docs/architecture/PLATFORM-V2-ARCHITECTURE-2026-10-04-architect2-rev.md`` §1.4.
+What this runner actually enforces (each backed by a test that fails if removed):
+1. Environment Sanitization: strips FY_/AWS_/DB/SECRET/TOKEN/credential variables.
+2. Path Confinement for the writes *this runner performs*: ``script_name`` and
+   every ``extra_files`` key are resolved and must stay inside the run directory;
+   ``../`` traversal and absolute escapes raise ``SandboxBoundaryViolation`` (S0-1).
+3. Process-tree termination: wall-clock timeout kills the whole tree (S-1), and
+   memory is capped with an OS-level limit where the platform supports it (S-2).
+4. Post-execution audit: writes outside the run directory and network egress
+   attempts are recorded as violations (S-3).
+
+What this runner does **NOT** enforce — do not claim otherwise:
+* It is **not** a filesystem jail. A child can still ``open('/etc/passwd')``; we
+  can only *detect* writes to ``protected_root`` after the fact.
+* It does **not** block network egress — egress is audited, not blocked.
+* It does **not** block the host Docker socket or the core DB volume. Doing so
+  needs OS-level confinement (containers / job objects), which is C-batch work.
+  The ``block_docker_socket`` / ``block_core_db_paths`` flags are therefore
+  **declarations with no enforcement** — see their field comments.
+
+This mirrors ``adapters/community_harness_adapter.py``, which labels itself
+``isolation_level="trusted_local"`` and states "we refuse to claim a security
+sandbox". Honest labelling beats a claim nobody can back (ADR-011: no doc-level
+green — every negative safety assertion must name the code that implements it).
 """
 
 from __future__ import annotations
@@ -25,6 +39,63 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from ..services.terminal import kill_process_tree
+
+
+class SandboxBoundaryViolation(Exception):
+    """Raised when a caller-supplied path would escape the sandbox run directory.
+
+    This is the *write-side* boundary: it constrains files this runner creates on
+    the caller's behalf (``script_name``, ``extra_files``). It is not a runtime
+    jail for the child process — see the module docstring.
+    """
+
+
+#: Filenames never acceptable as a sandbox write target, even when the path
+#: resolves inside the run directory (defence in depth; mirrors the deny-list in
+#: ``adapters/community_harness_adapter.py::validate_path``).
+FORBIDDEN_TARGET_NAMES = (
+    ".env",
+    ".git",
+    "id_rsa",
+    "config.env",
+    "find-yourself.db",
+)
+
+
+def _resolve_within(run_dir: Path, candidate: str | Path, *, field_name: str) -> Path:
+    """Resolve ``candidate`` and require it to stay inside ``run_dir``.
+
+    Both traversal shapes are covered:
+    * relative escape — ``../../evil.py``
+    * absolute escape — ``/tmp/evil.py`` or ``C:/Windows/evil.py``
+
+    ``Path.resolve()`` collapses ``..`` and follows symlinks *before* the
+    containment check, so neither shape slips through.
+    """
+    base = run_dir.resolve()
+    raw = Path(candidate)
+    resolved = (base / raw).resolve() if not raw.is_absolute() else raw.resolve()
+
+    try:
+        resolved.relative_to(base)
+    except ValueError:
+        raise SandboxBoundaryViolation(
+            f"{field_name} escapes the sandbox run directory: "
+            f"{candidate!r} resolves to {resolved}, outside {base}"
+        ) from None
+
+    if resolved == base:
+        raise SandboxBoundaryViolation(
+            f"{field_name} must name a file inside the run directory, got {candidate!r}"
+        )
+
+    for forbidden in FORBIDDEN_TARGET_NAMES:
+        if resolved.name.lower() == forbidden.lower():
+            raise SandboxBoundaryViolation(
+                f"{field_name} targets sensitive filename {resolved.name!r}"
+            )
+
+    return resolved
 
 
 SAFE_ENV_PASSTHROUGH = {
@@ -88,14 +159,55 @@ NETWORK_EGRESS_MARKERS = (
 class SandboxConfig:
     sandbox_root: str = ".runtime/sandbox"
     timeout_seconds: float = 5.0
+    #: Address-space cap for the child. Enforced on POSIX via
+    #: ``setrlimit(RLIMIT_AS/DATA)``; the result reports ``memory_limited`` so a
+    #: caller can tell whether the cap was actually applied. On Windows this is
+    #: **not** enforced (no ``setrlimit``; a real cap needs a Job Object).
     memory_limit_mb: int = 256
+    #: ⚠️ DECLARATION ONLY — not enforced. Nothing in this module reads this
+    #: flag: the child runs on the host and can open ``/var/run/docker.sock`` or
+    #: the named pipe if it can reach it. Real blocking requires OS-level
+    #: confinement (container with the socket unmounted), which is C-batch work.
+    #: Kept so callers can express intent, but **do not treat True as a
+    #: guarantee** — see the module docstring's honest isolation level.
     block_docker_socket: bool = True
+    #: ⚠️ DECLARATION ONLY — not enforced, same reason as ``block_docker_socket``.
+    #: There is no filesystem jail: the child can read the core DB volume if the
+    #: OS permits it. We only *audit* writes that land in ``protected_root``
+    #: after the fact (S-3).
     block_core_db_paths: bool = True
     #: Root that untrusted scripts may not write outside of. Defaults to the CWD
     #: captured at construction time (the project root in every real deployment).
     protected_root: Optional[str] = None
     #: When False the memory cap is not applied (still recorded on the result).
     enforce_memory_limit: bool = True
+
+    def describe_isolation(self) -> dict[str, Any]:
+        """Report what is *actually* enforced, so callers stop guessing.
+
+        This exists because the two ``block_*`` flags above look like guarantees
+        but have no consumer (S-C: "protections the docstring promised, that the
+        code never wired"). Returning the true level is cheaper and safer than a
+        docstring nobody can back (ADR-011).
+        """
+        return {
+            "isolation_level": "process",
+            "security_boundary": False,
+            "enforced": {
+                "env_sanitization": True,
+                "write_path_confinement": True,
+                "process_tree_kill": True,
+                "memory_cap": self.enforce_memory_limit and self.memory_limit_mb > 0,
+                "write_audit": True,
+                "egress_audit": True,
+            },
+            "not_enforced": {
+                "filesystem_jail": "no OS-level confinement; child can read host paths",
+                "network_egress_block": "egress is audited, not blocked",
+                "docker_socket_block": "requires container; flag is declaration only",
+                "core_db_volume_block": "requires container; flag is declaration only",
+            },
+        }
 
 
 @dataclass
@@ -254,12 +366,19 @@ class IsolatedScriptRunner:
         run_dir = self.sandbox_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        target_script = run_dir / script_name
+        # S0-1a: script_name comes from the caller and was previously written
+        # unvalidated — `run_dir / "../../evil.py"` escaped the sandbox and let
+        # an attacker drop a .py into the source tree. Validate before writing.
+        target_script = _resolve_within(run_dir, script_name, field_name="script_name")
+        target_script.parent.mkdir(parents=True, exist_ok=True)
         target_script.write_text(script_code, encoding="utf-8")
 
         if extra_files:
+            # S0-1b: a *separate* attack surface from script_name. Same function,
+            # different line — fixing one does not fix the other, so it gets its
+            # own validation and its own test.
             for rel_path, content in extra_files.items():
-                p = run_dir / rel_path
+                p = _resolve_within(run_dir, rel_path, field_name=f"extra_files[{rel_path!r}]")
                 p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(content, encoding="utf-8")
 

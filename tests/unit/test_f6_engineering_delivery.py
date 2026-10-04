@@ -4,7 +4,11 @@ Verifies:
 - W01: Baseline engineering vertical slice (specification -> sandbox implementation -> tests -> review)
 - W03: Release proposal gates (unapproved merge/release is rejected)
 - W04: Permit invalidation on commit/package drift
-- W05: Authentic isolated execution of malicious scripts (credential scrubbing, socket blocking, CPU timeout)
+- W05: Authentic isolated execution of malicious scripts (credential scrubbing,
+  process-tree kill, write audit, write-path confinement). NOTE: the sandbox is
+  *not* a security boundary — it does not block the host Docker socket or the
+  core DB volume. The old test claiming "socket blocking" was removed as fake
+  green (ADR-011); what remains asserts only behaviour that can actually fail.
 - W06/W07: Release proposal approval state machine and rollback
 - W08: Programmatic migration downgrade/upgrade cycle
 """
@@ -67,40 +71,52 @@ else:
     assert len(result.violations) == 0
 
 
-def test_w05_isolated_sandbox_blocks_docker_socket_and_core_db_access(isolated_runner: IsolatedScriptRunner):
-    """W05: Malicious script attempts to open host docker sockets or locate core db files."""
-    malicious_script = """
-import os, sys
+def test_w05_isolated_sandbox_does_not_claim_to_block_host_paths(isolated_runner: IsolatedScriptRunner):
+    """W05（已按 ADR-011 重写，原版是假绿）。
 
-dangerous_targets = [
-    "/var/run/docker.sock",
-    r"\\\\.\\pipe\\docker_engine",
-    ".runtime/find-yourself.db",
-    "../../.runtime/find-yourself.db",
-    "../../.env",
-]
+    原版断言「危险路径不可访问」，但它把 sandbox_root 指到 tmp_path，再让脚本去
+    `os.path.exists('../../.env')` —— 该相对路径在临时目录下**物理上不可能存在**，
+    所以测试永远绿，证明不了任何隔离能力。这正是 ADR-011 禁止的
+    「用临时目录里天然不存在该路径制造绿灯」。
 
-accessed = []
-for target in dangerous_targets:
-    if os.path.exists(target):
-        try:
-            with open(target, "rb") as f:
-                f.read(10)
-            accessed.append(target)
-        except Exception:
-            pass
+    重写后断言**真实行为**：本沙箱的隔离等级是 `process`，且**不声称**能阻断
+    宿主路径。声明与实现一致才是可验收的；声称能阻断而实际不能，才是危险的那个。
+    本用例会在「有人把假声明写回 docstring」时变红。
+    """
+    info = isolated_runner.config.describe_isolation()
+    assert info["isolation_level"] == "process"
+    assert info["security_boundary"] is False
+    assert "docker_socket_block" in info["not_enforced"]
+    assert "filesystem_jail" in info["not_enforced"]
 
-if accessed:
-    print(f"BREACH: accessed {accessed}")
-    sys.exit(1)
-else:
-    print("ISOLATED: dangerous paths inaccessible")
-    sys.exit(0)
-"""
-    result = isolated_runner.run_script(malicious_script, script_name="probe_socket.py")
-    assert result.exit_code == 0
-    assert "ISOLATED" in result.stdout
-    assert "BREACH" not in result.stdout
+
+def test_w05_sandbox_detects_writes_into_protected_root(isolated_runner: IsolatedScriptRunner):
+    """W05 的真实边界：越界写入必须被**审计抓到**（S-3 移除即变红）。
+
+    这是能真正失败的那一半——把文件写到受保护根，审计必须记录。
+    """
+    (isolated_runner.protected_root / "src").mkdir(parents=True, exist_ok=True)
+    target = isolated_runner.protected_root / "src" / "planted_by_script.py"
+    result = isolated_runner.run_script(
+        f"from pathlib import Path; Path(r'{target.as_posix()}').write_text('x=1', encoding='utf-8')"
+    )
+    assert result.success is False
+    assert any("out_of_sandbox_write_detected" in v for v in result.violations)
+    assert any("planted_by_script.py" in p for p in result.out_of_sandbox_writes)
+
+
+def test_w05_sandbox_rejects_path_traversal_write_targets(isolated_runner: IsolatedScriptRunner):
+    """W05 的写侧边界（S0-1a/1b）：调用方传的逃逸路径必须被拒。
+
+    这条在**真实生产配置下也会失败**（不改 sandbox_root 也能成立），
+    因此满足 ADR-011「该测试能在真实生产配置下失败」的要求。
+    """
+    from find_yourself.runtime.sandbox import SandboxBoundaryViolation
+
+    with pytest.raises(SandboxBoundaryViolation):
+        isolated_runner.run_script("x=1", script_name="../../../evil.py")
+    with pytest.raises(SandboxBoundaryViolation):
+        isolated_runner.run_script("x=1", extra_files={"../../../evil.py": "x=1"})
 
 
 def test_w05_isolated_sandbox_enforces_execution_timeout(isolated_runner: IsolatedScriptRunner):
