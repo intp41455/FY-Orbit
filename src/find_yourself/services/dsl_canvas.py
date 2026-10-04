@@ -741,8 +741,16 @@ def dsl_digest(doc: Any) -> str:
 
 
 def compile_dsl(doc: Any) -> CompiledPlan:
-    """校验 + 拓扑排序（Kahn）+ 环检测。"""
+    """校验 + 拓扑排序（Kahn）+ 环检测。
+
+    在既有结构校验之后追加 **ADR-02 的类型化 IR 闸门**（:func:`dsl_ir.assert_ir_valid`）：
+    节点/边的强类型契约（``extra="forbid"``）在执行之前就把类型错误拦下，且错误能
+    定位到「哪张画布的哪个节点、哪个字段」。既有合法文档全部照常通过。
+    """
     validate_dsl(doc)
+    # 局部导入：dsl_ir 反向依赖本模块的 VERB_REGISTRY，模块级导入会成环。
+    from .dsl_ir import assert_ir_valid
+    assert_ir_valid(doc)
     nodes = {n["id"]: n for n in doc["nodes"]}
     adjacency: dict[str, list[dict[str, Any]]] = {nid: [] for nid in nodes}
     indegree = {nid: 0 for nid in nodes}
