@@ -5,13 +5,15 @@
  * 锁定 G4 追加段的关键规则确实存在且形态正确，防止修复被回退或再次漂移。
  * 真实三档（1280/1024/768）视觉截图由主控起服务后用 Playwright 收尾（见报告）。
  */
-import { readFileSync } from 'node:fs';
+// 用 node:fs 真实读取同目录 styles.css 源文本：vitest 运行期由 esbuild 直接执行，
+// 类型由 @types/node 提供（已在 tsconfig.types 中登记）。
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { describe, it, expect } from 'vitest';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const css = readFileSync(path.join(here, 'src', 'styles.css'), 'utf8');
+const css = fs.readFileSync(path.join(here, 'styles.css'), 'utf8');
+import { describe, it, expect } from 'vitest';
 
 // G4 段：从段落标记到文件结尾。
 const g4Start = css.indexOf('---- G4 UI 错位修复 ----');
