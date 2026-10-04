@@ -3305,3 +3305,124 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 .hub-manifest { margin-top: 0.8rem; }
 
 .hub-footnote { margin-top: 1.2rem; font-size: 0.8rem; }
+
+/* ==========================================================================
+   ---- G4 UI 错位修复 ----（D 组独占追加段，2026-10-04）
+   规则：本段只追加、不修改任何既有行；同特异性下因位于文件后段而按层叠生效。
+   覆盖：响应式中间档断点 + 任务书 §6.2 的 8 处根因 + 顶部安全区约定。
+   风格：遵守 docs/UI_BASELINE.md 冰蓝玻璃风、零 UI 绿。
+   ========================================================================== */
+
+/* G4-8 · 尺寸 / 间距 token（追加，不改他人变量） ---------------------------- */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --size-sidebar: 288px;
+  --size-sidebar-narrow: 232px;
+  --size-touch: 44px;
+  --hud-top: 14px;
+  --hud-safe-right: 1rem;
+  --z-hud: 40;
+}
+
+/* G4-头号根因 · 1100 档补 .app 侧栏收窄（既有 L691 断点未覆盖 .app/.sidebar） ---
+   现状：≤760px 已转单列（L701），但 761–1100px（典型 1024 视口）仍硬挤 288px
+   侧栏。这里补中间档：收窄侧栏，主区保持 minmax(0,1fr) 可收缩。 */
+@media (max-width: 1100px) {
+  .app { grid-template-columns: var(--size-sidebar-narrow) minmax(0, 1fr); }
+  .sidebar { padding: 1.25rem 0.9rem; }
+}
+
+/* 主内容区 flex/grid 子项补 min-width:0，杜绝子项撑破栅格产生横向滚动。 */
+.main > *,
+.main .card,
+.main .glass-panel,
+.main .row,
+.main .grid,
+.main [class*='grid'] > * { min-width: 0; }
+
+/* G4-1 · 「装修」开关与「返回」按钮不重叠（最简位置避让） -------------------
+   .cabin-back 在 top:14px/left:14px（L1156）；.w2-toggle 原在 left:1rem（L1284），
+   两者几乎同位。把装修开关右移到返回按钮之后。 */
+.w2-toggle { left: 5.25rem; }
+/* 窄屏（单列顶部条）时改为第二行，彻底避开左上返回。 */
+@media (max-width: 760px) {
+  .w2-toggle { top: 3.4rem; left: 1rem; }
+}
+
+/* G4-2 · 小屋工具条 / 室内操作条：矮视口不裁切、可滚动、顶对齐 --------------- */
+.cabin-toolbar {
+  width: min(1040px, calc(100vw - 240px));
+  max-height: min(38vh, 220px);
+  overflow-y: auto;
+}
+.cabin-indoor-bar {
+  top: var(--hud-top);                 /* 与工具条 14px 顶对齐，消除 16/14 的 2px 错位 */
+  max-height: min(38vh, 220px);
+  overflow-y: auto;
+}
+
+/* G4-3 · 角色工坊布局连续化（补两列中间档，消除 1200 断崖） ------------------
+   >1400：原三列；1025–1400：两列；≤1024：单列。区间写法避免与既有 L1893 冲突。 */
+@media (min-width: 1025px) and (max-width: 1400px) {
+  .avatar-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  }
+}
+@media (max-width: 1024px) {
+  .avatar-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* G4-4 · 微调区栅格列统一：第二列 minmax(0,1fr)，标签列 max-content ---------- */
+.avatar-field { grid-template-columns: max-content minmax(0, 1fr); }
+.avatar-two-col { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.avatar-grid > *,
+.avatar-panel { min-width: 0; }
+.avatar-field-hint { grid-column: 2; }   /* 两类 field 第二列均为列 2，显式对齐 */
+
+/* G4-5 · 室内操作条输入框弹性，不再固定 9.5rem ------------------------------ */
+.cabin-input {
+  width: auto;
+  flex: 1 1 8rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* G4-6 · 装饰光斑窄视口不溢出；全站横向滚动兜底 ----------------------------- */
+.app::before { max-width: 60vmin; }
+.app::after { max-width: 56vmin; }
+html, body { overflow-x: clip; }
+
+/* G4-7 · 像素画边缘锐利：只保留 pixelated（覆盖 L1140 的 crisp-edges） --------
+   image-rendering 为单值属性，本段位于最后，pixelated 成为最终生效声明。 */
+.cabin-canvas { image-rendering: pixelated; }
+
+/* G4-3 全局排查 · 顶部安全区约定（.cabin-hud） ------------------------------
+   目标：把 .cabin-back / .cabin-toolbar / .cabin-indoor-bar / .w2-toggle 收进
+   单一顶部安全区容器，杜绝多处独立绝对定位互相重叠。以下为该容器的样式约定，
+   供 CabinPage JSX 采用；结构改动属 G1 的 CabinPage.tsx，本 CSS 不越权改 JSX。 */
+.cabin-hud {
+  position: absolute;
+  top: var(--hud-top);
+  left: var(--hud-top);
+  right: var(--hud-safe-right);
+  z-index: var(--z-hud);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  max-height: min(40vh, 240px);
+  overflow-y: auto;
+  pointer-events: none;
+}
+.cabin-hud > * { pointer-events: auto; }
+@media (max-width: 760px) {
+  .cabin-hud { flex-direction: column; align-items: stretch; }
+}
+/* ---- 本段 G4 结束 ---- */

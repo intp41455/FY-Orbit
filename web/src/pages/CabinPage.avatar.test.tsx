@@ -63,52 +63,20 @@ function renderPage() {
 }
 
 function houseProfile() {
+  // G1-3：历史上这里返回「嵌套 AvatarProfile」假结构，掩盖了小屋白屏（G1-1）。
+  // 真实后端 /api/avatar/house（avatar_profile.py:234）只返回**扁平 9 键**，
+  // 没有 avatar 嵌套、没有 params_fingerprint。此处改用真实扁平结构，
+  // 让测试真正复现「前端按扁平字段读取」的契约，而不是喂一个永远不崩的假数据。
   return {
-    id: 'av_1',
-    state: 'confirmed',
-    owner_id: 'o1',
-    portrait: {},
-    params: {},
-    base_signature: {},
-    overrides: null,
-    fingerprint: 'A5AC842BAAAAAAAA',
-    params_fingerprint: '6D73FAA1BBBBBBBB',
-    engine_version: 'w11-1',
-    likeness_score: 9,
-    likeness_note: '挺像',
-    is_house_avatar: true,
-    version: 2,
-    avatar: {
-      fingerprint: 'A5AC842BAAAAAAAA',
-      params_fingerprint: '6D73FAA1BBBBBBBB',
-      engine_version: 'w11-1',
-      params: {},
-      base_signature: {},
-      tuned: false,
-      layers: fixture.layers,
-      matrix: fixture.matrix,
-      width: 24,
-      height: 32,
-      palette: fixture.palette,
-      char_palette: fixture.char_palette,
-      param_space_size: 13271040,
-      advisory: {
-        complete: true,
-        pending: [],
-        note: '画像完整',
-        notes: '性别与年龄档为可选信息，未填写也不影响角色生成。',
-        age_band_label: null,
-      },
-    },
-    advisory: {
-      complete: true,
-      pending: [],
-      note: '画像完整',
-      notes: '性别与年龄档为可选信息，未填写也不影响角色生成。',
-      age_band_label: null,
-    },
-    created_at: '2026-10-04T00:00:00Z',
-    updated_at: '2026-10-04T00:00:00Z',
+    fingerprint: '6D73FAA1BBBBBBBB', // = 后端的 params_fingerprint
+    layers: fixture.layers,
+    matrix: fixture.matrix,
+    width: 24,
+    height: 32,
+    palette: fixture.palette,
+    char_keys: fixture.char_keys,
+    char_palette: fixture.char_palette,
+    labels: {},
   };
 }
 

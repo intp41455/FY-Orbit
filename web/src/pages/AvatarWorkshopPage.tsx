@@ -70,13 +70,21 @@ const GENDERS = [
   { value: 'other', label: '其他' },
 ];
 
-/** 微调滑杆的可选值（与后端 HAIR_STYLES / HAIR_TONES / OUTFITS / MOUTH_STYLES / EYE_STYLES 对齐的子集）。 */
+/**
+ * 微调滑杆的可选值。**必须与后端 avatar_gen.py 的枚举逐字一致**（G1-2 修复：
+ * 历史上混入了 14 个后端白名单外的非法值——tea/honey/wheat/silver、tunic/jacket/
+ * suit/cape_outfit、frown/smirn、round/sleepy/wink/wide——提交会被后端 422 拒，
+ * 前端却照常展示，用户调到这些项就卡死）。
+ *
+ * 交叉校验由 tests/unit/test_tuning_options_contract.py 守住：它直接读本文件并断言
+ * 每个选项 ⊆ 对应后端元组，后端改枚举时测试会立刻红，杜绝再次漂移。
+ */
 const TUNING_OPTIONS = {
   hair_style: ['short_neat', 'short_fluffy', 'bob', 'ponytail', 'bun', 'side_swept', 'undercut', 'long_straight', 'long_wavy', 'curly', 'twin_tail', 'braid'],
-  hair_tone: ['ink', 'ash', 'chestnut', 'tea', 'honey', 'wheat', 'silver', 'auburn'],
-  outfit: ['knit', 'robe', 'tunic', 'coat', 'jacket', 'dress', 'suit', 'cape_outfit'],
-  mouth: ['smile', 'small', 'open_smile', 'grin', 'flat', 'frown', 'smirk'],
-  eye: ['calm', 'sharp', 'round', 'sparkle', 'sleepy', 'wink', 'wide'],
+  hair_tone: ['ink', 'chestnut', 'gold', 'auburn', 'ash', 'rose', 'mint', 'frost'],
+  outfit: ['tshirt', 'knit', 'coat', 'robe', 'dress', 'hoodie', 'vest', 'cape'],
+  mouth: ['smile', 'flat', 'open_smile', 'small', 'grin'],
+  eye: ['sparkle', 'calm', 'sharp', 'gentle', 'dreamy', 'focused'],
 } as const;
 
 const TUNING_LABELS: Record<keyof typeof TUNING_OPTIONS, string> = {

@@ -184,3 +184,38 @@ describe('cabinPixels PixelBuffer：程序化图层', () => {
     expect(edgeA ?? 0).toBeLessThan(centerA);
   });
 });
+
+describe('cabinPixels vGradient：三通道各自 clamp255（G1-4 回归守卫）', () => {
+  it('极端 stops + 抖动下，R/G/B 恒在 [0,255]', () => {
+    const buf = new PixelBuffer(8, 8);
+    // 顶端纯白、底端纯黑，中间抖动 step 会把边缘像素推向 <0 或 >255；
+    // 若任一通道漏写 clamp255 会溢出（G1-4 历史 bug：蓝通道括号错误未 clamp）。
+    buf.vGradient(0, 0, 8, 8, [
+      { t: 0, color: 0x000000 },
+      { t: 1, color: 0xffffff },
+    ], 16);
+    for (let i = 0; i < buf.data.length; i += 4) {
+      expect(buf.data[i]).toBeGreaterThanOrEqual(0);
+      expect(buf.data[i]).toBeLessThanOrEqual(255);
+      expect(buf.data[i + 1]).toBeGreaterThanOrEqual(0);
+      expect(buf.data[i + 1]).toBeLessThanOrEqual(255);
+      expect(buf.data[i + 2]).toBeGreaterThanOrEqual(0);
+      expect(buf.data[i + 2]).toBeLessThanOrEqual(255);
+    }
+  });
+
+  it('三通道形态一致（纯灰渐变下 R==G==B，蓝通道不被区别对待）', () => {
+    const buf = new PixelBuffer(4, 4);
+    buf.vGradient(0, 0, 4, 4, [
+      { t: 0, color: 0x808080 },
+      { t: 1, color: 0x808080 },
+    ], 16);
+    for (let y = 0; y < 4; y++) {
+      for (let x = 0; x < 4; x++) {
+        const i = (y * 4 + x) * 4;
+        expect(buf.data[i]).toBe(buf.data[i + 1]);
+        expect(buf.data[i + 1]).toBe(buf.data[i + 2]);
+      }
+    }
+  });
+});

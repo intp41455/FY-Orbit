@@ -42,7 +42,7 @@ import {
   avatarErrorCode,
   getHouseAvatar,
   isAvatarNotFound,
-  type AvatarProfile,
+  type HouseAvatar,
 } from '../api/avatar';
 import { toPixelPalette, walkFrames } from '../components/avatar/avatarPixels';
 // W9 个人资产库联动（墙面挂画 + BGM）。只读 /api/assets，不改 cabinScene 内部。
@@ -296,7 +296,7 @@ export function CabinPage() {
    * 404 = 还没有专属小人 —— 这是正常空态，静默回退默认小人即可，**不阻塞小屋**。
    * 其它错误才提示（且只是提示，不影响小屋可用性）。
    */
-  const [houseAvatar, setHouseAvatar] = useState<AvatarProfile | null>(null);
+  const [houseAvatar, setHouseAvatar] = useState<HouseAvatar | null>(null);
   const [houseAvatarError, setHouseAvatarError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -326,11 +326,11 @@ export function CabinPage() {
 
   // 行走两帧 + 调色板：交给 cabinScene 认矩阵，本页不参与角色设计。
   const houseWalkFrames = useMemo(
-    () => (houseAvatar ? walkFrames(houseAvatar.avatar.layers).map((f) => f.matrix) : undefined),
+    () => (houseAvatar ? walkFrames(houseAvatar.layers).map((f) => f.matrix) : undefined),
     [houseAvatar],
   );
   const housePalette = useMemo(
-    () => (houseAvatar ? toPixelPalette(houseAvatar.avatar.char_palette) : undefined),
+    () => (houseAvatar ? toPixelPalette(houseAvatar.char_palette) : undefined),
     [houseAvatar],
   );
 
@@ -698,7 +698,7 @@ export function CabinPage() {
         {houseAvatar && (
           <p className="cabin-note" data-testid="cabin-house-avatar">
             院子里走动的已是你的专属小人（短码{' '}
-            <code>{houseAvatar.params_fingerprint.slice(0, 8)}</code>）。
+            <code>{houseAvatar.fingerprint.slice(0, 8)}</code>）。
             <button type="button" className="cabin-btn" onClick={() => navigate('/avatar')}>
               🪞 去角色工坊调整
             </button>

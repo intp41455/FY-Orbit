@@ -154,6 +154,36 @@ export interface AvatarProfile {
   updated_at: string;
 }
 
+/**
+ * 小屋消费端点 `/api/avatar/house` 的真实返回结构 —— **扁平 9 键**，刻意与
+ * `AvatarProfile`（含嵌套 `avatar: AvatarPackage`）**不共享**形状。
+ *
+ * 诚实契约铁律（FROZEN_CONTRACT §11 / 交接总纲铁律 3）：后端 `house_avatar()`
+ * （avatar_profile.py:234）只下发「已确认且已设为专属」的那一份的扁平矩阵 / 分层 /
+ * 调色板，**没有** `AvatarPackage` 嵌套，也**没有** `params_fingerprint` 字段
+ * （只有 `fingerprint`，其值等于呈现指纹）。前端历史上错读成
+ * `houseAvatar.avatar.layers` 和 `houseAvatar.params_fingerprint`，导致小屋白屏
+ * （G1-1）。因此本类型单独定义，从类型层面杜绝再次误用嵌套字段。
+ */
+export interface HouseAvatar {
+  /** 呈现指纹（= 后端 `row.params_fingerprint`）。短码展示用它。 */
+  fingerprint: string;
+  /** 8 层独立矩阵（每层 32 行 × 24 列）；小屋只认矩阵，按层做行走动效。 */
+  layers: AvatarLayers;
+  /** 8 层合成后的扁平矩阵（渲染与小屋都用这个）。 */
+  matrix: string[];
+  width: number;
+  height: number;
+  /** 语义色键 → #RRGGBB：引擎内部调色板，前端渲染用 `char_palette`。 */
+  palette: AvatarPalette;
+  /** 字符 → 语义名（引擎 `CHAR_KEYS`）。后端恒定下发，前端渲染不直接消费。 */
+  char_keys: AvatarCharKeys;
+  /** 字符 → #RRGGBB：前端渲染唯一需要的色板。 */
+  char_palette: AvatarCharPalette;
+  /** 参数语义标签（如 day_master / element），供小屋卡片展示。 */
+  labels: Record<string, string>;
+}
+
 export interface ShareBadge {
   field: ShareBadgeField;
   label: string;
@@ -323,8 +353,8 @@ export function createShareCard(input: {
  * 只有 confirmed 且 is_house_avatar 的档案才会被返回；其余一律 404。
  * 小屋在 404 时**回退默认小人**即可，不该阻塞小屋渲染。
  */
-export function getHouseAvatar(): Promise<AvatarProfile> {
-  return request<AvatarProfile>('/api/avatar/house');
+export function getHouseAvatar(): Promise<HouseAvatar> {
+  return request<HouseAvatar>('/api/avatar/house');
 }
 
 // ======================================================================

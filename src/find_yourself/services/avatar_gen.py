@@ -152,9 +152,13 @@ EYE_LABELS: dict[str, str] = {
     "sparkle": "高光闪烁", "calm": "沉静平和", "sharp": "锐利专注",
     "gentle": "温柔含光", "dreamy": "朦胧发呆", "focused": "凝神前视",
 }
+# 随身小物 ← 性格 mood（决策契约见 build_avatar：mood 优先，mood 缺失才退回 _hand_for(mbti)）。
+# 键必须 ∈ MOOD_EYE_BIAS 的合法值（sunny/calm/melancholy）；过去错写成 curious/warm/...
+# 导致 HAND_ITEMS.get(mood) 永远 miss、恒回退 lantern，性格随身小物功能形同虚设（G1-2b 修复）。
 HAND_ITEMS: dict[str, str] = {
-    "curious": "book", "warm": "tea_cup", "steady": "lantern",
-    "bright": "flower", "quiet": "note_book", "bold": "compass",
+    "sunny": "flower",        # 晴朗外向 → 小花
+    "calm": "tea_cup",        # 平和 → 茶杯
+    "melancholy": "book",     # 沉静内省 → 书
 }
 HAND_ITEMS_DEFAULT = "lantern"
 
@@ -654,7 +658,10 @@ def map_portrait(portrait: PortraitInput) -> AvatarParams:
     sources["emblem"] = f"sun_sign({emblem})" if sun else "default"
     sources["cape"] = f"moon_sign({moon})" if moon else "default"
 
-    # 随身小物 ← 性格
+    # 随身小物 ← 性格：决策优先级契约（G1-2b 明确）
+    #   mood 命中 HAND_ITEMS → 用所选项；
+    #   mood 缺失但 mbti 存在 → 退回 MBTI 维度 _hand_for；
+    #   都缺失 → HAND_ITEMS_DEFAULT。
     hand = HAND_ITEMS.get(portrait.mood or "", HAND_ITEMS_DEFAULT)
     if portrait.mbti is not None and portrait.mood is None:
         hand = _hand_for(e_i, t_f)
