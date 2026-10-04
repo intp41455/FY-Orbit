@@ -53,6 +53,7 @@ import {
   useCabinMedia,
 } from '../components/assets/CabinMedia';
 import { assetsApi, type AssetRecord } from '../api/assets';
+import { CabinHud } from '../components/cabin/hud/CabinHud';
 
 /** 台词来源诚实标注：模型生成 / 预生成台词池（未探测时默认 provider 本就是池）。 */
 const DIALOGUE_SOURCE_LABEL: Record<DialogueSource, string> = {
@@ -456,6 +457,27 @@ export function CabinPage() {
 
       {/* W9：墙面挂画覆盖层（读资产库元数据渲染成像素风画框） */}
       <CabinWallArt asset={media.wall} />
+
+      {/* A6 · UI 像素化重构：顶部状态栏 32px + 底部工具栏 40px (6×32px圆按钮) + 64×64小地图 + 4px像素弹窗 */}
+      <CabinHud
+        view={view}
+        editMode={editMode}
+        onToggleDecorate={() => {
+          if (view === 'outdoor') {
+            setView('indoor');
+            setEditMode(true);
+          } else if (editMode) {
+            handleExitEdit();
+          } else {
+            setEditMode(true);
+          }
+        }}
+        onNavigateBack={() => navigate('/private')}
+        currentTheme={config.background}
+        onSelectTheme={(bg) => update({ background: bg })}
+        timeOfDay={config.timeOfDay ?? 'day'}
+        onSelectTimeOfDay={(t) => update({ timeOfDay: t })}
+      />
 
       <button type="button" className="cabin-back" onClick={() => navigate('/private')}>
         ← 返回私人空间

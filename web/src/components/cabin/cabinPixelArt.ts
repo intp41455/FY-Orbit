@@ -1441,7 +1441,7 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
     },
     ambientGlow: { fx: 0.35, fy: 0.25, rx: 0.46, ry: 0.36, color: 0x8973cb, alpha: 0.3 },
   },
-  magic_continent: {
+  magic: {
     skyStops: [
       { t: 0, color: 0x1f1642 },
       { t: 0.4, color: 0x3d2b6b },
@@ -1483,7 +1483,7 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
     },
     ambientGlow: { fx: 0.3, fy: 0.2, rx: 0.46, ry: 0.36, color: 0x72d6c9, alpha: 0.35 },
   },
-  scifi_planet: {
+  scifi: {
     skyStops: [
       { t: 0, color: 0x091526 },
       { t: 0.45, color: 0x132a45 },
@@ -1516,7 +1516,7 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
     },
     ambientGlow: { fx: 0.7, fy: 0.2, rx: 0.45, ry: 0.38, color: 0x4fc3f7, alpha: 0.35 },
   },
-  pastoral_countryside: {
+  country: {
     skyStops: [
       { t: 0, color: 0xb5d8ec },
       { t: 0.45, color: 0xdff0f2 },
@@ -1550,7 +1550,7 @@ export const THEME_ART: Record<CabinBackgroundId, ThemeArt> = {
     },
     ambientGlow: { fx: 0.5, fy: 0.12, rx: 0.5, ry: 0.36, color: 0xfff6cf, alpha: 0.4 },
   },
-  peach_blossom_spring: {
+  ink: {
     skyStops: [
       { t: 0, color: 0xa6d1df },
       { t: 0.4, color: 0xcbe4ec },

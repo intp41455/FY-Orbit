@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CABIN_BACKGROUNDS, type CabinBackgroundId, type CabinHouseId } from './cabinConfig';
+import { THEME_IDS } from './gameplay/lifeApi';
 import {
   BAMBOO_ROWS,
   BUSH_ROWS,
@@ -188,10 +189,10 @@ describe('A4 · 主题美术（5 背景深化 + 4 大主题全要素）', () => 
       'stream',
       'field',
       'planet',
-      'magic_continent',
-      'scifi_planet',
-      'pastoral_countryside',
-      'peach_blossom_spring',
+      'magic',
+      'scifi',
+      'country',
+      'ink',
     ];
     const registeredIds = CABIN_BACKGROUNDS.map((b) => b.id);
     for (const id of expectedThemes) {
@@ -199,6 +200,10 @@ describe('A4 · 主题美术（5 背景深化 + 4 大主题全要素）', () => 
       expect(THEME_ART[id]).toBeDefined();
     }
     expect(registeredIds).toHaveLength(9);
+  });
+
+  it('契约测试：CABIN_BACKGROUNDS 的 id 集合必须与 lifeApi.THEME_IDS 完全一致（防漂移）', () => {
+    expect(CABIN_BACKGROUNDS.map((b) => b.id).sort()).toEqual([...THEME_IDS].sort());
   });
 
   const allBackgroundIds = Object.keys(THEME_ART) as CabinBackgroundId[];

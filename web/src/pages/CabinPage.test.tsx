@@ -160,6 +160,7 @@ describe('cabinConfig 纯逻辑：sanitize / save / load', () => {
       petPersonality: 'chatty',
       personPersonality: 'cool',
       personName: 'x'.repeat(16),
+      timeOfDay: 'day',
     });
   });
 

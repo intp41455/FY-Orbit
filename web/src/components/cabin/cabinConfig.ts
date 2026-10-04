@@ -43,10 +43,10 @@ export type CabinBackgroundId =
   | 'stream'
   | 'field'
   | 'planet'
-  | 'magic_continent'
-  | 'scifi_planet'
-  | 'pastoral_countryside'
-  | 'peach_blossom_spring';
+  | 'magic'
+  | 'scifi'
+  | 'country'
+  | 'ink';
 
 export interface CabinBackgroundMeta {
   id: CabinBackgroundId;
@@ -54,15 +54,15 @@ export interface CabinBackgroundMeta {
 }
 
 export const CABIN_BACKGROUNDS: readonly CabinBackgroundMeta[] = [
-  { id: 'forest', label: '树林' },
-  { id: 'garden', label: '花园' },
-  { id: 'stream', label: '小溪旁' },
-  { id: 'field', label: '田野' },
-  { id: 'planet', label: '宇宙星球' },
-  { id: 'magic_continent', label: '魔法大陆' },
-  { id: 'scifi_planet', label: '科幻星球' },
-  { id: 'pastoral_countryside', label: '田园乡村' },
-  { id: 'peach_blossom_spring', label: '古风桃源' },
+  { id: 'forest', label: '老林子' },
+  { id: 'garden', label: '后花园' },
+  { id: 'stream', label: '溪水边' },
+  { id: 'field', label: '金黄田野' },
+  { id: 'planet', label: '观星台' },
+  { id: 'magic', label: '魔法大陆' },
+  { id: 'scifi', label: '科幻星球' },
+  { id: 'country', label: '田园乡村' },
+  { id: 'ink', label: '古风桃源' },
 ] as const;
 
 /* ------------------------------------------------------------------ */
