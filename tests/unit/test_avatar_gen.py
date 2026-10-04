@@ -363,6 +363,12 @@ def test_generate_returns_full_avatar_package(client: TestClient, headers: dict)
     assert data["advisory"]["complete"] is True
     # ID 由服务端生成，客户端不能自选
     assert data["id"].startswith("av_")
+    # 契约护栏：前端微调面板读 data["avatar"]["params"][key]（hair_style 等），
+    # 若 _pack 漏发 params，页面对「生成我的小人」后必崩且白屏。
+    assert "params" in data["avatar"], "avatar.params 必须随包下发（前端微调面板依赖）"
+    assert data["avatar"]["params"].get("hair_style"), "avatar.params.hair_style 必须非空"
+    # 顶层 params 与包内 params 必须一致（同一份引擎结果，不许两处漂移）
+    assert data["avatar"]["params"] == data["params"]
 
 
 def test_generate_is_upsert_not_append(client: TestClient, headers: dict):

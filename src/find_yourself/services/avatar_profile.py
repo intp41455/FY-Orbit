@@ -266,7 +266,15 @@ def _clean_overrides(overrides: Any) -> dict[str, Any]:
 
 
 def _pack(avatar: dict[str, Any]) -> dict[str, Any]:
-    """角色包里前端真正需要的部分（矩阵 / 分层 / 调色板 / 语义表）。"""
+    """角色包里前端真正需要的部分（矩阵 / 分层 / 调色板 / 语义表 / 参数）。
+
+    `params` 必须随包下发：前端微调面板按 `profile.avatar.params[key]`
+    读取每个维度的当前取值（hair_style / hair_tone / outfit / mouth / eye）。
+    缺它时 `avatar.params` 为 undefined，一进微调渲染段即抛
+    `Cannot read properties of undefined (reading 'hair_style')` 白屏。
+    TS 类型 `AvatarPackage.params` 与前端测试 fixture 都声明它恒存在，
+    因此这里是**契约字段**，不是可选装饰。
+    """
     return {
         "width": avatar["width"],
         "height": avatar["height"],
@@ -277,4 +285,5 @@ def _pack(avatar: dict[str, Any]) -> dict[str, Any]:
         "char_palette": avatar["char_palette"],
         "param_space_size": avatar["param_space_size"],
         "tuned": avatar["tuned"],
+        "params": avatar["params"],
     }
