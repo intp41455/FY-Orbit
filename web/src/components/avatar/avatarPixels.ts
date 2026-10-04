@@ -151,20 +151,83 @@ export interface AvatarFrame {
  * 实际上移的是**脸的可见区**：呼吸靠 head 起伏，若整层上移会把地面影一起带走。
  * 因此这里对 body / hair 做「头部行区间」的整体上移，影子不动。
  */
-export function idleFrames(layers: AvatarLayers): [AvatarFrame, AvatarFrame] {
-  return [makeIdleFrame(layers, 0), makeIdleFrame(layers, 1)];
+/**
+ * 待机动画的 4 个相位（任务书 G5-1：让站立的角色不再像贴纸）。
+ * 运行时按 `tick % frames.length` 轮播，营造呼吸 + 头发摆动 + 眨眼 + 影子联动。
+ */
+export type IdleVariant = 'neutral' | 'breathe' | 'hairSway' | 'blink';
+
+/**
+ * 待机 4 帧（任务书 G5-1）：
+ *  0 中性（不动）｜1 呼吸（头身脸上移 1px，影子反向缩小）｜2 头发摆动｜3 眨眼。
+ * 旧实现只有 2 帧、且只动 body/hair/face、影子完全不动 —— 角色像贴纸。
+ */
+export function idleFrames(layers: AvatarLayers): AvatarFrame[] {
+  return [
+    makeIdleFrame(layers, 'neutral'),
+    makeIdleFrame(layers, 'breathe'),
+    makeIdleFrame(layers, 'hairSway'),
+    makeIdleFrame(layers, 'blink'),
+  ];
 }
 
-function makeIdleFrame(layers: AvatarLayers, phase: 0 | 1): AvatarFrame {
-  // phase 0 = 吸气（头略低，原位）；phase 1 = 呼气（头上抬 1px）
-  const dy = phase === 1 ? -1 : 0;
-  const moved: AvatarLayers = {};
+const VARIANT_INDEX: Record<IdleVariant, number> = {
+  neutral: 0, breathe: 1, hairSway: 2, blink: 3,
+};
+
+function makeIdleFrame(layers: AvatarLayers, variant: IdleVariant): AvatarFrame {
+  const index = VARIANT_INDEX[variant];
+  const moved: AvatarLayers = {} as AvatarLayers;
   for (const name of LAYER_NAMES) {
-    moved[name] = name === 'body' || name === 'hair' || name === 'face'
-      ? shiftRowsUp(layers[name], dy)
-      : layers[name].map((r) => r.slice());
+    const src = layers[name];
+    if (variant === 'neutral') {
+      moved[name] = src.map((r) => r.slice());
+    } else if (variant === 'breathe') {
+      // 呼吸：头身脸上移 1px；影子反向联动（底部裁 1 行，接触面收窄）
+      if (name === 'shadow') moved[name] = shrinkShadow(src);
+      else if (name === 'body' || name === 'hair' || name === 'face') moved[name] = shiftRowsUp(src, -1);
+      else moved[name] = src.map((r) => r.slice());
+    } else if (variant === 'hairSway') {
+      // 头发摆动：发层整体横移 1px，发梢（最后 2 行）再额外横移 1px
+      moved[name] = name === 'hair' ? swayHair(src) : src.map((r) => r.slice());
+    } else {
+      // 眨眼：脸层眼睛像素（e/E）闭合成肤色 s
+      moved[name] = name === 'face' ? blinkFace(src) : src.map((r) => r.slice());
+    }
   }
-  return { index: phase, layers: moved, matrix: compositeLayers(moved) };
+  return { index, layers: moved, matrix: compositeLayers(moved) };
+}
+
+/** 眨眼：脸层眼睛像素（'e'/'E'）闭合成肤色 's'。 */
+function blinkFace(rows: readonly string[]): string[] {
+  return rows.map((r) => r.replace(/[eE]/g, 's'));
+}
+
+/** 呼吸时影子反向缩小：裁掉最底 1 行（接触面收窄，呼应身体上抬）。 */
+function shrinkShadow(rows: readonly string[]): string[] {
+  const out = rows.map((r) => r.slice());
+  out[out.length - 1] = '.'.repeat(AVATAR_WIDTH);
+  return out;
+}
+
+/** 头发摆动：整层右移 1px，发梢（最后 2 行）再右移 1px。 */
+function swayHair(rows: readonly string[]): string[] {
+  const out = shiftLayer(rows, 1, 0); // 整层横移 1px
+  for (let y = out.length - 2; y < out.length; y++) {
+    out[y] = shiftRowRight(out[y], 1); // 发梢额外横移 1px
+  }
+  return out;
+}
+
+/** 单行右移 dx（越界填 '.'）。 */
+function shiftRowRight(row: string, dx: number): string {
+  if (dx === 0) return row;
+  let out = '';
+  for (let x = 0; x < row.length; x++) {
+    const sx = x - dx;
+    out += sx < 0 || sx >= row.length ? '.' : row[sx];
+  }
+  return out;
 }
 
 /** 行走两帧：身体上下 1px + 影子横向 1px，读作一步一颠。 */

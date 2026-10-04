@@ -115,24 +115,27 @@ describe('W11 · 渲染成像素', () => {
   });
 });
 
-describe('W11 · 两帧待机呼吸', () => {
-  it('产出恰好 2 帧，尺寸恒定 24×32', () => {
+describe('W11 · 四帧待机生命感', () => {
+  it('产出恰好 4 帧，尺寸恒定 24×32', () => {
     const frames = idleFrames(layers);
-    expect(frames).toHaveLength(2);
+    expect(frames).toHaveLength(4);
     for (const f of frames) {
       expect(f.matrix).toHaveLength(AVATAR_HEIGHT);
       for (const r of f.matrix) expect(r).toHaveLength(AVATAR_WIDTH);
     }
   });
 
-  it('两帧不同（真的在动）', () => {
-    const [a, b] = idleFrames(layers);
-    expect(a.matrix).not.toEqual(b.matrix);
+  it('四帧各不相同（呼吸/发摆/眨眼/中性，真的在动）', () => {
+    const frames = idleFrames(layers);
+    for (let i = 1; i < frames.length; i++) {
+      expect(frames[i].matrix, `帧 ${i} 与中性帧不同`).not.toEqual(frames[0].matrix);
+    }
   });
 
-  it('影子层在两帧完全一致（呼吸不应带动地面影）', () => {
-    const [a, b] = idleFrames(layers);
-    expect(a.layers.shadow).toEqual(b.layers.shadow);
+  it('呼吸帧影子与中性帧不同（G5-1 影子联动：身体上抬时接触面收窄）', () => {
+    const frames = idleFrames(layers);
+    // frames[0]=neutral，frames[1]=breathe
+    expect(frames[1].layers.shadow).not.toEqual(frames[0].layers.shadow);
   });
 
   it('结果确定：同样输入两次派生逐字节相同', () => {

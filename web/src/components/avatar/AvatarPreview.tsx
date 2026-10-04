@@ -3,7 +3,8 @@
 // 为什么用 canvas 而不是 <img>：像素画必须 imageSmoothingEnabled=false，
 // nearest 是灵魂；CSS 放大 SVG/div 在部分浏览器会引入插值模糊。
 //
-// 动画：任务书要求「两帧待机呼吸 + 两帧行走」。这里是**帧索引轮播**，
+// 动画：任务书要求「四帧待机生命感（呼吸/发摆/眨眼/影子联动）+ 两帧行走」。
+// 这里是**帧索引轮播**，帧数由运行时 frames.length 决定（不再写死 2），
 // 帧由 avatarPixels.idleFrames / walkFrames 在前端从 8 层矩阵确定性派生，
 // 后端只负责给底稿（诚实：不假装后端下发动画帧）。
 
@@ -13,7 +14,7 @@ import type { AvatarFrame } from './avatarPixels';
 export type AvatarAnimation = 'idle' | 'walk' | 'static';
 
 interface Props {
-  frames: [AvatarFrame, AvatarFrame];
+  frames: AvatarFrame[];
   palette: Record<string, string>;
   animation?: AvatarAnimation;
   /** 整数放大倍数（nearest）。默认 6 → 24×32 放大为 144×192。 */
@@ -74,7 +75,7 @@ export function AvatarPreview({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    drawFrame(canvas, frames[tick % 2], palette, scale);
+    drawFrame(canvas, frames[tick % frames.length], palette, scale);
   }, [frames, palette, scale, tick]);
 
   return (

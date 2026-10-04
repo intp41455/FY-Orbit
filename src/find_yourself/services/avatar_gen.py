@@ -1518,21 +1518,12 @@ def _draw_hand_item(hand: str) -> list[str]:
 
 
 def _draw_outline(layers: list[list[str]], from_left: bool) -> list[str]:
-    """层 8：1px 轮廓光——沿实体受光侧外沿补 1px 光边（任务书 §2.2 第 7 层）。
+    """层 8：1px 轮廓光——沿实体**整圈外沿**补 1px 光边（左右对称）。
 
-    **只画在轮廓的转折处，不画在平坦段上。**
-
-    旧实现对受光侧的**每一行**外沿都填 ``x``。躯干在 24px 画布上近似矩形
-    （肩 x=6~16、y=13 起连续 8 行不变），于是那条竖边被整列填满 —— 像素诊断
-    实测 A 组 32 个 ``x`` 里有 20 个挤在 x=20 同一列（y=14~21 连续不断），
-    渲染出来是**一条 8px 长的亮黄色竖条光晕**，而不是"1px 轮廓光"。
-
-    真实像素画的轮廓光只落在形体转折处（肩头、肘、膝、裙摆），因为只有轮廓
-    法线转向光源时才会被打亮；一段平直的侧边受光均匀，本就不该有高光。
-    于是判据取「本行外沿 x 与上下行都不同」= 该行是转折点。
-
-    同时对每段连续转折做**去重限宽**：真实高光带在转折处也只有 1~2px 长，
-    不会沿垂直方向连成一片。
+    G5-2 重构：旧实现按 ``from_left`` 只在**单侧**描边（受光侧），渲染出来角色
+    "只有一边有轮廓"；更早的版本又在受光侧整列填满成亮条。现改为**全边界 1px 描边**
+    —— 任意空像素只要 4-邻域挨着实体，就在该像素描边。得到左右对称的轮廓，
+    且厚度恒为 1px（不会连成亮条）。``from_left`` 保留签名兼容，不再决定描边在哪一侧。
     """
     solid = [[False] * AVATAR_WIDTH for _ in range(AVATAR_HEIGHT)]
     for rows in layers:
@@ -1541,34 +1532,19 @@ def _draw_outline(layers: list[list[str]], from_left: bool) -> list[str]:
                 if ch != ".":
                     solid[y][x] = True
 
-    # 每行在受光侧的最外实体列（-1 表示该行无实体）
-    edge = [-1] * AVATAR_HEIGHT
-    for y in range(AVATAR_HEIGHT):
-        if from_left:
-            for x in range(AVATAR_WIDTH):
-                if solid[y][x]:
-                    edge[y] = x
-                    break
-        else:
-            for x in range(AVATAR_WIDTH - 1, -1, -1):
-                if solid[y][x]:
-                    edge[y] = x
-                    break
-
     c = PixelCanvas()
-    dx = -1 if from_left else 1
     for y in range(AVATAR_HEIGHT):
-        here = edge[y]
-        if here < 0:
-            continue
-        prev = edge[y - 1] if y > 0 else -1
-        nxt = edge[y + 1] if y < AVATAR_HEIGHT - 1 else -1
-        # 转折点 = 本行外沿与上下行都不同（含"本行是孤立凸起"与"轮廓端点"）
-        if here == prev or here == nxt:
-            continue
-        nx = here + dx
-        if 0 <= nx < AVATAR_WIDTH and not solid[y][nx]:
-            c.px(nx, y, "x")
+        for x in range(AVATAR_WIDTH):
+            if solid[y][x]:
+                continue
+            adjacent = (
+                (x > 0 and solid[y][x - 1])
+                or (x < AVATAR_WIDTH - 1 and solid[y][x + 1])
+                or (y > 0 and solid[y - 1][x])
+                or (y < AVATAR_HEIGHT - 1 and solid[y + 1][x])
+            )
+            if adjacent:
+                c.px(x, y, "x")
     return c.rows()
 
 
