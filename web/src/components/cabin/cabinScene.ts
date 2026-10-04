@@ -11,6 +11,9 @@ import {
 } from 'pixi.js';
 import {
   PET_COLORS,
+  TILE,
+  VIRTUAL_H,
+  VIRTUAL_W,
   WORLD,
   cameraTargetX,
   clampCameraToPerson,
@@ -20,6 +23,7 @@ import {
   layerVirtualWidth,
   lerpCameraX,
   screenToWorldX,
+  snapToGrid,
   worldToScreenX,
   type CabinBackgroundId,
   type CabinConfig,
@@ -83,41 +87,21 @@ import {
 
 /* ------------------------------ 常量 ------------------------------ */
 
-/** 虚拟分辨率与各图层高度（虚拟像素）。 */
-const VIRTUAL_H = 270;
-const SKY_VH = 157; // 58% 地平线，与 groundY = height*0.58 精确对应
-const FAR_VH = 40;
-const MID_VH = 50;
-const NEAR_VH = 26;
-/**
- * 中景/近景**道具段的纹理宽度**（虚拟像素）。
- *
- * 旧实现：mid/near 只有一张 480 宽的贴图，整张 TilingSprite 无限平铺。
- * 在 G3 的 8 屏世界里，这等于**每屏看到的道具摆位完全一样**（周期 = 1 屏），
- * 玩家往右走 4 屏就能数出重复 —— 这是「空间感」最伤的一处。
- *
- * 新实现：每段 1920 宽（= 4 个 480 视口），每段用**不同种子**生成，
- * 且段与段之间按**屏幕位移**拼接（不靠 tilePosition 重置），于是：
- *   - 世界内任意一屏看到的是 1920 宽构图里的一个**不同窗口**；
- *   - 相邻屏的道具不再重置。
- * 仍用 stampTiled 按段宽环绕，段内依旧无缝。
- */
-const PROP_TILE_VW = 1920;
-/** 每层生成几段互不相同的道具纹理（不同种子 → 摆位不同）。 */
+/** 虚拟分辨率与各图层高度（虚拟像素）。A1 一次冻结。 */
+export { TILE, VIRTUAL_H, VIRTUAL_W };
+export const SKY_VH = 208; // 58% 地平线，与 groundY = height*(208/360) 精确对应
+export const FAR_VH = 54;
+export const MID_VH = 68;
+export const NEAR_VH = 36;
+export const GROUND_VH = 152; // 360 - 208
+export const GROUND_TILE_VW = 128; // 4 * TILE (32)
+export const TILE_VW = VIRTUAL_W; // 640
+export const SKY_BUFFER_WIDTH = TILE_VW;
+export const PROP_TILE_VW = 2560; // 4 * 640
 const MID_SEG_VARIANTS = 2;
 const NEAR_SEG_VARIANTS = 3;
-/**
- * 每层的精灵槽位数（≥ 可见段数；多出的槽位按需隐藏）。
- * 比变体数多一个是为了应对超宽屏（视口 > 1920 虚拟 px）需要更多段。
- */
 const MID_SEG_SLOTS = 3;
 const NEAR_SEG_SLOTS = 4;
-const GROUND_VH = 113; // 270 - 157
-const GROUND_TILE_VW = 128;
-const TILE_VW = 480;
-/** G2-1：天空渐变缓冲宽度（= 全宽）。曾为 1px 导致 bayer 抖动退化成每 4 行重复的水平亮带；导出供护栏测试锁定。 */
-export const SKY_BUFFER_WIDTH = TILE_VW;
-/** 视差位移余量（虚拟像素），保证 TilingSprite 平移时始终盖满画面。 */
 const PARALLAX_MARGIN = 96;
 
 /* ---- G3 · 摄像机与视差系数 ---- */
@@ -136,19 +120,15 @@ const PARALLAX = {
 /**
  * 人物/宠物纵向坐标改用**地面带比例 depth**（0 = 地平线，1 = 屏幕底）存储，
  * 而非屏幕像素 —— 这样 resize（高度变化）时人物保持在同一相对位置，不会漂到别处。
- *
- * 可走区间仍然严格复现旧的屏幕像素边界 `groundY+24 .. height-26`
- * （`depthLimits()` 按当前高度换算），**不借 G3 之名改玩法手感**。
  */
-/** 旧边界：地平线下方 24 屏幕 px、屏幕底部上方 26 屏幕 px。 */
-const WALK_MARGIN_TOP_PX = 24;
-const WALK_MARGIN_BOTTOM_PX = 26;
+const WALK_MARGIN_TOP_PX = 32;
+const WALK_MARGIN_BOTTOM_PX = 32;
 
 /** 宠物相对小人的纵向偏移（虚拟 px，折算成 depth）。 */
-const PET_DEPTH_OFFSET = 4 / 113;
+const PET_DEPTH_OFFSET = 6 / 152;
 
 /** 边界渐隐的虚拟宽度（人物靠近世界缘时两侧变暗，给出「到头了」的视觉收束）。 */
-const EDGE_FADE_VW = 48;
+const EDGE_FADE_VW = 64;
 
 const BUBBLE_MS = 3600;
 
@@ -594,7 +574,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   let width = window.innerWidth;
   let height = window.innerHeight;
-  let groundY = Math.round(height * 0.58);
+  let groundY = Math.round(height * (SKY_VH / VIRTUAL_H));
   let worldScale = height / VIRTUAL_H;
   let config: CabinConfig = { ...options.config };
   let destroyed = false;
@@ -967,8 +947,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     const ps = worldScale * PERSON_SCALE;
     if (!actorsSeeded) {
       actorsSeeded = true;
-      personWorldX = clampToWorld(WORLD.spawnX);
-      petWorldX = clampToWorld(personWorldX - 48);
+      personWorldX = snapToGrid(clampToWorld(WORLD.spawnX));
+      petWorldX = snapToGrid(clampToWorld(personWorldX - TILE * 2));
       const { min, max } = depthLimits();
       personDepth = clamp(0.55, min, max);
       petDepth = clamp(personDepth + PET_DEPTH_OFFSET, min, max);
@@ -1091,7 +1071,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   };
 
   const redraw = () => {
-    groundY = Math.round(height * 0.58);
+    groundY = Math.round(height * (SKY_VH / VIRTUAL_H));
     worldScale = height / VIRTUAL_H;
     applyTheme();
     // resize 后视口宽变了，相机必须重新钳制（否则可能停在世界之外）。
@@ -1113,10 +1093,10 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   app.stage.on('pointertap', (e: FederatedPointerEvent) => {
     // G3-2 第 2 处 clamp（旧版把点击钳在屏幕内，屏幕外点不到）：
-    // 先把屏幕坐标按 worldScale 换成虚拟像素，再反投影为世界坐标，最后钳到世界范围。
+    // 先把屏幕坐标按 worldScale 换成虚拟像素，再反投影为世界坐标，最后钳到世界范围并吸附到 32px 地面格。
     const { min, max } = depthLimits();
     const screenVirtualX = e.global.x / worldScale;
-    walkTarget.x = clampToWorld(screenToWorldX(screenVirtualX, cameraX));
+    walkTarget.x = snapToGrid(clampToWorld(screenToWorldX(screenVirtualX, cameraX)));
     // Y 直接用屏幕 px → depth（groundY/height 是屏幕量，转 depth 后与 depthToScreenY 互逆）
     walkTarget.y = clamp((e.global.y - groundY) / Math.max(1, height - groundY), min, max);
     walking = true;
@@ -1245,6 +1225,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       const dDepth = walkTarget.y - personDepth;
       if (Math.abs(dx) * worldScale < 4 && Math.abs(dDepth) * (height - groundY) < 4) {
         walking = false;
+        personWorldX = snapToGrid(personWorldX);
       } else {
         personWorldX += dx * ease;
         personDepth += dDepth * ease;
@@ -1273,7 +1254,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     nameTagC.scale.x = personDir; // 名牌不随身体翻面镜像
 
     // 宠物跟随（世界坐标 + 相机投影）+ 小跳 + 两帧动画（换色 = 调色板重生成纹理）
-    const followX = personWorldX - personDir * 48;
+    const followX = snapToGrid(personWorldX - personDir * TILE * 1.5);
     const followDepth = personDepth + PET_DEPTH_OFFSET;
     const petEase = 1 - Math.pow(0.004, dt / 1000);
     const pdx = followX - petWorldX;

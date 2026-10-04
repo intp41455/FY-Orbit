@@ -9,6 +9,9 @@
 import { describe, expect, it } from 'vitest';
 import cabinSceneSrc from './cabinScene.ts?raw';
 import {
+  TILE,
+  VIRTUAL_H,
+  VIRTUAL_W,
   WORLD,
   cameraMaxX,
   cameraTargetX,
@@ -16,16 +19,19 @@ import {
   clampCameraX,
   clampToWorld,
   edgeFadeAlpha,
+  fromGrid,
   layerVirtualWidth,
   lerpCameraX,
   screenToWorldX,
+  snapToGrid,
+  toGrid,
   worldScreens,
   worldToScreenX,
   type CabinWorld,
 } from './cabinConfig';
 
-/** 480×270 基准下的一屏宽度（虚拟像素），与 cabinScene 的 VIRTUAL_H=270 对应。 */
-const VIEW_W = 480;
+/** 640×360 基准下的一屏宽度（虚拟像素），与 cabinScene 的 VIRTUAL_W=640 对应。 */
+const VIEW_W = VIRTUAL_W;
 
 /**
  * 源码文本。用 Vite 的 `?raw` 导入（本仓已有先例：
@@ -51,8 +57,8 @@ describe('G3-2 · 世界 ↔ 屏幕坐标映射', () => {
   it('双向映射互为逆运算', () => {
     for (const [worldX, camX] of [
       [0, 0],
-      [1660, 1420],
-      [3840, 3360],
+      [2208, 1920],
+      [5120, 4480],
       [-500, 0],
       [1e7, 9_999_999],
     ] as const) {
@@ -87,8 +93,8 @@ describe('G3-2 · 世界 ↔ 屏幕坐标映射', () => {
   it('点击世界外不会把人拽回屏幕内：反投影后仍可落在世界远端', () => {
     // 相机停在 0，点击屏幕最左（虚拟 x=-100）→ 世界 x=-100 → 被钳到 edgeMargin
     expect(clampToWorld(screenToWorldX(-100, 0))).toBe(WORLD.edgeMargin);
-    // 相机在 3360（世界右缘对齐视口右缘），点击屏幕最右（虚拟 x=VIEW_W）→ 世界 x=3840 → 钳到右缘内
-    expect(clampToWorld(screenToWorldX(VIEW_W, 3360))).toBe(WORLD.width - WORLD.edgeMargin);
+    // 相机在 4480（世界右缘对齐视口右缘），点击屏幕最右（虚拟 x=VIEW_W）→ 世界 x=5120 → 钳到右缘内
+    expect(clampToWorld(screenToWorldX(VIEW_W, 4480))).toBe(WORLD.width - WORLD.edgeMargin);
   });
 });
 
@@ -157,7 +163,7 @@ describe('相机滞后时人物不被甩出视口', () => {
   });
 
   it('相机严重滞后时强行拉回，使人物落在视口内', () => {
-    const personX = 3800; // 人物已跑到世界右缘附近
+    const personX = 5000; // 人物已跑到世界右缘附近
     const lagCam = 1600; // 相机还停在很靠左的位置（模拟快走滞后）
     const fixed = clampCameraToPerson(lagCam, personX, VIEW_W);
     const personScreen = worldToScreenX(personX, fixed);
@@ -184,9 +190,9 @@ describe('相机滞后时人物不被甩出视口', () => {
   });
 
   it('人物贴世界左缘时仍留在画面内（安全区崩取的分支）', () => {
-    // personX=24 → hi = 24-24 = 0，lo = 0，区间退化为一点
-    const cam = clampCameraToPerson(1600, 24, VIEW_W);
-    const screen = worldToScreenX(24, cam);
+    // personX=32 → hi = 32-32 = 0，lo = 0，区间退化为一点
+    const cam = clampCameraToPerson(1600, 32, VIEW_W);
+    const screen = worldToScreenX(32, cam);
     expect(screen).toBeGreaterThanOrEqual(0);
     expect(screen).toBeLessThanOrEqual(VIEW_W);
     expect(cam).toBe(0);
@@ -309,5 +315,29 @@ describe('cabinScene.ts 源码护栏：屏幕内 clamp 已彻底移除', () => {
   it('房屋锚定世界坐标 WORLD.houseX，而非 width*0.36', () => {
     expect(src).not.toContain('width * 0.36');
     expect(src).toContain('worldToScreenX(WORLD.houseX, cameraX)');
+  });
+});
+
+describe('A1 · 地面格 32×32 与分辨率 640×360 地基冻结', () => {
+  it('分辨率与网格常量冻结为 640×360 与 32px', () => {
+    expect(VIRTUAL_W).toBe(640);
+    expect(VIRTUAL_H).toBe(360);
+    expect(TILE).toBe(32);
+  });
+
+  it('世界宽度、房屋坐标、出生点、边距全部与 32px 地面格对齐', () => {
+    expect(WORLD.width % TILE).toBe(0);
+    expect(WORLD.houseX % TILE).toBe(0);
+    expect(WORLD.spawnX % TILE).toBe(0);
+    expect(WORLD.edgeMargin % TILE).toBe(0);
+  });
+
+  it('snapToGrid / toGrid / fromGrid 满足整数格对齐与双向映射', () => {
+    expect(snapToGrid(35)).toBe(32);
+    expect(snapToGrid(49)).toBe(64);
+    expect(snapToGrid(0)).toBe(0);
+    expect(snapToGrid(WORLD.spawnX)).toBe(WORLD.spawnX);
+    expect(toGrid(64)).toBe(2);
+    expect(fromGrid(2)).toBe(64);
   });
 });

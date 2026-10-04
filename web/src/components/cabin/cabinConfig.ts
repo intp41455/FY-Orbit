@@ -178,24 +178,45 @@ export function useCabinConfig(): [CabinConfig, (patch: Partial<CabinConfig>) =>
 /* ------------------------------------------------------------------ */
 /* G3 · 开放世界：世界坐标 + 摄像机（纯逻辑，可在 jsdom 直测）          */
 /* ------------------------------------------------------------------ */
+/* A1 · 分辨率与网格地基（一次冻结）                                    */
+/* ------------------------------------------------------------------ */
+
+export const VIRTUAL_W = 640;
+export const VIRTUAL_H = 360;
+export const TILE = 32;
+
+/** 把世界像素 x 坐标吸附到 32px 地面格（整数格）。 */
+export function snapToGrid(v: number, tile = TILE): number {
+  return Math.round(v / tile) * tile;
+}
+
+/** 像素坐标 -> 整数格坐标 */
+export function toGrid(coord: number, tile = TILE): number {
+  return Math.round(coord / tile);
+}
+
+/** 整数格坐标 -> 像素坐标 */
+export function fromGrid(gridCoord: number, tile = TILE): number {
+  return Math.round(gridCoord * tile);
+}
+
+/* ------------------------------------------------------------------ */
+/* G3 · 开放世界：世界坐标 + 摄像机（纯逻辑，可在 jsdom 直测）          */
+/* ------------------------------------------------------------------ */
 
 /**
- * 世界与摄像机配置。**单位一律是「虚拟像素」**（虚拟分辨率见 cabinScene 的
- * VIRTUAL_H；虚拟宽度 = 视口宽 / worldScale）。渲染层只负责把虚拟像素乘
+ * 世界与摄像机配置。**单位一律是「虚拟像素」**（虚拟分辨率见 VIRTUAL_W/H；
+ * 虚拟宽度 = 视口宽 / worldScale）。渲染层只负责把虚拟像素乘
  * worldScale 画到屏幕，本文件不依赖 Pixi / DOM，可直接单测。
- *
- * ⚠️ 与 G2（分辨率提升 480×270 → 640×360）的协作点：
- * `width` 以虚拟像素表达。若 G2 把虚拟宽度从 480 提到 853，3840 只剩约 4.5 屏，
- * 需同步放大本常数（约 ×1.78）。`worldScreens()` 可读出当前屏数做校验（仅观测）。
  */
 export interface CabinWorld {
-  /** 世界宽度（虚拟像素）。3840 = 480 虚拟宽 × 8 屏。 */
+  /** 世界宽度（虚拟像素）。5120 = 640 虚拟宽 × 8 屏。 */
   width: number;
-  /** 房屋中心的**世界** x（虚拟像素）。不再用 width*0.36 的屏幕比例，相机移动时不漂移。 */
+  /** 房屋中心的**世界** x（虚拟像素）。按 32px 网格对齐（65 格 = 2080px）。 */
   houseX: number;
-  /** 小人出生点的**世界** x（虚拟像素，房屋门口右侧）。 */
+  /** 小人出生点的**世界** x（虚拟像素，按 32px 网格对齐，69 格 = 2208px）。 */
   spawnX: number;
-  /** 人物/宠物距世界左右边缘的最小留白（虚拟像素），保证身体完整入画。 */
+  /** 人物/宠物距世界左右边缘的最小留白（虚拟像素，按 32px 网格对齐，1 格 = 32px）。 */
   edgeMargin: number;
   /** 边界视觉收束（渐隐）的触发距离（虚拟像素）：相机距世界边缘小于它就渐隐。 */
   edgeFadePx: number;
@@ -208,11 +229,11 @@ export interface CabinWorld {
 }
 
 export const WORLD: CabinWorld = {
-  width: 3840,
-  houseX: 1560,
-  spawnX: 1660,
-  edgeMargin: 24,
-  edgeFadePx: 110,
+  width: 5120,
+  houseX: 2080,
+  spawnX: 2208,
+  edgeMargin: 32,
+  edgeFadePx: 160,
   edgeFadeMax: 0.82,
   cameraLag: 0.0015,
   cameraLead: 0.5,
@@ -221,9 +242,9 @@ export const WORLD: CabinWorld = {
 /**
  * 人物必须留在视口内的最小边距（虚拟像素）。
  * 相机是 lerp 平滑的，长距离快走时相机会滞后于人物；
- * 不加这道钳制，人物会被甩到视口外（实测可达 2000 屏幕 px）。
+ * 不加这道钳制，人物会被甩到视口外。
  */
-export const CAMERA_SAFE_MARGIN = 24;
+export const CAMERA_SAFE_MARGIN = 32;
 
 /**
  * 把相机硬钳到「人物必在视口内」的区间，同时不越世界边界。
@@ -250,8 +271,8 @@ export function clampCameraToPerson(
   return clampNum(cameraX, lo, hi);
 }
 
-/** 当前虚拟宽度下世界横向可探索的屏数（观测用；虚拟宽度默认 480）。 */
-export function worldScreens(world: CabinWorld = WORLD, virtualWidth = 480): number {
+/** 当前虚拟宽度下世界横向可探索的屏数（观测用；虚拟宽度默认 VIRTUAL_W 640）。 */
+export function worldScreens(world: CabinWorld = WORLD, virtualWidth = VIRTUAL_W): number {
   return virtualWidth > 0 ? world.width / virtualWidth : 0;
 }
 
