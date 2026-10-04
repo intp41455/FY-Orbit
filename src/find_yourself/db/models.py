@@ -80,6 +80,9 @@ AGENT_STATES = (
 )
 LEASE_STATES = ("active", "released", "expired", "revoked")
 SKILL_STATES = ("staged", "active", "disabled", "deprecated")
+# 插件生态（需求14）：包画像决定上架门禁要求（见 services/plugin_signing.py）。
+# 只有惰性元数据 + skill_md 的包是 instruction（不执行）；含可执行条目的是 plugin。
+SKILL_GATE_PROFILES = ("instruction", "plugin")
 RESERVATION_STATES = ("reserved", "settled", "released", "cancelled", "unknown")
 OP_STATES = ("pending", "claimed", "succeeded", "failed", "unknown")
 RELATION_TYPES = ("derives", "quotes", "cites", "supports")
@@ -569,12 +572,35 @@ class Skill(Base):
     state: Mapped[str] = mapped_column(String(16), default="staged")
     source: Mapped[str] = mapped_column(String(300))
     license: Mapped[str] = mapped_column(String(120))
+    # --- 插件生态（需求14）：签名 + 自动扫描 + 上架门禁 ---------------------
+    #: 包签名的 base64 值（**签名不是私钥**，可入库）。未签名时为 NULL。
+    signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: 签名算法（当前仅 ed25519）。未签名时为 NULL。
+    signature_algorithm: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    #: 指向 plugin_signing_keys.id 的**公钥** id（绝不指向私钥）。
+    signing_key_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: 服务端在 stage 时对签名做的真实校验结论。调用方无法写入此列。
+    signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: 自动静态扫描报告（结构化，含 code/severity/location）。服务端写入。
+    scan_report: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    #: 扫描是否通过（无 critical/high 发现）。服务端写入。
+    scan_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: 门禁画像（instruction/plugin），服务端按包结构判定。
+    gate_profile: Mapped[str] = mapped_column(String(16), nullable=False, default="instruction")
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     __table_args__ = (
         CheckConstraint(_in("domain", DOMAINS), name="ck_skill_domain"),
         CheckConstraint(_in("state", SKILL_STATES), name="ck_skill_state"),
+        CheckConstraint(_in("gate_profile", SKILL_GATE_PROFILES), name="ck_skill_gate_profile"),
+        # 「已校验签名」必须伴随签名/算法/公钥 id 三者齐备——不存在一个
+        # signature_verified=True 却没有签名来源的行（否则门禁可被一行空数据骗过）。
+        CheckConstraint(
+            "NOT signature_verified OR (signature IS NOT NULL AND "
+            "signature_algorithm IS NOT NULL AND signing_key_id IS NOT NULL)",
+            name="ck_skill_signature_shape",
+        ),
         UniqueConstraint("name", "semantic_version", name="uq_skill_name_version"),
         UniqueConstraint("package_hash", name="uq_skill_pkg_hash_immutable"),
     )
