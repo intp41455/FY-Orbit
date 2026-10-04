@@ -47,9 +47,9 @@ function hashFrames(frames: { matrix: string[] }[]): string {
 }
 
 // 冻结基线：由人工写入后提交。禁止 `vitest -u` 自动更新绕过，更新须人审 diff。
-// 如需重置基线：临时把下面常量改回 'PLACEHOLDER' 跑一次取 stdout 打印值，再写回。
-const FROZEN_AVATAR_BASELINE = '26fa7820';
-const FROZEN_IDLE_BASELINE = 'cbaf16fa';
+// A2 升级为 24×48（2.5 头身）后的冻结基线。
+const FROZEN_AVATAR_BASELINE = '55a9fbdf';
+const FROZEN_IDLE_BASELINE = '2bf90e95';
 
 describe('G5-3 · 视觉回归护栏（角色渲染快照）', () => {
   it('基准角色渲染与冻结快照一致（G5-2 描边 / 后端像素变更会被拦下）', () => {

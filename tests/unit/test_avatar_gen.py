@@ -113,13 +113,13 @@ def test_full_portrait_reports_complete():
 # 二、像素合成器：结构红线
 # ======================================================================
 @pytest.mark.parametrize("portrait", [PORTRAIT_A, PORTRAIT_B, PORTRAIT_C, {}])
-def test_avatar_is_24x32_with_eight_non_empty_layers(portrait):
+def test_avatar_is_24x48_with_eight_non_empty_layers(portrait):
     out = ag.build_avatar(portrait)
-    assert (out["width"], out["height"]) == (24, 32)
+    assert (out["width"], out["height"]) == (24, 48)
     assert tuple(out["layers"]) == ag.LAYER_NAMES
     assert len(ag.LAYER_NAMES) == 8
     for name, rows in out["layers"].items():
-        assert len(rows) == 32, name
+        assert len(rows) == 48, name
         assert all(len(r) == 24 for r in rows), name
         assert any(ch != "." for r in rows for ch in r), f"{name} 是空层"
 
@@ -162,7 +162,7 @@ def test_compose_layers_never_out_of_bounds_across_dimension_sweep():
         used = {ch for rows in layers.values() for r in rows for ch in r if ch != "."}
         assert used <= set(ag.CHAR_KEYS), (hs, ht, eye, mouth, oc, acc, emb, tex, used - set(ag.CHAR_KEYS))
         for name, rows in layers.items():
-            assert len(rows) == 32 and all(len(r) == 24 for r in rows), name
+            assert len(rows) == 48 and all(len(r) == 24 for r in rows), name
 
 
 def test_idle_frames_and_ground_shadow_exist():
@@ -170,8 +170,8 @@ def test_idle_frames_and_ground_shadow_exist():
     out = ag.build_avatar(PORTRAIT_A)
     shadow = out["layers"]["shadow"]
     assert any(ch != "." for r in shadow for ch in r)
-    # 地面影必须在画布下部
-    assert any(ch != "." for row in shadow[26:] for ch in row)
+    # 地面影必须在画布下部（40 行之后）
+    assert any(ch != "." for row in shadow[40:] for ch in row)
     # 帧数据由前端从分层矩阵派生（见 api/avatar.ts deriveFrames），这里保证层够用
     assert "body" in out["layers"] and "hair" in out["layers"]
 
@@ -357,7 +357,7 @@ def test_generate_returns_full_avatar_package(client: TestClient, headers: dict)
     assert r.status_code == 200, r.text
     data = r.json()
     assert data["state"] == "draft"
-    assert data["avatar"]["width"] == 24 and data["avatar"]["height"] == 32
+    assert data["avatar"]["width"] == 24 and data["avatar"]["height"] == 48
     assert len(data["avatar"]["layers"]) == 8
     assert len(data["avatar"]["palette"]) >= 16
     assert data["advisory"]["complete"] is True
@@ -526,9 +526,9 @@ def test_house_endpoint_only_serves_confirmed_house_avatar(client: TestClient, h
     r = client.get("/api/avatar/house", headers=headers)
     assert r.status_code == 200
     data = r.json()
-    assert data["width"] == 24 and data["height"] == 32
+    assert data["width"] == 24 and data["height"] == 48
     assert data["char_keys"] == ag.CHAR_KEYS
-    assert len(data["matrix"]) == 32
+    assert len(data["matrix"]) == 48
 
 
 def test_house_avatar_matches_me_matrix(client: TestClient, headers: dict):

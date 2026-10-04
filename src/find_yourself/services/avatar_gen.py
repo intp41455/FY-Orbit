@@ -44,9 +44,9 @@ from .errors import ValidationFailed
 
 ENGINE_VERSION = "1.0.0-rules"
 AVATAR_WIDTH = 24
-AVATAR_HEIGHT = 32
+AVATAR_HEIGHT = 48
 MIN_PALETTE_COLORS = 16
-BODY_HEAD_RATIO = 1.2  # 头身比 1:1.2 Q 版（任务书 §2.2）
+BODY_HEAD_RATIO = 1.4  # 头身比 20:28 = 1:1.4，严格 2.5 头身（任务书 A2 / §3.2）
 
 # --- 八字五行 → 主色调板 ------------------------------------------------
 # 任务书 §2.1：金=白金冷调、木=青绿、水=蓝黑靛、火=红橙、土=赭黄
@@ -851,14 +851,14 @@ CHAR_KEYS: dict[str, str] = {
 #: 现在两者都从这里取，**结构上不可能再错位**。
 HEAD_TOP = 1
 FACE_CX = 12.0
-FACE_CY = 7.0
-FACE_RX = 5.8          # S 圆脸
-FACE_RY = 5.0
-FACE_RX_SHARP = 5.2    # N 清峭脸（rx 差 0.6，视觉上明显不同）
-FACE_RY_SHARP = 5.4
-BODY_TOP = 13
-SHOULDER_W = 11
-HIP_W = 9
+FACE_CY = 10.5
+FACE_RX = 7.2          # S 圆脸
+FACE_RY = 7.2
+FACE_RX_SHARP = 6.4    # N 清峭脸
+FACE_RY_SHARP = 7.6
+BODY_TOP = 20
+SHOULDER_W = 14
+HIP_W = 12
 
 
 def face_radii(face_shape: str) -> tuple[float, float]:
@@ -982,56 +982,50 @@ class PixelCanvas:
 def _draw_shadow() -> list[str]:
     """层 1：地面椭圆影（11 号文档 DNA-5 硬要求：地面椭圆影）。"""
     c = PixelCanvas()
-    # G1-6：过去用 "a"(emblem_bg，木主题近白 #eef7ec) 当阴影色 → 脚下像踩了亮色地砖。
-    # 改用 "z"(ground_shadow = shade(base, 0.55))，角色主色的深版，视觉上读作影子。
-    c.ellipse(FACE_CX, 30.0, 6.5, 1.7, "z")
-    c.ellipse(FACE_CX, 30.0, 3.5, 0.9, "z")
+    # 地面影在第 45~47 行，深色半透明角色主色深版
+    c.ellipse(FACE_CX, 46.0, 8.5, 1.8, "z")
+    c.ellipse(FACE_CX, 46.0, 5.0, 1.0, "z")
     return c.rows()
 
 
 def _draw_body(face_shape: str) -> list[str]:
     """层 2：身体底层 = 头（脸）+ 颈 + 躯干 + 手臂 + 腿 + 鞋。
 
-    解剖约定（Q 版 1:1.2）：
-      - 头（脸）是**独立一块干净区域**，发型在其**外侧/上方**堆叠，脸中央永远可见；
-      - 肩宽 11 < 脸宽 11.8 → 头略大于肩，Q 版的「可爱」比例；
-      - 躯干 12 行 + 腿 3 行 = 15 行，与头 14 行构成 1:1。
-
-    **实现顺序很关键**：先画躯干/四肢并 ``shade_edge`` 描边，**最后**才把脸 overlay 回去。
-    否则 ``shade_edge`` 会沿着脸的整圈轮廓糊上一圈暗边（实测第 01~13 行脸周全被
-    染成 ``S``），脸显脏显小，Q 版的「可爱」直接消失。
+    解剖约定（严格 2.5 头身，头 20 + 身 28 = 48 行）：
+      - 头部 20 行（y=0..19），脸本体干净，圆润软边缘；
+      - 肩宽 14（y=20..24 软圆肩角），腰宽 12（y=25..30），胯宽 12（y=31..36）；
+      - 手臂（y=21..33，手掌 s 在 y=31..33）；
+      - 腿 7 行（y=37..43，L）；
+      - 鞋 3 行（y=44..46，w，圆角像素鞋）。
     """
     torso = PixelCanvas()
     cx = int(FACE_CX)
-    # --- 躯干：肩 → 腰 → 胯（先画这块，后面会被脸 overlay 盖住上部）---
+    # --- 躯干：肩 → 腰 → 胯 ---
     half = SHOULDER_W // 2
-    torso.rect(cx - half, BODY_TOP, SHOULDER_W, 3, "o")           # 肩
-    torso.rect(cx - half + 1, BODY_TOP + 3, SHOULDER_W - 2, 5, "o")  # 腰
-    torso.rect(cx - HIP_W // 2, BODY_TOP + 8, HIP_W, 4, "o")       # 胯/下摆
-    # --- 手臂（贴在躯干两侧，独立 2 宽，手为皮肤）---
-    torso.rect(cx - half - 2, BODY_TOP, 2, 7, "o")
-    torso.rect(cx + half, BODY_TOP, 2, 7, "o")
-    torso.rect(cx - half - 2, BODY_TOP + 7, 2, 2, "s")
-    torso.rect(cx + half, BODY_TOP + 7, 2, 2, "s")
+    torso.rect(cx - half + 1, BODY_TOP, SHOULDER_W - 2, 2, "o")      # 肩顶圆角
+    torso.rect(cx - half, BODY_TOP + 2, SHOULDER_W, 3, "o")          # 肩中
+    torso.rect(cx - half + 1, BODY_TOP + 5, SHOULDER_W - 2, 6, "o")  # 腰 (y=25..30)
+    torso.rect(cx - HIP_W // 2, BODY_TOP + 11, HIP_W, 6, "o")        # 胯/下摆 (y=31..36)
+    # --- 手臂（两侧 2 宽，手为皮肤 s）---
+    torso.rect(cx - half - 2, BODY_TOP + 1, 2, 10, "o")
+    torso.rect(cx + half, BODY_TOP + 1, 2, 10, "o")
+    torso.rect(cx - half - 2, BODY_TOP + 11, 2, 3, "s")
+    torso.rect(cx + half, BODY_TOP + 11, 2, 3, "s")
     # --- 腿 + 鞋 ---
-    torso.rect(cx - 3, BODY_TOP + 12, 2, 3, "L")
-    torso.rect(cx + 1, BODY_TOP + 12, 2, 3, "L")
-    torso.rect(cx - 4, BODY_TOP + 15, 3, 1, "w")
-    torso.rect(cx + 1, BODY_TOP + 15, 3, 1, "w")
+    torso.rect(cx - 4, BODY_TOP + 17, 3, 7, "L")
+    torso.rect(cx + 1, BODY_TOP + 17, 3, 7, "L")
+    torso.rect(cx - 5, BODY_TOP + 24, 4, 3, "w")
+    torso.rect(cx + 1, BODY_TOP + 24, 4, 3, "w")
     torso.shade_edge("S", prefer="bottom")
 
-    # --- 干净的脸 + 颈（overlay 在描边之上，边界锐利、绝无暗边）---
+    # --- 干净的脸 + 颈（overlay 在描边之上）---
     head = PixelCanvas()
     rx, ry = face_radii(face_shape)
     head.ellipse(FACE_CX, FACE_CY, rx, ry, "s")
-    head.px(cx - 6, int(FACE_CY), "s")       # 耳
-    head.px(cx + 5, int(FACE_CY), "s")
-    # 颈：脸**之内**底部（FACE_CY+ry-2 起）画 4 宽 3 高。
-    # 脖子必须够宽够长并与肩线重叠，否则 `shade_edge` 会在中间插一整行暗边，
-    # 视觉上头与身体「断成两截」（实测第 12 行只有 3px 颈、第 13 行整行 S）。
-    # **不加底部暗部行**：那一行 `S` 正好落在脸与肩之间，渲染出来像一条黑口罩。
-    neck_y = int(FACE_CY + ry) - 2
-    head.rect(cx - 2, neck_y, 4, 3, "s")
+    head.px(cx - 8, int(FACE_CY), "s")       # 耳
+    head.px(cx + 7, int(FACE_CY), "s")
+    neck_y = int(FACE_CY + ry) - 3
+    head.rect(cx - 3, neck_y, 6, 4, "s")
 
     torso.overlay(head)
     return torso.rows()
@@ -1059,10 +1053,6 @@ def _draw_hair(style: str, face_shape: str) -> list[str]:
 
     关键：**先画头发团（比脸大 1~2px 的外圈），再挖出脸的可见区**，
     于是脸（body 层）从发团中透出来，而不是被头发盖住。
-
-    挖洞半径取 :func:`face_radii`（与 body 画脸**同一套**），刘海单独叠在洞顶 ——
-    绝不靠「把洞挖小/挖大再压刘海」来调节，那会让发型从四周内侵、把脸挤成一条缝
-    （渲染实测：脸只剩中间 6×3 像素，五官几乎不可见）。
     """
     shape = _HAIR_SHAPES.get(style, _HAIR_SHAPES["short_neat"])
     c = PixelCanvas()
@@ -1072,55 +1062,53 @@ def _draw_hair(style: str, face_shape: str) -> list[str]:
     fringe = int(shape["fringe"])
 
     # 1) 头顶发团：比脸略大（外圈）
-    c.ellipse(FACE_CX, FACE_CY - 0.4, frx + 1.3 + puff * 0.4, fry + 1.0 + puff * 0.3, "h")
+    c.ellipse(FACE_CX, FACE_CY - 0.5, frx + 1.8 + puff * 0.5, fry + 1.4 + puff * 0.4, "h")
     if shape.get("bun"):
-        c.ellipse(FACE_CX, FACE_CY - fry - 1.4, 3.2, 2.3, "h")
+        c.ellipse(FACE_CX, FACE_CY - fry - 2.5, 4.2, 3.2, "h")
     if shape.get("sweep"):
-        c.ellipse(cx + 4.5, FACE_CY - 2.4, 2.6, 3.0, "h")
+        c.ellipse(cx + 6.0, FACE_CY - 3.0, 3.5, 4.5, "h")
     if shape.get("bob"):
-        c.ellipse(cx - 6, FACE_CY + 1.0, 2.0, 3.4, "h")
-        c.ellipse(cx + 6, FACE_CY + 1.0, 2.0, 3.4, "h")
+        c.ellipse(cx - 7.5, FACE_CY + 2.0, 2.8, 5.5, "h")
+        c.ellipse(cx + 7.5, FACE_CY + 2.0, 2.8, 5.5, "h")
     if shape.get("back"):
-        back = int(shape["back"])
-        c.rect(cx - 7, int(FACE_CY) - 1, 2, back, "h")
-        c.rect(cx + 6, int(FACE_CY) - 1, 2, back, "h")
+        back = int(shape["back"]) * 2
+        c.rect(cx - 9, int(FACE_CY) - 1, 3, back, "h")
+        c.rect(cx + 7, int(FACE_CY) - 1, 3, back, "h")
         if shape.get("wave"):
-            for k in range(back // 2 + 1):
-                c.ellipse(cx - 7, FACE_CY + 1 + k * 2, 1.7, 1.2, "h")
-                c.ellipse(cx + 7, FACE_CY + 1 + k * 2, 1.7, 1.2, "h")
+            for k in range(back // 3 + 1):
+                c.ellipse(cx - 9, FACE_CY + 2 + k * 3, 2.2, 1.8, "h")
+                c.ellipse(cx + 8, FACE_CY + 2 + k * 3, 2.2, 1.8, "h")
         if shape.get("braid"):
-            c.ellipse(cx - 7, FACE_CY + back, 1.5, 1.2, "h")
-            c.ellipse(cx + 7, FACE_CY + back, 1.5, 1.2, "h")
+            c.ellipse(cx - 9, FACE_CY + back, 2.0, 1.8, "h")
+            c.ellipse(cx + 8, FACE_CY + back, 2.0, 1.8, "h")
     if shape.get("tails") == 1:
-        c.ellipse(cx + 8, FACE_CY + 2.0, 2.3, 4.2, "h")
+        c.ellipse(cx + 10, FACE_CY + 3.0, 3.0, 6.5, "h")
     if shape.get("tails") == 2:
-        c.ellipse(cx - 8, FACE_CY + 1.5, 2.2, 3.6, "h")
-        c.ellipse(cx + 8, FACE_CY + 1.5, 2.2, 3.6, "h")
+        c.ellipse(cx - 10, FACE_CY + 2.5, 3.0, 5.5, "h")
+        c.ellipse(cx + 10, FACE_CY + 2.5, 3.0, 5.5, "h")
 
-    # 2) 挖出脸的可见区（与 body 的脸同一椭圆，顶部为刘海预留 keep_fringe 行）
-    hole = _face_hole_mask(frx, fry, fringe)
+    # 2) 挖出脸的可见区
+    scaled_fringe = fringe + 1
+    hole = _face_hole_mask(frx, fry, scaled_fringe)
     for y in range(AVATAR_HEIGHT):
         for x in range(AVATAR_WIDTH):
             if hole[y][x]:
                 c.grid[y][x] = "."
 
-    # 3) 刘海：叠在洞顶（发际线上方），只压 fringe 行，绝不盖到眼睛
+    # 3) 刘海：叠在洞顶
     top = int(FACE_CY - fry) - 1
-    c.rect(cx - 6, top, 13, fringe, "h")
+    c.rect(cx - 7, top, 15, scaled_fringe, "h")
     if shape.get("wave") and int(shape["wave"]) >= 2:
-        for k in range(3):     # 卷发刘海做出波浪缺口
-            c.px(cx - 4 + k * 4, top + fringe, ".")
+        for k in range(4):
+            c.px(cx - 6 + k * 4, top + scaled_fringe, ".")
 
-    # 4) 只给**外轮廓**描暗边：脸洞边缘不描，否则会出现 HhH 三明治暗边把脸框小
+    # 4) 只给外轮廓描暗边
     _shade_outer_edge(c, hole=hole, edge="H", prefer="bottom")
     return c.rows()
 
 
 def _face_hole_mask(rx: float, ry: float, keep_fringe: int) -> list[list[bool]]:
-    """脸的可见区掩膜。
-
-    ``rx/ry`` **必须**传 :func:`face_radii` 的返回值——与 body 画脸保持同一套半径。
-    """
+    """脸的可见区掩膜。"""
     hole = [[False] * AVATAR_WIDTH for _ in range(AVATAR_HEIGHT)]
     y0 = int(FACE_CY - ry) + keep_fringe
     y1 = int(FACE_CY + ry)
@@ -1160,38 +1148,32 @@ def _shade_outer_edge(
 
 
 def _draw_face(eye: str, mouth: str, face_shape: str) -> list[str]:
-    """层 4：表情（眼 + 高光 + 腮红 + 嘴）。落在脸的可见区中央。
-
-    所有元素都夹在 :func:`_face_hole_mask` 的椭圆内，保证不会画到头发/脸外，
-    且彼此不重叠（眼 → 腮红 → 嘴 自上而下分区）。
-    """
+    """层 4：表情（眼 + 高光 + 腮红 + 嘴）。大眼(>=2px) + 腮红明显 + 柔和表情。"""
     c = PixelCanvas()
     cx = int(FACE_CX)
-    eye_y = int(FACE_CY) - 1      # 眼略高于中线，给腮红让出下方一行
-    # 眼：左右各 2×2 块（3 宽会撞到腮红，渲染实测眼睛像戴红框眼镜）；
-    # 高光像素位置按眼型变化（任务书 §2.2「眼睛高光像素」）
+    eye_y = int(FACE_CY) - 1      # y=9..11
     spec = {
-        "sparkle":  [(0, 0), (1, 0)],
+        "sparkle":  [(0, 0), (1, 1)],
         "calm":     [(0, 0)],
         "sharp":    [(1, 0)],
-        "gentle":   [(0, 0), (1, 1)],
+        "gentle":   [(0, 0), (1, 2)],
         "dreamy":   [(0, 1), (1, 0)],
         "focused":  [(0, 0), (1, 0)],
     }.get(eye, [(0, 0)])
+
+    # 大眼睛：2×3 尺寸，大眼可爱萌动
     for side in (-1, 1):
-        ex = cx + side * 3 - 1
-        c.rect(ex, eye_y, 2, 2, "e")
+        ex = cx + (side * 4 if side < 0 else side * 2)
+        c.rect(ex, eye_y, 2, 3, "e")
         for dx, dy in spec:
             c.px(ex + dx, eye_y + dy, "E")
 
-    # 腮红：与眼**隔 1 行**、贴脸缘（cx±4..5）。
-    # 三条实测教训：放眼下一行变「鼻子」；与眼同行变「红框眼镜」；
-    # 紧贴眼角变「眼泪」。必须隔 1 行 + 横向让开。
-    c.rect(cx - 5, eye_y + 2, 2, 1, "b")
-    c.rect(cx + 3, eye_y + 2, 2, 1, "b")
+    # 腮红明显：宽 2 高 1，落在眼睛下方外侧
+    c.rect(cx - 6, eye_y + 4, 2, 1, "b")
+    c.rect(cx + 4, eye_y + 4, 2, 1, "b")
 
-    # 嘴：腮红下方 1 行，与腮红错开
-    my = eye_y + 4
+    # 嘴巴：柔和表情
+    my = eye_y + 5
     if mouth == "flat":
         c.rect(cx - 2, my, 4, 1, "O")
     elif mouth == "smile":
@@ -1205,12 +1187,11 @@ def _draw_face(eye: str, mouth: str, face_shape: str) -> list[str]:
         c.rect(cx - 2, my, 5, 1, "O")
         c.rect(cx - 1, my + 1, 3, 1, "b")
     elif mouth == "grin":
-        c.rect(cx - 3, my, 7, 1, "O")
-        c.rect(cx - 2, my + 1, 5, 1, "O")
+        c.rect(cx - 3, my, 6, 1, "O")
+        c.rect(cx - 2, my + 1, 4, 1, "O")
     else:
-        c.rect(cx - 1, my, 2, 1, "O")
+        c.rect(cx - 1, my, 3, 1, "O")
 
-    # 兜底裁剪：任何表情元素都不得越出脸的可见区（结构上防溢出）
     frx, fry = face_radii(face_shape)
     hole = _face_hole_mask(frx, fry, 0)
     for y in range(AVATAR_HEIGHT):
@@ -1242,40 +1223,43 @@ def _draw_outfit(outfit: str) -> list[str]:
     sl = int(shape.get("sleeve", 2))
 
     # 衣身（肩 → 腰 → 下摆）
-    c.rect(cx - half, BODY_TOP, half * 2, 3, "o")
-    c.rect(cx - half + 1, BODY_TOP + 3, (half - 1) * 2, 5, "o")
-    hem_rows = 8 + int(shape.get("hem", 0))
-    c.rect(cx - HIP_W // 2, BODY_TOP + 8, HIP_W, hem_rows - 8, "o")
+    c.rect(cx - half + 1, BODY_TOP, (half - 1) * 2, 2, "o")
+    c.rect(cx - half, BODY_TOP + 2, half * 2, 3, "o")
+    c.rect(cx - half + 1, BODY_TOP + 5, (half - 1) * 2, 6, "o")
+    hem_rows = 6 + int(shape.get("hem", 0)) * 2
+    c.rect(cx - HIP_W // 2, BODY_TOP + 11, HIP_W, hem_rows, "o")
     if shape.get("skirt"):
         sk = int(shape["skirt"])
-        c.rect(cx - HIP_W // 2 - sk, BODY_TOP + 11, HIP_W + sk * 2, sk, "o")
+        c.rect(cx - HIP_W // 2 - sk, BODY_TOP + 14, HIP_W + sk * 2, sk + 2, "o")
     # 袖（长度 = sleeve；0 = 背心无袖）
     if sl > 0:
-        c.rect(cx - half - 2, BODY_TOP, 2, sl, "o")
-        c.rect(cx + half, BODY_TOP, 2, sl, "o")
+        sleeve_len = 4 if sl == 1 else (7 if sl == 2 else 10)
+        c.rect(cx - half - 2, BODY_TOP + 1, 2, sleeve_len, "o")
+        c.rect(cx + half, BODY_TOP + 1, 2, sleeve_len, "o")
     if shape.get("cape"):
-        c.rect(cx - half - 3, BODY_TOP - 1, (half + 3) * 2, 8, "c")
+        c.rect(cx - half - 3, BODY_TOP - 1, (half + 3) * 2, 16, "c")
     if shape.get("hood"):
         # 帽堆在颈后
-        c.rect(cx - half - 1, BODY_TOP - 2, (half + 1) * 2, 2, "o")
+        c.rect(cx - half - 1, BODY_TOP - 3, (half + 1) * 2, 3, "o")
 
     # --- 细节：全部画在「衣身之内」，且不与描边抢位置 ---
     if shape.get("stripe"):
-        # 针织条纹：只在**腰侧**做 1px 竖条纹，不再横贯整个躯干
-        # （原实现是 1 行横贯 8 宽的 F，在 24px 画布上就是一条醒目的白腰带）
         for k in range(3):
-            c.px(cx - half + 2 + k * 2, BODY_TOP + 4, "F")
-            c.px(cx - half + 2 + k * 2, BODY_TOP + 5, "F")
+            c.px(cx - half + 2 + k * 2, BODY_TOP + 6, "F")
+            c.px(cx - half + 2 + k * 2, BODY_TOP + 7, "F")
+            c.px(cx - half + 2 + k * 2, BODY_TOP + 8, "F")
     if shape.get("lapel"):
-        # 翻领：只在肩部做出 V 字领口线（4px 长），不在躯干中间开一条亮带
+        # 翻领：只在肩部做出 V 字领口线
         c.px(cx - 2, BODY_TOP, "t")
         c.px(cx + 1, BODY_TOP, "t")
         c.px(cx - 1, BODY_TOP + 1, "t")
         c.px(cx, BODY_TOP + 1, "t")
+        c.px(cx - 1, BODY_TOP + 2, "t")
+        c.px(cx, BODY_TOP + 2, "t")
     if shape.get("pocket"):
-        c.rect(cx - 4, BODY_TOP + 6, 3, 2, "O")
-        c.rect(cx + 1, BODY_TOP + 6, 3, 2, "O")
-    # 领口：1px 点缀在肩线上（整行 t 会变成一条突兀的横杠）
+        c.rect(cx - 4, BODY_TOP + 9, 3, 2, "O")
+        c.rect(cx + 1, BODY_TOP + 9, 3, 2, "O")
+    # 领口：1px 点缀在肩线上
     c.px(cx - 2, BODY_TOP, "t")
     c.px(cx + 1, BODY_TOP, "t")
     c.shade_edge("O", prefer="bottom")
@@ -1291,24 +1275,13 @@ _HEADWEAR_KINDS: dict[str, str] = {
 
 
 def _hair_anchor(hair: list[str]) -> tuple[int, int, int]:
-    """头饰锚点：返回 ``(锚行, 跨度左, 跨度右)``。
-
-    为什么必须取自**实际渲染出的头发**而不是脸椭圆公式：
-    脸椭圆顶端描述的是「脸」，而头饰要坐在「头发」上。发型头顶的实际高度由
-    ``_HAIR_SHAPES`` 的 puff/fringe 以及丸子头、侧分、辫子等附加块决定，与脸型
-    无关。用 ``int(FACE_CY - fry) - 1`` 反推会在脸型切换时错位：实测清峭脸 +
-    丸子头时发夹整体滑到发团外侧，渲染成头顶两枚**游离的黄色小块**（真实像素
-    诊断：accessory 第 00~01 行是 ``........tt.....tt``，而 hair 第 00 行是
-    ``......HhhtthhhhhtthhH``，两者水平范围并不重合）。
-
-    锚行取「最顶实心行 +1」：最顶行往往只有头顶中央几像素，跨度太窄会把发夹夹断。
-    """
+    """头饰锚点：返回 ``(锚行, 跨度左, 跨度右)``。"""
     top = AVATAR_HEIGHT
     for y, row in enumerate(hair):
         if any(ch != "." for ch in row):
             top = y
             break
-    if top >= AVATAR_HEIGHT:      # 理论上不可达（发型必有像素），保底不留空洞
+    if top >= AVATAR_HEIGHT:
         return HEAD_TOP, int(FACE_CX) - 5, int(FACE_CX) + 5
     y = min(top + 1, AVATAR_HEIGHT - 1)
     xs = [x for x in range(AVATAR_WIDTH) if hair[y][x] != "."]
@@ -1318,62 +1291,50 @@ def _hair_anchor(hair: list[str]) -> tuple[int, int, int]:
 def _draw_accessory(
     accessory: str, emblem: str, face_shape: str, hair: list[str]
 ) -> list[str]:
-    """层 6：头饰（压在发际线上）+ 星座徽记（胸前，像素化星座符号）。
-
-    头饰锚点来自 :func:`_hair_anchor`（真实头发几何），不取脸椭圆公式 —— 理由见
-    该函数 docstring。绘制后再按头发跨度做一次横向收口，保证**没有任何头饰像素
-    脱离发团悬空**。
-    """
+    """层 6：头饰（压在发际线上）+ 星座徽记（胸前，像素化星座符号）。"""
     c = PixelCanvas()
     cx = int(FACE_CX)
     kind = _HEADWEAR_KINDS.get(accessory, "band")
-    frx, fry = face_radii(face_shape)   # noqa: F841 — 保留给未来按脸型缩放头饰
-    # 发际线：锚定真实头发。头饰压在这条线上（既不埋进头发，也不悬空）
+    frx, fry = face_radii(face_shape)   # noqa: F841
     hairline, span_lo, span_hi = _hair_anchor(hair)
 
     if kind == "band":
-        c.rect(cx - 5, hairline, 11, 1, "t")
-    elif kind == "bow":
-        c.rect(cx - 6, hairline - 1, 3, 2, "t")
-        c.rect(cx + 4, hairline - 1, 3, 2, "t")
-        c.rect(cx - 1, hairline - 1, 3, 2, "t")
-    elif kind == "pin":
-        c.rect(cx - 4, hairline, 2, 2, "t")
-        c.rect(cx + 3, hairline, 2, 2, "t")
-    elif kind == "hood":
         c.rect(cx - 6, hairline, 13, 2, "t")
-        c.rect(cx - 7, hairline + 2, 2, 4, "t")
-        c.rect(cx + 6, hairline + 2, 2, 4, "t")
+    elif kind == "bow":
+        c.rect(cx - 7, hairline - 1, 4, 3, "t")
+        c.rect(cx + 3, hairline - 1, 4, 3, "t")
+        c.rect(cx - 1, hairline - 1, 3, 3, "t")
+    elif kind == "pin":
+        c.rect(cx - 5, hairline, 3, 2, "t")
+        c.rect(cx + 3, hairline, 3, 2, "t")
+    elif kind == "hood":
+        c.rect(cx - 7, hairline, 15, 3, "t")
+        c.rect(cx - 8, hairline + 3, 2, 6, "t")
+        c.rect(cx + 7, hairline + 3, 2, 6, "t")
     elif kind == "crown":
-        c.rect(cx - 4, hairline + 1, 9, 1, "t")
-        c.px(cx - 4, hairline, "t")
-        c.px(cx - 1, hairline - 1, "t")
-        c.px(cx + 2, hairline, "t")
-        c.px(cx + 4, hairline - 1, "t")
+        c.rect(cx - 5, hairline + 1, 11, 2, "t")
+        c.px(cx - 5, hairline, "t")
+        c.px(cx - 2, hairline - 1, "t")
+        c.px(cx + 1, hairline - 1, "t")
+        c.px(cx + 4, hairline, "t")
     elif kind == "wreath":
         for k in range(5):
-            c.px(cx - 5 + k * 3, hairline + (k % 2), "t")
-            c.px(cx - 4 + k * 3, hairline + 1 - (k % 2), "t")
+            c.px(cx - 6 + k * 3, hairline + (k % 2), "t")
+            c.px(cx - 5 + k * 3, hairline + 1 - (k % 2), "t")
     elif kind == "veil":
-        c.rect(cx - 6, hairline, 13, 1, "t")
-        c.rect(cx - 6, hairline + 1, 1, 9, "t")
-        c.rect(cx + 6, hairline + 1, 1, 9, "t")
+        c.rect(cx - 7, hairline, 15, 2, "t")
+        c.rect(cx - 7, hairline + 2, 2, 14, "t")
+        c.rect(cx + 6, hairline + 2, 2, 14, "t")
     elif kind == "feather":
-        c.rect(cx - 3, hairline, 7, 1, "t")
-        for k in range(5):
+        c.rect(cx - 4, hairline, 9, 2, "t")
+        for k in range(6):
             c.px(cx + 2 + k, hairline - (k // 2), "t")
     elif kind == "halo":
-        c.ellipse(cx + 0.5, hairline - 0.5, 4.5, 1.3, "t")
-    # 头饰**不描边**：`shade_edge` 会把 1px 发带膨胀成 3 行厚光环（实测第 00~02 行
-    # 整行 F），在 24px 画布上比发带本身还显眼。1px 物件靠对比色本身即可读。
+        c.ellipse(cx + 0.5, hairline - 1.5, 6.0, 2.0, "t")
 
-    # 横向收口：任何头饰像素都不得超出「头发锚行跨度 ±1px」。
-    # 这一步是「不许有游离像素」这条不变量的执行点 —— 各 kind 的横向偏移
-    # （crown 的 ±4、veil 的 ±6、wreath 的 ±5）都是按 11px 肩宽手调的，在
-    # 丸子头/利落短发这类窄发型上会溢出。留 ±1px 容差让描边仍然读作"贴着头皮"。
     lo, hi = span_lo - 1, span_hi + 1
     for y in range(AVATAR_HEIGHT):
-        if y >= BODY_TOP:            # 胸前的星座徽记在下方，不受头饰收口影响
+        if y >= BODY_TOP:
             break
         row = c.grid[y]
         if "." in row:
@@ -1381,19 +1342,15 @@ def _draw_accessory(
                 row[x] if lo <= x <= hi else "." for x in range(AVATAR_WIDTH)
             )
 
-    # 星座徽记：3 行窄符号，**居中**贴在胸前（肩宽 11 内、避开两侧手臂与领口点）。
+    # 星座徽记：居中贴在胸前
     art = _emblem_art(emblem)
     aw = max(len(r) for r in art)
-    c.blit(_emblem_plate(art, plated=False), cx - aw // 2, BODY_TOP + 4)
+    c.blit(_emblem_plate(art, plated=False), cx - aw // 2, BODY_TOP + 5)
     return c.rows()
 
 
 def _emblem_plate(art: tuple[str, ...], *, plated: bool = False) -> tuple[str, ...]:
-    """裁掉 ``art`` 的空白包围盒，使徽记紧贴中心（``plated`` 保留给将来描边用）。
-
-    裁剪必要：3×3 art 里若某行/列全空（例如天秤第 0 行），不裁就会在胸前
-    留出一条空像素带，视觉上把徽记挤到一边。
-    """
+    """裁掉 ``art`` 的空白包围盒，使徽记紧贴中心。"""
     h = len(art)
     w = max(len(r) for r in art)
     solid = [
@@ -1426,98 +1383,60 @@ def _emblem_plate(art: tuple[str, ...], *, plated: bool = False) -> tuple[str, .
 
 
 def _emblem_art(emblem: str) -> tuple[str, ...]:
-    """12 星座符号 → **3 行 × 最多 5 列**极简徽记（'t'=符号, '.'=透明）。
-
-    为什么压到 3 行而不是 8×8：
-      24×32 画布上，胸前能安全放 detail 的区域只有约 6×6 px。8×8 的星座 art 裁完
-      仍有 5~6 行、6 列，贴上去就是一条横扫胸口的横条（渲染实测：像绶带/托盘，
-      完全喧宾夺主，且看不出是哪个星座）。3 行窄徽记保留每个星座的**辨识特征**
-      （白羊的叉、天秤的横杠、双子的双柱），在小尺寸下依然可辨，且绝不抢脸。
-
-      注意是「3 行、每行宽度不等」（1~5 列），**不是 3×3 正方**——3 列放不下
-      天秤的横梁与天蝎的 M 形，强行压成 3 列会把这两星座的特征抹平。
-    """
+    """12 星座符号 → 3 行 × 最多 5 列极简徽记。"""
     table: dict[str, tuple[str, ...]] = {
-        # 白羊：上方双角 + 中柱
         "aries":       (".t.t.", "..t..", ".ttt."),
-        # 金牛：圆顶 + 中柱
         "taurus":      ("ttt..", "..t..", "..t.."),
-        # 双子：双柱 + 双横
         "gemini":      ("t.t.", "ttt.", "t.t."),
-        # 巨蟹：双弧
         "cancer":      (".t.t", "t.t.", ".t.t"),
-        # 狮子：鬃毛环 + 尾
         "leo":         ("ttt.", "t.t.", "..t."),
-        # 处女：V 字 + 竖
         "virgo":       ("t.t.", "t.t.", ".t.."),
-        # 天秤：横梁 + 底座
         "libra":       (".....", "ttttt", "..t.."),
-        # 天蝎：M 形 + 尾刺
         "scorpio":     ("t...t", "t.t.t", "..t.."),
-        # 射手：斜箭
         "sagittarius": ("...t.", "..tt.", ".t..."),
-        # 摩羯：V + 横
         "capricorn":   ("t...t", "t.t.t", ".ttt."),
-        # 水瓶：双波
         "aquarius":    (".....", "t.t.t", ".t.t."),
-        # 双鱼：双鱼身
         "pisces":      ("t...t", ".t.t.", "t...t"),
     }
     return table.get(emblem, table["virgo"])
 
 
 def _draw_hand_item(hand: str) -> list[str]:
-    """层 7：随身小物（**握在右手**，5px 宽，不喧宾夺主）。
-
-    定位由两条真实解剖约束决定，不是随手取的魔数：
-
-    1. ``hx = 18`` 而非更左 —— body 层的手掌是 ``rect(cx + half, BODY_TOP + 7,
-       2, 2)``，即 x=17~18 / y=20~21。物件从 x=18 起画，**故意让手掌的 x=17
-       一列皮肤露出来**，读作"手指攥着物件"；若从 x=17 起画（实测旧值），物件会
-       把手掌整个盖死，手臂末端就成了一截悬空方块。
-    2. ``hy = BODY_TOP + 5``（=18）—— 物件 6~7 行高，跨 y=18~24，手掌（y=20~21）
-       落在物件**上中部**。旧值 ``BODY_TOP + 8``（=21）让整件物品掉到 y=21~27，
-       与大腿/鞋同高，视觉上变成"挂在腿边"而非"拿在手里"（像素诊断实测：包围盒
-       y=21~27，而腿在 y=25~27、鞋在 y=28）。
-
-    右缘约束：``hx + 5 = 23`` 正好是画布最后一列（0~23），所以轮廓光只能落在
-    物件**左侧**或上/下侧。这是有意的安排。
-    """
+    """层 7：随身小物（握在右手，5px 宽，不喧宾夺主）。"""
     c = PixelCanvas()
     hx = 18
-    hy = BODY_TOP + 5
+    hy = BODY_TOP + 9
     if hand == "book":
-        c.rect(hx, hy, 5, 6, "g")
-        c.rect(hx + 1, hy + 1, 3, 4, "t")
+        c.rect(hx, hy, 5, 7, "g")
+        c.rect(hx + 1, hy + 1, 3, 5, "t")
     elif hand == "tea_cup":
         c.rect(hx, hy + 1, 5, 1, "t")        # 杯口
-        c.rect(hx, hy + 2, 5, 3, "g")        # 杯身
-        c.rect(hx + 1, hy + 5, 3, 1, "t")    # 杯托
+        c.rect(hx, hy + 2, 5, 4, "g")        # 杯身
+        c.rect(hx + 1, hy + 6, 3, 1, "t")    # 杯托
     elif hand == "lantern":
         c.rect(hx + 1, hy, 3, 1, "t")        # 提环
-        c.rect(hx, hy + 1, 5, 5, "g")        # 灯身
-        c.rect(hx + 1, hy + 2, 3, 3, "t")    # 灯窗
-        c.rect(hx + 1, hy + 6, 3, 1, "t")    # 底座
+        c.rect(hx, hy + 1, 5, 6, "g")        # 灯身
+        c.rect(hx + 1, hy + 2, 3, 4, "t")    # 灯窗
+        c.rect(hx + 1, hy + 7, 3, 1, "t")    # 底座
     elif hand == "flower":
         c.rect(hx + 1, hy, 3, 2, "g")        # 上瓣
-        c.rect(hx, hy + 2, 5, 2, "g")        # 侧瓣
-        c.rect(hx + 1, hy + 4, 3, 2, "g")    # 下瓣
-        c.rect(hx + 2, hy + 6, 1, 1, "g")    # 花茎
+        c.rect(hx, hy + 2, 5, 3, "g")        # 侧瓣
+        c.rect(hx + 1, hy + 5, 3, 2, "g")    # 下瓣
+        c.rect(hx + 2, hy + 7, 1, 2, "g")    # 花茎
     elif hand == "note_book":
-        c.rect(hx, hy, 5, 6, "g")
+        c.rect(hx, hy, 5, 7, "g")
         c.rect(hx + 1, hy + 1, 3, 1, "t")
         c.rect(hx + 1, hy + 3, 3, 1, "t")
+        c.rect(hx + 1, hy + 5, 3, 1, "t")
     elif hand == "compass":
-        c.rect(hx, hy + 1, 5, 5, "g")
-        c.rect(hx + 1, hy + 2, 3, 3, "t")
+        c.rect(hx, hy + 1, 5, 6, "g")
+        c.rect(hx + 1, hy + 2, 3, 4, "t")
         c.px(hx + 1, hy + 2, "g")            # 指针一端
-        c.px(hx + 3, hy + 4, "g")            # 指针另一端
+        c.px(hx + 3, hy + 5, "g")            # 指针另一端
     else:  # seal
-        c.rect(hx + 1, hy, 3, 1, "t")        # 提钮
-        c.rect(hx, hy + 1, 5, 4, "g")        # 印身
-        c.rect(hx + 1, hy + 2, 3, 2, "t")    # 印文
-    # 手持物**不描边**：它只有 5×6px，`shade_edge` 会四边包 F 变成 7×8 的
-    # 发光箱子（实测第 22~28 行整圈 F），在小画布上比物本身还大。
+        c.rect(hx + 1, hy, 3, 2, "t")        # 提钮
+        c.rect(hx, hy + 2, 5, 5, "g")        # 印身
+        c.rect(hx + 1, hy + 3, 3, 3, "t")    # 印文
     return c.rows()
 
 

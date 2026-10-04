@@ -50,9 +50,9 @@ describe('W11 · 色板转换', () => {
     expect(() => hexToRgbInt('#12345')).toThrow(/非法色值/);
   });
 
-  it('字符色板整体转换为 PixelPalette（19 个语义色 = 19 个字符键）', () => {
+  it('字符色板整体转换为 PixelPalette（20 个语义色 = 20 个字符键）', () => {
     const p = toPixelPalette(palette);
-    expect(Object.keys(p)).toHaveLength(19);
+    expect(Object.keys(p)).toHaveLength(20);
     expect(p.s).toBe(hexToRgbInt(palette.s));
     // 矩阵里真的用到的每个字符都必须有颜色
     for (const ch of new Set(matrix.join(''))) {
@@ -68,7 +68,7 @@ describe('W11 · 8 层矩阵契约', () => {
     expect(Object.keys(layers)).toEqual([...LAYER_NAMES]);
   });
 
-  it('每层都是 32 行 × 24 列', () => {
+  it('每层都是 48 行 × 24 列', () => {
     for (const name of LAYER_NAMES) {
       const rows = layers[name];
       expect(rows, name).toHaveLength(AVATAR_HEIGHT);
@@ -94,7 +94,7 @@ describe('W11 · 8 层矩阵契约', () => {
 });
 
 describe('W11 · 渲染成像素', () => {
-  it('矩阵 → RGBA 快照尺寸 = 24×32（未放大）', () => {
+  it('矩阵 → RGBA 快照尺寸 = 24×48（未放大）', () => {
     const snap = renderAvatar(layers, palette);
     expect(snap.width).toBe(AVATAR_WIDTH);
     expect(snap.height).toBe(AVATAR_HEIGHT);
@@ -116,7 +116,7 @@ describe('W11 · 渲染成像素', () => {
 });
 
 describe('W11 · 四帧待机生命感', () => {
-  it('产出恰好 4 帧，尺寸恒定 24×32', () => {
+  it('产出恰好 4 帧，尺寸恒定 24×48', () => {
     const frames = idleFrames(layers);
     expect(frames).toHaveLength(4);
     for (const f of frames) {

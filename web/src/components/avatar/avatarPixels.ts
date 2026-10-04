@@ -34,7 +34,7 @@ export const LAYER_NAMES = [
 export type LayerName = (typeof LAYER_NAMES)[number];
 
 export const AVATAR_WIDTH = 24;
-export const AVATAR_HEIGHT = 32;
+export const AVATAR_HEIGHT = 48;
 
 /* ------------------------------------------------------------------ */
 /* 色板：#RRGGBB → PixelPalette（RGBA 整数）                            */

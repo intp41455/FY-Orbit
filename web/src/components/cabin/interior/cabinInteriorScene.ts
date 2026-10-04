@@ -24,6 +24,7 @@ import {
   shade,
 } from '../cabinPixelArt';
 import type { CabinHouseId } from '../cabinConfig';
+import { resolveViewport } from '../cabinViewport';
 import { getFurniture } from './furnitureCatalog';
 import { assertFurnitureArtComplete, getColorway, getFurnitureRows } from './furnitureArt';
 import {
@@ -377,6 +378,12 @@ export interface CreateInteriorSceneOptions {
   editMode?: boolean;
   callbacks?: InteriorCallbacks;
   /**
+   * I3 衔接（双形态并行）：可选宿主元素。
+   * 可选；不传时初始视口 = window（既有行为完全不变）；
+   * 传入后按宿主测量值定标，使室内核心同样可挂进内嵌容器。
+   */
+  host?: Element | null;
+  /**
    * W11 衔接：自定义小人行走矩阵 + 调色板（与 cabinScene 同款契约）。
    * 可选；不传或帧数 <2 时回退默认小人，行为与注入前完全一致。
    */
@@ -398,10 +405,12 @@ export async function createCabinInteriorScene(
   assertFurnitureArtComplete();
 
   const app = new Application();
+  // I3：初始视口优先取宿主元素（内嵌形态），无宿主时回退 window（既有行为不变）。
+  const initialView = resolveViewport(options.host);
   await app.init({
     canvas: options.canvas,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: initialView.width,
+    height: initialView.height,
     background: hexToNumber('#0b1030'),
     antialias: false,
     resolution: 1,

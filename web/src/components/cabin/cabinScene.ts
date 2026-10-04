@@ -41,6 +41,7 @@ import {
   type PixelTexture,
   type RgbaSnapshot,
 } from './cabinPixels';
+import { resolveViewport } from './cabinViewport';
 import {
   CLOUD_ROWS,
   CABIN_HOUSE_ART,
@@ -530,6 +531,16 @@ export interface CreateCabinSceneOptions {
   config: CabinConfig;
   callbacks?: CabinSceneCallbacks;
   /**
+   * I3 衔接（双形态并行）：可选宿主元素。
+   *
+   * 契约（务必保持）：
+   *  - **可选**，不传时初始视口 = window（既有行为完全不变）。
+   *  - 传入后，初始尺寸按宿主元素测量值定标（`resolveViewport`），
+   *    使同一游戏核心可挂进任意尺寸的容器（内嵌工作台形态）。
+   *  - 量不到宿主尺寸（未布局）时自动回退 window。
+   */
+  host?: Element | null;
+  /**
    * W11 衔接（个性化像素角色）：自定义小人行走矩阵 + 调色板。
    *
    * 契约（务必保持）：
@@ -562,18 +573,20 @@ interface GlowState {
 
 export async function createCabinScene(options: CreateCabinSceneOptions): Promise<CabinScene> {
   const app = new Application();
+  // I3：初始视口优先取宿主元素（内嵌形态），无宿主时回退 window（既有行为不变）。
+  const initialView = resolveViewport(options.host);
   await app.init({
     canvas: options.canvas,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: initialView.width,
+    height: initialView.height,
     background: 0x0b1030,
     antialias: false, // 像素风：关抗锯齿
     resolution: 1, // 像素风：1x 渲染 + CSS image-rendering: pixelated
     autoDensity: false,
   });
 
-  let width = window.innerWidth;
-  let height = window.innerHeight;
+  let width = initialView.width;
+  let height = initialView.height;
   let groundY = Math.round(height * (SKY_VH / VIRTUAL_H));
   let worldScale = height / VIRTUAL_H;
   let config: CabinConfig = { ...options.config };
