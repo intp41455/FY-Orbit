@@ -2,8 +2,11 @@
 
 Implements the phase-internal reasoning and execution graph:
 * Pipeline: requirements -> planning -> [single_agent | research | tool_step | delegate] -> validate -> finish.
-* Graph State: task_id, attempt, stage, route, goal, domain, budget_balance, granted_source_ids,
-  evidence_refs, step_count, max_steps, history, output, error.
+* Graph State: task_id, attempt, stage, route, route_criterion, goal, domain, budget_balance,
+  granted_source_ids, evidence_refs, step_count, max_steps, history, output, error.
+* Route selection (ADR-07): an explicit, ORDERED criteria table (``ROUTE_CRITERIA``) is evaluated
+  top-to-bottom before any model call; first match wins and the matched criterion name is recorded
+  in the audit chain. tool_step and delegate carry guards (budget headroom / cycle detection).
 * Four Verified Routes:
   1. Single Agent: Empathetic listening, reflection without unsolicited diagnosis or forced assessment.
   2. Source Research: Provenance-preserving research with source IDs and outbound privacy checks.
@@ -14,17 +17,285 @@ Implements the phase-internal reasoning and execution graph:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Callable, Dict, List, Literal, Optional, TypedDict
+from typing import Any, Callable, Literal, Mapping, TypedDict
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
-from ..db.types import utcnow
 from ..services.actor import Actor
-from ..services.errors import PermissionDenied, ValidationFailed
-from .gateway import CallResult, MockModelProvider, ModelGateway, ModelRequest
+from ..services.errors import Conflict, NotFound, ValidationFailed
+
+
+# ---------------------------------------------------------------------------
+# ADR-07: explicit, ORDERED route-criteria table.
+#
+# This table is a *rule asset*: it is a module-level constant so it can be
+# reviewed and changed as data, never hidden in an if/elif chain. Criteria are
+# evaluated top-to-bottom; the FIRST match wins. The table is evaluated BEFORE
+# any model call, and a model-suggested route is never consulted (see
+# ``evaluate_route``) — the model cannot bypass the table to pick its own route.
+# ---------------------------------------------------------------------------
+
+#: Route ids (kept identical to the historic literals for caller compatibility).
+ROUTE_SINGLE_AGENT = "single_agent"
+ROUTE_RESEARCH = "research"
+ROUTE_TOOL_STEP = "tool_step"
+ROUTE_DELEGATE = "delegate"
+
+
+@dataclass(frozen=True)
+class RouteGuardResult:
+    """Outcome of a criterion guard. ``ok=False`` means: do not route here."""
+
+    ok: bool
+    reason: str = ""
+    reservation_id: str | None = None
+
+
+@dataclass
+class RouteContext:
+    """Everything a criterion predicate/guard may inspect.
+
+    Service handles are optional; when a guard needs one and it is missing it
+    must fail *closed* (refuse the route) rather than assume the check passed.
+    """
+
+    state: Mapping[str, Any]
+    goal: str  # lower-cased goal, used for keyword matching
+    budget: Any | None = None  # BudgetService
+    auditor: Any | None = None  # AuditService
+    actor: Actor | None = None
+
+
+@dataclass(frozen=True)
+class RouteCriterion:
+    name: str
+    route: str
+    keywords: tuple[str, ...]
+    description: str
+    guard: Callable[[RouteContext], RouteGuardResult] | None = None
+
+
+@dataclass(frozen=True)
+class RouteDecision:
+    route: str
+    criterion: str
+    reason: str
+    reservation_id: str | None = None
+
+
+def _guard_tool_budget(ctx: RouteContext) -> RouteGuardResult:
+    """tool_step requires a KNOWN price and a proven budget headroom.
+
+    Contract: an unknown price must never be waved through as zero cost. We
+    therefore require an explicit ``tool_price_status == "known"`` and a
+    concrete ``estimated_cost_usd``, then prove sufficiency with an *atomic*
+    reservation through :class:`~find_yourself.services.budget.BudgetService`.
+    A missing budget service is treated as failure to prove sufficiency.
+    """
+    state = ctx.state
+    if state.get("tool_price_status") != "known":
+        return RouteGuardResult(False, "price_unknown: 工具价格未知，禁止按零费用放行")
+    raw_price = state.get("estimated_cost_usd")
+    if raw_price is None:
+        return RouteGuardResult(False, "price_unknown: 缺少 estimated_cost_usd，禁止按零费用放行")
+    amount = Decimal(str(raw_price))
+    if amount < 0:
+        return RouteGuardResult(False, "bad_price: 预估费用为负")
+    if ctx.budget is None or ctx.actor is None or not state.get("task_id"):
+        return RouteGuardResult(False, "budget_unavailable: 未接线预算服务，无法证明额度充足")
+    if amount == 0:
+        # A price that is *known* to be zero needs no reservation, but it still
+        # passed the known-price gate above (it is not "unknown treated as 0").
+        return RouteGuardResult(True, "price_known_zero")
+    try:
+        reservation = ctx.budget.reserve(
+            ctx.actor,
+            task_id=str(state["task_id"]),
+            amount=amount,
+            idempotency_key=f"route:{state['task_id']}:{state.get('attempt', 1)}",
+        )
+    except (Conflict, ValidationFailed, NotFound) as exc:
+        return RouteGuardResult(False, f"budget_insufficient: {getattr(exc, 'code', 'error')}")
+    return RouteGuardResult(True, "budget_reserved", reservation.id)
+
+
+def _proposed_delegation_members(state: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Collect a proposed delegation dependency graph, if one was supplied."""
+    raw = state.get("delegation_graph") or state.get("subtasks") or []
+    members: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role") or item.get("name")
+        if not role:
+            continue
+        members.append({"role": str(role), "depends_on": list(item.get("depends_on") or [])})
+    return members
+
+
+def _guard_delegation_acyclic(ctx: RouteContext) -> RouteGuardResult:
+    """delegate must run cycle detection on the proposed member graph.
+
+    Reuses the existing detector in
+    :class:`~find_yourself.services.agent_teams.AgentTeamService` rather than
+    re-implementing graph traversal.
+    """
+    members = _proposed_delegation_members(ctx.state)
+    if not members:
+        return RouteGuardResult(True, "no_dependency_graph_supplied")
+    # Lazy import keeps the runtime layer free of an import-order dependency on
+    # the service layer; the capability itself is unchanged.
+    from ..services.agent_teams import AgentTeamService
+
+    try:
+        AgentTeamService._assert_no_cycle(members, "delegation")
+    except (Conflict, ValidationFailed) as exc:
+        return RouteGuardResult(False, f"delegation_cycle: {getattr(exc, 'code', 'error')}")
+    return RouteGuardResult(True, "acyclic")
+
+
+#: THE ordered criteria table. First match wins. Do not reorder casually: the
+#: order is the decision policy (e.g. "listen + research" routes to
+#: single_agent because empathetic listening is listed first).
+ROUTE_CRITERIA: tuple[RouteCriterion, ...] = (
+    RouteCriterion(
+        name="empathetic_single_agent",
+        route=ROUTE_SINGLE_AGENT,
+        keywords=("listen", "倾听", "feel", "陪伴", "talk"),
+        description="共情倾听：陪伴与情绪表达，不做强制诊断或评估。",
+    ),
+    RouteCriterion(
+        name="source_research",
+        route=ROUTE_RESEARCH,
+        keywords=("research", "search", "调查", "研究", "source"),
+        description="带出处的资料检索，保留来源可溯源。",
+    ),
+    RouteCriterion(
+        name="authorized_tool_step",
+        route=ROUTE_TOOL_STEP,
+        keywords=("tool", "calc", "execute", "run", "工具"),
+        description="受预算约束的工具执行；须先原子预留且价格已知。",
+        guard=_guard_tool_budget,
+    ),
+    RouteCriterion(
+        name="expert_delegation",
+        route=ROUTE_DELEGATE,
+        keywords=("delegate", "expert", "subagent", "委派", "专家"),
+        description="专家委派；须通过环检测，子代理只收窄上下文。",
+        guard=_guard_delegation_acyclic,
+    ),
+)
+
+#: Safe fallback when nothing matches (kept as a named criterion for audit).
+FALLBACK_CRITERION = RouteCriterion(
+    name="default_single_agent",
+    route=ROUTE_SINGLE_AGENT,
+    keywords=(),
+    description="全不命中时的安全回落。",
+)
+
+#: Services used by criterion guards. The graph node has no session of its own,
+#: so the application wires them here at setup time (see ``configure_route_runtime``).
+ROUTE_RUNTIME: dict[str, Any] = {"budget": None, "auditor": None, "actor": None}
+
+
+def configure_route_runtime(
+    *, budget: Any = None, auditor: Any = None, actor: Actor | None = None
+) -> None:
+    """Wire the services that route guards need (budget reservation, audit)."""
+    ROUTE_RUNTIME["budget"] = budget
+    ROUTE_RUNTIME["auditor"] = auditor
+    ROUTE_RUNTIME["actor"] = actor
+
+
+def _criterion_matches(criterion: RouteCriterion, goal: str) -> bool:
+    return any(keyword in goal for keyword in criterion.keywords)
+
+
+def _emit_route_audit(
+    auditor: Any,
+    actor: Actor | None,
+    state: Mapping[str, Any],
+    decision: RouteDecision,
+    rejections: list[dict[str, str]],
+    model_suggested: str | None,
+) -> None:
+    """Record the chosen criterion (and any guard rejections) into the audit chain."""
+    if auditor is None or actor is None:
+        return
+    target = str(state.get("task_id") or "") or None
+    auditor.append(actor, "route.decided", target, {
+        "route": decision.route,
+        "criterion": decision.criterion,
+        "reason": decision.reason,
+        "reservation_id": decision.reservation_id,
+        "rejections": list(rejections),
+        # Observability without leaking private goal text.
+        "goal_length": len(str(state.get("goal", "") or "")),
+        "model_suggested_route": model_suggested,
+        "model_route_ignored": bool(model_suggested),
+        "contains_private_text": False,
+    })
+
+
+def evaluate_route(
+    state: Mapping[str, Any],
+    *,
+    budget: Any = None,
+    auditor: Any = None,
+    actor: Actor | None = None,
+) -> RouteDecision:
+    """Evaluate the ordered criteria table and return the route + matched name.
+
+    Precedence:
+    1. An explicit caller-supplied ``route`` wins (test/API override).
+    2. Otherwise the criteria table is evaluated top-to-bottom, first match wins.
+    3. If nothing matches, fall back to ``single_agent``.
+
+    A ``model_suggested_route`` in state is recorded for audit but NEVER used.
+    """
+    raw_goal = str(state.get("goal", "") or "")
+    ctx = RouteContext(state=state, goal=raw_goal.lower(), budget=budget, auditor=auditor, actor=actor)
+    rejections: list[dict[str, str]] = []
+
+    explicit = state.get("route")
+    if explicit:
+        decision = RouteDecision(
+            route=str(explicit),
+            criterion="explicit_override",
+            reason="caller supplied an explicit route",
+        )
+    else:
+        decision = None
+        for criterion in ROUTE_CRITERIA:
+            if not _criterion_matches(criterion, ctx.goal):
+                continue
+            if criterion.guard is not None:
+                guard = criterion.guard(ctx)
+                if not guard.ok:
+                    # Fail closed and keep evaluating the rest of the table.
+                    rejections.append({"criterion": criterion.name, "reason": guard.reason})
+                    continue
+                decision = RouteDecision(
+                    criterion.route,
+                    criterion.name,
+                    guard.reason or "matched",
+                    guard.reservation_id,
+                )
+            else:
+                decision = RouteDecision(criterion.route, criterion.name, "matched")
+            break
+        if decision is None:
+            decision = RouteDecision(
+                FALLBACK_CRITERION.route, FALLBACK_CRITERION.name, "no criterion matched"
+            )
+
+    model_suggested = state.get("model_suggested_route")
+    _emit_route_audit(auditor, actor, state, decision, rejections, model_suggested)
+    return decision
 
 
 class TaskGraphState(TypedDict, total=False):
@@ -32,6 +303,13 @@ class TaskGraphState(TypedDict, total=False):
     attempt: int
     stage: str
     route: Literal["single_agent", "research", "tool_step", "delegate"]
+    route_criterion: str
+    route_reason: str
+    tool_reservation_id: str | None
+    tool_price_status: str
+    estimated_cost_usd: float | str
+    delegation_graph: list[dict[str, Any]]
+    model_suggested_route: str
     goal: str
     domain: str
     granted_source_ids: list[str]
@@ -53,11 +331,6 @@ def node_requirements(state: TaskGraphState) -> dict:
     if not goal:
         return {"status": "failed", "error": "Goal cannot be empty", "stage": "requirements"}
 
-    domain = state.get("domain", "personal")
-    # Enforce boundary: if domain is not personal, ensure personal sources have grants
-    granted = state.get("granted_source_ids", [])
-    history = state.get("history", [])
-
     return {
         "stage": "planning",
         "status": "in_progress",
@@ -66,27 +339,28 @@ def node_requirements(state: TaskGraphState) -> dict:
 
 
 def node_planning(state: TaskGraphState) -> dict:
-    """Stage 2: Determines execution route based on goal and constraints."""
-    goal = state.get("goal", "").lower()
-    explicit_route = state.get("route")
+    """Stage 2: selects the execution route via the ordered criteria table.
 
-    if explicit_route:
-        route = explicit_route
-    elif any(k in goal for k in ["listen", "倾听", "feel", "陪伴", "talk"]):
-        route = "single_agent"
-    elif any(k in goal for k in ["research", "search", "调查", "研究", "source"]):
-        route = "research"
-    elif any(k in goal for k in ["tool", "calc", "execute", "run", "工具"]):
-        route = "tool_step"
-    elif any(k in goal for k in ["delegate", "expert", "subagent", "委派", "专家"]):
-        route = "delegate"
-    else:
-        route = "single_agent"
-
-    return {
-        "route": route,
-        "stage": f"exec_{route}",
+    The table (``ROUTE_CRITERIA``) is the sole policy for implicit routing and is
+    evaluated before any model call; a model-suggested route is never consulted.
+    The matched criterion name is surfaced in state and recorded in the audit
+    chain so a route can be explained and regressed.
+    """
+    decision = evaluate_route(
+        state,
+        budget=ROUTE_RUNTIME["budget"],
+        auditor=ROUTE_RUNTIME["auditor"],
+        actor=ROUTE_RUNTIME["actor"],
+    )
+    update: dict[str, Any] = {
+        "route": decision.route,
+        "route_criterion": decision.criterion,
+        "route_reason": decision.reason,
+        "stage": f"exec_{decision.route}",
     }
+    if decision.reservation_id:
+        update["tool_reservation_id"] = decision.reservation_id
+    return update
 
 
 def route_decision(state: TaskGraphState) -> str:
@@ -99,7 +373,6 @@ def node_single_agent(state: TaskGraphState) -> dict:
     Does not force psychometric assessment, diagnoses, or summarize away user emotion.
     """
     goal = state.get("goal", "")
-    history = state.get("history", [])
     spent = 0.001
 
     # Empathetic listening reflection
@@ -129,7 +402,6 @@ def node_research(state: TaskGraphState) -> dict:
     """
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
-    domain = state.get("domain", "personal")
     spent = 0.002
 
     citations = [f"src:{sid}" for sid in granted]
@@ -158,7 +430,6 @@ def node_tool_step(state: TaskGraphState) -> dict:
     No tool is wired into this node yet — the output must never claim a
     successful execution or fabricate an execution receipt.
     """
-    subtasks = state.get("subtasks", [])
     tool_name = "data_analysis_tool"
     spent = 0.005
 
