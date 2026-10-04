@@ -33,6 +33,7 @@ from pgvector.sqlalchemy import Vector
 
 from .base import Base
 from .types import HASH64, ID, MONEY, TZDateTime, utcnow
+from ..workflows.models import Stage as WorkflowStage
 
 # ---------------------------------------------------------------------------
 # Allowed status values (mirrored as DB CHECK constraints; single source here)
@@ -44,6 +45,12 @@ TASK_STATUSES = (
     "completed", "failed", "cancelled",
 )
 ATTEMPT_STATUSES = ("pending", "running", "succeeded", "failed", "cancelled")
+# Task.stage is the persisted orchestration checkpoint. Its allowed values are
+# **derived** from the workflow ``Stage`` enum (``workflows/models.py``) rather
+# than copied, so the DB CHECK and the workflow's own state machine can never
+# drift into two independent sources of truth. Order follows the enum's
+# declaration order.
+TASK_STAGES: tuple[str, ...] = tuple(member.value for member in WorkflowStage)
 PROPOSAL_OPS = (
     "memory.upsert", "memory.delete", "grant.add", "grant.revoke",
     "agent.register", "agent.drain", "skill.stage", "skill.promote",
@@ -246,6 +253,7 @@ class Task(Base):
         CheckConstraint(_in("mode", MODES), name="ck_task_mode"),
         CheckConstraint(_in("strategy", STRATEGIES), name="ck_task_strategy"),
         CheckConstraint(_in("status", TASK_STATUSES), name="ck_task_status"),
+        CheckConstraint(_in("stage", TASK_STAGES), name="ck_task_stage"),
         UniqueConstraint("owner_id", "idempotency_key", name="uq_task_owner_idem"),
     )
 
