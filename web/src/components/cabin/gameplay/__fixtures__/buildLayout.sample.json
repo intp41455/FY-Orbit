@@ -1,0 +1,472 @@
+{
+  "room": {
+    "cols": 12,
+    "rows": 9,
+    "tile": 32,
+    "wall_band": [
+      0,
+      1
+    ],
+    "door_row": 8,
+    "door_clear_x": [
+      5,
+      7
+    ],
+    "max_items": 60
+  },
+  "categories": [
+    {
+      "category": "table_chair",
+      "label": "桌椅",
+      "count": 4,
+      "cheapest": 30,
+      "ids": [
+        "b4_dining_table",
+        "b4_stool",
+        "b4_tea_table",
+        "b4_writing_desk"
+      ]
+    },
+    {
+      "category": "bed",
+      "label": "床",
+      "count": 4,
+      "cheapest": 150,
+      "ids": [
+        "b4_single_bed",
+        "b4_double_bed",
+        "b4_bunk_bed",
+        "b4_hammock"
+      ]
+    },
+    {
+      "category": "cabinet",
+      "label": "柜",
+      "count": 4,
+      "cheapest": 90,
+      "ids": [
+        "b4_wardrobe",
+        "b4_shelf",
+        "b4_drawer",
+        "b4_coatrack"
+      ]
+    },
+    {
+      "category": "decor",
+      "label": "装饰",
+      "count": 6,
+      "cheapest": 60,
+      "ids": [
+        "b4_rug_small",
+        "b4_rug_long",
+        "b4_painting",
+        "b4_wall_clock",
+        "b4_mirror_small",
+        "b4_rug_large"
+      ]
+    },
+    {
+      "category": "lamp",
+      "label": "灯具",
+      "count": 5,
+      "cheapest": 40,
+      "ids": [
+        "b4_ceiling_lamp",
+        "b4_floor_lamp",
+        "b4_desk_lamp",
+        "b4_lantern",
+        "b4_candle"
+      ]
+    },
+    {
+      "category": "plant",
+      "label": "植物",
+      "count": 5,
+      "cheapest": 50,
+      "ids": [
+        "b4_pot_plant",
+        "b4_tall_plant",
+        "b4_hanging_vine",
+        "b4_herb_box",
+        "b4_bonsai"
+      ]
+    }
+  ],
+  "catalog": [
+    {
+      "id": "b4_dining_table",
+      "label": "方桌",
+      "category": "table_chair",
+      "layer": "floor",
+      "width": 2,
+      "height": 2,
+      "cost": 120,
+      "comfort": 4
+    },
+    {
+      "id": "b4_stool",
+      "label": "小凳",
+      "category": "table_chair",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 30,
+      "comfort": 1
+    },
+    {
+      "id": "b4_tea_table",
+      "label": "矮茶几",
+      "category": "table_chair",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 80,
+      "comfort": 3
+    },
+    {
+      "id": "b4_writing_desk",
+      "label": "书桌",
+      "category": "table_chair",
+      "layer": "floor",
+      "width": 3,
+      "height": 1,
+      "cost": 160,
+      "comfort": 5
+    },
+    {
+      "id": "b4_single_bed",
+      "label": "单人床",
+      "category": "bed",
+      "layer": "floor",
+      "width": 2,
+      "height": 3,
+      "cost": 240,
+      "comfort": 6
+    },
+    {
+      "id": "b4_double_bed",
+      "label": "双人床",
+      "category": "bed",
+      "layer": "floor",
+      "width": 3,
+      "height": 3,
+      "cost": 420,
+      "comfort": 8
+    },
+    {
+      "id": "b4_bunk_bed",
+      "label": "上下铺",
+      "category": "bed",
+      "layer": "floor",
+      "width": 2,
+      "height": 4,
+      "cost": 380,
+      "comfort": 6
+    },
+    {
+      "id": "b4_hammock",
+      "label": "吊床",
+      "category": "bed",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 150,
+      "comfort": 4
+    },
+    {
+      "id": "b4_wardrobe",
+      "label": "衣柜",
+      "category": "cabinet",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 300,
+      "comfort": 5
+    },
+    {
+      "id": "b4_shelf",
+      "label": "置物架",
+      "category": "cabinet",
+      "layer": "floor",
+      "width": 1,
+      "height": 2,
+      "cost": 140,
+      "comfort": 3
+    },
+    {
+      "id": "b4_drawer",
+      "label": "抽屉柜",
+      "category": "cabinet",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 170,
+      "comfort": 3
+    },
+    {
+      "id": "b4_coatrack",
+      "label": "衣帽架",
+      "category": "cabinet",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 90,
+      "comfort": 2
+    },
+    {
+      "id": "b4_rug_small",
+      "label": "小地毯",
+      "category": "decor",
+      "layer": "under",
+      "width": 2,
+      "height": 2,
+      "cost": 60,
+      "comfort": 3
+    },
+    {
+      "id": "b4_rug_long",
+      "label": "长地毯",
+      "category": "decor",
+      "layer": "under",
+      "width": 3,
+      "height": 1,
+      "cost": 90,
+      "comfort": 4
+    },
+    {
+      "id": "b4_painting",
+      "label": "挂画",
+      "category": "decor",
+      "layer": "wall",
+      "width": 1,
+      "height": 1,
+      "cost": 110,
+      "comfort": 3
+    },
+    {
+      "id": "b4_wall_clock",
+      "label": "挂钟",
+      "category": "decor",
+      "layer": "wall",
+      "width": 1,
+      "height": 1,
+      "cost": 70,
+      "comfort": 2
+    },
+    {
+      "id": "b4_mirror_small",
+      "label": "穿衣镜",
+      "category": "decor",
+      "layer": "wall",
+      "width": 1,
+      "height": 1,
+      "cost": 130,
+      "comfort": 3
+    },
+    {
+      "id": "b4_rug_large",
+      "label": "大块地毯",
+      "category": "decor",
+      "layer": "under",
+      "width": 3,
+      "height": 3,
+      "cost": 180,
+      "comfort": 6
+    },
+    {
+      "id": "b4_ceiling_lamp",
+      "label": "吊灯",
+      "category": "lamp",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 200,
+      "comfort": 4
+    },
+    {
+      "id": "b4_floor_lamp",
+      "label": "落地灯",
+      "category": "lamp",
+      "layer": "floor",
+      "width": 1,
+      "height": 2,
+      "cost": 120,
+      "comfort": 3
+    },
+    {
+      "id": "b4_desk_lamp",
+      "label": "台灯",
+      "category": "lamp",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 60,
+      "comfort": 2
+    },
+    {
+      "id": "b4_lantern",
+      "label": "纸灯笼",
+      "category": "lamp",
+      "layer": "wall",
+      "width": 1,
+      "height": 1,
+      "cost": 80,
+      "comfort": 2
+    },
+    {
+      "id": "b4_candle",
+      "label": "烛台",
+      "category": "lamp",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 40,
+      "comfort": 1
+    },
+    {
+      "id": "b4_pot_plant",
+      "label": "盆栽",
+      "category": "plant",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 50,
+      "comfort": 2
+    },
+    {
+      "id": "b4_tall_plant",
+      "label": "高盆栽",
+      "category": "plant",
+      "layer": "floor",
+      "width": 1,
+      "height": 2,
+      "cost": 95,
+      "comfort": 3
+    },
+    {
+      "id": "b4_hanging_vine",
+      "label": "垂吊绿萝",
+      "category": "plant",
+      "layer": "wall",
+      "width": 1,
+      "height": 1,
+      "cost": 70,
+      "comfort": 2
+    },
+    {
+      "id": "b4_herb_box",
+      "label": "香草箱",
+      "category": "plant",
+      "layer": "floor",
+      "width": 2,
+      "height": 1,
+      "cost": 85,
+      "comfort": 3
+    },
+    {
+      "id": "b4_bonsai",
+      "label": "小盆景",
+      "category": "plant",
+      "layer": "floor",
+      "width": 1,
+      "height": 1,
+      "cost": 160,
+      "comfort": 4
+    }
+  ],
+  "layers": [
+    "floor",
+    "wall",
+    "under"
+  ],
+  "layout": {
+    "cols": 12,
+    "rows": 9,
+    "items": [
+      {
+        "id": "i0",
+        "furniture_id": "b4_rug_large",
+        "x": 1,
+        "y": 3,
+        "rotation": 0
+      },
+      {
+        "id": "i1",
+        "furniture_id": "b4_double_bed",
+        "x": 1,
+        "y": 3,
+        "rotation": 0
+      },
+      {
+        "id": "i2",
+        "furniture_id": "b4_writing_desk",
+        "x": 6,
+        "y": 5,
+        "rotation": 0
+      },
+      {
+        "id": "i3",
+        "furniture_id": "b4_painting",
+        "x": 4,
+        "y": 0,
+        "rotation": 0
+      },
+      {
+        "id": "i4",
+        "furniture_id": "b4_pot_plant",
+        "x": 9,
+        "y": 6,
+        "rotation": 0
+      }
+    ]
+  },
+  "confirm": {
+    "items": 5,
+    "total_cost": 920,
+    "comfort": 24,
+    "counts": {
+      "table_chair": 1,
+      "bed": 1,
+      "cabinet": 0,
+      "decor": 2,
+      "lamp": 0,
+      "plant": 1
+    },
+    "grade": "像个家了。",
+    "line": "布置了 5 件家具，舒适度 24"
+  },
+  "door_cells": [
+    [
+      5,
+      8
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      7,
+      8
+    ]
+  ],
+  "rejections": {
+    "overlap": "和双人床重叠了",
+    "door": "门口要留出路，烛台不能挡着门",
+    "wall_mounted_on_floor": "挂画只能挂在墙上（第 0~1 行）",
+    "floor_item_on_wall": "烛台不能放到墙上（第 0~1 行留给挂件）",
+    "rug_at_wall_root": "小地毯不能铺到墙根",
+    "negative": "超出房间范围：需要 x∈[0,11]、y∈[0,8]，实际 (-1,4)",
+    "past_right": "超出房间范围：需要 x∈[0,9]、y∈[0,6]，实际 (11,3)",
+    "too_big_for_room": "双人床放不下这个房间（需要 3×3 格）",
+    "duplicate_id": "布局里已经有同 id 的家具: 'probe'",
+    "cap": "家具最多 60 件，房间放不下了"
+  },
+  "grades": {
+    "0": "还什么都没有。",
+    "5": "勉强能住。",
+    "15": "像个家了。",
+    "30": "待着很舒服。",
+    "50": "来客人都舍不得走。",
+    "90": "这里是你自己的地方。"
+  }
+}

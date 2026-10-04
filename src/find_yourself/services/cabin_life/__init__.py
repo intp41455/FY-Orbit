@@ -17,6 +17,8 @@
 ``crafting.py``      B3  配方表 + 技能解锁 + 材料校验
 ``quests.py``        B6  主线/支线 + 任务日志 + 头顶感叹号
 ``interaction.py``   B1/B2  靠近提示 + 八大类采集动作
+``world.py``         B10 160×100 格地图生成 / 秘密区域 / 隐藏宝箱 / 随机事件 / 寻路
+``build.py``         B4  家具目录 / 网格吸附 / 旋转 / 重叠 / 门口禁放 / 装修评分
 ======================  ====================================================
 
 统一约定（诚实原则 §2-1）
@@ -29,13 +31,15 @@
 
 尚未包含（诚实列出，见交付报告「未尽事项」）
 ------------------------------------------
-B4 建造与装修、B5 房屋进入、B10 大世界（都依赖 A1 冻结 `cabinScene.ts` 常量后
-才能落地），以及 B11 存档的持久化与 HTTP 通道。
+B5 房屋进入，以及 B11 存档的持久化与 HTTP 通道。
+B10（`world.py`）与 B4（`build.py`）已落**数据层**；两者的**渲染段**
+（镜头跟随 / 无缝滚动 / 瓦片绘制 / 家具绘制）按 §2.5 串行点要改 `cabinScene.ts`，
+等 A5 收工后再做。
 """
 
 from __future__ import annotations
 
-from . import clock, crafting, interaction, npcs, quests, rng, shop, themes
+from . import build, clock, crafting, interaction, npcs, quests, rng, shop, themes, world
 from .clock import GameClock, roll_weather, weather_of
 from .themes import THEME_IDS, ThemeDef, get_theme
 
@@ -48,6 +52,8 @@ __all__ = [
     "crafting",
     "quests",
     "interaction",
+    "world",
+    "build",
     "GameClock",
     "roll_weather",
     "weather_of",
