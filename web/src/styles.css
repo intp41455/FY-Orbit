@@ -3974,3 +3974,48 @@ html, body { overflow-x: clip; }
 .fy-plugin-risk-low { background: #e5f3e8; color: #2f6f4f; }
 .fy-plugin-risk-medium { background: #fdf3e0; color: #9a6b1f; }
 .fy-plugin-risk-high { background: #fde3e0; color: #c0392b; border: 1px solid #c0392b; }
+
+/* ---- P10 平台响应式 ----
+   ==========================================================================
+   平台域三档断点收口（1280 / 1024 / 768），覆盖：工作台（wb-*）· 画布/工作流
+   （fy-flow-*）· 资产库（kb-*）· 插件市场（fy-plugin-*）· 通用栅格/页头。
+   规则：本段只追加、不改既有行；同特异性下位于文件尾按层叠生效；
+   不使用 !important（不破坏他人段落的层叠纪律）；不触碰游戏域选择器。
+   ========================================================================== */
+
+/* P10-1 · 通用防溢出：长代码/表格在窄屏可横向滚动，而不是撑破栅格。 */
+.p10-scroll-x { overflow-x: auto; min-width: 0; }
+.main pre { overflow-x: auto; max-width: 100%; }
+
+/* P10-2 · 1280 档：工作台左区与工作流侧栏提前收窄，消除 1024 前的横向滚动。 */
+@media (max-width: 1280px) {
+  .wb-zone-left { min-width: 150px; }
+  .fy-flow-side { max-width: 400px; }
+}
+
+/* P10-3 · 1024 档：工作台双区改纵向堆叠；工作流侧栏转全宽；
+   插件市场详情条收窄。 */
+@media (max-width: 1024px) {
+  .wb-main { flex-wrap: wrap; }
+  .wb-zone-left { flex: 1 1 100%; }
+  .wb-zone-right { min-width: 0; }
+  .wb-split-handle { display: none; }
+  .fy-flow-side { min-width: 0; max-width: none; flex: 1 1 100%; }
+}
+
+/* P10-4 · 768 档：平台页全部单列 + 工具条纵排。 */
+@media (max-width: 768px) {
+  .page-head { flex-wrap: wrap; gap: 0.5rem; }
+  .grid.cols-2 { grid-template-columns: minmax(0, 1fr); }
+  .fy-flow { flex-direction: column; }
+  .fy-plugin-toolbar { flex-direction: column; }
+  .fy-plugin-pager { flex-wrap: wrap; }
+  .fy-plugin-detail { border-left-width: 3px; }
+  .preview-body { max-height: 60vh; overflow: auto; }
+}
+
+/* P10-5 · 768 档：资产库源卡片单列（auto-fit 280px 在 320px 视口下仍可双列挤压，
+   显式收为单列保证触控目标宽度）。 */
+@media (max-width: 480px) {
+  .kb-sources { grid-template-columns: minmax(0, 1fr); }
+}
