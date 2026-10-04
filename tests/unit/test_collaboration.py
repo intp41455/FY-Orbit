@@ -19,7 +19,9 @@
 
 from __future__ import annotations
 
+import ast
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
@@ -34,10 +36,16 @@ import find_yourself.db.collaboration_models  # noqa: F401  (本次新增)
 from find_yourself.db.canvas_models import CanvasInstance
 from find_yourself.db.collaboration_models import (
     ALL_ROLES,
+    NOTIFICATION_KIND_IN,
+    NOTIFICATION_KINDS,
+    NOTIFICATION_MENTION,
+    NOTIFICATION_REPLY,
     CollaborationRole,
     Comment,
     Notification,
 )
+import find_yourself.services.collaboration as collaboration_module
+from find_yourself.services.collaboration import NotificationTarget
 from find_yourself.db.models import Artifact, AuditEvent, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
@@ -877,3 +885,119 @@ def test_delete_requires_author_or_delete_any_still_enforced(svc, session, alice
     with pytest.raises(PermissionDenied):
         svc.delete_comment(bob, cid)
     assert len(svc.list_notifications(bob)) == 1  # 越权删除被拒，通知原封不动
+
+
+# ======================================================================
+# 第三切片：回复通知语义（纯 planner）/ 自通知抑制收口 / kind 单一真源
+# ======================================================================
+# --- 回复通知语义：谁通知谁（纯函数，不落库） ------------------------- #
+def test_plan_reply_notifies_parent_author_with_reply_kind(svc):
+    plan = svc.plan_reply_targets(author_id="B", parent_author_id="A")
+    assert plan == [NotificationTarget("A", NOTIFICATION_REPLY)]
+
+
+def test_plan_reply_to_self_produces_nothing(svc):
+    assert svc.plan_reply_targets(author_id="B", parent_author_id="B") == []
+
+
+def test_plan_reply_notifies_mentioned_as_mention_kind(svc):
+    plan = svc.plan_reply_targets(author_id="B", parent_author_id="A", mentioned=["C"])
+    assert NotificationTarget("A", NOTIFICATION_REPLY) in plan
+    assert NotificationTarget("C", NOTIFICATION_MENTION) in plan
+
+
+def test_plan_reply_dedups_parent_author_to_the_more_specific_reply_kind(svc):
+    # A 既是父评论作者、又被 @：只收一条，取更具体的 comment_reply。
+    plan = svc.plan_reply_targets(author_id="B", parent_author_id="A", mentioned=["A", "A"])
+    assert plan == [NotificationTarget("A", NOTIFICATION_REPLY)]
+
+
+def test_plan_reply_never_self_notifies_even_when_mentioned(svc):
+    plan = svc.plan_reply_targets(author_id="B", parent_author_id="A", mentioned=["B"])
+    assert [t.user_id for t in plan] == ["A"]  # B 不在名单里
+
+
+def test_plan_reply_does_not_auto_notify_record_owner(svc):
+    # owner 是 A；回复人 B 回复 C 的评论、未 @ A → A 不应被惊动。
+    plan = svc.plan_reply_targets(author_id="B", parent_author_id="C")
+    assert [t.user_id for t in plan] == ["C"]
+
+
+# --- 落库闸门：未白名单 kind 拒写、白名单 kind 可写 ------------------- #
+def test_notify_targets_rejects_unwhitelisted_kind(svc, session, alice):
+    """comment_reply 未进白名单 → 落库被拒（fail loud），且不留半行。"""
+    _task(session, "t1", "A")
+    ref = svc.resolve_record("task", "t1")
+    cid = svc.add_comment(alice, record_kind="task", record_id="t1", body="hi")["comment"]["id"]
+    row = session.get(Comment, cid)
+    with pytest.raises(ValidationFailed):
+        svc.notify_targets(alice, row, ref, [NotificationTarget("B", NOTIFICATION_REPLY)])
+    assert session.query(Notification).filter_by(owner_id="B").count() == 0
+
+
+def test_notify_targets_persists_every_whitelisted_kind(svc, session, alice):
+    """前瞻性：对当前白名单里的每个 kind 都能落库（将来扩白名单即自动覆盖）。"""
+    _task(session, "t1", "A")
+    ref = svc.resolve_record("task", "t1")
+    for i, kind in enumerate(NOTIFICATION_KINDS):
+        cid = svc.add_comment(alice, record_kind="task", record_id="t1", body=f"c{i}")["comment"]["id"]
+        row = session.get(Comment, cid)
+        out = svc.notify_targets(alice, row, ref, [NotificationTarget("B", kind)])
+        assert len(out) == 1 and out[0]["kind"] == kind
+
+
+def test_comment_reply_is_designed_but_not_yet_whitelisted():
+    assert NOTIFICATION_REPLY not in NOTIFICATION_KINDS
+    assert NOTIFICATION_MENTION in NOTIFICATION_KINDS
+
+
+# --- kind 白名单单一真源 ---------------------------------------------- #
+def test_kind_whitelist_expr_is_derived_and_matches_0030():
+    from sqlalchemy import CheckConstraint
+
+    assert NOTIFICATION_KIND_IN == "kind IN ('mention')"
+    exprs = [
+        str(c.sqltext) for c in Notification.__table__.constraints
+        if isinstance(c, CheckConstraint) and "kind IN" in str(c.sqltext)
+    ]
+    assert exprs == [NOTIFICATION_KIND_IN]
+
+
+def test_migration_0030_kind_check_matches_model():
+    """模型派生的 CHECK 与已落盘 0030 迁移逐字一致 → 无 fresh/migrated schema 分叉。"""
+    path = Path(__file__).resolve().parents[2] / "migrations" / "versions" / "0030_collaboration.py"
+    text = path.read_text(encoding="utf-8")
+    assert "kind IN ('mention')" in text
+    assert NOTIFICATION_KIND_IN == "kind IN ('mention')"
+
+
+def _service_non_docstring_string_literals() -> list[str]:
+    src = Path(collaboration_module.__file__).read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    docstrings: set[int] = set()
+
+    def _mark_doc(node) -> None:
+        body = getattr(node, "body", None)
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            docstrings.add(id(body[0].value))
+
+    _mark_doc(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            _mark_doc(node)
+    return [
+        n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in docstrings
+    ]
+
+
+def test_service_does_not_hardcode_notification_kind_literals():
+    """服务层不得硬编码 kind 字面量：必须引用 db 层的白名单常量（单一真源）。"""
+    banned = set(NOTIFICATION_KINDS) | {NOTIFICATION_REPLY}
+    offenders = sorted({s for s in _service_non_docstring_string_literals() if s in banned})
+    assert offenders == [], f"service must reference NOTIFICATION_* constants, not literals: {offenders}"

@@ -72,8 +72,21 @@ ROLE_CAPABILITIES: dict[str, frozenset[str]] = {
 }
 
 ROLE_STATES = ("active", "revoked")
-#: 目前只有「被提及」一种通知。留成白名单以便后续切片扩展（回复/指派…）。
-NOTIFICATION_KINDS = ("mention",)
+#: 被 ``@`` 提及产生的通知。**当前唯一进白名单**的 kind。
+NOTIFICATION_MENTION = "mention"
+#: 回复评论触发的通知。**语义已在 ``services/collaboration.py`` 定义并实现
+#: （纯函数 planner），但尚未进白名单**：扩白名单要同步扩 ``ck_notif_kind``
+#: 的 DB CHECK，属 schema 变更，必须走迁移（待 0032）。在此之前任何尝试落库
+#: 该 kind 的调用都会被服务层的白名单闸门拒绝（fail loud，不静默丢弃）。
+NOTIFICATION_REPLY = "comment_reply"
+#: **当前 DB CHECK 允许**的 kind。单一真源：``ck_notif_kind`` 的表达式由它派生，
+#: 服务层也只引用这里的常量、不硬编码字面量。加一个 kind = 在此加值 + 一次迁移。
+NOTIFICATION_KINDS = (NOTIFICATION_MENTION,)
+#: ``ck_notif_kind`` 的表达式。**逐字**与 migration 0030 一致（``kind IN ('mention')``）：
+#: 用 ``", ".join`` 而不是元组的 ``repr``，否则单元素元组会渲染成 ``('mention',)``，
+#: 带尾逗号 → fresh-DB 与 migrated-DB 的 CHECK 文本分叉（DDL 语义相同但文本不同，
+#: 正是迁移纪律要消除的漂移）。
+NOTIFICATION_KIND_IN = "kind IN (" + ", ".join(f"'{k}'" for k in NOTIFICATION_KINDS) + ")"
 
 
 class CollaborationRole(Base):
@@ -171,7 +184,7 @@ class Notification(Base):
     id: Mapped[str] = mapped_column(ID, primary_key=True)
     #: 收件人（owner 身份）。owner 隔离即按此列过滤。
     owner_id: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
-    kind: Mapped[str] = mapped_column(String(24), nullable=False, default="mention")
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, default=NOTIFICATION_MENTION)
     record_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     record_id: Mapped[str] = mapped_column(String(64), nullable=False)
     comment_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -183,7 +196,9 @@ class Notification(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     __table_args__ = (
-        CheckConstraint("kind IN ('mention')", name="ck_notif_kind"),
+        # 白名单从 NOTIFICATION_KINDS 派生（单一真源），表达式见 NOTIFICATION_KIND_IN：
+        # 当前渲染为 ``kind IN ('mention')``，与已落盘的 migration 0030 逐字相同。
+        CheckConstraint(NOTIFICATION_KIND_IN, name="ck_notif_kind"),
         CheckConstraint("version >= 1", name="ck_notif_version_positive"),
         CheckConstraint("length(record_id) > 0", name="ck_notif_record_nonempty"),
         # 同一条评论对同一个人最多一条同类通知：重复解析 @ 幂等。

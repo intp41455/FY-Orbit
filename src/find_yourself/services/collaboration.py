@@ -39,6 +39,9 @@ from sqlalchemy.orm import Session
 
 from ..db.collaboration_models import (
     ASSIGNABLE_ROLES,
+    NOTIFICATION_KINDS,
+    NOTIFICATION_MENTION,
+    NOTIFICATION_REPLY,
     RECORD_KINDS,
     ROLE_CAPABILITIES,
     CollaborationRole,
@@ -73,6 +76,19 @@ class Record:
     id: str
     owner_id: str
     domain: str
+
+
+@dataclass(frozen=True)
+class NotificationTarget:
+    """一位应收到通知的人及其 kind。纯数据，不含任何评论正文。"""
+
+    user_id: str
+    kind: str
+
+
+#: kind 的具体程度（越靠前越具体）。同一个人被两条规则命中时取更具体的那条，
+#: 避免「回复了某人、又 @ 了同一个人」产生两条重复通知。
+NOTIFICATION_KIND_PRIORITY = (NOTIFICATION_REPLY, NOTIFICATION_MENTION)
 
 
 class CollaborationService:
@@ -488,27 +504,102 @@ class CollaborationService:
                 out.append(raw)
         return out
 
-    def _notify_mentions(
-        self, actor: Actor, comment: Comment, ref: Record
+    def _merge_targets(
+        self, pairs: list[tuple[str, str]], author_id: str
+    ) -> list[NotificationTarget]:
+        """把「(人, kind)」序列合并为去重后的通知计划。
+
+        **自通知抑制在此收口**：作者永不在自己的通知名单里，不管他是被 @ 还是
+        被回复的目标。@ 路径与将来的回复路径共用这一个函数，所以「不能给自己发
+        通知」不需要在两条路径上各写一遍，也就不会在其中一条上漏掉。
+        """
+        best: dict[str, str] = {}
+        for user_id, kind in pairs:
+            if not user_id or user_id == author_id:
+                continue  # 自通知抑制
+            if kind not in NOTIFICATION_KIND_PRIORITY:
+                raise ValidationFailed(
+                    "bad_notification_kind", f"Unknown notification kind {kind!r}"
+                )
+            if user_id not in best or (
+                NOTIFICATION_KIND_PRIORITY.index(kind)
+                < NOTIFICATION_KIND_PRIORITY.index(best[user_id])
+            ):
+                best[user_id] = kind
+        return [NotificationTarget(uid, k) for uid, k in best.items()]
+
+    def plan_reply_targets(
+        self,
+        *,
+        author_id: str,
+        parent_author_id: str | None,
+        mentioned: list[str] | None = None,
+    ) -> list[NotificationTarget]:
+        """**回复**触发的通知计划（纯函数，不落库）。
+
+        语义（谁通知谁）
+        ----------------
+        1. **回复人 → 被回复评论的作者**：kind = ``NOTIFICATION_REPLY``，即「有人
+           回了你」。这是回复通知的主目标。
+        2. **回复人 → 正文里 @ 到的人**：kind = ``NOTIFICATION_MENTION``，与普通
+           评论的 @ 语义一致（``mentioned`` 必须已按可见性过滤，见
+           :meth:`_parse_mentions`）。
+        3. **record 的 owner 不因「被回复」而收到通知**：只有被直接 @、或是被回复
+           评论的作者才收。否则每条评论都惊动 owner，通知就失去意义。
+        4. **去重**：一个人既是父评论作者又被 @，只收一条，取更具体的
+           ``comment_reply``。
+        5. **自通知抑制**：回复自己的评论、或 @ 自己 → 不产生任何通知。
+
+        为什么现在不落库
+        ----------------
+        ``NOTIFICATION_REPLY`` **尚未**进 ``NOTIFICATION_KINDS``：扩白名单要同步
+        扩 ``ck_notif_kind`` 的 DB CHECK，属 schema 变更，须走迁移（待 0032）；
+        且「回复」还缺一根承载父评论关系的列。所以本函数只产出**计划**，能否落库
+        由 :meth:`notify_targets` 的白名单闸门决定——未白名单的 kind 会被拒绝，
+        而不是被悄悄丢弃。
+        """
+        pairs: list[tuple[str, str]] = []
+        if parent_author_id:
+            pairs.append((parent_author_id, NOTIFICATION_REPLY))
+        for uid in mentioned or []:
+            pairs.append((uid, NOTIFICATION_MENTION))
+        return self._merge_targets(pairs, author_id)
+
+    def notify_targets(
+        self,
+        actor: Actor,
+        comment: Comment,
+        ref: Record,
+        targets: list[NotificationTarget],
     ) -> list[dict[str, Any]]:
-        """给被提及的人建通知。不给作者自己发；同一评论同一人幂等。"""
+        """把一份通知计划落库。**先整体校验再落库**，绝不部分写入。
+
+        白名单闸门：任何不在 ``NOTIFICATION_KINDS`` 里的 kind 一律拒绝（fail
+        loud）。这划出了「将来加 comment_reply 只需扩白名单与 CHECK、服务层不再
+        改动」的边界——planner 算得出计划，落库能力由白名单决定。
+        """
+        for t in targets:
+            if t.kind not in NOTIFICATION_KINDS:
+                raise ValidationFailed(
+                    "kind_not_whitelisted",
+                    f"Notification kind {t.kind!r} is not enabled; it needs a schema migration",
+                )
         created: list[Notification] = []
-        for user_id in comment.mentions or []:
-            if user_id == comment.author_id:
-                continue
+        for t in targets:
+            # 同一评论同一人同一 kind 幂等。
             existing = self.s.execute(
                 select(Notification).where(
-                    Notification.owner_id == user_id,
+                    Notification.owner_id == t.user_id,
                     Notification.comment_id == comment.id,
-                    Notification.kind == "mention",
+                    Notification.kind == t.kind,
                 )
             ).scalar_one_or_none()
             if existing is not None:
                 continue
             row = Notification(
                 id=f"nt-{uuid4().hex[:12]}",
-                owner_id=user_id,
-                kind="mention",
+                owner_id=t.user_id,
+                kind=t.kind,
                 record_kind=ref.kind,
                 record_id=ref.id,
                 comment_id=comment.id,
@@ -522,9 +613,20 @@ class CollaborationService:
             # 通知正文不含评论正文：details 里显式声明，便于下游安全地记录/转发。
             self._audit(actor, "collaboration.notification.created", row.id,
                         {"record_kind": ref.kind, "record_id": ref.id,
-                         "comment_id": comment.id, "contains_private_text": False},
+                         "comment_id": comment.id, "kind": row.kind,
+                         "contains_private_text": False},
                         message_id=comment.id)
         return [self._notification_view(n) for n in created]
+
+    def _notify_mentions(
+        self, actor: Actor, comment: Comment, ref: Record
+    ) -> list[dict[str, Any]]:
+        """@ 提及路径：与回复路径共用同一套合并/自通知抑制逻辑。"""
+        targets = self._merge_targets(
+            [(uid, NOTIFICATION_MENTION) for uid in (comment.mentions or [])],
+            comment.author_id,
+        )
+        return self.notify_targets(actor, comment, ref, targets)
 
     def _delete_notifications_for_comment(self, comment_id: str) -> int:
         """硬删指向某条评论的通知，返回删除行数。"""
@@ -539,7 +641,7 @@ class CollaborationService:
         keep = list(comment.mentions or [])
         stmt = delete(Notification).where(
             Notification.comment_id == comment.id,
-            Notification.kind == "mention",
+            Notification.kind == NOTIFICATION_MENTION,
         )
         if keep:
             stmt = stmt.where(Notification.owner_id.not_in(keep))
