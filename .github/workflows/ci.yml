@@ -18,6 +18,8 @@ jobs:
   backend:
     name: Backend Lint, Test & Alembic Single Head Check
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -34,7 +36,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          uv pip install --system -r pyproject.toml
+          uv pip install --system -e .
           uv pip install --system pytest pytest-asyncio ruff
 
       - name: Lint (Ruff)
@@ -53,7 +55,7 @@ jobs:
 
       - name: Run Backend Test Suite
         run: |
-          PYTHONPATH=. pytest -q
+          pytest -q
 
   frontend:
     name: Frontend Typecheck, Test & Build
