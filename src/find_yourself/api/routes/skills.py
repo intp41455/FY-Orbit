@@ -42,7 +42,14 @@ class StageBody(BaseModel):
 class EvaluateBody(BaseModel):
     static_passed: bool
     functional_passed: bool
+    dynamic_passed: bool = False
     report: dict = Field(default_factory=dict)
+
+
+class SandboxEvaluateBody(BaseModel):
+    command: list[str] = Field(default_factory=lambda: ["python", "-c", "print('sandbox_ok')"])
+    workspace: str | None = None
+    timeout_s: float = 10.0
 
 
 class TrustedEvaluateBody(BaseModel):
@@ -78,10 +85,30 @@ async def stage(body: StageBody, actor: Actor = Depends(csrf_protected),
 async def evaluate(skill_id: str, body: EvaluateBody, actor: Actor = Depends(csrf_protected),
                   svc: Services = Depends(get_services)) -> dict:
     ev = svc.skills.evaluate(actor, skill_id, static_passed=body.static_passed,
-                            functional_passed=body.functional_passed, report=body.report)
+                            functional_passed=body.functional_passed,
+                            dynamic_passed=body.dynamic_passed,
+                            report=body.report)
     svc.session.commit()
     return {"evaluation_id": ev.id, "static_passed": ev.static_passed,
-            "functional_passed": ev.functional_passed}
+            "functional_passed": ev.functional_passed,
+            "dynamic_passed": ev.dynamic_passed}
+
+
+@router.post("/{skill_id}/sandbox-evaluate")
+async def sandbox_evaluate(
+    skill_id: str,
+    body: SandboxEvaluateBody,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """Run dynamic evaluation of skill script in the container sandbox (Batch H)."""
+    return svc.skills.run_sandbox_evaluation(
+        actor,
+        skill_id,
+        command=body.command,
+        workspace=body.workspace,
+        timeout_s=body.timeout_s,
+    )
 
 
 @router.post("/{skill_id}/trusted-evaluate")

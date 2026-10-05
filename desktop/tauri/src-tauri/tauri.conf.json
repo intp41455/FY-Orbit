@@ -6,8 +6,8 @@
   "build": {
     "beforeDevCommand": "npm --prefix ../../web run dev",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm --prefix ../../web run build",
-    "frontendDist": "../../web/dist"
+    "beforeBuildCommand": "",
+    "frontendDist": "../../../web/dist"
   },
   "app": {
     "windows": [
@@ -23,13 +23,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost",
-      "devtools": false
+      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,8 +42,8 @@
         "installMode": "currentUser"
       }
     },
-    "shortDescription": "本地优先的桌面端 AI 超级工作台",
-    "longDescription": "Find Yourself —— 本地优先的桌面端 AI 超级工作台、个人数字空间与数码小屋。数据全部保存在你自己的电脑上；工作台免登录即可使用。"
+    "shortDescription": "\u672c\u5730\u4f18\u5148\u7684\u684c\u9762\u7aef AI \u8d85\u7ea7\u5de5\u4f5c\u53f0",
+    "longDescription": "Find Yourself \u2014\u2014 \u672c\u5730\u4f18\u5148\u7684\u684c\u9762\u7aef AI \u8d85\u7ea7\u5de5\u4f5c\u53f0\u3001\u4e2a\u4eba\u6570\u5b57\u7a7a\u95f4\u4e0e\u6570\u7801\u5c0f\u5c4b\u3002\u6570\u636e\u5168\u90e8\u4fdd\u5b58\u5728\u4f60\u81ea\u5df1\u7684\u7535\u8111\u4e0a\uff1b\u5de5\u4f5c\u53f0\u514d\u767b\u5f55\u5373\u53ef\u4f7f\u7528\u3002"
   },
   "plugins": {
     "shell": {

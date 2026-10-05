@@ -6,9 +6,9 @@ authors = ["Find Yourself"]
 edition = "2021"
 rust-version = "1.77"
 
-[lib]
-name = "find_yourself_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+[[bin]]
+name = "find-yourself-desktop"
+path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

@@ -23,15 +23,20 @@ dependencies = [
   "opentelemetry-sdk>=1.30,<2",
   "opentelemetry-exporter-otlp-proto-http>=1.30,<2",
   "cryptography>=44,<50",
-  # 18 工程代码工作台：真实交互终端。Windows 走 ConPTY；不可用时降级为管道并
-  # 明确标注为「命令日志」，不冒充可调整尺寸的交互终端。
-  "pywinpty>=3,<4",
   "argon2-cffi>=25.1.0",
   "pypdf>=5,<7",
   "python-docx>=1.1,<2",
+]
+
+[project.optional-dependencies]
+gui = [
   "mss>=10.2.0",
   "pyautogui>=0.9.54",
   "pygetwindow>=0.0.9",
+  "pywinpty>=3,<4; sys_platform == 'win32'",
+]
+desktop = [
+  "pyinstaller>=6.5,<7",
 ]
 
 [dependency-groups]

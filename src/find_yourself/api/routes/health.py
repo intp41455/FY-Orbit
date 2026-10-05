@@ -20,6 +20,7 @@ router = APIRouter(tags=["health"])
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
+@router.get("/health")
 @router.get("/health/live")
 async def live() -> dict:
     return {"status": "ok"}

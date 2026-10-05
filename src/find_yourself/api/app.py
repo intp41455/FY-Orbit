@@ -83,6 +83,11 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
         # They default to off; this only makes the tools exist (permission-gated).
         from ..services.automation.registry import wire_automation_tools
         wire_automation_tools()
+        # E1/E2: Auto-discover bundled skill packages and prompt templates.
+        from ..skills.discovery import discover_and_stage_skills, discover_and_create_prompts
+
+        await asyncio.to_thread(discover_and_stage_skills, session_maker=app.state.session_maker)
+        await asyncio.to_thread(discover_and_create_prompts, session_maker=app.state.session_maker)
         # P2 MCP integration: wire configured MCP servers (FY_MCP_SERVERS) into
         # the dynamic tool registry. Unreachable servers are logged and skipped;
         # the empty default config makes this a no-op. Off the event loop so a

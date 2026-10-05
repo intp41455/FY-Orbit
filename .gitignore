@@ -8,10 +8,14 @@ __pycache__/
 *.db*
 node_modules/
 dist/
+dist-desktop/
+desktop/sidecar/build/
+desktop/tauri/src-tauri/target/
+desktop/tauri/src-tauri/sidecar-binaries/
+desktop/tauri/src-tauri/gen/
 test-results/
 playwright-report/
 *.egg-info/
-dist-desktop/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
@@ -23,6 +27,8 @@ dist-desktop/
 *.env
 .env.*
 !.env.example
+!.env.*.example
+!*.env.example
 !.env.template
 # 例外：这一份已脱敏（值替换为 REDACTED_0…0，2026-10-04 主控实测确认无 64 位十六进制残留），
 # 它是 P1-05 工具注册验收的证据，丢了就无法复现该批次结论。

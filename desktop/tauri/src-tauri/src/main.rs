@@ -48,7 +48,7 @@ struct Sidecar(Mutex<Option<CommandChild>>);
 
 impl Sidecar {
     fn kill(&self) {
-        if let Some(mut child) = self.0.lock().ok().and_then(|mut s| s.take()) {
+        if let Some(child) = self.0.lock().ok().and_then(|mut s| s.take()) {
             let _ = child.kill();
         }
     }
@@ -71,7 +71,8 @@ fn open_main_route(app: AppHandle, route: String) -> Result<(), String> {
         .clone();
     let main = app.get_webview_window("main").ok_or("main window missing")?;
     let url = format!("{base}{route}");
-    main.navigate(url.parse().map_err(|e| format!("bad url: {e}"))?)?;
+    main.navigate(url.parse().map_err(|e| format!("bad url: {e}"))?)
+        .map_err(|e| e.to_string())?;
     main.set_focus().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -89,7 +90,7 @@ fn port_from_file() -> Option<u16> {
     let base = std::env::var("APPDATA")
         .or_else(|_| std::env::var("LOCALAPPDATA"))
         .ok()?;
-    let path: PathBuf = [base, "FindYourself", "run", "port.txt"].iter().collect();
+    let path: PathBuf = [base.as_str(), "FindYourself", "run", "port.txt"].iter().collect();
     let text = std::fs::read_to_string(path).ok()?;
     text.trim().parse::<u16>().ok()
 }
@@ -143,7 +144,7 @@ fn start_backend(app: &tauri::AppHandle) -> Result<String, String> {
     let deadline = Instant::now() + READY_TIMEOUT;
     while Instant::now() < deadline {
         // stdout handshake
-        while let Ok(Some(event)) = rx.try_recv() {
+        while let Ok(event) = rx.try_recv() {
             match event {
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line);

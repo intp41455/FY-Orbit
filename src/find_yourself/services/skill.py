@@ -23,6 +23,9 @@ here until a real sandbox evaluator is wired.
 这道判定不接受任何「本次跳过」参数——调用方无法削弱它。
 """
 
+from __future__ import annotations
+
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -111,7 +114,8 @@ class SkillService:
         return row
 
     def evaluate(self, actor: Actor, skill_id: str, *, static_passed: bool,
-                 functional_passed: bool, report: dict | None = None) -> SkillEvaluation:
+                 functional_passed: bool, dynamic_passed: bool = False,
+                 report: dict | None = None) -> SkillEvaluation:
         actor.require_authenticated()
         skill = self.s.get(Skill, skill_id)
         if skill is None:
@@ -120,15 +124,54 @@ class SkillService:
             raise Conflict("skill_state", "Only staged skills can be evaluated")
         ev = SkillEvaluation(
             id=uuid4().hex, skill_id=skill.id, subject_digest=skill.package_hash,
-            static_passed=static_passed, dynamic_passed=False,
+            static_passed=static_passed, dynamic_passed=dynamic_passed,
             functional_passed=functional_passed, professional_passed=False,
             report=report or {}, evaluator=actor.service_id or "core",
         )
         self.s.add(ev)
         self.s.flush()
         self.audit.append(actor, "skill.evaluated", skill.id,
-                          {"static": static_passed, "functional": functional_passed})
+                          {"static": static_passed, "functional": functional_passed, "dynamic": dynamic_passed})
         return ev
+
+    def run_sandbox_evaluation(
+        self,
+        actor: Actor,
+        skill_id: str,
+        command: list[str],
+        workspace: str | None = None,
+        timeout_s: float = 10,
+    ) -> dict[str, Any]:
+        """Run dynamic execution of a plugin script in the container sandbox (Batch H).
+
+        Uses ContainerSandboxRunner (docker/sandbox/Dockerfile image).
+        Returns execution result dict with exit_code, stdout, stderr, and whether it passed.
+        """
+        actor.require_authenticated()
+        skill = self.s.get(Skill, skill_id)
+        if skill is None:
+            raise NotFound("skill_not_found", "Skill not found")
+        if skill.state != "staged":
+            raise Conflict("skill_state", "Only staged skills can be evaluated in sandbox")
+
+        try:
+            from ..runtime.sandbox_container import ContainerSandboxRunner
+            runner = ContainerSandboxRunner()
+            isolation = runner.describe_isolation()
+            result = runner.run(command, workspace=workspace, timeout_s=timeout_s)
+            passed = (result.get("exit_code") == 0) and not result.get("timed_out")
+            return {
+                "sandbox_available": True,
+                "isolation": isolation,
+                "passed": passed,
+                "result": result,
+            }
+        except Exception as exc:
+            return {
+                "sandbox_available": False,
+                "passed": False,
+                "error": str(exc),
+            }
 
     def promote(self, actor: Actor, skill_id: str, evaluation_id: str) -> Skill:
         # Only the owner may promote; an agent cannot enable itself (§5.3).

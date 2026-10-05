@@ -73,5 +73,26 @@ class Settings(BaseSettings):
 
 
 @lru_cache
-def settings():
+def _get_settings() -> Settings:
     return Settings()
+
+
+def settings(refresh: bool = False) -> Settings:
+    """获取应用配置单例。
+
+    支持热重载（refresh=True），在测试重置环境变量或配置更新时触发重新实例化与安全校验。
+    validate_security() 会在每次实例化时强校验，确保生产安全规则不被绕过。
+    """
+    if refresh:
+        _get_settings.cache_clear()
+    return _get_settings()
+
+
+# 保持与原有 lru_cache 装饰器方法向后兼容
+settings.cache_clear = _get_settings.cache_clear  # type: ignore[attr-defined]
+
+
+def reload_settings() -> Settings:
+    """强制重新载入并安全校验配置。"""
+    _get_settings.cache_clear()
+    return _get_settings()

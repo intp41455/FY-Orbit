@@ -2,7 +2,7 @@
 // 模板库 (/api/prompts) + 工具注册表 (/api/tools) 读取，以及
 // POST /api/streaming/chat 的 SSE 流式解析（EventSource 不支持 POST，
 // 因此用 fetch + ReadableStream 手工解析 text/event-stream 帧协议）。
-import { getCsrfToken, request } from './client';
+import { buildApiUrl, getCsrfToken, request } from './client';
 
 export interface PromptTemplateSummary {
   id: string;
@@ -61,7 +61,7 @@ export async function streamChat(body: StreamChatBody,
   const csrf = getCsrfToken();
   if (csrf) headers['X-CSRF-Token'] = csrf;
 
-  const res = await fetch('/api/streaming/chat', {
+  const res = await fetch(buildApiUrl('/api/streaming/chat'), {
     method: 'POST',
     headers,
     credentials: 'same-origin',
