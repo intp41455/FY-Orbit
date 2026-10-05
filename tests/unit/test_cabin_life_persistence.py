@@ -544,14 +544,15 @@ def test_unauthenticated_actor_rejected(session_maker):
 def test_put_rejects_numeric_fields(client: TestClient, headers: dict, field: str):
     """`PUT` 提交任何结算字段一律 422 —— 数值只能由 /action 算出。"""
     _create(client, headers, "forest")
+    before = client.get("/api/cabin/life/save", headers=headers).json()["save"]
     r = client.put(
         "/api/cabin/life/save", json={field: {"a": 1}}, headers=headers
     )
     assert r.status_code == 422, r.text
     assert r.json()["error"]["code"] == "life_server_authoritative"
-    # 并且存档真的没被改
+    # 并且存档真的没被改（真比对前后值）
     snap = client.get("/api/cabin/life/save", headers=headers).json()
-    assert snap["save"][field] in ({}, 0) or field in snap["save"]
+    assert snap["save"][field] == before[field]
 
 
 def test_put_can_switch_theme_and_keeps_progress(client: TestClient, headers: dict):
@@ -691,19 +692,110 @@ def test_sleep_advances_day_and_resets_daily_counters(client: TestClient, header
     assert body["settlement"]["lines"] == [], "没进货就没有售出明细"
 
 
-def test_sleep_settles_stock_and_reports_leftovers(client: TestClient, headers: dict):
+def test_sleep_settles_stock_and_reports_leftovers(
+    client: TestClient, headers: dict, session_maker
+):
     """进货后睡觉要真的结算，未售出部分如实留在库存。"""
     _create(client, headers, "forest")
     snap = client.get("/api/cabin/life/save", headers=headers).json()
     good = next(g for g in snap["shop"] if g["unlocked"])
-    # 先给金币：走 restock 需要钱，这里通过反复 set_price 不加钱，
-    # 所以直接断言「金币不足时被拒」这条同样重要。
+
+    # 1. 验证金币不足时被拒
     r = _action(client, headers, action="restock", good_id=good["id"], qty=1)
     assert r["status"] == 422, r["text"]
     assert "金币不足" in r["body"]["error"]["message"]
-
     st = client.get("/api/cabin/life/save", headers=headers).json()["save"]
     assert st["shop"]["stock"].get(good["id"], 0) == 0, "被拒的进货不该进库存"
+
+    # 2. 给初始金币（1000），实测进货 5 件与隔日真实结算
+    owner = _owner(client, headers)
+    db = session_maker()
+    try:
+        row = db.get(LifeSaveRow, owner)
+        row.coins = 1000
+        db.commit()
+    finally:
+        db.close()
+
+    r_restock = _action(client, headers, action="restock", good_id=good["id"], qty=5)
+    assert r_restock["status"] == 200, r_restock["text"]
+    assert r_restock["body"]["save"]["shop"]["stock"][good["id"]] == 5
+
+    # 3. 睡觉触发隔日结算
+    r_sleep = _action(client, headers, action="sleep")
+    assert r_sleep["status"] == 200, r_sleep["text"]
+    settlement = r_sleep["body"]["settlement"]
+    assert "coins_after" in settlement
+    assert "lines" in settlement
+    line = next((l for l in settlement["lines"] if l["good_id"] == good["id"]), None)
+    assert line is not None, "进货商品必须出现在结算明细中"
+    sold = line["sold"]
+    leftover = line["leftover"]
+    assert sold + leftover == 5, f"售出({sold}) + 剩余({leftover}) 必须等于进货数(5)"
+
+    st = client.get("/api/cabin/life/save", headers=headers).json()["save"]
+    assert st["shop"]["stock"].get(good["id"], 0) == leftover, "未售出部分必须如实留在库存"
+    assert st["coins"] == settlement["coins_after"]
+    assert "06:00" in r_sleep["body"]["note"]
+
+
+def test_corrupt_save_via_http_returns_409(
+    client: TestClient, headers: dict, session_maker
+):
+    """坏存档写进 DB → 走 HTTP GET/action → 断言真返 409 (life_save_corrupt)，绝不静默兜底。"""
+    _create(client, headers, "forest")
+    owner = _owner(client, headers)
+
+    db = session_maker()
+    try:
+        row = db.get(LifeSaveRow, owner)
+        assert row is not None
+        # 破坏主题字段为不存在的主题
+        row.theme = "atlantis"
+        db.commit()
+    finally:
+        db.close()
+
+    # GET 请求必须真返 409
+    r_get = client.get("/api/cabin/life/save", headers=headers)
+    assert r_get.status_code == 409, r_get.text
+    assert r_get.json()["error"]["code"] == "life_save_corrupt"
+    assert "atlantis" in r_get.json()["error"]["message"]
+
+    # POST action 请求同样真返 409
+    r_act = client.post(
+        "/api/cabin/life/action", json={"action": "sleep"}, headers=headers
+    )
+    assert r_act.status_code == 409, r_act.text
+    assert r_act.json()["error"]["code"] == "life_save_corrupt"
+
+
+def test_delete_save_via_http(client: TestClient, headers: dict):
+    """DELETE /api/cabin/life/save 完整生命周期测试（建档 → DELETE → 200 → 再次 GET 返 404）。"""
+    _create(client, headers, "forest")
+    owner = _owner(client, headers)
+
+    # 1. 显式删除存档
+    r_del = client.delete("/api/cabin/life/save", headers=headers)
+    assert r_del.status_code == 200, r_del.text
+    assert r_del.json() == {"deleted": True, "owner": owner}
+
+    # 2. 删后 GET 必须 404
+    r_get = client.get("/api/cabin/life/save", headers=headers)
+    assert r_get.status_code == 404, r_get.text
+    assert r_get.json()["error"]["code"] == "life_save_missing"
+
+    # 3. 再次 DELETE 必须 404
+    r_del2 = client.delete("/api/cabin/life/save", headers=headers)
+    assert r_del2.status_code == 404, r_del2.text
+    assert r_del2.json()["error"]["code"] == "life_save_missing"
+
+    # 4. 删档后可重新建档开新周目
+    r_recreate = client.post(
+        "/api/cabin/life/save", json={"theme": "magic"}, headers=headers
+    )
+    assert r_recreate.status_code == 200, r_recreate.text
+    assert client.get("/api/cabin/life/save", headers=headers).json()["save"]["theme"] == "magic"
 
 
 def test_version_is_monotonic_across_theme_switch(client: TestClient, headers: dict):
