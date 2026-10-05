@@ -56,6 +56,8 @@ from . import artifact_gate  # 需求7 产物版本门禁
 api_router.include_router(artifact_gate.router)  # 需求7 /api/artifact-gates
 from . import collaboration  # 需求15 多人协作闭环（评论/@人/通知/角色）
 api_router.include_router(collaboration.router)  # 需求15 /api/collaboration
+from . import cabin_life  # B11 像素风生活模拟存档/动作（/api/cabin/life/*，前缀与 W1/W2 无交集）
+api_router.include_router(cabin_life.router)  # B11 /api/cabin/life
 
 # P5 · 插件市场路由（追加挂载；只许追加形态）
 api_router.include_router(plugins.router)
