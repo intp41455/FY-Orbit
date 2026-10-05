@@ -1,0 +1,1349 @@
+/* ==========================================================================
+   包 E · 知识星图与中台域样式（/knowledge /hub /skills /plugins）
+   --------------------------------------------------------------------------
+   独占文件：本文件归包 E 所有。所有颜色一律 var(--ui-*)，不写裸色值。
+   状态语义走九档色；薄荷青仅用于装饰泛光（星图次级节点簇 / 泛光），不承载状态语义。
+
+   ⚠ 零绿色自查（总纲 §2 红线一）
+     本文件**不出现**任何纯绿色值。原有 `styles.css`（冻结文件）里的
+     `.fy-plugin-risk-low { background:#e5f3e8; color:#2f6f4f }`（偏绿）
+     在本文件 §5 覆盖为 `--ui-st-complete` 深蓝。
+
+   ⚠ 渲染边界（包 E 任务书 §3.5）
+     星图用 **canvas 2D + 手写透视投影**，不引 three / WebGL ——
+     一是 /cabin 的 pixi 已经占着 WebGL 上下文，再抢一个会互相拖；
+     二是节点上限 2000 时 canvas 2D 完全够用。
+     canvas 层因此不吃 backdrop-filter（见 §1）。
+
+   ⚠ 派生令牌说明：本包需要「半透明强调边框」这类 alpha 色，但 tokens.css
+     （冻结）只有不透明主色与三个 glow rgba，没有 alpha 变体。
+     故 §0 的 alpha 色全部由 `--ui-*` 经 color-mix 计算得出 —— 仍是令牌，不是裸色值。
+     依赖：color-mix()（Chrome 111+ / Safari 16.2+ / Firefox 113+）。
+     本项目已要求 :focus-visible / backdrop-filter / inset，基线要求不低于此。
+   ========================================================================== */
+
+/* ==========================================================================
+   §0 本包局部派生令牌（本包唯一的色值来源）
+   ========================================================================== */
+:root {
+  /* 薄荷青 alpha（--ui-teal-400，授权装饰色，不承载状态语义） */
+  --kn-a-teal-34: color-mix(in srgb, var(--ui-teal-400) 34%, transparent);
+  --kn-a-teal-40: color-mix(in srgb, var(--ui-teal-400) 40%, transparent);
+  --kn-a-teal-50: color-mix(in srgb, var(--ui-teal-400) 50%, transparent);
+  /* 薄荷青浅色 alpha（hover 底色） */
+  --kn-a-glow-14: color-mix(in srgb, var(--ui-teal-200) 14%, transparent);
+  /* 九档状态色 alpha */
+  --kn-a-complete-28: color-mix(in srgb, var(--ui-st-complete) 28%, transparent);
+  --kn-a-waiting-28: color-mix(in srgb, var(--ui-st-waiting) 28%, transparent);
+  --kn-a-waiting-34: color-mix(in srgb, var(--ui-st-waiting) 34%, transparent);
+  --kn-a-failed-28: color-mix(in srgb, var(--ui-st-failed) 28%, transparent);
+  --kn-a-failed-34: color-mix(in srgb, var(--ui-st-failed) 34%, transparent);
+  --kn-a-external-28: color-mix(in srgb, var(--ui-st-external) 28%, transparent);
+  /* 中性白 alpha */
+  --kn-a-white-60: color-mix(in srgb, var(--ui-ink-inv) 60%, transparent);
+}
+
+/* ==========================================================================
+   §0b 包 E 同样用到但全局缺失的类
+   --------------------------------------------------------------------------
+   ⚠ `.ui-badge--neutral` 在 tokens.css 的九档徽标里**不存在**，
+     包 E 多处（风险标签、Skills 卡片、能力标签）用了它，全部静默退回基础
+     `.ui-badge`（丢底色与边框）。属共享层该补的，tokens.css 冻结，
+     故在此补齐并请收口包收编。
+   ========================================================================== */
+.ui-badge--neutral {
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  color: var(--ui-ink-3);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   §1 星图画布层（Canvas）—— 深底、无滤镜、不吃毛玻璃
+   ========================================================================== */
+
+.kn-root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-height: 0;
+}
+
+/* ---- 星图画布容器：深底玻璃（用户要求「星图/画布等需要压暗的场景」）---- */
+.kn-stage {
+  position: relative;
+  border-radius: var(--ui-r-3);
+  overflow: hidden;
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2);
+  min-height: 460px;
+  height: clamp(460px, 62vh, 720px);
+  /* 画布层不吃毛玻璃（每帧重采样）。玻璃感由外层 .kn-panel 提供。 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.kn-stage canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  cursor: grab;
+  touch-action: none;
+}
+.kn-stage canvas:active {
+  cursor: grabbing;
+}
+
+/* 无障碍等价通道：canvas 里的节点对读屏不可见，
+   所以所有节点必须在「列表视图」里也有等价条目（最少点击守则第 7 条）。 */
+.kn-stage:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-ring);
+}
+
+/* ---- 画布内的浮层控件 ---- */
+.kn-stage-bar {
+  position: absolute;
+  top: var(--ui-s-3);
+  left: var(--ui-s-3);
+  right: var(--ui-s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  pointer-events: none;
+}
+.kn-stage-bar > * {
+  pointer-events: auto;
+}
+.kn-stage-bar-right {
+  margin-left: auto;
+  display: flex;
+  gap: var(--ui-s-2);
+  align-items: center;
+}
+
+.kn-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+}
+.kn-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.kn-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+.kn-legend i.kn-legend-line {
+  width: 20px;
+  height: 0;
+  border-radius: 0;
+  border-top-width: 2px;
+  border-top-style: solid;
+}
+
+.kn-stage-tools {
+  display: flex;
+  gap: var(--ui-s-1);
+  padding: 4px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+}
+.kn-stage-tool {
+  min-width: var(--ui-hit);
+  min-height: var(--ui-hit);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 var(--ui-s-3);
+  border: 0;
+  border-radius: var(--ui-r-pill);
+  background: transparent;
+  color: var(--ui-ink-3);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  cursor: pointer;
+  transition: color var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease);
+}
+.kn-stage-tool:hover:not(:disabled) {
+  color: var(--ui-sky-700);
+  background: var(--kn-a-glow-14);
+}
+.kn-stage-tool[aria-pressed='true'] {
+  background: var(--ui-glass-2);
+  color: var(--ui-sky-800);
+  box-shadow: 0 0 18px -10px var(--ui-glow-teal);
+}
+.kn-stage-tool:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 命中计数：搜索过滤时给出「命中 N / 共 M」 */
+.kn-count {
+  padding: var(--ui-s-1) var(--ui-s-3);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 空态 / 加载态（画布内浮层，不遮挡） */
+.kn-stage-note {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-s-2);
+  text-align: center;
+  padding: var(--ui-s-6);
+  color: var(--ui-ink-3);
+  pointer-events: none;
+}
+.kn-stage-note > strong {
+  font-size: var(--ui-fs-lg);
+  color: var(--ui-ink-2);
+}
+.kn-stage-note p {
+  margin: 0;
+  max-width: 46ch;
+  font-size: var(--ui-fs-sm);
+}
+
+/* ==========================================================================
+   §2 节点卡（点节点弹卡，跟随节点，不遮视口中心）
+   ========================================================================== */
+
+.kn-nodecard {
+  position: absolute;
+  z-index: 6;
+  width: min(300px, 78vw);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-3);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  animation: kn-card-in var(--ui-t-slow) var(--ui-ease);
+}
+@keyframes kn-card-in {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.kn-nodecard-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  min-width: 0;
+}
+.kn-nodecard-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kn-nodecard-meta {
+  margin-top: var(--ui-s-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.kn-nodecard-body {
+  margin-top: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  line-height: 1.6;
+  /* 摘要最多 6 行，超出省略（不截断可读性，但要能看全文 → 下方「打开原文件」） */
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.kn-nodecard-actions {
+  margin-top: var(--ui-s-3);
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+/* ==========================================================================
+   §3 页面骨架：顶栏 / 子 Tab / 三栏
+   ========================================================================== */
+
+.kn-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+.kn-topbar-spacer {
+  margin-left: auto;
+}
+
+.kn-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex: 1 1 16rem;
+  min-width: 0;
+  max-width: 28rem;
+}
+.kn-search > svg {
+  position: absolute;
+  left: var(--ui-s-3);
+  color: var(--ui-ink-4);
+  pointer-events: none;
+}
+.kn-search input {
+  padding-left: 2.1rem;
+}
+
+.kn-body {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--ui-s-4);
+  align-items: start;
+  min-height: 0;
+}
+
+/* 左侧竖排子 Tab（最多次要操作，不藏进设置） */
+.kn-subtabs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  position: sticky;
+  top: var(--ui-s-4);
+}
+.kn-subtab {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ui-ink-3);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease),
+    border-color var(--ui-t) var(--ui-ease), transform var(--ui-t-fast) var(--ui-ease);
+}
+.kn-subtab:hover {
+  color: var(--ui-sky-700);
+  transform: translateY(calc(-1 * var(--ui-lift)));
+}
+.kn-subtab[aria-selected='true'] {
+  background: var(--ui-glass-3);
+  border-color: var(--kn-a-teal-50);
+  color: var(--ui-sky-800);
+  box-shadow: var(--ui-shadow-1), 0 0 18px -10px var(--ui-glow-teal);
+}
+.kn-subtab > svg {
+  flex: 0 0 auto;
+}
+
+.kn-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-width: 0;
+}
+
+/* ==========================================================================
+   §3b 高级配置抽屉（⚙ 常驻右上角，浮在星图之上不推挤布局）
+   ========================================================================== */
+
+.kn-cfg {
+  gap: var(--ui-s-3);
+}
+.kn-cfg-nav {
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.kn-cfg-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  margin: 0;
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  min-width: 0;
+}
+.kn-cfg-row[data-wired='false'] {
+  /* 待接线项：视觉上就比可用项弱一档，避免用户误以为能点 */
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--kn-a-waiting-34);
+}
+.kn-cfg-row[data-wired='true'] {
+  border-color: var(--kn-a-teal-34);
+}
+.kn-cfg-label {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  padding: 0;
+}
+.kn-cfg-row[data-wired='true'] .kn-cfg-label > svg {
+  color: var(--ui-st-complete);
+}
+.kn-cfg-row[data-wired='false'] .kn-cfg-label > svg {
+  color: var(--ui-st-waiting);
+}
+.kn-cfg-row > p {
+  margin: 0;
+}
+.kn-cfg-row input[type='range'] {
+  width: 100%;
+  min-height: var(--ui-hit);
+  accent-color: var(--ui-sky-600);
+  cursor: pointer;
+}
+.kn-cfg-row input[type='number'],
+.kn-cfg-row input[type='text'],
+.kn-cfg-row select {
+  width: 100%;
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+}
+.kn-cfg-row input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ui-sky-600);
+}
+.kn-cfg-row:disabled {
+  opacity: 0.72;
+}
+.kn-cfg-out {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+/* ==========================================================================
+   §4 视图：时间线 / 层级 / 列表
+   ========================================================================== */
+
+/* ---- 时间线 ---- */
+.kn-timeline {
+  display: flex;
+  gap: var(--ui-s-4);
+  overflow-x: auto;
+  padding: var(--ui-s-4) var(--ui-s-2);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-1);
+  min-height: 200px;
+}
+.kn-tl-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  min-width: 190px;
+  flex: 0 0 auto;
+}
+.kn-tl-date {
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  color: var(--ui-ink-2);
+  font-variant-numeric: tabular-nums;
+  padding-bottom: var(--ui-s-2);
+  border-bottom: 2px solid var(--ui-line-1);
+}
+.kn-tl-item {
+  text-align: left;
+  padding: var(--ui-s-2);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-xs);
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.kn-tl-item:hover,
+.kn-tl-item:focus-visible {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: 0 0 18px -8px var(--ui-glow-teal);
+}
+.kn-tl-item-name {
+  display: block;
+  font-weight: 600;
+  color: var(--ui-ink-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kn-tl-item-meta {
+  color: var(--ui-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 层级（文件树） ---- */
+.kn-tree {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+}
+.kn-tree-node {
+  display: flex;
+  flex-direction: column;
+}
+.kn-tree-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-2);
+  border-radius: var(--ui-r-1);
+  color: var(--ui-ink-2);
+  font-size: var(--ui-fs-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+.kn-tree-row:hover,
+.kn-tree-row:focus-visible {
+  background: var(--ui-glass-3);
+  border-color: var(--kn-a-teal-40);
+}
+.kn-tree-row[data-depth='1'] {
+  padding-left: var(--ui-s-5);
+}
+.kn-tree-row[data-depth='2'] {
+  padding-left: var(--ui-s-8);
+}
+.kn-tree-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kn-tree-kids {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  border-left: 1px dashed var(--ui-line-1);
+  margin-left: var(--ui-s-4);
+  padding-left: var(--ui-s-2);
+}
+
+/* ---- 列表（图形视图的等价兜底路径） ---- */
+.kn-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--ui-s-3);
+}
+.kn-list-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  text-align: left;
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.kn-list-card:hover,
+.kn-list-card:focus-visible {
+  transform: translateY(calc(-ui-lift));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 22px -8px var(--ui-glow-teal);
+}
+.kn-list-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  min-width: 0;
+}
+.kn-list-card-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kn-list-card-meta {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.kn-list-card-body {
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.kn-list-card mark {
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 600;
+}
+
+/* 悬停显次要操作（absolute，不占常驻布局） */
+.kn-hover-act {
+  position: absolute;
+  top: var(--ui-s-2);
+  right: var(--ui-s-2);
+  display: flex;
+  gap: var(--ui-s-1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ui-t) var(--ui-ease);
+}
+.kn-list-card:hover .kn-hover-act,
+.kn-list-card:focus-within .kn-hover-act {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ==========================================================================
+   §5 插件市场（/plugins）与技能目录（/skills）
+   ========================================================================== */
+
+/* ---- 风险分级：颜色 + 文字 + 图标三重通道（不许只靠颜色） ---- */
+.fy-plugin-risk-low,
+.fy-plugin-risk-medium,
+.fy-plugin-risk-high {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.fy-plugin-risk-low {
+  /* 低风险 = 完成语义深蓝（禁绿色） */
+  background: var(--ui-st-complete-bg);
+  color: var(--ui-st-complete);
+  border-color: var(--kn-a-complete-28);
+}
+.fy-plugin-risk-medium {
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border-color: var(--kn-a-waiting-28);
+}
+.fy-plugin-risk-high {
+  background: var(--ui-st-failed-bg);
+  color: var(--ui-st-failed);
+  border-color: var(--kn-a-failed-34);
+}
+
+.fy-plugin-toolbar {
+  display: flex;
+  gap: var(--ui-s-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: var(--ui-s-3) 0;
+}
+.fy-plugin-toolbar input {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.fy-plugin-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--ui-s-3);
+}
+.fy-plugin-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.fy-plugin-item:hover,
+.fy-plugin-item:focus-within {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 24px -8px var(--ui-glow-teal);
+}
+.fy-plugin-item .row.spread {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.fy-plugin-scan {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 能力清单：安装前必读，用玻璃小卡框起来 */
+.fy-plugin-caps {
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+}
+.fy-plugin-caps ul {
+  margin: var(--ui-s-2) 0 0;
+  padding-left: 1.1rem;
+}
+.fy-plugin-caps li {
+  margin-bottom: var(--ui-s-1);
+}
+
+/* 安装确认：列出将获得的权限 */
+.fy-plugin-grant {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  margin: var(--ui-s-3) 0;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+}
+
+/* 详情抽屉（不占页宽）
+   ⚠ z-index 缺陷修正：tokens.css 里 `.ui-overlay` 用 `--ui-z-modal`(80)，
+     而 `.ui-drawer` 用 `--ui-z-drawer`(60) —— **遮罩压在抽屉之上**，
+     抽屉里的按钮点不到（Playwright 实测报 `<div class="ui-overlay"> intercepts pointer events`）。
+     tokens.css 是冻结文件，故在本包样式里把抽屉抬到遮罩之上。
+     已在交付报告「越界发现」里列出，请收口包把 tokens.css 的层级修对。 */
+.fy-plugin-detail {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(460px, 94vw);
+  z-index: calc(var(--ui-z-modal) + 1);
+  display: flex;
+  flex-direction: column;
+  padding: var(--ui-s-5);
+  gap: var(--ui-s-3);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--ui-glass-3);
+  border-left: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-3) 0 0 var(--ui-r-3);
+  box-shadow: var(--ui-shadow-3);
+  backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  animation: kn-slide-in var(--ui-t-slow) var(--ui-ease);
+}
+@keyframes kn-slide-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.fy-plugin-pager {
+  display: flex;
+  gap: var(--ui-s-3);
+  align-items: center;
+  margin-top: var(--ui-s-4);
+  flex-wrap: wrap;
+}
+
+/* ---- /skills 能力目录 ---- */
+.fy-cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: var(--ui-s-3);
+}
+.fy-cat-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  text-align: left;
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  color: var(--ui-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.fy-cat-card:hover,
+.fy-cat-card:focus-visible {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 22px -8px var(--ui-glow-teal);
+}
+.fy-cat-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  min-width: 0;
+}
+.fy-cat-title > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fy-cat-meta {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
+}
+/* 能力标签 */
+.fy-plugin-caps-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-s-1);
+}
+
+/* ---- /hub 超级中台 ---- */
+.hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--ui-s-3);
+}
+.hub-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.hub-card:hover,
+.hub-card:focus-within {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 24px -8px var(--ui-glow-teal);
+}
+.hub-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+.hub-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-md);
+  flex: 0 0 auto;
+}
+.hub-card-title {
+  min-width: 0;
+  flex: 1 1 8rem;
+}
+.hub-card-title h3 {
+  margin: 0;
+  font-size: var(--ui-fs-md);
+  color: var(--ui-ink-1);
+}
+.hub-card-actions {
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--ui-s-2);
+}
+.hub-card-actions button {
+  min-height: var(--ui-hit);
+}
+
+/* 状态胶囊：九档色 + 文字（颜色不是唯一通道） */
+.hub-state,
+.hub-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.hub-state-ok,
+.hub-health-ok {
+  /* 可用 = 完成语义深蓝（禁绿色） */
+  background: var(--ui-st-complete-bg);
+  color: var(--ui-st-complete);
+  border-color: var(--kn-a-complete-28);
+}
+.hub-state-fail,
+.hub-health-fail {
+  background: var(--ui-st-failed-bg);
+  color: var(--ui-st-failed);
+  border-color: var(--kn-a-failed-28);
+}
+.hub-state-warn,
+.hub-health-pending {
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border-color: var(--kn-a-waiting-28);
+}
+.hub-state-idle,
+.hub-health-unknown {
+  /* 未探活 = 外部未知紫灰，与「不可用」严格区分 */
+  background: var(--ui-st-external-bg);
+  color: var(--ui-st-external);
+  border-color: var(--kn-a-external-28);
+}
+
+.hub-toolbar,
+.hub-filters {
+  display: flex;
+  gap: var(--ui-s-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.hub-filters {
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--ui-r-pill);
+  background: var(--kn-a-white-60);
+  border: 1px solid var(--ui-line-2);
+}
+.hub-filter {
+  min-height: 34px;
+  padding: 0 var(--ui-s-3);
+  border: 0;
+  border-radius: var(--ui-r-pill);
+  background: transparent;
+  color: var(--ui-ink-3);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  cursor: pointer;
+  transition: color var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease);
+}
+.hub-filter:hover {
+  color: var(--ui-sky-700);
+}
+.hub-filter.active {
+  background: var(--ui-glass-3);
+  color: var(--ui-sky-800);
+  box-shadow: var(--ui-shadow-1), 0 0 18px -10px var(--ui-glow-teal);
+}
+
+.hub-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ui-s-3);
+}
+.hub-preset {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.hub-preset:hover {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--kn-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 22px -8px var(--ui-glow-teal);
+}
+.hub-preset-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+.hub-preset-skeleton {
+  padding: 1px var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border: 1px solid var(--kn-a-waiting-28);
+}
+.hub-preset button {
+  margin-top: auto;
+  min-height: var(--ui-hit);
+}
+
+.hub-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+}
+.hub-tag {
+  padding: 1px var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.hub-tag-more {
+  color: var(--ui-sky-700);
+}
+
+/* 表格：窄屏改卡片式，不横向裁切 */
+.hub-table,
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-sm);
+}
+.hub-table th,
+.hub-table td,
+.table th,
+.table td {
+  padding: var(--ui-s-2) var(--ui-s-3);
+  text-align: left;
+  border-bottom: 1px solid var(--ui-line-2);
+  color: var(--ui-ink-2);
+}
+.hub-table th,
+.table th {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.hub-table td:first-child,
+.table td:first-child {
+  color: var(--ui-ink-1);
+  font-weight: 600;
+}
+.hub-form-row {
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.hub-form-row input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-1);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+}
+.hub-route-list,
+.hub-reasons,
+.fy-plugin-findings {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+.hub-reasons {
+  padding-left: 1rem;
+  list-style: disc;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.hub-route-list > li,
+.fy-plugin-findings > li {
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-sm);
+}
+.hub-score {
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-sky-700);
+  font-weight: 700;
+}
+.hub-health-detail {
+  margin: 0;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-st-failed);
+}
+
+/* ==========================================================================
+   §6 响应式：可重排，不截断（基准原文）
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+  .hub-grid,
+  .fy-plugin-list,
+  .fy-cat-grid {
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .kn-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 侧边子 Tab 收成顶部横条（不许直接消失） */
+  .kn-subtabs {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: var(--ui-s-1);
+  }
+  .kn-subtab {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .kn-stage {
+    height: clamp(360px, 56vh, 520px);
+    min-height: 360px;
+  }
+  .kn-search {
+    max-width: 100%;
+    flex: 1 1 100%;
+  }
+  .kn-topbar-spacer {
+    display: none;
+  }
+  .kn-list,
+  .hub-grid,
+  .fy-plugin-list,
+  .fy-cat-grid,
+  .hub-preset-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fy-plugin-detail {
+    width: 100vw;
+    border-radius: 0;
+  }
+
+  /* 表格改卡片式：每行 data-label 作表头，不横向裁切 */
+  .hub-table thead,
+  .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .hub-table tr,
+  .table tr {
+    display: block;
+    margin-bottom: var(--ui-s-3);
+    padding: var(--ui-s-2);
+    border-radius: var(--ui-r-2);
+    background: var(--ui-glass-2);
+    border: 1px solid var(--ui-line-1);
+  }
+  .hub-table td,
+  .table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--ui-s-3);
+    border-bottom: 1px dashed var(--ui-line-2);
+    padding: var(--ui-s-2) 0;
+    min-height: var(--ui-hit);
+    align-items: center;
+  }
+  /* 表格改卡片式：每行首格作表头，不横向裁切。
+     `.hub-table` 的列是写死的（能力 / 所属连接 / 类型 / 健康 / 说明），
+     而 CapabilityPanel.tsx 不归本包（只读），不能给它加 data-label，
+     所以这里用 nth-child 显式给每列配中文表头文字。
+     ⚠ 代价：后端若给能力表加列，这里要同步补 —— 已在交付报告列为维护点。 */
+  .hub-table td:nth-child(1)::before { content: '能力'; }
+  .hub-table td:nth-child(2)::before { content: '所属连接'; }
+  .hub-table td:nth-child(3)::before { content: '类型'; }
+  .hub-table td:nth-child(4)::before { content: '健康'; }
+  .hub-table td:nth-child(5)::before { content: '说明'; }
+  .hub-table td:nth-child(6)::before { content: '操作'; }
+
+  .table td::before {
+    content: attr(data-label);
+    font-size: var(--ui-fs-xs);
+    color: var(--ui-ink-3);
+    font-weight: 700;
+    flex: 0 0 auto;
+  }
+  .hub-table td:last-child,
+  .table td:last-child {
+    border-bottom: none;
+  }
+
+  /* 触摸设备无 hover：次要操作常显 */
+  .kn-hover-act {
+    position: static;
+    opacity: 1;
+    pointer-events: auto;
+    margin-top: var(--ui-s-1);
+  }
+  .kn-list-card {
+    flex-direction: column;
+  }
+}
+
+/* ==========================================================================
+   §7 尊重系统减弱动效（本包所有动效都要兜住）
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .kn-nodecard,
+  .fy-plugin-detail,
+  .kn-subtab,
+  .kn-stage-tool,
+  .kn-tl-item,
+  .kn-tree-row,
+  .kn-list-card,
+  .fy-plugin-item,
+  .fy-plugin-item:hover,
+  .fy-cat-card,
+  .fy-cat-card:hover,
+  .hub-card,
+  .hub-card:hover,
+  .hub-preset,
+  .hub-preset:hover,
+  .hub-filter,
+  .kn-hover-act,
+  .kn-stage canvas {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .kn-nodecard,
+  .fy-plugin-detail {
+    animation: none !important;
+  }
+  .kn-subtab:hover,
+  .kn-tl-item:hover,
+  .kn-list-card:hover,
+  .fy-plugin-item:hover,
+  .fy-cat-card:hover,
+  .hub-card:hover,
+  .hub-preset:hover {
+    transform: none;
+  }
+}

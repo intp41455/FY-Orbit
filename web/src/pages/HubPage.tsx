@@ -17,6 +17,8 @@ import type {
   HubRouteCandidate,
 } from '../api/hub';
 import { errorMessage } from '../components/ui';
+import { LineIcon } from '../components/ui/LineIcon';
+import '../styles/pages/knowledge.css';
 import { ConnectionCard } from '../components/hub/ConnectionCard';
 import { ConnectionForm, type ConnectionFormSeed, type ConnectionFormSubmit } from '../components/hub/ConnectionForm';
 import { PresetGallery } from '../components/hub/PresetGallery';
@@ -273,15 +275,16 @@ export function HubPage() {
   return (
     <>
       <div className="page-head">
-        <h2>🧲 超级中台</h2>
+        <h2>超级中台</h2>
         <span className="muted">
           统一适配层 · 六类对象 · 凭证加密存储 · 能力路由（确定性规则，非模型决策）
         </span>
       </div>
 
-      <div className="hub-toolbar">
+      <div className="hub-toolbar ui-panel ui-panel--pad">
         <button
           type="button"
+          className="ui-btn ui-btn--primary"
           onClick={() => {
             setSeed(null);
             setEditing(null);
@@ -290,9 +293,17 @@ export function HubPage() {
           }}
           data-testid="hub-new"
         >
+          <LineIcon name="plus" size={16} />
           新建连接
         </button>
-        <button type="button" onClick={() => void onHealthAll()} disabled={busy || connections.length === 0} data-testid="hub-health-all">
+        <button
+          type="button"
+          className="ui-btn"
+          onClick={() => void onHealthAll()}
+          disabled={busy || connections.length === 0}
+          data-testid="hub-health-all"
+        >
+          <LineIcon name="refresh" size={16} />
           批量探活
         </button>
         <ManifestImport
@@ -322,14 +333,13 @@ export function HubPage() {
         />
       )}
 
-      <section className="hub-connections">
-        <div className="hub-filters" role="tablist" aria-label="连接分组">
+      <section className="hub-connections" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ui-s-3)' }}>
+        <div className="hub-filters" role="group" aria-label="连接分组">
           {FILTERS.map((f) => (
             <button
               key={f.key}
               type="button"
-              role="tab"
-              aria-selected={filter === f.key}
+              aria-pressed={filter === f.key}
               className={filter === f.key ? 'hub-filter active' : 'hub-filter'}
               onClick={() => setFilter(f.key)}
               data-testid={`hub-filter-${f.key}`}
@@ -337,6 +347,9 @@ export function HubPage() {
               {f.label}
             </button>
           ))}
+          <span className="kn-count" style={{ marginLeft: 'var(--ui-s-2)' }}>
+            共 {connections.length} 条连接 · 显示 {shown.length}
+          </span>
         </div>
 
         {loading && <div className="muted">读取中…</div>}
