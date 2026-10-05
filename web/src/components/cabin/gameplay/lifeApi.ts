@@ -12,7 +12,9 @@
  * 为什么不直接 import 后端 Python：前端构建链不含 Python，且规则必须单源。
  * `lifeApi.test.ts` 用真实快照 JSON 做契约测试，两端字段对不上就红。
  */
+import { request, ApiError, NetworkError } from '../../../api/client';
 
+export { ApiError, NetworkError };
 /** 与 `cabin_life.themes.THEME_IDS` 对齐（5 背景 + 四大主题）。 */
 export const THEME_IDS = [
   'forest',
@@ -243,3 +245,160 @@ export function settlementSummary(s: Settlement): string {
   const base = `第${s.day}天 收入 ${s.total_revenue} / 成本 ${s.cost_of_goods_sold} / 利润 ${s.profit}`;
   return left > 0 ? `${base}（另有 ${left} 件没卖掉，留在仓库）` : base;
 }
+
+/* ------------------------------------------------------------------ */
+/* HTTP 客户端通道（/api/cabin/life/* 六端点契约）                      */
+/* ------------------------------------------------------------------ */
+
+/** 完整快照：包含存档、HUD文案以及四大面板数据 */
+export interface LifeSnapshot {
+  save: LifeSave;
+  hud_line: string;
+  npcs: NpcRow[];
+  shop: ShopRow[];
+  craft: CraftRow[];
+  gather: GatherRow[];
+  version: number;
+}
+
+export interface LifeMeta {
+  themes: Array<{ id: string; label: string }>;
+  actions: string[];
+  writable_settings: string[];
+  max_hearts: number;
+  max_gifts_per_day: number;
+  daily_node_limit: number;
+  daily_reset_minute: number;
+}
+
+export interface LifeActionPayload {
+  action: string;
+  node_id?: string;
+  recipe_id?: string;
+  good_id?: string;
+  npc_id?: string;
+  gift_id?: string;
+  quest_id?: string;
+  giver?: string;
+  price?: number;
+  qty?: number;
+  [key: string]: unknown;
+}
+
+export interface LifeActionResult {
+  action: string;
+  save: LifeSave;
+  hud_line: string;
+  receipt?: unknown;
+  settlement?: Settlement;
+  [key: string]: unknown;
+}
+
+export interface CreateSavePayload {
+  theme: string;
+  day?: number;
+}
+
+export interface PutSettingsPayload {
+  settings?: Record<string, unknown>;
+  expected_version?: number;
+  [key: string]: unknown;
+}
+
+/** 识别 409 / 412 乐观锁冲突或版本冲突 */
+export function isConflictError(err: unknown): boolean {
+  if (err instanceof ApiError) {
+    return err.status === 409 || err.status === 412 || err.body?.code === 'life_version_conflict';
+  }
+  return false;
+}
+
+/** 读取完整面板快照 (GET /api/cabin/life/save) */
+export async function fetchSnapshot(
+  playerTile?: [number, number] | null,
+  signal?: AbortSignal,
+): Promise<LifeSnapshot> {
+  const query: Record<string, number | undefined> = {};
+  if (playerTile) {
+    query.player_x = playerTile[0];
+    query.player_y = playerTile[1];
+  }
+  return request<LifeSnapshot>('/api/cabin/life/save', {
+    method: 'GET',
+    query,
+    signal,
+  });
+}
+
+/** 建新档 (POST /api/cabin/life/save) */
+export async function createSave(
+  themeOrPayload: string | CreateSavePayload,
+  day?: number,
+  signal?: AbortSignal,
+): Promise<{ save: LifeSave; hud_line: string }> {
+  const body = typeof themeOrPayload === 'string'
+    ? { theme: themeOrPayload, day: day ?? 1 }
+    : { theme: themeOrPayload.theme, day: themeOrPayload.day ?? 1 };
+  return request<{ save: LifeSave; hud_line: string }>('/api/cabin/life/save', {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** 保存玩家偏好设置 (PUT /api/cabin/life/save) */
+export async function save(
+  payload: PutSettingsPayload,
+  signal?: AbortSignal,
+): Promise<{ save: LifeSave; hud_line: string }> {
+  return request<{ save: LifeSave; hud_line: string }>('/api/cabin/life/save', {
+    method: 'PUT',
+    body: payload,
+    signal,
+  });
+}
+
+/** 删档 (DELETE /api/cabin/life/save) */
+export async function deleteSave(
+  signal?: AbortSignal,
+): Promise<{ deleted: boolean; owner: string }> {
+  return request<{ deleted: boolean; owner: string }>('/api/cabin/life/save', {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/** 服务端权威动作通道 (POST /api/cabin/life/action) */
+export async function act(
+  actionOrPayload: string | LifeActionPayload,
+  args?: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<LifeActionResult> {
+  const body: LifeActionPayload = typeof actionOrPayload === 'string'
+    ? { action: actionOrPayload, ...(args ?? {}) }
+    : actionOrPayload;
+  return request<LifeActionResult>('/api/cabin/life/action', {
+    method: 'POST',
+    body,
+    signal,
+  });
+}
+
+/** 元数据查询 (GET /api/cabin/life/meta) */
+export async function meta(signal?: AbortSignal): Promise<LifeMeta> {
+  return request<LifeMeta>('/api/cabin/life/meta', {
+    method: 'GET',
+    signal,
+  });
+}
+
+/** lifeApi 客户端聚合对象 */
+export const lifeApi = {
+  fetchSnapshot,
+  createSave,
+  save,
+  deleteSave,
+  act,
+  meta,
+  isConflictError,
+};

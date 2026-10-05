@@ -53,7 +53,9 @@ import {
   useCabinMedia,
 } from '../components/assets/CabinMedia';
 import { assetsApi, type AssetRecord } from '../api/assets';
+import { ApiError } from '../api/client';
 import { CabinHud } from '../components/cabin/hud/CabinHud';
+import { lifeApi, type LifeSnapshot } from '../components/cabin/gameplay/lifeApi';
 
 /** 台词来源诚实标注：模型生成 / 预生成台词池（未探测时默认 provider 本就是池）。 */
 const DIALOGUE_SOURCE_LABEL: Record<DialogueSource, string> = {
@@ -127,6 +129,65 @@ export function CabinPage() {
       .catch(() => {
         // 接线 provider 内部已做池回退，这里只是最后防线：异常时跳过本次台词，不打断游戏。
       });
+  };
+
+  /* ------------------------------------------------------------------ */
+  /* B 包 · 生活模拟与 HUD 真实快照数据                                  */
+  /* ------------------------------------------------------------------ */
+  const [lifeSnapshot, setLifeSnapshot] = useState<LifeSnapshot | null>(null);
+  const [lifeLoading, setLifeLoading] = useState(false);
+  const [lifeError, setLifeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLifeLoading(true);
+
+    const loadLife = async () => {
+      try {
+        const snap = await lifeApi.fetchSnapshot();
+        if (!cancelled) {
+          setLifeSnapshot(snap);
+          setLifeError(null);
+        }
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          try {
+            await lifeApi.createSave(config.background, 1);
+            const snap = await lifeApi.fetchSnapshot();
+            if (!cancelled) {
+              setLifeSnapshot(snap);
+              setLifeError(null);
+            }
+            return;
+          } catch {
+            // 建档异常由外部统一兜底展示
+          }
+        }
+        if (!cancelled) {
+          setLifeError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (!cancelled) {
+          setLifeLoading(false);
+        }
+      }
+    };
+
+    void loadLife();
+    return () => {
+      cancelled = true;
+    };
+  }, [config.background]);
+
+  const handleLifeAction = async (action: string, args?: Record<string, unknown>) => {
+    try {
+      await lifeApi.act(action, args);
+      const snap = await lifeApi.fetchSnapshot();
+      setLifeSnapshot(snap);
+      setLifeError(null);
+    } catch (err) {
+      setLifeError(err instanceof Error ? err.message : String(err));
+    }
   };
 
   /* ------------------------------------------------------------------ */
@@ -477,6 +538,12 @@ export function CabinPage() {
         onSelectTheme={(bg) => update({ background: bg })}
         timeOfDay={config.timeOfDay ?? 'day'}
         onSelectTimeOfDay={(t) => update({ timeOfDay: t })}
+        coins={lifeSnapshot?.save?.coins ?? 0}
+        dayText={lifeSnapshot?.hud_line ?? '第1天 上午 晴 · 0 金币'}
+        snapshot={lifeSnapshot}
+        loading={lifeLoading}
+        error={lifeError}
+        onAction={handleLifeAction}
       />
 
       <button type="button" className="cabin-back" onClick={() => navigate('/private')}>
