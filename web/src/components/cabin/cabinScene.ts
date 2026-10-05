@@ -66,6 +66,20 @@ import {
   type ParticleKindDef,
   type ThemeArt,
 } from './cabinPixelArt';
+import {
+  generateDeterministicWorldGrid,
+  createTerrainTileTexture,
+  getVisibleTileBounds,
+  MAP_COLS,
+  MAP_ROWS,
+} from './cabinWorldTiles';
+import {
+  B4_CATALOG_MAP,
+  createFurnitureTexture,
+  DEFAULT_PLACED_FURNITURE,
+} from './cabinBuildArt';
+import type { PlacedItem } from './gameplay/buildApi';
+import type { TerrainId } from './gameplay/worldApi';
 
 /**
  * 数码小屋 PixiJS 像素风渲染层（零外部素材）。
@@ -542,6 +556,13 @@ export interface CabinScene {
   /** 在指定角色头顶弹出气泡（含「虚拟演绎」角标），约 3.6s 自动消失。 */
   speak(speaker: DialogueSpeaker, text: string): void;
   destroy(): void;
+  /** B10 瓦片大世界地块（160×100） */
+  getWorldGrid?: () => { cols: number; rows: number; tiles: TerrainId[][] };
+  /** B4 家具放置与管理（28 种家具） */
+  setPlacedFurniture?: (items: PlacedItem[]) => void;
+  getPlacedFurniture?: () => PlacedItem[];
+  /** 镜头跟随状态 */
+  getCameraState?: () => { cameraX: number; targetX: number; isSmooth: boolean };
 }
 
 export interface CreateCabinSceneOptions {
@@ -570,6 +591,10 @@ export interface CreateCabinSceneOptions {
    */
   personWalkFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
+  /** B10 大世界地块网格（可选，未传时生成标准 160×100） */
+  worldGrid?: { cols: number; rows: number; tiles: TerrainId[][] };
+  /** B4 家具放置列表（可选，未传时使用默认庭院摆放） */
+  furniture?: PlacedItem[];
 }
 
 interface ParticleState {
@@ -811,7 +836,105 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     }
   };
 
-  app.stage.addChild(bgLayer, houseC, actorLayer, particleLayer, edgeLayer, timeOverlay, bubbleLayer);
+  /* ---- B10 大世界瓦片地块（160×100 格） ---- */
+  let worldGrid = options.worldGrid ?? generateDeterministicWorldGrid('player', config.background);
+  const worldTileLayer = new Container();
+  worldTileLayer.alpha = 0.95;
+  const MAX_VISIBLE_TILES = 360;
+  const tileSprites: Sprite[] = [];
+  for (let i = 0; i < MAX_VISIBLE_TILES; i++) {
+    const spr = new Sprite();
+    spr.visible = false;
+    worldTileLayer.addChild(spr);
+    tileSprites.push(spr);
+  }
+
+  /* ---- B4 家具图层（28 种家具） ---- */
+  let placedFurniture: PlacedItem[] = options.furniture ? [...options.furniture] : [...DEFAULT_PLACED_FURNITURE];
+  const furnitureUnderLayer = new Container();
+  const furnitureFloorLayer = new Container();
+  const furnitureWallLayer = new Container();
+  const furnitureSprites: Map<string, Sprite> = new Map();
+
+  const rebuildFurnitureSprites = () => {
+    furnitureUnderLayer.removeChildren();
+    furnitureFloorLayer.removeChildren();
+    furnitureWallLayer.removeChildren();
+    furnitureSprites.clear();
+
+    for (const item of placedFurniture) {
+      const def = B4_CATALOG_MAP.get(item.furniture_id);
+      if (!def) continue;
+      const tex = createFurnitureTexture(def, item.rotation);
+      const spr = new Sprite(tex.texture);
+      spr.roundPixels = true;
+      furnitureSprites.set(item.id, spr);
+      if (def.layer === 'under') {
+        furnitureUnderLayer.addChild(spr);
+      } else if (def.layer === 'wall') {
+        furnitureWallLayer.addChild(spr);
+      } else {
+        furnitureFloorLayer.addChild(spr);
+      }
+    }
+  };
+
+  rebuildFurnitureSprites();
+
+  const syncWorldTiles = () => {
+    const vw = viewWidth();
+    const vh = Math.ceil(height / worldScale);
+    const bounds = getVisibleTileBounds(cameraX, 0, vw, vh);
+
+    let idx = 0;
+    const rowOffset = 50; // SPAWN_TILE y 居中
+    for (let r = 0; r < 8; r++) {
+      const worldRow = (rowOffset - 4 + r + MAP_ROWS) % MAP_ROWS;
+      for (let c = bounds.col0; c <= bounds.col1 && c < MAP_COLS; c++) {
+        if (idx >= tileSprites.length) break;
+        const spr = tileSprites[idx++];
+        const tid = worldGrid.tiles[worldRow]?.[c] ?? 'grass';
+        spr.texture = createTerrainTileTexture(tid, config.background).texture;
+        spr.scale.set(worldScale);
+        spr.position.set(
+          Math.round(worldToScreenX(c * TILE, cameraX) * worldScale),
+          Math.round(groundY + r * (TILE * 0.5) * worldScale),
+        );
+        spr.visible = true;
+      }
+    }
+    for (; idx < tileSprites.length; idx++) {
+      tileSprites[idx].visible = false;
+    }
+  };
+
+  const syncFurnitureToCamera = () => {
+    for (const item of placedFurniture) {
+      const spr = furnitureSprites.get(item.id);
+      if (!spr) continue;
+      const def = B4_CATALOG_MAP.get(item.furniture_id);
+      if (!def) continue;
+      spr.scale.set(worldScale);
+      const screenX = Math.round(worldToScreenX(item.x * TILE, cameraX) * worldScale);
+      const screenY = Math.round(groundY + (item.y - 48) * (TILE * 0.4) * worldScale);
+      spr.position.set(screenX, screenY);
+      spr.visible = screenX + spr.width >= -64 && screenX <= width + 64;
+    }
+  };
+
+  app.stage.addChild(
+    bgLayer,
+    worldTileLayer,
+    furnitureUnderLayer,
+    houseC,
+    furnitureFloorLayer,
+    actorLayer,
+    furnitureWallLayer,
+    particleLayer,
+    edgeLayer,
+    timeOverlay,
+    bubbleLayer,
+  );
   app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
 
@@ -1113,6 +1236,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       nearSegs.forEach((s, i) => {
         s.texture = currentTextures.near[i % currentTextures.near.length].texture;
       });
+      worldGrid = generateDeterministicWorldGrid('player', config.background);
+      rebuildFurnitureSprites();
     }
     bindParticles();
   };
@@ -1136,6 +1261,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     layoutHouse();
     layoutActors();
     updateNamePlate();
+    syncWorldTiles();
+    syncFurnitureToCamera();
   };
 
   redraw();
@@ -1297,6 +1424,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     cameraX = clampCameraToPerson(lerpCameraX(cameraX, camTarget, dt), personWorldX, vw);
     cameraX = clampCameraX(cameraX, vw);
     syncHouseToCamera();
+    syncWorldTiles();
+    syncFurnitureToCamera();
 
     // 走路两帧动画（换帧）；显示位置取整到像素网格
     const frame = walking ? Math.floor(timeMs / 150) % 2 : 0;
@@ -1419,9 +1548,30 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       if (destroyed) return;
       destroyed = true;
       app.ticker.remove(tick);
+      tileSprites.length = 0;
+      furnitureSprites.clear();
       // 注意：不销毁模块级缓存纹理（themeCache / spriteCache / glow / shadow），
       // React StrictMode 双挂载时新场景直接复用；缓存总量有界（约 40 张小纹理）。
       app.destroy(true, { children: true });
+    },
+    getWorldGrid() {
+      return { cols: worldGrid.cols, rows: worldGrid.rows, tiles: worldGrid.tiles };
+    },
+    setPlacedFurniture(items: PlacedItem[]) {
+      if (destroyed) return;
+      placedFurniture = [...items];
+      rebuildFurnitureSprites();
+      syncFurnitureToCamera();
+    },
+    getPlacedFurniture() {
+      return [...placedFurniture];
+    },
+    getCameraState() {
+      return {
+        cameraX,
+        targetX: cameraTargetX(personWorldX, viewWidth()),
+        isSmooth: true,
+      };
     },
   };
 }
