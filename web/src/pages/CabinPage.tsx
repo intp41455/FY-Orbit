@@ -55,7 +55,11 @@ import {
 import { assetsApi, type AssetRecord } from '../api/assets';
 import { ApiError } from '../api/client';
 import { CabinHud } from '../components/cabin/hud/CabinHud';
-import { lifeApi, type LifeSnapshot } from '../components/cabin/gameplay/lifeApi';
+import { lifeApi, type LifeSnapshot, type GatherRow } from '../components/cabin/gameplay/lifeApi';
+import {
+  GatherAnimationPlayer,
+  buildThreeSecondPrompt,
+} from '../components/cabin/gameplay/cabinGatherInteraction';
 import {
   getHouseRooms,
   unlockRoom,
@@ -195,6 +199,24 @@ export function CabinPage() {
       setLifeError(err instanceof Error ? err.message : String(err));
     }
   };
+
+  const animPlayer = useMemo(() => new GatherAnimationPlayer(), []);
+  const activeGatherNode = useMemo(
+    () => lifeSnapshot?.gather?.find((r) => r.in_range) ?? null,
+    [lifeSnapshot?.gather],
+  );
+  const threeSecondCard = useMemo(
+    () => (activeGatherNode ? buildThreeSecondPrompt(activeGatherNode) : null),
+    [activeGatherNode],
+  );
+
+  const handleGather = useCallback(
+    async (node: GatherRow) => {
+      animPlayer.play(node.action);
+      await handleLifeAction('gather', { node_id: node.id });
+    },
+    [animPlayer],
+  );
 
   /* ------------------------------------------------------------------ */
   /* W1 · 室内场景与布置                                                 */
@@ -617,23 +639,40 @@ export function CabinPage() {
       )}
 
       {view === 'outdoor' ? (
-        <button
-          type="button"
-          className="cabin-enter-indoor"
-          data-testid="cabin-enter-indoor"
-          onClick={() => {
-            globalTransitionManager.saveOutdoorState({
-              playerX: 0,
-              playerY: 0,
-              cameraX: 0,
-              themeId: config.background,
-              timeOfDay: config.timeOfDay ?? 'day',
-            });
-            setView('indoor');
-          }}
-        >
-          🚪 进屋布置
-        </button>
+        <>
+          <button
+            type="button"
+            className="cabin-enter-indoor"
+            data-testid="cabin-enter-indoor"
+            onClick={() => {
+              globalTransitionManager.saveOutdoorState({
+                playerX: 0,
+                playerY: 0,
+                cameraX: 0,
+                themeId: config.background,
+                timeOfDay: config.timeOfDay ?? 'day',
+              });
+              setView('indoor');
+            }}
+          >
+            🚪 进屋布置
+          </button>
+          {activeGatherNode && threeSecondCard && (
+            <div className="cabin-gather-prompt" data-testid="cabin-gather-prompt">
+              <span className="cabin-gather-text" data-testid="cabin-gather-text">
+                {threeSecondCard.fullPrompt}
+              </span>
+              <button
+                type="button"
+                className="cabin-btn primary cabin-gather-btn"
+                data-testid="cabin-gather-btn"
+                onClick={() => void handleGather(activeGatherNode)}
+              >
+                {threeSecondCard.buttonLabel}
+              </button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="cabin-indoor-bar">
           <button
