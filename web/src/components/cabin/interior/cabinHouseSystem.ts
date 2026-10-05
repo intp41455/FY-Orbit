@@ -627,18 +627,23 @@ export async function executeSleep(
     }
   }
 
-  // 4. 若服务端仍未返回合法存档，拒绝伪造，明确抛错（宁可空值，不可假值）
+  // 4. 若服务端仍未返回合法存档，拒绝伪造，明确抛错（零伪造：缺时钟或金币一律抛错拒收，绝不伪造 0 或默认时间）
   if (!afterSave || !afterSave.clock || typeof afterSave.clock.day !== 'number') {
     throw new Error('睡觉动作失败：服务端未返回权威存档或时钟数据');
   }
+  if (typeof afterSave.coins !== 'number') {
+    throw new Error('睡觉动作失败：服务端未返回权威金币数据');
+  }
 
   const dayAfter = afterSave.clock.day;
-  const coinsAfter = typeof afterSave.coins === 'number' ? afterSave.coins : 0;
+  const coinsAfter = afterSave.coins;
   const partLabel = afterSave.clock.part_label ?? '';
   const minuteStr = typeof afterSave.clock.minute === 'number' ? formatMinute(afterSave.clock.minute) : '';
   const weatherLabel = afterSave.weather?.label ?? afterSave.weather?.id ?? '';
   const timeLabel = `第${dayAfter}天 ${partLabel} ${minuteStr} ${weatherLabel}`.replace(/\s+/g, ' ').trim();
-  const note = serverNote ?? `睡到第 ${dayAfter} 天 06:00；未售出货品安全留存。`;
+  const note = serverNote ?? (minuteStr
+    ? `睡到第 ${dayAfter} 天 ${minuteStr}；未售出货品安全留存。`
+    : `睡到第 ${dayAfter} 天；未售出货品安全留存。`);
 
   return {
     dayBefore,

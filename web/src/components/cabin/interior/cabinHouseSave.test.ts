@@ -260,6 +260,18 @@ describe('B5 · H3 睡觉 = 存档 + 跳时间与读回一致性', () => {
       '睡觉动作失败：服务端未返回权威存档或时钟数据',
     );
   });
+
+  it('零假数据保证：服务端缺失金币字段时抛错拒收，绝不伪造 0 兜底', async () => {
+    const mockAction = vi.fn().mockResolvedValue({
+      save: {
+        clock: { day: 5, minute: 360, part: 'morning', part_label: '上午' },
+        // coins 缺失
+      },
+    });
+    await expect(executeSleep(mockAction, null)).rejects.toThrow(
+      '睡觉动作失败：服务端未返回权威金币数据',
+    );
+  });
 });
 
 describe('B5 · H4 储物 / 做饭 / 制作 / 展示收藏四大互动站', () => {
