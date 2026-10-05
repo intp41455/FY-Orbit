@@ -37,10 +37,11 @@ from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
 from find_yourself.services.actor import Actor
-from find_yourself.services.cabin_life import crafting, npcs, state, themes
+from find_yourself.services.cabin_life import crafting, npcs, persistence, state, themes
 from find_yourself.services.cabin_life.persistence import (
     LifeSaveCorrupt,
     LifeSaveRow,
+    apply_save,
     read_save,
 )
 from find_yourself.services.cabin_life.service import ACTIONS, LifeService
@@ -56,6 +57,7 @@ if _proj_root not in sys.path:
     sys.path.insert(0, _proj_root)
 
 m0034 = importlib.import_module("migrations.versions.0034_cabin_life_save")
+m0035 = importlib.import_module("migrations.versions.0035_cabin_life_build_state")
 
 LOCAL_TOKEN = "dev-token-secret-b11"
 
@@ -64,6 +66,7 @@ EXPECTED_COLUMNS = {
     "affinity", "gifts_today", "shop", "quest_log", "gather_counts",
     "version", "created_at", "updated_at",
 }
+EXPECTED_COLUMNS_0035 = EXPECTED_COLUMNS | {"build_state"}
 
 
 # --- Test-only SQLite TZ shim (same as test_cabin_gameplay.py) ---
@@ -284,6 +287,116 @@ def test_path_b_downgrade_then_upgrade_works():
     finally:
         conn.close()
         engine.dispose()
+
+
+# ======================================================================
+# 2.5 迁移 0035：B包建造状态 (build_state) 与用户外键 (H6 / H7)
+# ======================================================================
+
+
+def test_0035_down_revision_matches_0034():
+    """防止照着文件名猜父节点。"""
+    assert m0035.down_revision == m0034.revision
+
+
+def test_0035_path_a_fresh_upgrade_downgrade_roundtrip():
+    """H7 往返 ①（全新库）：0034 建表 → 0035 upgrade → downgrade → upgrade。"""
+    engine, conn = _mig_conn()
+    try:
+        m0034.upgrade()
+        assert sa.inspect(conn).has_table("life_saves")
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS
+
+        # 0035 upgrade: 加入 build_state 列
+        m0035.op = m0034.op
+        m0035.upgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS_0035
+
+        # 幂等：连跑两次不崩
+        m0035.upgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS_0035
+
+        # downgrade: 卸载 build_state 列
+        m0035.downgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS
+
+        # 再 upgrade 恢复
+        m0035.upgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS_0035
+    finally:
+        conn.close()
+        engine.dispose()
+
+
+def test_0035_path_b_existing_table_with_fk_and_data_preserved():
+    """H7 往返 ②（已有库/带数据）：验证 sa.inspect 补齐 build_state 列与外键且保留已有数据。"""
+    engine = sa.create_engine("sqlite:///:memory:", future=True)
+    conn = engine.connect()
+    try:
+        # 模拟已有 users 表与已有 0034 life_saves 表
+        conn.execute(sa.text("CREATE TABLE users (id VARCHAR(200) PRIMARY KEY)"))
+        conn.execute(sa.text("INSERT INTO users (id) VALUES ('u_alice')"))
+        ctx = MigrationContext.configure(
+            connection=conn, opts={"target_metadata": Base.metadata}
+        )
+        op_instance = Operations(ctx)
+        m0034.op = op_instance
+        m0035.op = op_instance
+
+        m0034.upgrade()
+        conn.execute(
+            sa.text(
+                "INSERT INTO life_saves (owner_id, theme, clock, weather, bag, coins, skill_exp, "
+                "affinity, gifts_today, shop, quest_log, gather_counts, version, created_at, updated_at) "
+                "VALUES ('u_alice', 'forest', '{}', '{}', '{}', 100, 0, '{}', '{}', '{}', '{}', '{}', 1, '2026-10-05', '2026-10-05')"
+            )
+        )
+
+        # 执行 0035 迁移
+        m0035.upgrade()
+        insp = sa.inspect(conn)
+        assert {c["name"] for c in insp.get_columns("life_saves")} == EXPECTED_COLUMNS_0035
+        # 验证外键已加上
+        fk_names = {fk.get("name") for fk in insp.get_foreign_keys("life_saves")}
+        assert "fk_life_saves_owner_id_users" in fk_names
+
+        # 验证数据完整保留
+        row = conn.execute(
+            sa.text("SELECT owner_id, theme, coins, build_state FROM life_saves WHERE owner_id = 'u_alice'")
+        ).fetchone()
+        assert row is not None
+        assert row[0] == "u_alice"
+        assert row[1] == "forest"
+        assert row[2] == 100
+        assert row[3] == "{}" or row[3] == {}
+
+        # 往返：downgrade 后再 upgrade
+        m0035.downgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS
+        m0035.upgrade()
+        assert {c["name"] for c in sa.inspect(conn).get_columns("life_saves")} == EXPECTED_COLUMNS_0035
+    finally:
+        conn.close()
+        engine.dispose()
+
+
+def test_0035_build_state_roundtrip_via_persistence(session_maker):
+    """H6 门禁：build_state 字段能正常持久化并在读取时无损还原。"""
+    db = session_maker()
+    try:
+        s = state.new_save("user_build", "forest")
+        s.build_state = {"layout": [{"item_id": "bed_wood", "x": 1, "y": 2}]}
+        row = LifeSaveRow(owner_id="user_build")
+        persistence.apply_save(row, s)
+        db.add(row)
+        db.commit()
+
+        row_db = db.get(LifeSaveRow, "user_build")
+        assert row_db is not None
+        loaded = persistence.read_save(row_db)
+        assert loaded.build_state == {"layout": [{"item_id": "bed_wood", "x": 1, "y": 2}]}
+    finally:
+        db.close()
 
 
 # ======================================================================
@@ -737,6 +850,35 @@ def test_sleep_settles_stock_and_reports_leftovers(
     assert st["shop"]["stock"].get(good["id"], 0) == leftover, "未售出部分必须如实留在库存"
     assert st["coins"] == settlement["coins_after"]
     assert "06:00" in r_sleep["body"]["note"]
+
+
+def test_gather_daily_limit_rejection(client: TestClient, headers: dict):
+    """I5 门禁：每个采集点计入每日上限（DAILY_NODE_LIMIT=8 次），第 9 次被拒（422）且提示已达上限。"""
+    from find_yourself.services.cabin_life.interaction import DAILY_NODE_LIMIT
+
+    _create(client, headers, "forest")
+    snap0 = client.get("/api/cabin/life/save", headers=headers).json()
+    node_id = snap0["gather"][0]["id"]
+    node_label = snap0["gather"][0]["label"]
+
+    # 连续采集 8 次（应全成功）
+    for i in range(DAILY_NODE_LIMIT):
+        res = _action(client, headers, action="gather", node_id=node_id)
+        assert res["status"] == 200, f"第 {i+1} 次采集失败: {res['text']}"
+        counts = res["body"]["save"]["gather_counts"]
+        assert counts.get(node_id) == i + 1
+
+    # 第 9 次（第 DAILY_NODE_LIMIT + 1 次）必须被规则层拦截
+    res_overflow = _action(client, headers, action="gather", node_id=node_id)
+    assert res_overflow["status"] == 422, res_overflow["text"]
+    err = res_overflow["body"]["error"]
+    assert err["code"] == "life_gather_rejected"
+    assert f"今天已经采过 {DAILY_NODE_LIMIT} 次了" in err["message"]
+    assert node_label in err["message"]
+
+    # 验证数据库状态未被污染：计数仍保持 8
+    snap_after = client.get("/api/cabin/life/save", headers=headers).json()
+    assert snap_after["save"]["gather_counts"].get(node_id) == DAILY_NODE_LIMIT
 
 
 def test_corrupt_save_via_http_returns_409(

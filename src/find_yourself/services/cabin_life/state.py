@@ -39,6 +39,8 @@ class LifeSave:
     quest_log: dict[str, object] = field(default_factory=dict)
     #: 采集点每日计数（node_id -> 次数）
     gather_counts: dict[str, int] = field(default_factory=dict)
+    #: 室内建造与家具摆放状态（H6 建造布局落库）
+    build_state: dict[str, object] = field(default_factory=dict)
     version: int = 1
 
 
@@ -62,6 +64,7 @@ def new_save(owner: str, theme: str, *, day: int = 1) -> LifeSave:
             "entries": [asdict(e) for e in quests.start_log(theme).entries],
         },
         gather_counts={},
+        build_state={},
     )
 
 

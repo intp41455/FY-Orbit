@@ -23,17 +23,21 @@ export interface BackpackPanelProps {
   save: CabinSaveView;
   /** 当前小屋家具件数（由 W1 的 layout.items.length 派生，与后端 house_level 对齐）。 */
   furnitureCount: number;
+  /** 是否显示金币状态（默认为 true，若与外部统一 HUD 并存时可置为 false 避免显示两份金币）。 */
+  showCoins?: boolean;
 }
 
 /** 顶部数值条：金币 / 亲密度 / 小屋等级 / 连续登录 / 钥匙。 */
-export function StatusBar({ save, furnitureCount }: BackpackPanelProps) {
+export function StatusBar({ save, furnitureCount, showCoins = true }: BackpackPanelProps) {
   const lv = nextLevelProgress(furnitureCount, save.house_level);
   return (
     <section className="w2-status" aria-label="小屋状态" data-testid="w2-status-bar">
-      <div className="w2-stat" data-testid="w2-stat-coins">
-        <span className="w2-stat-label">金币</span>
-        <span className="w2-stat-value">{formatNumber(save.coins)}</span>
-      </div>
+      {showCoins && (
+        <div className="w2-stat" data-testid="w2-stat-coins">
+          <span className="w2-stat-label">金币</span>
+          <span className="w2-stat-value">{formatNumber(save.coins)}</span>
+        </div>
+      )}
       <div className="w2-stat" data-testid="w2-stat-intimacy">
         <span className="w2-stat-label">亲密度</span>
         <span className="w2-stat-value">{formatNumber(save.intimacy)} / 100</span>

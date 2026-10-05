@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, Integer, String
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...db.base import Base
@@ -66,7 +66,9 @@ class LifeSaveRow(Base):
 
     __tablename__ = "life_saves"
 
-    owner_id: Mapped[str] = mapped_column(String(200), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(
+        String(200), ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
     theme: Mapped[str] = mapped_column(String(32))
     clock: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     weather: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
@@ -78,6 +80,7 @@ class LifeSaveRow(Base):
     shop: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     quest_log: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     gather_counts: Mapped[dict[str, int]] = mapped_column(JSON, default=dict)
+    build_state: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     version: Mapped[int] = mapped_column(Integer, default=1)
 
     created_at: Mapped[Any] = mapped_column(TZDateTime, default=utcnow)
@@ -113,6 +116,7 @@ def apply_save(row: LifeSaveRow, save: LifeSave) -> LifeSaveRow:
     row.shop = dict(save.shop)
     row.quest_log = dict(save.quest_log)
     row.gather_counts = {str(k): int(v) for k, v in save.gather_counts.items()}
+    row.build_state = dict(getattr(save, "build_state", None) or {})
     row.version = int(save.version)
     return row
 
@@ -221,6 +225,7 @@ def read_save(row: LifeSaveRow) -> LifeSave:
         shop=shop,
         quest_log=quest_log,
         gather_counts=gather_counts,
+        build_state=dict(getattr(row, "build_state", None) or {}),
         version=version,
     )
 

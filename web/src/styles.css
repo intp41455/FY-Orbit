@@ -2109,6 +2109,34 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
   backdrop-filter: blur(10px);
 }
 
+.w2-experimental-banner {
+  max-width: 68rem;
+  margin: 0 auto 0.75rem;
+  padding: 0.5rem 0.85rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  color: #fbbf24;
+}
+
+.w2-experimental-badge {
+  background: #f59e0b;
+  color: #1e1e1e;
+  font-weight: bold;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.w2-experimental-text {
+  line-height: 1.4;
+}
+
 .w2-root {
   display: flex;
   flex-direction: column;

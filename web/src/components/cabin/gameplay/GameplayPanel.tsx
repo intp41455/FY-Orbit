@@ -32,6 +32,7 @@ export interface GameplayPanelProps {
   /** W1 布局里的家具件数，用于小屋等级展示（与后端 house_level 同源阈值）。 */
   furnitureCount: number;
   initialTheme?: ThemeId;
+  showCoins?: boolean;
 }
 
 type LoadState =
@@ -55,6 +56,7 @@ export function GameplayPanel({
   personName,
   furnitureCount,
   initialTheme = 'forest',
+  showCoins = true,
 }: GameplayPanelProps) {
   const [theme, setTheme] = useState<ThemeId>(initialTheme);
   const [save, setSave] = useState<CabinSaveView | null>(null);
@@ -306,7 +308,7 @@ export function GameplayPanel({
 
       {save && saveState.kind === 'ready' && (
         <>
-          <StatusBar save={save} furnitureCount={furnitureCount} />
+          <StatusBar save={save} furnitureCount={furnitureCount} showCoins={showCoins} />
 
           <div className="w2-grid">
             <SpotsPanel

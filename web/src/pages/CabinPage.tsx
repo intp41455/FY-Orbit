@@ -643,10 +643,17 @@ export function CabinPage() {
 
       {gameplayOpen && (
         <div className="w2-overlay" data-testid="w2-overlay">
+          <div className="w2-experimental-banner" data-testid="w2-experimental-banner">
+            <span className="w2-experimental-badge">实验功能</span>
+            <span className="w2-experimental-text">
+              此面板为 W2 探险实验系统；金币与时间进度统一以主界面新版 HUD 为准。
+            </span>
+          </div>
           <GameplayPanel
             personality={config.personPersonality}
             personName={config.personName}
             furnitureCount={layout.items.length}
+            showCoins={false}
           />
         </div>
       )}

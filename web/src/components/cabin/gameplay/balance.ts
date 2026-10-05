@@ -19,7 +19,17 @@
 /* ------------------------------------------------------------------ */
 
 /** 后端 THEME 白名单顺序即页签顺序（服务端权威，前端不自行排序）。 */
-export const THEME_ORDER = ['forest', 'garden', 'stream', 'field', 'planet'] as const;
+export const THEME_ORDER = [
+  'forest',
+  'garden',
+  'stream',
+  'field',
+  'planet',
+  'magic',
+  'scifi',
+  'country',
+  'ink',
+] as const;
 export type ThemeId = (typeof THEME_ORDER)[number];
 
 export const THEME_LABELS: Record<ThemeId, string> = {
@@ -28,6 +38,10 @@ export const THEME_LABELS: Record<ThemeId, string> = {
   stream: '溪水边',
   field: '金黄田野',
   planet: '观星台',
+  magic: '魔法大陆',
+  scifi: '科幻星球',
+  country: '田园乡村',
+  ink: '古风桃源',
 };
 
 export const MAX_MATERIAL_QTY = 99;

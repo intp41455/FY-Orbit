@@ -352,3 +352,23 @@ describe('preferenceHint', () => {
     expect(preferenceHint(null, 'person')).toContain('未知');
   });
 });
+
+/* ---------------- B3: 全仓 9 个主题清单一致性契约测试 ---------------- */
+import { CABIN_BACKGROUNDS } from '../cabinConfig';
+import { THEME_IDS, THEME_LABELS as LIFE_THEME_LABELS } from './lifeApi';
+import { THEME_ORDER, THEME_LABELS as BALANCE_THEME_LABELS } from './balance';
+
+describe('B3 全仓主题契约对齐（统一至 9 个）', () => {
+  it('balance.ts, cabinConfig.ts 与 lifeApi.ts 的 9 大主题 ID 严格一致', () => {
+    expect([...THEME_ORDER].sort()).toEqual([...THEME_IDS].sort());
+    expect([...CABIN_BACKGROUNDS.map((b) => b.id)].sort()).toEqual([...THEME_ORDER].sort());
+    expect(THEME_ORDER).toHaveLength(9);
+  });
+
+  it('9 大主题的中文标签在三处对齐一致', () => {
+    for (const b of CABIN_BACKGROUNDS) {
+      expect(BALANCE_THEME_LABELS[b.id]).toBe(b.label);
+      expect(LIFE_THEME_LABELS[b.id]).toBe(b.label);
+    }
+  });
+});
