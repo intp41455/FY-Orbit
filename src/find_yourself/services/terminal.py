@@ -102,7 +102,11 @@ def kill_process_tree(pid: int) -> dict[str, Any]:
     else:
         result["tree_signal"] = "SIGKILL process group"
         try:
-            os.killpg(os.getpgid(pid), 9)
+            pgid = os.getpgid(pid)
+            if pgid != os.getpgrp():
+                os.killpg(pgid, 9)
+            else:
+                os.kill(pid, 9)
         except Exception:
             try:
                 os.kill(pid, 9)
@@ -225,9 +229,13 @@ class TerminalService:
             # Bytes mode (not text=True): on a Chinese Windows the shell emits GBK,
             # and decoding as UTF-8 in the background reader thread raises
             # UnicodeDecodeError. We decode explicitly with errors="replace" below.
+            popen_kw: dict[str, Any] = {}
+            if os.name != "nt":
+                popen_kw["start_new_session"] = True
             proc = subprocess.Popen(
                 [shell_cmd], cwd=str(cwd), stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1,
+                **popen_kw,
             )
             rec.pid = proc.pid
             self._procs[rec.id] = proc

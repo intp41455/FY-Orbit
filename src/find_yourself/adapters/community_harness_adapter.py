@@ -433,7 +433,11 @@ def kill_process_tree(pid: int | None) -> dict[str, Any]:
     else:
         result["tree_signal"] = "SIGKILL process group"
         try:
-            os.killpg(os.getpgid(pid), 9)
+            pgid = os.getpgid(pid)
+            if pgid != os.getpgrp():
+                os.killpg(pgid, 9)
+            else:
+                os.kill(pid, 9)
         except Exception:
             try:
                 os.kill(pid, 9)
@@ -843,6 +847,9 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
     safe_env = build_safe_env(envelope.allow_provider_keys)
 
     try:
+        popen_kw: dict[str, Any] = {}
+        if os.name != "nt":
+            popen_kw["start_new_session"] = True
         proc = subprocess.Popen(
             cmd,
             cwd=str(sandbox.fixtures_dir),
@@ -852,6 +859,7 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
             encoding="utf-8",
             errors="replace",
             env=safe_env,
+            **popen_kw,
         )
         _ACTIVE_EXECUTIONS[execution_id]["process"] = proc
 
