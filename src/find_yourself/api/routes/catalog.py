@@ -46,11 +46,16 @@ async def list_agents(actor: Actor = Depends(get_actor),
 
 @router.get("/skills")
 async def list_skills(actor: Actor = Depends(get_actor),
-                       svc: Services = Depends(get_services)) -> list[dict]:
-    rows = svc.session.execute(select(Skill).order_by(Skill.name.asc())).scalars()
+                       svc: Services = Depends(get_services),
+                       include_builtin: bool = False) -> list[dict]:
+    stmt = select(Skill)
+    if not include_builtin:
+        stmt = stmt.where(Skill.source != "builtin")
+    rows = svc.session.execute(stmt.order_by(Skill.name.asc())).scalars()
     return [{"id": s.id, "name": s.name, "semantic_version": s.semantic_version,
              "state": s.state, "package_hash": s.package_hash, "domain": s.domain,
              "source": s.source, "license": s.license} for s in rows]
+
 
 
 @router.get("/artifacts/{artifact_id}")

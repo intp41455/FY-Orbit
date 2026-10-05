@@ -60,3 +60,8 @@ asyncio_mode = "auto"
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+extend-exclude = ["evidence", ".venv", "desktop"]
+
+[tool.ruff.lint]
+select = ["E9", "F63"]
+

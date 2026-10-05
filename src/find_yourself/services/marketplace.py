@@ -66,10 +66,14 @@ class MarketplaceService:
     # 检索（服务端过滤 + 有界分页）
     # ------------------------------------------------------------------
     def _active_query(self):
-        # 服务端过滤的唯一真源：未过门禁（state != 'active'）的包**根本不进查询**。
+        # 服务端过滤的唯一真源：未过门禁（state != 'active'）的包根本不进查询。
+        # 默认排除内置包（source == 'builtin'），使内置系统包不污染用户插件市场视图。
         return self.s.execute(
-            select(Skill).where(Skill.state == "active").order_by(Skill.created_at.asc())
+            select(Skill)
+            .where(Skill.state == "active", Skill.source != "builtin")
+            .order_by(Skill.created_at.asc())
         ).scalars().all()
+
 
     @staticmethod
     def _capabilities_of(skill: Skill) -> list[str]:
@@ -171,9 +175,10 @@ class MarketplaceService:
         """市场详情。未上架（state != 'active'）= 查无此包（NotFound，不伪装）。"""
         actor.require_authenticated()
         skill = self.s.get(Skill, skill_id)
-        if skill is None or skill.state != "active":
+        if skill is None or skill.state != "active" or skill.source == "builtin":
             raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
         return self._card(skill, detail=True)
+
 
     # ------------------------------------------------------------------
     # 安装（复用 GrantService 授权数据面）
