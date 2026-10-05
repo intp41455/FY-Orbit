@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
+import { NotificationBell } from './NotificationBell';
 
 /**
  * 工作台优先、个人空间独立切换。团队画布收在「协作画布」内，不新增一级菜单。
@@ -122,8 +123,9 @@ export function Layout() {
             </span>
             <span style={{ color: 'var(--amber)', fontWeight: 700 }}>查看</span>
           </NavLink>
-          <div className="identity">
-            {owner?.name ?? owner?.sub ?? 'owner'}
+          <div className="identity" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>{owner?.name ?? owner?.sub ?? 'owner'}</span>
+            <NotificationBell />
           </div>
           <button type="button" className="small ghost" onClick={() => void logout()}>
             登出
