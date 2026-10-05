@@ -56,6 +56,12 @@ import { assetsApi, type AssetRecord } from '../api/assets';
 import { ApiError } from '../api/client';
 import { CabinHud } from '../components/cabin/hud/CabinHud';
 import { lifeApi, type LifeSnapshot } from '../components/cabin/gameplay/lifeApi';
+import {
+  getHouseRooms,
+  unlockRoom,
+  createRoomLayout,
+  globalTransitionManager,
+} from '../components/cabin/interior/cabinHouseSystem';
 
 /** 台词来源诚实标注：模型生成 / 预生成台词池（未探测时默认 provider 本就是池）。 */
 const DIALOGUE_SOURCE_LABEL: Record<DialogueSource, string> = {
@@ -218,6 +224,34 @@ export function CabinPage() {
   const selected = selectedId ? layout.items.find((i) => i.id === selectedId) ?? null : null;
   const selectedLabel = selected ? (getFurniture(selected.furnitureId)?.label ?? selected.furnitureId) : null;
 
+  const [currentRoomId, setCurrentRoomId] = useState<string>('living');
+  const [unlockedRoomIds, setUnlockedRoomIds] = useState<string[]>(['living']);
+
+  const handleSwitchRoom = useCallback((roomId: string) => {
+    setCurrentRoomId(roomId);
+    if (roomId === 'living') {
+      const local = loadLocalLayout(config.house);
+      setLayout(local ?? defaultLayout(config.house));
+    } else {
+      const local = loadLocalLayout(`${config.house}:${roomId}`);
+      setLayout(local ?? createRoomLayout(config.house, roomId));
+    }
+    setSelectedId(null);
+    setDirty(false);
+  }, [config.house]);
+
+  const handleExpandRoom = useCallback((roomId: string) => {
+    const currentCoins = lifeSnapshot?.save?.coins ?? 0;
+    const res = unlockRoom(roomId, cabinLevel, currentCoins, unlockedRoomIds);
+    if (!res.success) {
+      setSaveState({ kind: 'error', text: res.reason ?? '扩建失败' });
+      return;
+    }
+    setUnlockedRoomIds(res.newUnlocked);
+    handleSwitchRoom(roomId);
+    setSaveState({ kind: 'saved', text: `成功扩建房间，消耗金币已结算` });
+  }, [cabinLevel, lifeSnapshot, unlockedRoomIds, handleSwitchRoom]);
+
   /** 切换房屋模板 → 切到该模板对应的布置（任务书第 4 条）。 */
   useEffect(() => {
     if (view !== 'indoor') return;
@@ -331,17 +365,27 @@ export function CabinPage() {
         navigate('/avatar');
         return;
       }
+      if (item.furnitureId === 'stove') {
+        saySeq.current += 1;
+        setSayToken({ text: '🍳 炉火正旺，可以烹制面包、果酱或热汤。', token: saySeq.current });
+        return;
+      }
+      if (item.furnitureId === 'crate' || item.furnitureId === 'cabinet') {
+        saySeq.current += 1;
+        setSayToken({ text: '📦 储物箱已整理完毕，可随时存取材料与装备。', token: saySeq.current });
+        return;
+      }
       const act = resolveFurnitureInteraction(item);
       if (!act) return; // interact='none'：不硬凑演出（诚实失败）
       if (act.kind === 'sleep') {
         setSleepToken((n) => n + 1);
-        // 场景的睡觉演出自带「晚安…」气泡，这里不再叠加第二句。
+        void handleLifeAction('sleep');
         return;
       }
       saySeq.current += 1;
       setSayToken({ text: act.text, token: saySeq.current });
     },
-    [navigate],
+    [navigate, handleLifeAction],
   );
 
   const handleFloorTap = useCallback((gx: number, gy: number) => {
@@ -577,7 +621,16 @@ export function CabinPage() {
           type="button"
           className="cabin-enter-indoor"
           data-testid="cabin-enter-indoor"
-          onClick={() => setView('indoor')}
+          onClick={() => {
+            globalTransitionManager.saveOutdoorState({
+              playerX: 0,
+              playerY: 0,
+              cameraX: 0,
+              themeId: config.background,
+              timeOfDay: config.timeOfDay ?? 'day',
+            });
+            setView('indoor');
+          }}
         >
           🚪 进屋布置
         </button>
@@ -603,6 +656,32 @@ export function CabinPage() {
           >
             {editMode ? '退出布置' : '🪑 布置'}
           </button>
+          <div className="cabin-room-tabs" data-testid="cabin-room-bar">
+            {getHouseRooms(cabinLevel, unlockedRoomIds).map((room) =>
+              room.unlocked ? (
+                <button
+                  key={room.id}
+                  type="button"
+                  className={currentRoomId === room.id ? 'cabin-btn primary cabin-room-btn' : 'cabin-btn cabin-room-btn'}
+                  data-testid={`cabin-room-${room.id}`}
+                  onClick={() => handleSwitchRoom(room.id)}
+                >
+                  {room.label}
+                </button>
+              ) : (
+                <button
+                  key={room.id}
+                  type="button"
+                  className="cabin-btn cabin-room-expand-btn"
+                  data-testid={`cabin-room-expand-${room.id}`}
+                  title={room.description}
+                  onClick={() => handleExpandRoom(room.id)}
+                >
+                  +扩建{room.label} ({room.expansionCost}金)
+                </button>
+              ),
+            )}
+          </div>
           {saveState.text && (
             <span
               className={saveState.kind === 'error' ? 'cabin-save-state error' : 'cabin-save-state'}
