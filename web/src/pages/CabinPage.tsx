@@ -67,6 +67,13 @@ import {
   globalTransitionManager,
   executeSleep,
 } from '../components/cabin/interior/cabinHouseSystem';
+// 包 D 视觉层：玻璃 HUD 覆盖层 + 像素/玻璃边界样式。
+import '../styles/pages/cabin.css';
+import {
+  CabinHudOverlay,
+  npcRowsFromSnapshot,
+  type CabinNpcRow,
+} from '../components/cabinni/CabinHudOverlay';
 
 /** 台词来源诚实标注：模型生成 / 预生成台词池（未探测时默认 provider 本就是池）。 */
 const DIALOGUE_SOURCE_LABEL: Record<DialogueSource, string> = {
@@ -565,6 +572,10 @@ export function CabinPage() {
     [media],
   );
 
+  /** HUD 用的 NPC 行：纯形状转换，字段缺失一律 null（UI 显示「未回传」），不造默认值。 */
+  const hudNpcs: CabinNpcRow[] = useMemo(() => npcRowsFromSnapshot(lifeSnapshot), [lifeSnapshot]);
+
+
   return (
     <div className="cabin-root" data-testid="cabin-root">
       {view === 'outdoor' ? (
@@ -598,7 +609,11 @@ export function CabinPage() {
       {/* W9：墙面挂画覆盖层（读资产库元数据渲染成像素风画框） */}
       <CabinWallArt asset={media.wall} />
 
-      {/* A6 · UI 像素化重构：顶部状态栏 32px + 底部工具栏 40px (6×32px圆按钮) + 64×64小地图 + 4px像素弹窗 */}
+      {/*
+        包 D · 玻璃 HUD 覆盖层（DOM 层，不碰 pixi canvas）。
+        与像素层（下方 <CabinHud /> 的 pixel-top-bar / pixel-bottom-bar）职责不重叠：
+        像素层管画布内的硬边游戏 HUD，本层管画布外的 NPC / 场景 / 视图操作。
+      */}
       <CabinHud
         view={view}
         editMode={editMode}
@@ -753,10 +768,54 @@ export function CabinPage() {
         </div>
       )}
 
-      <section className="cabin-toolbar" aria-label="我的小屋设置">
+      <CabinHudOverlay
+        view={view}
+        editMode={editMode}
+        currentTheme={config.background}
+        timeOfDay={config.timeOfDay ?? 'day'}
+        npcs={hudNpcs}
+        loading={lifeLoading}
+        error={lifeError}
+        notice={null}
+        onSelectTheme={(bg) => update({ background: bg })}
+        onSelectTimeOfDay={(t) => update({ timeOfDay: t })}
+        onInteract={(npc) => void handleLifeAction('interact', { npc_id: npc.id })}
+        onToggleDecorate={() => {
+          if (view === 'outdoor') {
+            setView('indoor');
+            setEditMode(true);
+          } else if (editMode) {
+            handleExitEdit();
+          } else {
+            setEditMode(true);
+          }
+        }}
+        onEnterIndoor={() => {
+          globalTransitionManager.saveOutdoorState({
+            playerX: 0,
+            playerY: 0,
+            cameraX: 0,
+            themeId: config.background,
+            timeOfDay: config.timeOfDay ?? 'day',
+          });
+          setView('indoor');
+        }}
+        onExitIndoor={handleExitIndoor}
+        onOpenGameplay={toggleGameplay}
+        gameplayOpen={gameplayOpen}
+      >
+        {/* 原 .cabin-toolbar 整块搬进右侧 HUD 栏（children）。
+            它原本是静态流式元素，在 .cabin-root（fixed + overflow:hidden）里
+            永远排在画布之上、压住第一屏画面；功能一个字都不能删（红线二），
+            所以搬家而不是隐藏 —— 搬进可滚动右栏后既不挡画面又不丢功能。 */}
+        <section className="cabin-toolbar" aria-label="我的小屋设置">
+
+      {/* A6 · UI 像素化重构：顶部状态栏 32px + 底部工具栏 40px (6×32px圆按钮) + 64×64小地图 + 4px像素弹窗 */}
         <div className="cabin-toolbar-title">
           <strong>🏠 我的小屋</strong>
-          <span className="cabin-vr-badge" title="本页面的小人与宠物台词均为虚拟演绎内容">虚拟演绎</span>
+          <span className="cabin-vr-badge" title="本页面的小人与宠物台词均为虚拟演绎内容">
+            虚拟演绎
+          </span>
           <span
             className="cabin-source-badge"
             data-testid="cabin-dialogue-source"
@@ -827,7 +886,9 @@ export function CabinPage() {
                 onChange={(e) => update({ petPersonality: e.target.value as PersonalityId })}
               >
                 {PERSONALITIES.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -843,6 +904,7 @@ export function CabinPage() {
                 value={config.personName}
                 maxLength={16}
                 placeholder="给小人起个名字"
+                autoComplete="off"
                 onChange={(e) => update({ personName: e.target.value })}
               />
               <select
@@ -853,7 +915,9 @@ export function CabinPage() {
                 onChange={(e) => update({ personPersonality: e.target.value as PersonalityId })}
               >
                 {PERSONALITIES.map((p) => (
-                  <option key={p.id} value={p.id}>{p.label}</option>
+                  <option key={p.id} value={p.id}>
+                    {p.label}
+                  </option>
                 ))}
               </select>
             </div>
@@ -867,7 +931,7 @@ export function CabinPage() {
         </div>
 
         {view === 'indoor' && (
-          <span className="cabin-sr-only" role="status" data-testid="cabin-selection-status">
+          <span className="cabin-ni-sr-only" role="status" data-testid="cabin-selection-status">
             {selectedLabel ? `已选中：${selectedLabel}` : '未选中家具'}
           </span>
         )}
@@ -940,7 +1004,8 @@ export function CabinPage() {
             资产库联动失败：{mediaError}
           </p>
         )}
-      </section>
+        </section>
+      </CabinHudOverlay>
     </div>
   );
 }

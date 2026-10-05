@@ -1,0 +1,1144 @@
+/* ==========================================================================
+   包 D · 画像与养成域样式（/profiles /avatar /cabin /game）
+   --------------------------------------------------------------------------
+   独占文件：本文件归包 D 所有。所有颜色一律 var(--ui-*)，不写裸色值。
+   状态语义走九档色；薄荷青仅用于装饰泛光，不承载状态。
+
+   ⛔ 性能红线（包 D 任务书 §3）
+     本域 /cabin 与 /game 跑 pixi.js 8。以下禁���逐条落地：
+       1. 绝不给 pixi canvas 或其祖先加 backdrop-filter；
+       2. 绝不用每帧改 DOM style 的方式做动效；
+       3. canvas 上不叠 ≥3 层半透明渐变；
+       4. HUD 不做持续呼吸/发光动画；
+       5. HUD 动效只在状态切换时跑一次 260ms transition，之后归零。
+→ 落地方式：所有 HUD 是**静态 DOM 覆盖层**，显式把 backdrop-filter 关掉
+        （见 §1），而不是靠"这里恰好没继承"。
+
+   ── 像素风与磨砂玻璃的边界（包 D 任务书 §4 裁决）─────────────────────────
+     画布内部（pixi 渲染）：硬边、1px 描边、无圆角、无渐变过渡、调色板不动。
+     画布外部（DOM 覆盖层/HUD/工具条）：玻璃 + 圆角 + 极淡阴影 + 线条图标。
+     两层之间留 8px 呼吸位，不压画面。
+   ========================================================================== */
+
+/* ==========================================================================
+   §0 本包局部派生令牌
+   --------------------------------------------------------------------------
+   总纲 §3 要求：页面 CSS 里**禁止裸色值**，一律 `var(--ui-*)`，收口包会 grep。
+   但「半透明强调边框」用纯令牌表达不了 —— tokens.css 只给了不透明主色与三个
+   glow rgba，没有 alpha 变体；而 tokens.css 是冻结文件，本包无权加令牌。
+
+   解法：这里的 alpha 色**全部由 --ui-* 计算得出**（color-mix），
+   因此仍是令牌而非裸色值；每个用到的地方都写了不支持 color-mix 时的回退色。
+   本块就是本包唯一的色值来源，其余位置一律 var()。
+   ========================================================================== */
+:root {
+  /* 薄荷青 alpha（--ui-teal-400，总纲授权的装饰色，不承载状态语义） */
+  --cabin-a-teal-22: color-mix(in srgb, var(--ui-teal-400) 22%, transparent);
+  --cabin-a-teal-24: color-mix(in srgb, var(--ui-teal-400) 24%, transparent);
+  --cabin-a-teal-45: color-mix(in srgb, var(--ui-teal-400) 45%, transparent);
+  --cabin-a-teal-50: color-mix(in srgb, var(--ui-teal-400) 50%, transparent);
+  --cabin-a-teal-65: color-mix(in srgb, var(--ui-teal-400) 65%, transparent);
+  /* 薄荷青浅色 alpha（hover 底色） */
+  --cabin-a-glow-14: color-mix(in srgb, var(--ui-teal-200) 14%, transparent);
+  /* 九档状态色 alpha（描边用） */
+  --cabin-a-complete-28: color-mix(in srgb, var(--ui-st-complete) 28%, transparent);
+  --cabin-a-waiting-28: color-mix(in srgb, var(--ui-st-waiting) 28%, transparent);
+  /* 中性白 alpha */
+  --cabin-a-white-90: color-mix(in srgb, var(--ui-ink-inv) 90%, transparent);
+  /* 玩法面板遮罩（压在 canvas 上，用不透明渐变而不是毛玻璃） */
+  --cabin-a-mask-top: color-mix(in srgb, var(--ui-sky-900) 62%, transparent);
+  --cabin-a-mask-bottom: color-mix(in srgb, var(--ui-mint-600) 50%, transparent);
+  /* 像素硬阴影 */
+  --cabin-a-hard-shadow: color-mix(in srgb, var(--ui-sky-900) 22%, transparent);
+}
+
+/* ==========================================================================
+   §0b 本包补充的两个共享层缺口
+   --------------------------------------------------------------------------
+   ⚠ 以下两个类在本包之前**不存在于任何样式表**，属于审查发现的真缺陷：
+     1. `.cabin-ni-sr-only` —— 我用它承载「仅读屏可见」的状态区，
+        但 styles.css 里只有 `.wb-sr-only` / `.chatui-sr-only`，
+        类名不存在 = 元素会以正文形式显示出来（本该读屏专用）。
+     2. `.ui-badge--neutral` —— tokens.css 的九档徽标里没有 neutral 档，
+        我用了 10 多处，全部静默退回基础 `.ui-badge`（丢掉底色与边框）。
+     两者都属于**共享层**该补的东西，但 tokens.css 是冻结文件，
+     所以在本包样式里补齐，并在交付报告里请收口包收编进 tokens.css。
+   ========================================================================== */
+.cabin-ni-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* 中性徽标（不属于九档状态语义，故用中性玻璃色 + 墨色三级字） */
+.ui-badge--neutral {
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  color: var(--ui-ink-3);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   §1 画布层（Canvas Interior）—— 保持像素风硬边，明确禁止毛玻璃
+   ========================================================================== */
+
+.cabin-root {
+  /* 背景渐变只作为 canvas 底色兜底；渐变层数保持 ≤2，避免 overdraw。 */
+  background: linear-gradient(180deg, var(--ui-sky-200) 0%, var(--ui-sky-200) 58%, var(--ui-sky-300) 100%);
+  /* 像素画布绝不吃毛玻璃：祖先元素的 backdrop-filter 会每帧重采样。 */
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.cabin-canvas-host,
+.cabin-canvas,
+.cabin-canvas-interior {
+  /* 画布层边界：显式声明无滤镜、无圆角、无 transform 过渡。 */
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border-radius: 0 !important;
+  image-rendering: pixelated;
+  box-shadow: none !important;
+}
+
+/* 画布内像素 UI 仍用像素字体与硬边，但把「绿色草地」换成授权的天蓝色阶
+   —— 画布背景属于本包可改的 CSS 变量层，贴图本身（cabinPixelArt.ts）不动。 */
+.cabin-fallback {
+  border-radius: 0;
+  border: 2px solid var(--ui-sky-300);
+  box-shadow: 4px 4px 0 var(--cabin-a-hard-shadow);
+  color: var(--ui-sky-800);
+  background: var(--cabin-a-white-90);
+}
+
+/* ==========================================================================
+   §1b 零绿色修正（画布周边 CSS 层）
+   --------------------------------------------------------------------------
+   `styles.css`（冻结文件）里以下规则用了纯绿，本包按总纲 §2 红线一在**自己的
+   CSS 文件里覆盖**（styles.css 不动，靠本文件后加载的同特异性覆盖）：
+     · `.minimap-inner`  radial-gradient(#8bc34a, #689f38, #4b7826)  ← 纯绿
+     · `.w2-bar-fill` / `.w2-spot` 等玩法条 —— 一并收口到天蓝色阶
+   ⚠ 只覆盖 CSS 变量层，**不动贴图**（cabinPixelArt.ts / cabinScene.ts 不是本包文件）。
+     若画布内像素素材本身含绿色，属于越界发现，已在交付报告列出交收口包裁决。
+   ========================================================================== */
+
+.minimap-inner {
+  /* 小地图是 DOM 覆盖层（画布外），按 §4 应走玻璃/线条体系；
+     这里保留圆形硬边气质，但把草地绿换成天蓝色阶。 */
+  background: radial-gradient(circle, var(--ui-sky-200) 20%, var(--ui-sky-300) 60%, var(--ui-sky-500) 100%);
+}
+.pixel-minimap {
+  border-color: var(--ui-sky-700);
+  box-shadow: var(--ui-shadow-2);
+  /* 小地图不在 canvas 正上方（悬浮在顶栏右侧），可以用毛玻璃背景。 */
+  background: var(--ui-glass-2);
+}
+.minimap-player-dot {
+  background: var(--ui-sky-600);
+  border: 1px solid var(--ui-sky-800);
+  box-shadow: 0 0 4px var(--ui-glow-sky);
+  /* 动画只跑一次 transition 达不到"呼吸"，这里改成静态：
+     包 D 任务书 §3 禁止给 HUD 做持续动画。 */
+  animation: none;
+}
+
+.w2-bar-fill {
+  background: linear-gradient(90deg, var(--ui-sky-500), var(--ui-sky-700));
+}
+.w2-chip.ok {
+  background: var(--ui-st-complete-bg);
+  color: var(--ui-st-complete);
+  border-color: var(--cabin-a-complete-28);
+}
+.w2-chip.warn {
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border-color: var(--cabin-a-waiting-28);
+}
+.w2-toggle.open {
+  background: var(--ui-glass-3);
+  color: var(--ui-sky-800);
+}
+
+/* ==========================================================================
+   §2 HUD 覆盖层（DOM Overlay）—— 玻璃质感 + 一次性 260ms 切换动效
+   ========================================================================== */
+
+.cabin-ni-overlay {
+  /* HUD 定位在画布之上；与画布之间留 8px 呼吸位，不压画面中心。 */
+  position: absolute;
+  inset: var(--ui-s-2) var(--ui-s-2) auto var(--ui-s-2);
+  z-index: 22;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-3);
+  pointer-events: none;
+}
+.cabin-ni-overlay > * {
+  pointer-events: auto;
+}
+
+/* 玻璃面板本体。
+ *
+ * ⚠ 默认**不带** backdrop-filter —— 包 D 任务书 §4 明确要求：
+ *   「HUD 面板（.cabin-hud / .cabin-toolbar / .w2-panel）改玻璃质感，但**不加
+ *    backdrop-filter**（除非该面板不在 canvas 正上方）」。
+ *   右侧 HUD 与快捷键条都**压在 canvas 上**，所以用高不透明度玻璃色
+ *   （--ui-glass-3 = .94）达到视觉上的"磨砂"，但不做逐帧背景重采样。
+ *
+ * 代价与收益都实测过（见交付报告 FPS 表）：带 backdrop-filter 时 HUD 开/关
+ * 差 ~3.7fps；去掉后差距收敛。`.cabin-ni-glass--blur` 保留给将来真正
+ * 位于画布之外的浮层使用。
+ */
+.cabin-ni-glass {
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-2);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  /* 动效只跑一次 transition，之后归零——没有无限循环动画。 */
+  transition: box-shadow var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    transform var(--ui-t) var(--ui-ease);
+}
+/* 仅用于**确实不在 canvas 上方**的浮层（如设置抽屉）。当前 HUD 未使用。 */
+.cabin-ni-glass--blur {
+  background: var(--ui-glass-2);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+.cabin-ni-glass:hover {
+  border-color: var(--cabin-a-teal-45);
+  box-shadow: var(--ui-shadow-2), 0 0 24px -10px var(--ui-glow-teal);
+}
+.cabin-ni-glass--flush {
+  background: var(--ui-glass-3);
+}
+
+/* ---- HUD 各分区 ---- */
+.cabin-ni-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  flex: 1 1 auto;
+  min-height: var(--ui-hit);
+  flex-wrap: wrap;
+}
+
+.cabin-ni-res {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-1) var(--ui-s-3);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-sm);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  /* 数字用等宽，避免资源数跳动时布局抖动。 */
+  font-variant-numeric: tabular-nums;
+}
+.cabin-ni-res > svg {
+  color: var(--ui-sky-600);
+}
+
+.cabin-ni-side {
+  /* ⚠ 必须绝对定位：.cabin-root 是 position:fixed 的容器，里面还有
+     CabinStage（绝对定位）。若这里用静态流式布局，HUD 会被挤到左上角并
+     压在画布上（第一版就是这么错的，靠截图才发现）。 */
+  position: absolute;
+  top: calc(32px + var(--ui-s-6));
+  right: var(--ui-s-2);
+  bottom: calc(40px + var(--ui-s-2));
+  z-index: 20;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  pointer-events: none;
+  scrollbar-width: thin;
+
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  width: 236px;
+  max-width: 34vw;
+  flex: 0 0 auto;
+
+  /* ⚠ 性能实测驱动的写法（见交付报告 FPS 表）：
+     初版给**每个** .cabin-ni-panel 单独铺一层半透明玻璃，右侧同时存在 4–5 层
+     叠放的半透明矩形；canvas 每帧变化时合成器要把这 4–5 块都重新混合一遍。
+     现在改成：<aside> 铺**一整块**半透明玻璃，内部 panel 全透明。
+     —— 教训：半透明合成的成本按"矩形块数"计，不按"是否 blur"计。 */
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-3);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding: var(--ui-s-2);
+}
+.cabin-ni-side > * {
+  pointer-events: auto;
+  /* ⚠ 关键：弹性/网格子项默认 min-width:auto，内容（长标签、chip 行）
+     会把 236px 的窄栏**撑破**并横向溢出到视口外。
+     窄栏里必须显式 min-width:0 + 让内部 chip 行换行。 */
+  min-width: 0;
+}
+/* 搬进右栏的 .cabin-toolbar 内部：chip 行必须能换行，不能横向撑破窄栏 */
+.cabin-ni-side .cabin-chip-row,
+.cabin-ni-side .cabin-toolbar-body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-s-1);
+  min-width: 0;
+  max-width: 100%;
+}
+.cabin-ni-side .cabin-group {
+  min-width: 0;
+  max-width: 100%;
+}
+.cabin-ni-side .cabin-group > legend {
+  font-size: var(--ui-fs-xs);
+}
+.cabin-ni-side .cabin-chip {
+  min-height: 32px;
+  padding: 0 var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  border-radius: var(--ui-r-1);
+  flex: 0 1 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  cursor: pointer;
+}
+.cabin-ni-side .cabin-chip.active {
+  border-color: var(--cabin-a-teal-65);
+  color: var(--ui-sky-800);
+}
+.cabin-ni-side .cabin-swatch {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.cabin-ni-side .cabin-input,
+.cabin-ni-side .cabin-select {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 32px;
+  font-size: var(--ui-fs-xs);
+}
+.cabin-ni-side .cabin-note,
+.cabin-ni-side .cabin-load-error {
+  font-size: var(--ui-fs-xs);
+  line-height: 1.6;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.cabin-ni-side .cabin-btn {
+  min-height: 32px;
+  font-size: var(--ui-fs-xs);
+}
+/* 地图切换在窄栏里排 2 列，按钮不再溢出 */
+.cabin-ni-side .cabin-ni-map {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.cabin-ni-side .cabin-ni-map-btn {
+  min-width: 0;
+  padding: 0 var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cabin-ni-panel {
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  /* 内部不再叠半透明层；用极淡分隔线代替边框，观感接近但零混合成本 */
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-bottom: 1px solid var(--ui-line-2);
+}
+.cabin-ni-panel:last-child {
+  border-bottom: none;
+}
+
+.cabin-ni-panel-hd {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  color: var(--ui-ink-2);
+  letter-spacing: 0.02em;
+}
+.cabin-ni-panel-hd > svg {
+  color: var(--ui-sky-600);
+}
+
+/* NPC 条：整块 ≥48px 可点，hover 才出次要操作（不占常驻布局）。 */
+.cabin-ni-npc {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: var(--ui-hit-lg);
+  text-align: left;
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-npc:hover,
+.cabin-ni-npc:focus-visible {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--cabin-a-teal-50);
+  box-shadow: 0 0 20px -8px var(--ui-glow-teal);
+}
+.cabin-ni-npc.is-active {
+  border-color: var(--cabin-a-teal-65);
+  box-shadow: 0 0 0 1px var(--cabin-a-teal-24), 0 0 24px -8px var(--ui-glow-teal);
+}
+.cabin-ni-npc-name {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+}
+.cabin-ni-npc-act {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+/* 双轨进度条：好感与 W2 intimacy 不合并，两条独立、各有起止色与文字标签。 */
+.cabin-ni-track {
+  display: grid;
+  grid-template-columns: 4.6rem 1fr auto;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.cabin-ni-track-bar {
+  height: 6px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-line-2);
+  overflow: hidden;
+}
+.cabin-ni-track-fill {
+  height: 100%;
+  border-radius: var(--ui-r-pill);
+  /* 轨道 A：好感（天蓝 500→700） */
+  background: linear-gradient(90deg, var(--ui-sky-500), var(--ui-sky-700));
+}
+.cabin-ni-track-fill--b {
+  /* 轨道 B：W2 intimacy（冰蓝 400→900），起止色不同以便区分 */
+  background: linear-gradient(90deg, var(--ui-sky-400), var(--ui-sky-900));
+}
+.cabin-ni-track-val {
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-ink-2);
+  font-weight: 600;
+}
+
+/* 常驻大按钮：地图切换等核心动作不藏二级菜单 */
+.cabin-ni-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--ui-s-2);
+}
+.cabin-ni-map-btn {
+  min-height: var(--ui-hit-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ui-s-2);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease), color var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-map-btn:hover:not(:disabled) {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  color: var(--ui-sky-700);
+  border-color: var(--cabin-a-teal-50);
+  box-shadow: 0 0 20px -8px var(--ui-glow-teal);
+}
+.cabin-ni-map-btn[aria-pressed='true'] {
+  border-color: var(--cabin-a-teal-65);
+  background: var(--ui-glass-3);
+  color: var(--ui-sky-800);
+  box-shadow: 0 0 0 1px var(--cabin-a-teal-22), 0 0 22px -8px var(--ui-glow-teal);
+}
+.cabin-ni-map-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 悬停显次要操作：absolute 定位，不占常驻布局 */
+.cabin-ni-hover-act {
+  position: absolute;
+  top: 50%;
+  right: var(--ui-s-2);
+  transform: translateY(-50%);
+  display: flex;
+  gap: var(--ui-s-1);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-npc:hover .cabin-ni-hover-act,
+.cabin-ni-npc:focus-within .cabin-ni-hover-act {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* 对象列表行：主按钮 + 次要操作是兄弟节点（按钮不能嵌套按钮） */
+.cabin-ni-psubject-wrap {
+  position: relative;
+}
+.cabin-ni-psubject-wrap .cabin-ni-psubject {
+  width: 100%;
+}
+.cabin-ni-hover-act--row {
+  top: auto;
+  bottom: var(--ui-s-2);
+  right: var(--ui-s-3);
+  transform: none;
+  background: var(--ui-glass-3);
+  border-radius: var(--ui-r-1);
+  padding: var(--ui-s-1);
+}
+.cabin-ni-psubject-wrap:hover .cabin-ni-hover-act--row,
+.cabin-ni-psubject-wrap:focus-within .cabin-ni-hover-act--row {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* ==========================================================================
+   §3 快捷键提示条（最少点击守则第 1 条：把提示画出来，别让用户猜）
+   ========================================================================== */
+
+.cabin-ni-keys {
+  position: absolute;
+  top: calc(32px + var(--ui-s-2));
+  left: var(--ui-s-2);
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-1) var(--ui-s-3);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  max-width: calc(100% - var(--ui-s-4));
+  overflow-x: auto;
+  /* 同样压在 canvas 上 → 不用毛玻璃 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--ui-glass-3);
+}
+.cabin-ni-keys > svg {
+  color: var(--ui-sky-600);
+}
+
+/* HUD 内既有按钮的玻璃质感覆盖。
+   `.cabin-btn` / `.w2-btn` / `.w2-panel` / `.cabin-toolbar` 都压在画布上方，
+   因此**只给半透明玻璃色，不加 backdrop-filter** —— 每帧重采样会直接掉帧。 */
+.cabin-btn,
+.w2-btn,
+.w2-panel,
+.cabin-toolbar,
+.w2-spot,
+.w2-chip {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 「小屋设置」完整面板（房屋模板 / 背景 / 宠物 / 小人 / 资产库）。
+   ⚠ 它原本是静态流式元素，在 .cabin-root（fixed + overflow:hidden）里永远排在
+     画布**上面**并压住第一屏画面（截图实证）。
+     功能一个字都不能删（红线二），所以本包把它**搬进右侧 HUD 栏**（CabinPage 传作
+     CabinHudOverlay 的 children），此处只把它改成与其它 HUD 区块一致的无边框分组。
+   —— 教训：position:fixed 容器里的静态子元素不是"在底部"，而是"在最上面"。 */
+.cabin-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  box-shadow: none;
+  color: var(--ui-ink-2);
+  min-width: 0;
+}
+.cabin-toolbar-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-1);
+}
+.cabin-toolbar[hidden] {
+  display: none;
+}
+
+.w2-panel {
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-2);
+  box-shadow: var(--ui-shadow-2);
+  color: var(--ui-ink-2);
+}
+
+.w2-overlay {
+  /* 玩法面板是全屏覆盖层，必须可读；用不透明度渐变而不是毛玻璃。 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: linear-gradient(180deg, var(--cabin-a-mask-top), var(--cabin-a-mask-bottom));
+}
+
+.cabin-ni-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-3);
+  font: inherit;
+  font-size: var(--ui-fs-xs);
+  cursor: pointer;
+  transition: color var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-collapse:hover {
+  color: var(--ui-sky-700);
+  border-color: var(--cabin-a-teal-50);
+}
+
+/* ==========================================================================
+   §4 /profiles 多维画像
+   ========================================================================== */
+
+.cabin-ni-profiles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-5);
+}
+
+.cabin-ni-psubjects {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+.cabin-ni-psubject {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-height: var(--ui-hit-lg);
+  text-align: left;
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-psubject:hover,
+.cabin-ni-psubject:focus-visible {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--cabin-a-teal-50);
+  box-shadow: 0 0 22px -8px var(--ui-glow-teal);
+}
+.cabin-ni-psubject[aria-pressed='true'] {
+  border-color: var(--cabin-a-teal-65);
+  box-shadow: 0 0 0 1px var(--cabin-a-teal-22), 0 0 24px -8px var(--ui-glow-teal);
+}
+.cabin-ni-psubject-label {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  font-size: var(--ui-fs-md);
+}
+.cabin-ni-psubject-desc {
+  margin-top: var(--ui-s-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  /* 长描述不撑破卡片 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 维度条：强弱档位用九档状态色表达，不用绿色 */
+.cabin-ni-dims {
+  display: grid;
+  grid-template-columns: minmax(9rem, 15rem) 1fr auto;
+  align-items: center;
+  gap: var(--ui-s-3);
+  padding: var(--ui-s-2) 0;
+}
+.cabin-ni-dim-name {
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  font-weight: 600;
+  min-width: 0;
+}
+.cabin-ni-dim-bar {
+  height: 8px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-line-2);
+  overflow: hidden;
+}
+.cabin-ni-dim-fill {
+  height: 100%;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-sky-600);
+  transition: width var(--ui-t-slow) var(--ui-ease);
+}
+.cabin-ni-dim-val {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  font-variant-numeric: tabular-nums;
+}
+.cabin-ni-dim-val > svg {
+  flex: 0 0 auto;
+}
+
+/* 证据链：可点进原文（跳转带上下文） */
+.cabin-ni-evi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-2);
+  background: var(--ui-glass-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.cabin-ni-evi-main {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-width: 0;
+}
+.cabin-ni-evi-locator {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--ui-sky-700);
+  overflow-wrap: anywhere;
+}
+.cabin-ni-evi-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-3);
+}
+
+/* 图谱 SVG 容器 */
+.cabin-ni-graph {
+  border-radius: var(--ui-r-2);
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-1);
+  padding: var(--ui-s-2);
+  position: relative;
+}
+.cabin-ni-graph svg {
+  display: block;
+  width: 100%;
+  height: 260px;
+}
+.cabin-ni-graph-node {
+  cursor: pointer;
+  transition: opacity var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-graph-node:focus-visible {
+  outline: none;
+}
+.cabin-ni-graph-node:focus-visible circle:first-of-type {
+  stroke-width: 3;
+}
+
+/* ==========================================================================
+   §5 /avatar 角色工坊
+   ========================================================================== */
+
+.cabin-ni-avatar-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr) minmax(0, 0.95fr);
+  gap: var(--ui-s-4);
+  align-items: start;
+}
+.cabin-ni-avatar-panel {
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  min-width: 0;
+}
+.cabin-ni-avatar-panel > h3 {
+  margin: 0;
+  font-size: var(--ui-fs-lg);
+  color: var(--ui-ink-1);
+}
+
+.cabin-ni-avatar-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-s-3);
+}
+
+/* 预览台：canvas 不加玻璃，保持像素硬边 */
+.cabin-ni-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--ui-s-6) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  /* 深底衬托像素硬边，但绝不用 backdrop-filter（canvas 在此容器内） */
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-1);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  min-height: 300px;
+}
+.cabin-ni-stage canvas {
+  image-rendering: pixelated;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.cabin-ni-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+}
+.cabin-ni-field-label {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  font-weight: 600;
+}
+.cabin-ni-field-hint {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-4);
+}
+
+/* 滑块 */
+.cabin-ni-slider {
+  width: 100%;
+  min-height: var(--ui-hit);
+  accent-color: var(--ui-sky-600);
+  cursor: pointer;
+}
+.cabin-ni-slider:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-ring);
+  border-radius: var(--ui-r-1);
+}
+
+/* 配色色板 */
+.cabin-ni-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-s-2);
+}
+.cabin-ni-swatch {
+  min-width: var(--ui-hit);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-swatch:hover {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--cabin-a-teal-50);
+  box-shadow: 0 0 18px -8px var(--ui-glow-teal);
+}
+.cabin-ni-swatch[aria-pressed='true'] {
+  border-color: var(--cabin-a-teal-65);
+  color: var(--ui-sky-800);
+  box-shadow: 0 0 0 1px var(--cabin-a-teal-22);
+}
+.cabin-ni-swatch-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--ui-line-1);
+  flex: 0 0 auto;
+}
+
+/* 素材库网格（上传创意挂件入口） */
+.cabin-ni-assets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: var(--ui-s-3);
+}
+.cabin-ni-asset {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  min-height: var(--ui-hit-lg);
+  color: var(--ui-ink-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--ui-t-fast) var(--ui-ease), border-color var(--ui-t) var(--ui-ease),
+    box-shadow var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-asset:hover,
+.cabin-ni-asset:focus-visible {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  border-color: var(--cabin-a-teal-50);
+  box-shadow: var(--ui-shadow-2), 0 0 22px -8px var(--ui-glow-teal);
+}
+.cabin-ni-asset-thumb {
+  height: 84px;
+  border-radius: var(--ui-r-1);
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-ink-4);
+  overflow: hidden;
+}
+.cabin-ni-asset-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+.cabin-ni-asset-name {
+  font-size: var(--ui-fs-sm);
+  font-weight: 600;
+  color: var(--ui-ink-1);
+  overflow-wrap: anywhere;
+}
+.cabin-ni-asset-meta {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+/* 分享卡：纯玻璃，可以发光 */
+.cabin-ni-share {
+  border-radius: var(--ui-r-3);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2), 0 0 30px -12px var(--ui-glow-sky);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  padding: var(--ui-s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+.cabin-ni-share canvas {
+  width: 100%;
+  max-width: 260px;
+  height: auto;
+  image-rendering: pixelated;
+  border-radius: var(--ui-r-1);
+}
+
+/* 徽章勾选（分享卡零隐私：默认一个都不勾） */
+.cabin-ni-badges {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: var(--ui-s-2);
+}
+.cabin-ni-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  cursor: pointer;
+  transition: border-color var(--ui-t) var(--ui-ease), color var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-badge:hover {
+  border-color: var(--cabin-a-teal-50);
+  color: var(--ui-sky-700);
+}
+.cabin-ni-badge input {
+  accent-color: var(--ui-sky-600);
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+/* ==========================================================================
+   §6 响应式：可重排，不截断（基准原文）
+   ========================================================================== */
+
+@media (max-width: 1200px) {
+  .cabin-ni-avatar-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .cabin-ni-avatar-panel:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 860px) {
+  /* 窄屏纵向堆叠：宁可堆叠，不许 overflow:hidden 藏内容 */
+  .cabin-ni-avatar-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cabin-ni-avatar-panel:last-child {
+    grid-column: auto;
+  }
+  .cabin-ni-side {
+    width: 100%;
+    max-width: 100%;
+  }
+  .cabin-ni-overlay {
+    flex-direction: column;
+    inset: var(--ui-s-2);
+  }
+  .cabin-ni-map {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  }
+  .cabin-ni-dims {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: 'name val' 'bar bar';
+  }
+  .cabin-ni-dim-name {
+    grid-area: name;
+  }
+  .cabin-ni-dim-val {
+    grid-area: val;
+  }
+  .cabin-ni-dim-bar {
+    grid-area: bar;
+  }
+  /* 触摸目标 ≥44px（--ui-hit 已保证） */
+  .cabin-ni-hover-act {
+    /* 触摸设备没有 hover，直接常显——但不遮主信息 */
+    opacity: 1;
+    pointer-events: auto;
+    position: static;
+    transform: none;
+    margin-top: var(--ui-s-1);
+  }
+  .cabin-ni-npc {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ==========================================================================
+   §7 尊重系统减弱动效（本包所有动效都要兜住）
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .cabin-ni-glass,
+  .cabin-ni-glass:hover,
+  .cabin-ni-npc,
+  .cabin-ni-npc:hover,
+  .cabin-ni-map-btn,
+  .cabin-ni-map-btn:hover:not(:disabled),
+  .cabin-ni-swatch,
+  .cabin-ni-swatch:hover,
+  .cabin-ni-asset,
+  .cabin-ni-asset:hover,
+  .cabin-ni-psubject,
+  .cabin-ni-psubject:hover,
+  .cabin-ni-hover-act,
+  .cabin-ni-dim-fill,
+  .cabin-ni-graph-node {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .cabin-ni-npc:hover,
+  .cabin-ni-npc:focus-visible,
+  .cabin-ni-map-btn:hover:not(:disabled),
+  .cabin-ni-swatch:hover,
+  .cabin-ni-asset:hover,
+  .cabin-ni-asset:focus-visible,
+  .cabin-ni-psubject:hover,
+  .cabin-ni-psubject:focus-visible {
+    transform: none;
+  }
+  /* 画布层彻底不参与动效 */
+  .cabin-canvas,
+  .cabin-canvas-host,
+  .cabin-canvas-interior {
+    transition: none !important;
+    animation: none !important;
+  }
+}

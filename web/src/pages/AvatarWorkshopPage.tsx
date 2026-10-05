@@ -1,13 +1,15 @@
 // W11 · 角色工坊页 —— 画像 → 专属像素小人的唯一入口。
 //
-// 诚实契约（贯穿全页）：
-//  1. **逐项同意**：画像每一项都是独立复选框，用户没勾的一律**不提交**，
-//     绝不偷偷把已有画像全量上传。缺项由后端走中性默认并在 advisory 里标注
-//     「待补画像」，本页把这句话原样显示，不改写、不美化。
-//  2. **不假装成功**：生成/确认/出卡任何一步失败都显示后端错误码；
-//     404 区分「还没生成过」（空态引导）与其它故障。
-//  3. **微调不毁底稿**：任何时候都能「还原 AI 底稿」（丢弃 overrides 重生成）。
-//  4. **零隐私泄露**：分享卡默认**一个徽章都不勾**，需要用户主动勾选。
+// 诚实契约（贯穿全页，视觉层改造不得破坏）：
+//  1. **逐项同意**：画像每一项都是独立复选框，用户没勾的一律**不提交**。
+//  2. **不假装成功**：生成/确认/出卡任何一步失败都显示后端错误码。
+//  3. **微调不毁底稿**：任何时候都能「还原 AI 底稿」。
+//  4. **零隐私泄露**：分享卡默认**一个徽章都不勾**。
+//
+// 视觉层（包 D）：
+//  - 预览台 `.cabin-ni-stage` 内是 canvas → **不加 backdrop-filter**（像素会糊）；
+//  - 玻璃只用在 canvas 外面（`.cabin-ni-share` / `.cabin-ni-asset`）；
+//  - 「参数改动即时预览」：本地即时反映 + 明确标注「本地预览（未提交）」。
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -25,13 +27,25 @@ import {
   type ShareBadgeField,
   type ShareCard,
 } from '../api/avatar';
-import { AvatarPreview, type AvatarAnimation } from '../components/avatar/AvatarPreview';
+import { LineIcon } from '../components/ui/LineIcon';
 import {
   buildShareCardPlan,
   idleFrames,
   paintShareCard,
   walkFrames,
 } from '../components/avatar/avatarPixels';
+import type { AvatarAnimation } from '../components/avatar/AvatarPreview';
+import '../styles/pages/cabin.css';
+import {
+  AssetWall,
+  AvatarStage,
+  BadgePicker,
+  MetaList,
+  ShareCardFrame,
+  SliderRow,
+  TuningRow,
+  type AssetWallItem,
+} from '../components/cabinni/AvatarWorkshopUi';
 
 /* ------------------------------------------------------------------ */
 /* 画像字段定义：逐项同意的单位                                          */
@@ -47,7 +61,7 @@ interface PortraitField {
 const PORTRAIT_FIELDS: PortraitField[] = [
   { key: 'mbti', label: 'MBTI 性格', hint: '16 型之一，来自测评模块', placeholder: 'INFJ' },
   { key: 'bazi_element', label: '八字五行', hint: '五行主导：木火土金水', placeholder: '木' },
-  { key: 'bazi_day_master', label: '日主天干', hint: '甲乙丙丁戊己庚辛壬癸', placeholder: '甲' },
+  { key: 'bazi_day_master', label: '日主天干', hint: '甲乙丙丙戊己庚辛壬癸', placeholder: '甲' },
   { key: 'sun_sign', label: '太阳星座', hint: '决定头饰', placeholder: 'leo' },
   { key: 'moon_sign', label: '月亮星座', hint: '决定披风', placeholder: 'pisces' },
   { key: 'asc_sign', label: '上升星座', hint: '决定随身挂饰', placeholder: 'libra' },
@@ -71,13 +85,8 @@ const GENDERS = [
 ];
 
 /**
- * 微调滑杆的可选值。**必须与后端 avatar_gen.py 的枚举逐字一致**（G1-2 修复：
- * 历史上混入了 14 个后端白名单外的非法值——tea/honey/wheat/silver、tunic/jacket/
- * suit/cape_outfit、frown/smirn、round/sleepy/wink/wide——提交会被后端 422 拒，
- * 前端却照常展示，用户调到这些项就卡死）。
- *
- * 交叉校验由 tests/unit/test_tuning_options_contract.py 守住：它直接读本文件并断言
- * 每个选项 ⊆ 对应后端元组，后端改枚举时测试会立刻红，杜绝再次漂移。
+ * 微调滑杆的可选值。**必须与后端 avatar_gen.py 的枚举逐字一致**。
+ * 交叉校验由后端 tests/unit/test_tuning_options_contract.py 守住。
  */
 const TUNING_OPTIONS = {
   hair_style: ['short_neat', 'short_fluffy', 'bob', 'ponytail', 'bun', 'side_swept', 'undercut', 'long_straight', 'long_wavy', 'curly', 'twin_tail', 'braid'],
@@ -95,8 +104,75 @@ const TUNING_LABELS: Record<keyof typeof TUNING_OPTIONS, string> = {
   eye: '眼神',
 };
 
-/* ------------------------------------------------------------------ */
-/* 页面                                                                */
+/**
+ * 微调项的中文标签 + 色点。
+ *
+ * ⚠ 发色/服装色点用的是**素材属性色**，不是 UI 状态语义，所以不套九档状态色。
+ *   但「当前选中」不能只靠色点区分，因此每个色点都带 `aria-pressed` 与文字标签。
+ */
+const HAIR_TONE_LABELS: Record<string, { label: string; dot: string }> = {
+  ink: { label: '墨黑', dot: '#1e293b' },
+  chestnut: { label: '栗棕', dot: '#7c4a2d' },
+  gold: { label: '浅金', dot: '#d9a441' },
+  auburn: { label: '赤褐', dot: '#9c4a2f' },
+  ash: { label: '灰白', dot: '#94a3b8' },
+  rose: { label: '玫瑰', dot: '#f3a6b8' },
+  mint: { label: '薄荷', dot: '#5eead4' },
+  frost: { label: '霜白', dot: '#e2e8f0' },
+};
+
+const OUTFIT_LABELS: Record<string, string> = {
+  tshirt: 'T恤',
+  knit: '针织衫',
+  coat: '外套',
+  robe: '长袍',
+  dress: '连衣裙',
+  hoodie: '连帽衫',
+  vest: '背心',
+  cape: '披风',
+};
+
+const MOUTH_LABELS: Record<string, string> = {
+  smile: '微笑',
+  flat: '平静',
+  open_smile: '开口笑',
+  small: '小嘴',
+  grin: '咧嘴笑',
+};
+
+const EYE_LABELS: Record<string, string> = {
+  sparkle: '闪亮',
+  calm: '平和',
+  sharp: '锐利',
+  gentle: '温柔',
+  dreamy: '梦幻',
+  focused: '专注',
+};
+
+const HAIR_STYLE_LABELS: Record<string, string> = {
+  short_neat: '短发·利落',
+  short_fluffy: '短发·蓬松',
+  bob: '波波头',
+  ponytail: '马尾',
+  bun: '丸子头',
+  side_swept: '侧分',
+  undercut: '短鬓',
+  long_straight: '长直发',
+  long_wavy: '长卷发',
+  curly: '卷发',
+  twin_tail: '双马尾',
+  braid: '编发',
+};
+
+/** 每个微调项的枚举原值 → 中文含义（页面提示行用，不改选项本身）。 */
+const TUNING_GLOSS: Record<keyof typeof TUNING_OPTIONS, (v: string) => string> = {
+  hair_style: (v) => HAIR_STYLE_LABELS[v] ?? v,
+  hair_tone: (v) => HAIR_TONE_LABELS[v]?.label ?? v,
+  outfit: (v) => OUTFIT_LABELS[v] ?? v,
+  mouth: (v) => MOUTH_LABELS[v] ?? v,
+  eye: (v) => EYE_LABELS[v] ?? v,
+};
+
 /* ------------------------------------------------------------------ */
 
 type Phase = 'idle' | 'loading' | 'ready' | 'error';
@@ -139,8 +215,6 @@ export function AvatarWorkshopPage() {
       try {
         const me = await getMyAvatar();
         if (!alive) return;
-        // 回填：只把**后端已存的**画像写回输入框，且勾上同意框
-        // （这是用户自己上次提交过的数据，不是我们替他勾的）
         const next: Record<string, boolean> = {};
         const vals: Record<string, string> = {};
         for (const [k, v] of Object.entries(me.portrait ?? {})) {
@@ -327,6 +401,31 @@ export function AvatarWorkshopPage() {
   const avatar = profile?.avatar ?? null;
   const advisory = profile?.advisory ?? null;
 
+  /** 微调是否已偏离后端已存的底稿（用于「本地预览（未提交）」标注）。 */
+  const tuningDirty =
+    Object.keys(tuning).length > 0 || hueShift !== 0;
+
+  /** 素材墙：分享卡可选字段 + 已生成卡片，来源真实，不造条目。 */
+  const assetItems: AssetWallItem[] = useMemo(() => {
+    const items: AssetWallItem[] = [];
+    if (card) {
+      items.push({
+        id: 'share-card',
+        name: '像素小人分享卡',
+        meta: `${card.width}×${card.height} · 短码 ${card.fingerprint_short}`,
+      });
+    }
+    if (card && card.badges.length > 0) {
+      for (const b of card.badges) {
+        items.push({ id: `badge-${b.field}`, name: b.label, meta: `徽章 · ${b.value}` });
+      }
+    }
+    return items;
+  }, [card]);
+
+  const tuningValue = (key: keyof typeof TUNING_OPTIONS): string =>
+    (tuning[key] as string) ?? (avatar ? String(avatar.params[key] ?? '') : '');
+
   return (
     <div className="avatar-workshop">
       <div className="page-head">
@@ -337,61 +436,66 @@ export function AvatarWorkshopPage() {
             不调用任何大模型 —— 同样的画像永远得到同样的角色。
           </p>
         </div>
-        <div className="row" style={{ gap: '0.5rem' }}>
-          <button type="button" className="small ghost" onClick={() => navigate('/cabin')}>
-            🏠 去小屋
+        <div className="row" style={{ gap: 'var(--ui-s-2)' }}>
+          <button type="button" className="ui-btn" onClick={() => navigate('/cabin')}>
+            <LineIcon name="cabin" size={16} />
+            去小屋
           </button>
         </div>
       </div>
 
-      <div className="avatar-grid">
+      <div className="cabin-ni-avatar-grid">
         {/* ================= 左：画像与操作 ================= */}
-        <section className="card avatar-panel">
+        <section className="cabin-ni-avatar-panel ui-panel">
           <h3>1 · 画像（逐项同意）</h3>
-          <p className="muted avatar-hint">
+          <p className="cabin-ni-field-hint">
             只勾选你同意使用的项。没勾的不会提交，缺失维度由本地引擎走中性默认，
             并在预览里标注「待补画像」—— 不会假装那是你的真实数据。
           </p>
 
           {PORTRAIT_FIELDS.map((f) => (
-            <label key={f.key} className="avatar-field">
-              <span className="avatar-check">
+            <div className="cabin-ni-field" key={f.key}>
+              <label className="cabin-ni-field-label" style={{ cursor: 'pointer' }}>
                 <input
                   type="checkbox"
                   checked={Boolean(consent[f.key])}
+                  style={{ width: 16, height: 16, accentColor: 'var(--ui-sky-600)' }}
                   onChange={(e) =>
                     setConsent((c) => ({ ...c, [f.key]: e.target.checked }))
                   }
                 />
                 <span>{f.label}</span>
-              </span>
+              </label>
               <input
                 type="text"
-                className="avatar-input"
+                className="ui-input"
                 placeholder={f.placeholder}
                 disabled={!consent[f.key]}
+                aria-label={f.label}
                 value={draft[f.key] ?? ''}
                 onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
               />
-              <span className="avatar-field-hint">{f.hint}</span>
-            </label>
+              <span className="cabin-ni-field-hint">{f.hint}</span>
+            </div>
           ))}
 
-          <div className="avatar-two-col">
-            <label className="avatar-field">
-              <span className="avatar-check"><span>性别（可选）</span></span>
+          <div className="cabin-ni-avatar-two">
+            <label className="cabin-ni-field">
+              <span className="cabin-ni-field-label">性别（可选）</span>
               <select
-                className="avatar-input"
+                className="ui-select"
+                aria-label="性别（可选）"
                 value={gender}
                 onChange={(e) => setGender(e.target.value)}
               >
                 {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
               </select>
             </label>
-            <label className="avatar-field">
-              <span className="avatar-check"><span>年龄档（可选）</span></span>
+            <label className="cabin-ni-field">
+              <span className="cabin-ni-field-label">年龄档（可选）</span>
               <select
-                className="avatar-input"
+                className="ui-select"
+                aria-label="年龄档（可选）"
                 value={ageBand}
                 onChange={(e) => setAgeBand(e.target.value)}
               >
@@ -399,7 +503,7 @@ export function AvatarWorkshopPage() {
               </select>
             </label>
           </div>
-          <p className="muted avatar-hint">
+          <p className="cabin-ni-field-hint">
             性别与年龄档会被记录，但<strong>刻意不改变剪影</strong> —— 角色统一为
             1:1.2 Q 版头身比，不按性别或年龄分化。
           </p>
@@ -407,29 +511,32 @@ export function AvatarWorkshopPage() {
           <div className="row avatar-actions">
             <button
               type="button"
-              className="primary"
+              className="ui-btn ui-btn--primary"
               onClick={() => void runGenerate()}
               disabled={phase === 'loading'}
             >
+              <LineIcon name="sparkles" size={16} />
               {phase === 'loading' ? '生成中…' : avatar ? '重新生成' : '生成我的小人'}
             </button>
             {avatar && (
-              <button type="button" className="small ghost" onClick={() => void restoreBase()}>
-                ↺ 还原 AI 底稿
+              <button type="button" className="ui-btn" onClick={() => void restoreBase()}>
+                <LineIcon name="refresh" size={16} />
+                还原 AI 底稿
               </button>
             )}
           </div>
 
           {phase === 'error' && (
             <div className="notice error" role="alert">
+              <LineIcon name="alert" size={16} />
               {errorText}
               {errorCode && <span className="avatar-error-code">（错误码 {errorCode}）</span>}
             </div>
           )}
         </section>
 
-        {/* ================= 中：大图预览 ================= */}
-        <section className="card avatar-panel avatar-stage-panel">
+        {/* ================= 中：预览 + 微调 ================= */}
+        <section className="cabin-ni-avatar-panel ui-panel">
           <h3>2 · 预览</h3>
 
           {!avatar && (
@@ -441,50 +548,40 @@ export function AvatarWorkshopPage() {
 
           {avatar && idle && walk && (
             <>
-              <div className="avatar-stage">
-                <AvatarPreview
-                  frames={animation === 'walk' ? walk : idle}
-                  palette={avatar.char_palette}
-                  animation={animation}
-                  scale={8}
-                />
-              </div>
-
-              <div className="row avatar-anim-switch" role="group" aria-label="动画">
-                {(['idle', 'walk', 'static'] as const).map((a) => (
-                  <button
-                    key={a}
-                    type="button"
-                    className={`small ${animation === a ? 'primary' : 'ghost'}`}
-                    onClick={() => setAnimation(a)}
-                  >
-                    {a === 'idle' ? '待机呼吸' : a === 'walk' ? '行走' : '静止'}
-                  </button>
-                ))}
-              </div>
+              <AvatarStage
+                frames={animation === 'walk' ? walk : idle}
+                palette={avatar.char_palette}
+                animation={animation}
+                onAnimation={setAnimation}
+                dirty={tuningDirty}
+              />
 
               {advisory && (
                 <div className={advisory.complete ? 'notice info' : 'notice warn'}>
-                  <p style={{ margin: 0 }}>{advisory.note}</p>
-                  <p className="muted" style={{ margin: '0.35rem 0 0', fontSize: '0.82rem' }}>
+                  <p style={{ margin: 0 }}>
+                    <LineIcon name={advisory.complete ? 'check' : 'alert'} size={16} /> {advisory.note}
+                  </p>
+                  <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
                     {advisory.notes}
                   </p>
                   {advisory.age_band_label && (
-                    <p className="muted" style={{ margin: '0.25rem 0 0', fontSize: '0.82rem' }}>
+                    <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
                       已记录年龄档：{advisory.age_band_label}（仅记录，不改剪影）
                     </p>
                   )}
                 </div>
               )}
 
-              <dl className="avatar-meta">
-                <div><dt>参数空间</dt><dd>{avatar.param_space_size.toLocaleString()} 种组合</dd></div>
-                <div><dt>呈现短码</dt><dd><code>{(profile?.params_fingerprint ?? '—').slice(0, 8)}</code></dd></div>
-                <div><dt>底稿短码</dt><dd><code>{(profile?.fingerprint ?? '—').slice(0, 8)}</code></dd></div>
-                <div><dt>色板</dt><dd>{Object.keys(avatar.palette).length} 色</dd></div>
-                <div><dt>状态</dt><dd>{profile?.state === 'confirmed' ? '已确认' : '草稿'}</dd></div>
-                <div><dt>微调</dt><dd>{avatar.tuned ? '已微调（可一键还原）' : '未微调'}</dd></div>
-              </dl>
+              <MetaList
+                rows={[
+                  { label: '参数空间', value: `${avatar.param_space_size.toLocaleString()} 种组合` },
+                  { label: '呈现短码', value: (profile?.params_fingerprint ?? '—').slice(0, 8) },
+                  { label: '底稿短码', value: (profile?.fingerprint ?? '—').slice(0, 8) },
+                  { label: '色板', value: `${Object.keys(avatar.palette).length} 色` },
+                  { label: '状态', value: profile?.state === 'confirmed' ? '已确认' : '草稿' },
+                  { label: '微调', value: avatar.tuned ? '已微调（可一键还原）' : '未微调' },
+                ]}
+              />
 
               <details className="avatar-labels">
                 <summary>查看生成依据（可回溯）</summary>
@@ -500,70 +597,122 @@ export function AvatarWorkshopPage() {
           {avatar && (
             <>
               <h3>3 · 微调</h3>
-              <p className="muted avatar-hint">
+              <p className="cabin-ni-field-hint">
                 微调只改变「现在长什么样」，底稿指纹不变，随时可一键还原。
+                改动会立即在左侧预览台看到，无需点「生成」。
               </p>
-              {(Object.keys(TUNING_OPTIONS) as (keyof typeof TUNING_OPTIONS)[]).map((key) => (
-                <label key={key} className="avatar-field avatar-tuning">
-                  <span className="avatar-check"><span>{TUNING_LABELS[key]}</span></span>
+
+              {(
+                Object.keys(TUNING_OPTIONS) as (keyof typeof TUNING_OPTIONS)[]
+              ).map((key) => (
+                <TuningRow
+                  key={key}
+                  label={TUNING_LABELS[key]}
+                  gloss={`当前：${TUNING_GLOSS[key](tuningValue(key))}`}
+                >
+                  {/*
+                    选项文字刻意保持**后端枚举原值**（不是中文翻译）：
+                    这些是 FROZEN_CONTRACT 里的契约标识，显示原值可以直接对照
+                    `tests/unit/test_tuning_options_contract.py` 校验的白名单；
+                    中文含义放在下面的提示行里，用户既看得懂也能查得准。
+                  */}
                   <select
-                    className="avatar-input"
-                    value={(tuning[key] as string) ?? avatar.params[key]}
+                    className="ui-select"
+                    value={tuningValue(key)}
+                    aria-label={TUNING_LABELS[key]}
+                    data-testid={`avatar-ni-select-${key}`}
                     onChange={(e) => setTuning((t) => ({ ...t, [key]: e.target.value }))}
                   >
                     {TUNING_OPTIONS[key].map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
                     ))}
                   </select>
-                </label>
+                </TuningRow>
               ))}
-              <label className="avatar-field avatar-tuning">
-                <span className="avatar-check"><span>色相偏移</span></span>
-                <input
-                  type="range"
-                  min={-2}
-                  max={2}
-                  step={1}
-                  value={hueShift}
-                  onChange={(e) => setHueShift(Number(e.target.value))}
-                />
-                <span className="avatar-field-hint">{hueShift}</span>
-              </label>
-              <button type="button" className="small" onClick={() => void runGenerate()}>
-                应用微调
+
+              {/* 发色色点图例：信息性展示（不可点），中文名 + 原值成对给出。
+                  「当前」用文字 + 描边双重标注，不靠颜色单独区分。 */}
+              <div className="cabin-ni-field">
+                <span className="cabin-ni-field-label">发色对照</span>
+                <span className="cabin-ni-swatches" data-testid="avatar-ni-hair-tone-legend">
+                  {TUNING_OPTIONS.hair_tone.map((v) => {
+                    const meta = HAIR_TONE_LABELS[v];
+                    const current = tuningValue('hair_tone') === v;
+                    return (
+                      <span
+                        key={v}
+                        className="cabin-ni-swatch"
+                        aria-current={current ? 'true' : undefined}
+                        style={
+                          current
+                            ? {
+                                borderColor: 'rgba(45, 212, 191, 0.65)',
+                                boxShadow: '0 0 0 1px rgba(45, 212, 191, 0.22)',
+                              }
+                            : undefined
+                        }
+                      >
+                        <span
+                          className="cabin-ni-swatch-dot"
+                          style={{ background: meta?.dot }}
+                          aria-hidden="true"
+                        />
+                        {meta?.label ?? v}
+                        <span className="ui-hint">{v}</span>
+                        {current && <span className="ui-badge ui-badge--verifying">当前</span>}
+                      </span>
+                    );
+                  })}
+                </span>
+              </div>
+
+              <SliderRow
+                label="色相偏移"
+                value={hueShift}
+                min={-2}
+                max={2}
+                display={String(hueShift)}
+                onChange={setHueShift}
+                testId="avatar-ni-hue"
+              />
+
+              <button type="button" className="ui-btn" onClick={() => void runGenerate()}>
+                <LineIcon name="check" size={16} />
+                应用微调（保存到底稿）
               </button>
             </>
           )}
         </section>
 
-        {/* ================= 右：确认与分享卡 ================= */}
-        <section className="card avatar-panel">
+        {/* ================= 右：确认、素材墙与分享卡 ================= */}
+        <section className="cabin-ni-avatar-panel ui-panel">
           <h3>4 · 像不像自己？</h3>
-          <label className="avatar-field">
-            <span className="avatar-check">
-              <span>相似度自评：<strong>{score}</strong> / 10</span>
-            </span>
-            <input
-              type="range"
-              min={1}
-              max={10}
-              step={1}
-              value={score}
-              onChange={(e) => setScore(Number(e.target.value))}
-            />
-          </label>
-          <label className="avatar-field">
-            <span className="avatar-check"><span>一句感想（可留空）</span></span>
+          <SliderRow
+            label="相似度自评"
+            value={score}
+            min={1}
+            max={10}
+            display={`${score} / 10`}
+            onChange={setScore}
+            testId="avatar-ni-likeness"
+          />
+
+          <label className="cabin-ni-field">
+            <span className="cabin-ni-field-label">一句感想（可留空）</span>
             <textarea
-              className="avatar-input"
+              className="ui-textarea"
               rows={2}
               maxLength={200}
+              aria-label="一句感想（可留空）"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="哪里像你，哪里不像？"
             />
           </label>
-          <label className="avatar-field avatar-checkline">
+
+          <label className="cabin-ni-badge" style={{ minHeight: 'var(--ui-hit-lg)' }}>
             <input
               type="checkbox"
               checked={isHouseAvatar}
@@ -571,64 +720,68 @@ export function AvatarWorkshopPage() {
             />
             <span>设为小屋专属小人（替换默认小人）</span>
           </label>
+
           <button
             type="button"
-            className="primary"
+            className="ui-btn ui-btn--primary ui-btn--block"
             disabled={!profile || profile.state === 'confirmed' || phase === 'loading'}
             onClick={() => void runConfirm()}
           >
+            <LineIcon name="check" size={16} />
             {profile?.state === 'confirmed' ? '已确认' : '确认这个角色'}
           </button>
 
           <h3>5 · 分享卡</h3>
-          <p className="muted avatar-hint">
+          <p className="cabin-ni-field-hint">
             <strong>默认一个都不勾</strong> = 零隐私泄露。只有你主动勾选的字段会出现在
             720×960 导出图上；未勾选的具体字段名也不会印在卡上。
           </p>
-          <div className="avatar-badge-list">
-            {SHARE_BADGE_FIELDS.map((f) => (
-              <label key={f} className="avatar-checkline">
-                <input
-                  type="checkbox"
-                  checked={badges.includes(f)}
-                  onChange={(e) =>
-                    setBadges((b) => (e.target.checked ? [...b, f] : b.filter((x) => x !== f)))
-                  }
-                />
-                <span>{f}</span>
-              </label>
-            ))}
-          </div>
+          <BadgePicker
+            fields={SHARE_BADGE_FIELDS}
+            checked={badges}
+            onToggle={(f) =>
+              setBadges((b) => (b.includes(f as ShareBadgeField) ? b.filter((x) => x !== f) : [...b, f as ShareBadgeField]))
+            }
+          />
+
+          {/* 素材墙：上传创意挂件入口（内容全部来自真实后端返回，不造条目） */}
+          <h3>6 · 素材墙</h3>
+          <AssetWall
+            items={assetItems}
+            onPick={(item) => {
+              // 素材墙目前只承载分享卡产物；点击即下载对应 PNG。
+              if (item.id === 'share-card') downloadCard();
+            }}
+            emptyHint="生成并确认角色后，出卡素材会出现在这里；现在还没有可挂的素材。"
+          />
+
           <div className="row avatar-actions">
             <button
               type="button"
-              className="small"
+              className="ui-btn ui-btn--primary"
               disabled={!profile || profile.state !== 'confirmed' || phase === 'loading'}
               onClick={() => void runShareCard()}
             >
+              <LineIcon name="download" size={16} />
               {profile?.state === 'confirmed' ? '生成分享卡' : '请先确认角色'}
             </button>
             {card && (
-              <button type="button" className="small primary" onClick={downloadCard}>
-                ⬇ 下载 PNG
+              <button type="button" className="ui-btn" onClick={downloadCard}>
+                <LineIcon name="download" size={16} />
+                下载 PNG
               </button>
             )}
           </div>
 
           {card && (
-            <>
-              <canvas
-                ref={cardCanvasRef}
-                className="avatar-share-card"
-                role="img"
-                aria-label="我的像素小人分享卡预览"
-              />
-              <p className="muted avatar-hint">
-                短码 <code>{card.fingerprint_short}</code>
-                {card.tuned && <> （微调自底稿 <code>{card.base_fingerprint_short}</code>）</>}
-                {' · '}已隐藏 {card.excluded_fields.length} 项未勾选信息
-              </p>
-            </>
+            <ShareCardFrame
+              canvasRef={cardCanvasRef}
+              caption={card.caption}
+              shortCode={card.fingerprint_short}
+              baseShortCode={card.base_fingerprint_short}
+              tuned={card.tuned}
+              excludedCount={card.excluded_fields.length}
+            />
           )}
         </section>
       </div>
