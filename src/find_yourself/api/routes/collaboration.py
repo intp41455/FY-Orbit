@@ -22,10 +22,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...db.types import utcnow
+from ...runtime.sse import bus as sse_bus  # P8 · 复用共享总线，不新写
 from ...services.actor import Actor
 from ...services.collaboration import CollaborationService
 from ...services.errors import DomainError, ValidationFailed
@@ -271,3 +273,37 @@ async def mark_notification_read(
         svc.session.rollback()
         raise _translate(exc) from exc
     return view
+
+
+# ----------------------------------------------------------------------
+# P8 · 通知 SSE 推送（复用 runtime.sse 共享总线，不新写总线）
+# ----------------------------------------------------------------------
+@router.get("/notifications/events")
+async def stream_notifications(
+    request: Request,
+    actor: Actor = Depends(get_actor),
+    svc: Services = Depends(get_services),
+):
+    """我的未读通知 SSE 流。
+
+    * 载荷只含 ``_summary()`` 定位串与元数据——**绝不含评论正文**；
+    * 断线重连带 ``Last-Event-ID`` 头即从断点续传（已收过的事件不重复），
+      幂等由共享总线的 per-channel 序号与环形缓冲保证。
+    """
+    service = _svc(svc)
+    channel = service.channel_for(actor)
+    raw_last = request.headers.get("Last-Event-ID") or request.query_params.get("last_event_id") or "0"
+    try:
+        last_event_id = max(0, int(raw_last))
+    except ValueError:
+        last_event_id = 0
+
+    async def gen():
+        async for ev in sse_bus.subscribe(channel, last_event_id=last_event_id):
+            yield ev.to_sse()
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )

@@ -37,6 +37,7 @@ from uuid import uuid4
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from ..db.canvas_models import CanvasInstance
 from ..db.collaboration_models import (
     ASSIGNABLE_ROLES,
     NOTIFICATION_KINDS,
@@ -49,8 +50,10 @@ from ..db.collaboration_models import (
     Notification,
 )
 from ..db.models import Artifact, Memory, Task
-from ..db.canvas_models import CanvasInstance
 from ..db.types import utcnow
+
+# P8 · SSE 推送复用 runtime 的共享事件总线（绝不新写第二条总线）。
+from ..runtime.sse import bus as sse_bus
 from .actor import Actor
 from .errors import NotFound, PermissionDenied, ValidationFailed
 from .grant import MAX_GRANT_SECONDS
@@ -60,6 +63,11 @@ MENTION_RE = re.compile(r"@([A-Za-z0-9_.\-]+)")
 
 #: 通知定位串的最大长度。它**不含**评论正文，这里只是给字符串一个上界。
 SUMMARY_MAX = 200
+
+
+def notification_channel(user_id: str) -> str:
+    """P8 · 某用户的通知推送 SSE 频道名（与路由层共用同一命名，单一真源）。"""
+    return f"collab-notifications:{user_id}"
 
 #: 评论分页。**默认必须有界**：不设默认上限就等于「一次拉全量」，在大记录上
 #: 既是性能问题，也让「分页」形同虚设。调用方只能请求更小的页，不能请求无限。
@@ -672,6 +680,33 @@ class CollaborationService:
                          "comment_id": comment.id, "kind": row.kind,
                          "contains_private_text": False},
                         message_id=comment.id)
+        # P8 · SSE 推送：每条**新建**的通知推一条事件（DB 幂等去重已保证同一
+        # 评论同一人同一 kind 不会有第二条，因此这里天然不重复推送）。
+        # 载荷只含 _summary() 的定位串与元数据——**绝不含评论正文**（铁律）。
+        for row in created:
+            unread = int(
+                self.s.execute(
+                    select(func.count())
+                    .select_from(Notification)
+                    .where(
+                        Notification.owner_id == row.owner_id,
+                        Notification.read_at.is_(None),
+                    )
+                ).scalar_one()
+            )
+            sse_bus.publish(
+                notification_channel(row.owner_id),
+                "notification",
+                {
+                    "notification_id": row.id,
+                    "kind": row.kind,
+                    "record_kind": ref.kind,
+                    "record_id": ref.id,
+                    "comment_id": comment.id,
+                    "summary": row.summary,
+                    "unread_count": unread,
+                },
+            )
         return [self._notification_view(n) for n in created]
 
     def _notify_mentions(
@@ -704,6 +739,11 @@ class CollaborationService:
         res = self.s.execute(stmt)
         self.s.flush()
         return int(res.rowcount or 0)
+
+    def channel_for(self, actor: Actor) -> str:
+        """P8 · 当前身份的通知推送频道名（幂等重连按 Last-Event-ID 续传）。"""
+        actor.require_authenticated()
+        return notification_channel(self._identity(actor))
 
     def unread_count(self, actor: Actor) -> int:
         """当前身份的未读通知数。**不区分 kind**（kind 多类型后此式仍正确），
