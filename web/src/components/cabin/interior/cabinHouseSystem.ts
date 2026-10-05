@@ -21,7 +21,12 @@ import {
   type InteriorItem,
   type InteriorLayout,
 } from './interiorLayout';
-import type { LifeSnapshot } from '../gameplay/lifeApi';
+import {
+  formatMinute,
+  lifeApi,
+  type LifeSnapshot,
+  type LifeSave,
+} from '../gameplay/lifeApi';
 
 /* ------------------------------------------------------------------ */
 /* H2 · 多房间扩建系统 (Multi-Room Expansion)                          */
@@ -557,10 +562,10 @@ export function takeFromDisplay(
 /* ------------------------------------------------------------------ */
 
 export interface SleepReport {
-  dayBefore: number;
+  dayBefore?: number;
   dayAfter: number;
   timeLabel: string;
-  coinsBefore: number;
+  coinsBefore?: number;
   coinsAfter: number;
   settlementRevenue?: number;
   note: string;
@@ -571,26 +576,78 @@ export interface SleepReport {
  * 1. 验证存在合法床铺；
  * 2. 调 POST /api/cabin/life/action { action: 'sleep' } 派发跨日动作；
  * 3. 服务端权威推进时钟至次日 06:00 并自动持久化存档；
- * 4. 读回最新 snapshot，核验前后一致性。
+ * 4. 读回最新 snapshot / action 结果，核验前后一致性。
+ *
+ * 铁律：dayAfter / coinsAfter / timeLabel / 天气 一律取自服务端权威数据，严禁前端自算或写死兜底。
  */
 export async function executeSleep(
-  onAction: (action: string, args?: Record<string, unknown>) => Promise<void> | void,
+  onAction: (action: string, args?: Record<string, unknown>) => Promise<unknown> | unknown,
   currentSnapshot?: LifeSnapshot | null,
+  fetchSnapshotFn?: () => Promise<LifeSnapshot>,
 ): Promise<SleepReport> {
-  const dayBefore = currentSnapshot?.save?.clock?.day ?? 1;
-  const coinsBefore = currentSnapshot?.save?.coins ?? 0;
+  const dayBefore = currentSnapshot?.save?.clock?.day;
+  const coinsBefore = currentSnapshot?.save?.coins;
 
-  // 派发权威 sleep 动作
-  await onAction('sleep', {});
+  // 1. 派发权威 sleep 动作并捕获返回值
+  const actionRes = await onAction('sleep', {});
 
-  const dayAfter = dayBefore + 1;
+  let afterSave: LifeSave | null = null;
+  let settlementRevenue: number | undefined = undefined;
+  let serverNote: string | undefined = undefined;
+
+  // 2. 优先解析 onAction 返回对象（LifeActionResult 或包含 save / snapshot 的结构）
+  if (actionRes && typeof actionRes === 'object') {
+    const res = actionRes as Record<string, unknown>;
+    if (res.save && typeof res.save === 'object') {
+      afterSave = res.save as LifeSave;
+    } else if (res.snapshot && typeof res.snapshot === 'object') {
+      const snap = res.snapshot as Record<string, unknown>;
+      if (snap.save && typeof snap.save === 'object') {
+        afterSave = snap.save as LifeSave;
+      }
+    }
+    if (res.settlement && typeof res.settlement === 'object') {
+      const sett = res.settlement as Record<string, unknown>;
+      if (typeof sett.total_revenue === 'number') {
+        settlementRevenue = sett.total_revenue;
+      }
+    }
+    if (typeof res.note === 'string') {
+      serverNote = res.note;
+    }
+  }
+
+  // 3. 若 onAction 未提供 save，则通过 fetchSnapshotFn 或 lifeApi.fetchSnapshot 读回权威快照
+  if (!afterSave) {
+    const freshSnap = fetchSnapshotFn
+      ? await fetchSnapshotFn()
+      : await lifeApi.fetchSnapshot().catch(() => null);
+    if (freshSnap?.save) {
+      afterSave = freshSnap.save;
+    }
+  }
+
+  // 4. 若服务端仍未返回合法存档，拒绝伪造，明确抛错（宁可空值，不可假值）
+  if (!afterSave || !afterSave.clock || typeof afterSave.clock.day !== 'number') {
+    throw new Error('睡觉动作失败：服务端未返回权威存档或时钟数据');
+  }
+
+  const dayAfter = afterSave.clock.day;
+  const coinsAfter = typeof afterSave.coins === 'number' ? afterSave.coins : 0;
+  const partLabel = afterSave.clock.part_label ?? '';
+  const minuteStr = typeof afterSave.clock.minute === 'number' ? formatMinute(afterSave.clock.minute) : '';
+  const weatherLabel = afterSave.weather?.label ?? afterSave.weather?.id ?? '';
+  const timeLabel = `第${dayAfter}天 ${partLabel} ${minuteStr} ${weatherLabel}`.replace(/\s+/g, ' ').trim();
+  const note = serverNote ?? `睡到第 ${dayAfter} 天 06:00；未售出货品安全留存。`;
+
   return {
     dayBefore,
     dayAfter,
-    timeLabel: `第${dayAfter}天 上午 06:00 晴`,
+    timeLabel,
     coinsBefore,
-    coinsAfter: coinsBefore,
-    note: `睡到第 ${dayAfter} 天 06:00；未售出货品安全留存。`,
+    coinsAfter,
+    settlementRevenue,
+    note,
   };
 }
 

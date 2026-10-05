@@ -32,7 +32,7 @@ import {
   SeamlessTransitionManager,
   globalTransitionManager,
 } from './cabinHouseSystem';
-import type { LifeSnapshot } from '../gameplay/lifeApi';
+import type { LifeSnapshot, LifeActionResult } from '../gameplay/lifeApi';
 
 describe('B5 · H1 建筑均可进入与独立像素场景加载 (<1s 预算)', () => {
   const houseTemplates = ['cabin', 'modern', 'castle', 'snowcave', 'treehouse'];
@@ -146,8 +146,7 @@ describe('B5 · H2 多房间扩建系统', () => {
 });
 
 describe('B5 · H3 睡觉 = 存档 + 跳时间与读回一致性', () => {
-  it('触发睡觉：派发 sleep action 并推移至次日 06:00', async () => {
-    const mockAction = vi.fn().mockResolvedValue(undefined);
+  it('权威闭环：服务端返回第7天/999金币/雨天，UI显示严格取自服务端权威数据（数据变了显示就变）', async () => {
     const mockSnap: LifeSnapshot = {
       save: {
         owner: 'tester',
@@ -172,13 +171,94 @@ describe('B5 · H3 睡觉 = 存档 + 跳时间与读回一致性', () => {
       version: 1,
     };
 
+    // Mock 服务端权威返回：第 7 天 / 金币 999 / 天气 rain (雨) / 日结算收益 649
+    const mockActionResult: LifeActionResult = {
+      action: 'sleep',
+      save: {
+        ...mockSnap.save,
+        coins: 999,
+        clock: { day: 7, minute: 360, part: 'morning', part_label: '上午' },
+        weather: { id: 'rain', label: '雨', icon: '🌧️', light: 0.6, yield_pct: 100, pace_pct: 100, demand_pct: 100, blocks_gather: false },
+        version: 2,
+      },
+      hud_line: '第7天 上午 雨 · 999 金币',
+      settlement: {
+        day: 6,
+        weather: 'rain',
+        theme: 'forest',
+        lines: [],
+        total_revenue: 649,
+        cost_of_goods_sold: 0,
+        profit: 649,
+        coins_after: 999,
+        next_day: 7,
+      },
+      note: '睡到第 7 天 06:00；没卖出的货品如实留在仓库。',
+    };
+    const mockAction = vi.fn().mockResolvedValue(mockActionResult);
+
     const report = await executeSleep(mockAction, mockSnap);
 
     expect(mockAction).toHaveBeenCalledWith('sleep', {});
+    // 关键校验：真断言，数据取自服务端而不是前端 dayBefore + 1 算术
     expect(report.dayBefore).toBe(2);
-    expect(report.dayAfter).toBe(3);
-    expect(report.timeLabel).toContain('第3天 上午 06:00');
-    expect(report.note).toContain('睡到第 3 天 06:00');
+    expect(report.dayAfter).toBe(7);
+    expect(report.coinsBefore).toBe(350);
+    expect(report.coinsAfter).toBe(999);
+    expect(report.settlementRevenue).toBe(649);
+    expect(report.timeLabel).toBe('第7天 上午 06:00 雨');
+    expect(report.note).toBe('睡到第 7 天 06:00；没卖出的货品如实留在仓库。');
+  });
+
+  it('fetchSnapshotFn 闭环：onAction 未回传 save 时从最新快照读回（第10天/雪天）', async () => {
+    const mockAction = vi.fn().mockResolvedValue(undefined);
+    const mockSnap: LifeSnapshot = {
+      save: {
+        owner: 'tester',
+        theme: 'forest',
+        coins: 100,
+        skill_exp: 0,
+        bag: {},
+        affinity: {},
+        gifts_today: {},
+        gather_counts: {},
+        quest_log: { day: 1, entries: [] },
+        shop: { kind: 'grocery', level: 1, stock: {}, ask_prices: {} },
+        clock: { day: 1, minute: 480, part: 'morning', part_label: '上午' },
+        weather: { id: 'sun', label: '晴', icon: '☀️', light: 1.0, yield_pct: 100, pace_pct: 100, demand_pct: 100, blocks_gather: false },
+        version: 1,
+      },
+      hud_line: '第1天 上午 晴 · 100 金币',
+      npcs: [],
+      shop: [],
+      craft: [],
+      gather: [],
+      version: 1,
+    };
+
+    const mockFreshSnapshot: LifeSnapshot = {
+      ...mockSnap,
+      save: {
+        ...mockSnap.save,
+        coins: 1500,
+        clock: { day: 10, minute: 360, part: 'morning', part_label: '上午' },
+        weather: { id: 'snow', label: '雪', icon: '❄️', light: 0.7, yield_pct: 80, pace_pct: 80, demand_pct: 120, blocks_gather: false },
+        version: 3,
+      },
+    };
+
+    const report = await executeSleep(mockAction, mockSnap, async () => mockFreshSnapshot);
+
+    expect(report.dayAfter).toBe(10);
+    expect(report.coinsAfter).toBe(1500);
+    expect(report.timeLabel).toBe('第10天 上午 06:00 雪');
+  });
+
+  it('零假数据保证：服务端未返回有效存档时绝不伪造自算，明确拒绝', async () => {
+    const mockAction = vi.fn().mockResolvedValue(undefined);
+    await expect(executeSleep(mockAction, null, async () => (null as any))).rejects.toThrow(
+      '睡觉动作失败：服务端未返回权威存档或时钟数据',
+    );
   });
 });
 

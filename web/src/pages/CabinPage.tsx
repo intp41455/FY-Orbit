@@ -65,6 +65,7 @@ import {
   unlockRoom,
   createRoomLayout,
   globalTransitionManager,
+  executeSleep,
 } from '../components/cabin/interior/cabinHouseSystem';
 
 /** 台词来源诚实标注：模型生成 / 预生成台词池（未探测时默认 provider 本就是池）。 */
@@ -191,12 +192,14 @@ export function CabinPage() {
 
   const handleLifeAction = async (action: string, args?: Record<string, unknown>) => {
     try {
-      await lifeApi.act(action, args);
+      const res = await lifeApi.act(action, args);
       const snap = await lifeApi.fetchSnapshot();
       setLifeSnapshot(snap);
       setLifeError(null);
+      return res;
     } catch (err) {
       setLifeError(err instanceof Error ? err.message : String(err));
+      throw err;
     }
   };
 
@@ -401,7 +404,17 @@ export function CabinPage() {
       if (!act) return; // interact='none'：不硬凑演出（诚实失败）
       if (act.kind === 'sleep') {
         setSleepToken((n) => n + 1);
-        void handleLifeAction('sleep');
+        void executeSleep(handleLifeAction, lifeSnapshot)
+          .then((report) => {
+            saySeq.current += 1;
+            setSayToken({
+              text: report.note || `已睡到第 ${report.dayAfter} 天 06:00`,
+              token: saySeq.current,
+            });
+          })
+          .catch((err) => {
+            setLifeError(err instanceof Error ? err.message : String(err));
+          });
         return;
       }
       saySeq.current += 1;

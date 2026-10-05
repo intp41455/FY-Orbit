@@ -15,7 +15,7 @@ export type CabinHudProps = {
   onSelectTimeOfDay?: (time: TimeOfDay) => void;
   loading?: boolean;
   error?: string | null;
-  onAction?: (action: string, args?: Record<string, unknown>) => Promise<void> | void;
+  onAction?: (action: string, args?: Record<string, unknown>) => Promise<unknown> | unknown;
 } & (
   | {
       /** 判据 U2b：接线时金币由调用方传入真实数据，TS 编译期强制约束（无假默认值） */
