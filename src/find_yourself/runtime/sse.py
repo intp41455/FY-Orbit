@@ -24,6 +24,10 @@ class TaskEvent:
     data: dict
 
     def to_sse(self) -> str:
+        if self.event_type == ": heartbeat" or (
+            self.event_type == "heartbeat" and (not self.data or self.data.get("heartbeat"))
+        ):
+            return ": heartbeat\n\n"
         import json
         payload = json.dumps(self.data, ensure_ascii=False, sort_keys=True, default=str)
         return f"id: {self.seq}\nevent: {self.event_type}\ndata: {payload}\n\n"
@@ -82,18 +86,42 @@ class TaskEventBus:
                 pass
         return ev
 
-    async def subscribe(self, task_id: str, last_event_id: int = 0) -> AsyncIterator[TaskEvent]:
+    async def subscribe(
+        self,
+        task_id: str,
+        last_event_id: int = 0,
+        heartbeat_interval: float = 15.0,
+    ) -> AsyncIterator[TaskEvent]:
         q: asyncio.Queue = asyncio.Queue(maxsize=200)
         async with self._lock:
             self._subs[task_id].append(q)
         try:
+            hist = list(self._hist.get(task_id, []))
+            # GAP 帧：若客户端提供了 last_event_id，且缓冲非空，
+            # 当 last_event_id < min_seq - 1 时，说明中间有事件已溢出丢弃，
+            # 必须先发一帧 event: gap 提示客户端全量重拉。
+            if last_event_id > 0 and hist:
+                min_seq = hist[0].seq
+                if last_event_id < min_seq - 1:
+                    yield TaskEvent(
+                        seq=min_seq,
+                        event_type="gap",
+                        data={"gap": True, "min_seq": min_seq, "last_seen": last_event_id},
+                    )
+
             # Replay buffered events after the client's last seen id.
-            for ev in list(self._hist.get(task_id, [])):
+            for ev in hist:
                 if ev.seq > last_event_id:
                     yield ev
             while True:
-                ev = await q.get()
-                yield ev
+                try:
+                    if heartbeat_interval and heartbeat_interval > 0:
+                        ev = await asyncio.wait_for(q.get(), timeout=heartbeat_interval)
+                    else:
+                        ev = await q.get()
+                    yield ev
+                except asyncio.TimeoutError:
+                    yield TaskEvent(seq=0, event_type=": heartbeat", data={"heartbeat": True})
         finally:
             async with self._lock:
                 if q in self._subs.get(task_id, []):

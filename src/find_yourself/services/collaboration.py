@@ -75,6 +75,10 @@ COMMENT_DEFAULT_LIMIT = 50
 COMMENT_MAX_LIMIT = 200
 COMMENT_ORDERS = ("asc", "desc")
 
+#: 通知分页。默认有界（B2 / 第 8 批）。
+NOTIFICATION_DEFAULT_LIMIT = 50
+NOTIFICATION_MAX_LIMIT = 200
+
 
 @dataclass(frozen=True)
 class Record:
@@ -770,15 +774,24 @@ class CollaborationService:
         text = f"{who} 在 {ref.kind} 的评论中提到了你"
         return text[:SUMMARY_MAX]
 
-    def list_notifications(self, actor: Actor) -> list[dict[str, Any]]:
+    def list_notifications(
+        self,
+        actor: Actor,
+        limit: int = NOTIFICATION_DEFAULT_LIMIT,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
         actor.require_authenticated()
         ident = self._identity(actor)
         if not ident:
             return []
+        safe_limit = max(1, min(limit, NOTIFICATION_MAX_LIMIT))
+        safe_offset = max(0, offset)
         rows = self.s.execute(
             select(Notification)
             .where(Notification.owner_id == ident)
             .order_by(Notification.created_at.desc())
+            .limit(safe_limit)
+            .offset(safe_offset)
         ).scalars()
         return [self._notification_view(n) for n in rows]
 

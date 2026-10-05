@@ -22,14 +22,18 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from ...db.types import utcnow
 from ...runtime.sse import bus as sse_bus  # P8 · 复用共享总线，不新写
 from ...services.actor import Actor
-from ...services.collaboration import CollaborationService
+from ...services.collaboration import (
+    CollaborationService,
+    NOTIFICATION_DEFAULT_LIMIT,
+    NOTIFICATION_MAX_LIMIT,
+)
 from ...services.errors import DomainError, ValidationFailed
 from ..deps import Services, csrf_protected, get_actor, get_services
 
@@ -241,12 +245,14 @@ async def delete_comment(
 # ----------------------------------------------------------------------
 @router.get("/notifications")
 async def list_notifications(
+    limit: int = Query(default=NOTIFICATION_DEFAULT_LIMIT, ge=1, le=NOTIFICATION_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict:
-    items = _svc(svc).list_notifications(actor)
+    items = _svc(svc).list_notifications(actor, limit=limit, offset=offset)
     svc.session.commit()
-    return {"count": len(items), "items": items}
+    return {"count": len(items), "items": items, "limit": limit, "offset": offset}
 
 
 @router.get("/notifications/unread-count")
@@ -305,5 +311,9 @@ async def stream_notifications(
     return StreamingResponse(
         gen(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-store",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )

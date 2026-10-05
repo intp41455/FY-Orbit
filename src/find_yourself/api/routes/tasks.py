@@ -171,5 +171,12 @@ async def task_events(task_id: str, request: Request,
         async for ev in bus.subscribe(task_id, last_event_id=last_id):
             yield ev.to_sse()
 
-    return StreamingResponse(gen(), media_type="text/event-stream",
-                            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
