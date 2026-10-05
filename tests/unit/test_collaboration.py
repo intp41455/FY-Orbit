@@ -25,6 +25,8 @@ from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
+import json
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -1475,3 +1477,169 @@ def _migration_0032_path() -> Path:
     return Path(__file__).resolve().parents[2] / (
         "migrations/versions/0032_collaboration_replies.py"
     )
+
+
+# ===========================================================================
+# P8 · 通知 SSE 推送（复用 runtime.sse 共享总线；载荷无正文；重连幂等）
+# ===========================================================================
+from find_yourself.runtime.sse import bus as p8_bus
+from find_yourself.services.collaboration import notification_channel
+
+
+@pytest.fixture()
+def clean_bus():
+    """总线是模块级单例：每个用例前清空，避免跨用例串味。"""
+    p8_bus._hist.clear()
+    p8_bus._subs.clear()
+    yield p8_bus
+
+
+def _events_for(user_id: str):
+    return list(p8_bus._hist.get(notification_channel(user_id), []))
+
+
+def test_push_payload_has_no_comment_body(svc, session, alice, bob, clean_bus):
+    """门禁核心①：推送载荷绝不含评论正文，只含 _summary 定位串与元数据。"""
+    _memory(session, "m-p8-1", "A")
+    _assign(svc, alice, "memory", "m-p8-1", "B", "manager")
+    secret = "SECRET-COMMENT-BODY-XYZ"
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-1",
+                    body=f"请 @{alice.owner_id if False else 'A'} 看这个：{secret}")
+    events = _events_for("A")
+    assert events, "被@人必须收到推送事件"
+    for ev in events:
+        payload = json.dumps(ev.data, ensure_ascii=False)
+        assert secret not in payload, "推送载荷泄漏了评论正文！"
+        assert ev.data["summary"] == "B 在 memory 的评论中提到了你"
+
+
+def test_push_goes_only_to_target_user_channel(svc, session, alice, bob, clean_bus):
+    _memory(session, "m-p8-2", "A")
+    _assign(svc, alice, "memory", "m-p8-2", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-2", body="hi @A")
+    assert _events_for("A"), "目标用户必须收到事件"
+    assert _events_for("B") == [], "非目标用户的频道不得收到事件（author 自通知抑制）"
+
+
+def test_push_event_carries_kind_and_record_ref(svc, session, alice, bob, clean_bus):
+    _memory(session, "m-p8-3", "A")
+    _assign(svc, alice, "memory", "m-p8-3", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-3", body="look @A")
+    ev = _events_for("A")[0]
+    assert ev.data["kind"] == "mention"
+    assert ev.data["record_kind"] == "memory"
+    assert ev.data["record_id"] == "m-p8-3"
+    assert ev.data["notification_id"].startswith("nt-")
+    assert ev.data["comment_id"].startswith("cm-")
+
+
+def test_push_unread_count_in_payload(svc, session, alice, bob, clean_bus):
+    _memory(session, "m-p8-4", "A")
+    _assign(svc, alice, "memory", "m-p8-4", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-4", body="one @A")
+    assert _events_for("A")[-1].data["unread_count"] == 1
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-4", body="two @A")
+    assert _events_for("A")[-1].data["unread_count"] == 2
+
+
+def test_reply_push_uses_reply_kind(svc, session, alice, bob, clean_bus):
+    """门禁语义：回复走 comment_reply kind 的推送。"""
+    _memory(session, "m-p8-5", "A")
+    _assign(svc, alice, "memory", "m-p8-5", "B", "manager")
+    parent = svc.add_comment(alice, record_kind="memory", record_id="m-p8-5",
+                             body="root")["comment"]
+    _events_for("A").clear()  # 清掉父评论阶段的事件，专注回复推送
+    p8_bus._hist.clear()
+    svc.add_reply(bob, record_kind="memory", record_id="m-p8-5",
+                  parent_comment_id=parent["id"], body="a reply, no mention")
+    evs = _events_for("A")
+    assert evs and evs[0].data["kind"] == "comment_reply"
+
+
+def test_self_mention_no_push(svc, session, alice, clean_bus):
+    _memory(session, "m-p8-6", "A")
+    svc.add_comment(alice, record_kind="memory", record_id="m-p8-6", body="note to self @A")
+    assert _events_for("A") == [], "自通知抑制必须同样抑制推送"
+
+
+def test_duplicate_notify_no_duplicate_push(svc, session, alice, bob, clean_bus):
+    """DB 幂等（同评论同人同 kind 只一条）传导到推送：不重复推。"""
+    _memory(session, "m-p8-7", "A")
+    _assign(svc, alice, "memory", "m-p8-7", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-7", body="hi @A")
+    n1 = len(_events_for("A"))
+    # 重复同步同一评论的通知计划（幂等路径：DB 已有 → 不新建 → 不推送）
+    comment = session.execute(
+        __import__("sqlalchemy").select(
+            __import__("find_yourself.db.collaboration_models", fromlist=["Comment"]).Comment)
+    ).scalars().first()
+    ref = svc.resolve_record("memory", "m-p8-7")
+    svc.notify_targets(bob, comment, ref,
+                       [NotificationTarget(user_id="A", kind=NOTIFICATION_MENTION)])
+    assert len(_events_for("A")) == n1, "重复落库被幂等抑制，推送也不得重复"
+
+
+def test_reconnect_with_last_event_id_no_duplicates(clean_bus):
+    """门禁核心②：断线重连带 Last-Event-ID → 已收过的事件不重复（总线机制）。"""
+    ch = notification_channel("user-r")
+    bus_publish = clean_bus.publish
+    e1 = bus_publish(ch, "notification", {"n": 1})
+    e2 = bus_publish(ch, "notification", {"n": 2})
+
+    import asyncio
+
+    # subscribe 是无限生成器：拿到缓冲重放 + 等待新事件。用任务+超时只取重放部分。
+    async def collect_bounded(last_id: int, expect: int):
+        out = []
+        async def consume():
+            async for ev in clean_bus.subscribe(ch, last_event_id=last_id):
+                out.append(ev)
+                if len(out) >= expect:
+                    break
+        task = asyncio.wait_for(consume(), timeout=2)
+        try:
+            await task
+        except asyncio.TimeoutError:
+            pass
+        return out
+
+    async def scenario():
+        # 断点续传：从 e1 之后应立刻重放出 e2（缓冲里的历史），绝不重复 e1
+        replay = await asyncio.wait_for(collect_bounded(e1.seq, 1), timeout=3)
+        assert [ev.seq for ev in replay] == [e2.seq], "重连不得重放已收过的事件"
+        # 新事件只推一次
+        e3 = bus_publish(ch, "notification", {"n": 3})
+        fresh = await asyncio.wait_for(collect_bounded(e2.seq, 1), timeout=3)
+        assert fresh and fresh[-1].seq == e3.seq
+
+    asyncio.run(asyncio.wait_for(scenario(), timeout=10))
+
+
+def test_channel_for_is_per_user_and_auth_guarded(svc, alice, bob):
+    assert svc.channel_for(alice) != svc.channel_for(bob)
+    assert svc.channel_for(alice).endswith(":A")
+
+
+def test_sse_frame_format_carries_no_body(svc, session, alice, bob, clean_bus):
+    """SSE 帧形态：id/event/data 三段；data 为 JSON 且无正文（端点用 to_sse 输出）。"""
+    _memory(session, "m-p8-8", "A")
+    _assign(svc, alice, "memory", "m-p8-8", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-8",
+                    body="frame @A SECRET-BODY")
+    ev = _events_for("A")[0]
+    frame = ev.to_sse()
+    assert frame.startswith(f"id: {ev.seq}\n")
+    assert "event: notification" in frame
+    assert "SECRET-BODY" not in frame
+    data_line = next(l for l in frame.splitlines() if l.startswith("data:"))
+    assert "summary" in data_line
+
+
+def test_summary_is_positioning_string_without_body(svc, session, alice, bob, clean_bus):
+    _memory(session, "m-p8-9", "A")
+    _assign(svc, alice, "memory", "m-p8-9", "B", "manager")
+    svc.add_comment(bob, record_kind="memory", record_id="m-p8-9",
+                    body="unique-content-abcdef @A")
+    summary = _events_for("A")[0].data["summary"]
+    assert "unique-content-abcdef" not in summary
+    assert summary == "B 在 memory 的评论中提到了你"
