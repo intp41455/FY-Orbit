@@ -87,3 +87,41 @@ class ClawFactBaseline(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "fact_key", name="uq_claw_fact_owner_key"),
     )
+
+
+class ClawDecisionPreference(Base):
+    """决策偏好库一行（机制-04）：用户每次裁决/拍板/修改沉淀下来，
+    下次类似冲突自动套用——从「每次都要裁决」变「大部分系统自己处理」。"""
+
+    __tablename__ = "claw_decision_preferences"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # 冲突类+情境摘要键（调用方构造，如 "jurisdiction:同文件写入"）
+    pattern_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    decision: Mapped[Text] = mapped_column(Text, nullable=False)
+    occurrences: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=1)
+    last_task_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "pattern_key", name="uq_claw_pref_owner_pattern"),
+    )
+
+
+class ClawParticipationMode(Base):
+    """参与模式记忆一行（参与-04）：用户第一次选了模式系统就记住，
+    下次同样问题直接按规则来。owner 唯一。"""
+
+    __tablename__ = "claw_participation_modes"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # auto（全自动）/ key_nodes（关键节点）/ escort（全程陪跑）
+    mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(TZDateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", name="uq_claw_participation_owner"),
+    )
