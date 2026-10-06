@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
 import { NotificationBell } from './NotificationBell';
 import { LineIcon, type LineIconName } from './ui/LineIcon';
+import { BRAND } from '../brand';
 
 /**
  * 工作台优先、个人空间独立切换。团队画布收在「协作画布」内，不新增一级菜单。
@@ -88,10 +89,14 @@ export function Layout() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true">FY</div>
+          <div className="brand-mark" aria-hidden="true">{BRAND.mark}</div>
           <div className="brand-text">
-            <strong>AI 协作工作台</strong>
-            <span>让 AI 团队，把事情做完</span>
+            {/* 母品牌中文功能名 + 主标语。旧的「AI 协作工作台 / 让 AI 团队，把事情
+                做完」是改名前的遗留：同一产品在侧栏、登录页、预览区曾有三个不同名字，
+                且后半句是修辞，命名书 §一.3 明令标语「直白、专业、无修辞」。
+                文案事实源见 src/brand.ts。 */}
+            <strong>{BRAND.productZh}</strong>
+            <span>{BRAND.slogan}</span>
           </div>
         </div>
 
