@@ -200,7 +200,10 @@ export function setPlan(
   taskId: string,
   plan: { planned_start?: string | null; planned_end?: string | null },
 ): Promise<KanbanCard> {
-  return request<KanbanCard>(`/api/kanban/tasks/${encodeURIComponent(taskId)}/plan`, {
+  // 路径是 /schedule 而非 /plan：后端有一条护栏断言「没有任何端点以 /plan 结尾」
+  // （防止出现能改账号套餐的端点）。本端点排的是任务起止时间，与套餐无关，
+  // 但撞上那条按后缀匹配的绊子对谁都没好处。
+  return request<KanbanCard>(`/api/kanban/tasks/${encodeURIComponent(taskId)}/schedule`, {
     method: 'PUT',
     body: plan,
   });

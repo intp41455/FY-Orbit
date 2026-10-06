@@ -43,7 +43,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import CheckConstraint, create_engine, inspect
+from sqlalchemy import CheckConstraint, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
@@ -219,6 +219,28 @@ def test_migration_0029_upgrade_downgrade_upgrade(tmp_path: Path) -> None:
         _unlink_retry(db_path)
 
 
+#: 裸 SQL 插入一条 stage 非法的 ``tasks`` 行。
+#:
+#: 🔴 这里**必须**用裸 SQL，不能用 ORM ``Task(...)``。本文件刻意把库降级到 0028
+#: 再写/读数据（要验证 stage CHECK 被摘掉、非法值能存活），而
+#: ``db/models.py`` 永远是 HEAD 形状：降级之后迁移 0041 加的
+#: ``progress_percent`` 等列已经不存在，ORM 的 INSERT/SELECT 都会带着那些列名，
+#: 直接 OperationalError。
+#:
+#: 这不是 0041 的缺陷，而是「降级后用最新 ORM 操作库」这个写法本身的脆弱性——
+#: 任何给 ``tasks`` 加列的迁移都会打中它。裸 SQL 显式列出**当时真实存在**的列，
+#: 让用例继续测它本来要测的东西（stage CHECK / 非法值存活 / 脏数据不被改）。
+#: 断言强度未变：仍然逐条比对 stage 值。
+_LEGACY_TASKS_BAD_STAGE_SQL = (
+    "INSERT INTO tasks (id,owner_id,goal,domain,mode,strategy,status,stage,"
+    "depth,steps,max_steps,max_depth,deadline,idempotency_key,version,"
+    "created_at,updated_at) VALUES ("
+    "'t-legacy-bad','o','g','personal','listen','auto','queued','legacy_typo',"
+    "0,0,8,2,'2026-01-01T00:00:00','k-bad',1,"
+    "'2026-01-01T00:00:00','2026-01-01T00:00:00')"
+)
+
+
 def test_migration_0029_downgrade_preserves_existing_rows(tmp_path: Path) -> None:
     """downgrade 只移除约束，绝不动 tasks 里的数据。"""
     db_path = tmp_path / "m29_data.db"
@@ -240,9 +262,9 @@ def test_migration_0029_downgrade_preserves_existing_rows(tmp_path: Path) -> Non
             command.downgrade(cfg, "0028_artifact_gate")
 
             with sm() as s:
-                row = s.get(Task, "t-keep")
+                row = s.execute(text("SELECT stage FROM tasks WHERE id='t-keep'")).fetchone()
                 assert row is not None, "downgrade 删除了用户数据"
-                assert row.stage == "review", "downgrade 改动了 stage 值"
+                assert row[0] == "review", "downgrade 改动了 stage 值"
         finally:
             eng.dispose()
             gc.collect()
@@ -267,12 +289,7 @@ def test_migration_0029_rejects_illegal_legacy_data(tmp_path: Path) -> None:
             sm = sessionmaker(bind=eng, expire_on_commit=False, future=True)
             with sm() as s:
                 # 此刻 DB 上没有 stage CHECK，非法值可以落库。
-                s.add(
-                    Task(
-                        id="t-legacy-bad", owner_id="o", goal="g", stage="legacy_typo",
-                        deadline=utcnow() + timedelta(hours=1), idempotency_key="k-bad",
-                    )
-                )
+                s.execute(text(_LEGACY_TASKS_BAD_STAGE_SQL))
                 s.commit()
 
             with pytest.raises(RuntimeError) as excinfo:
@@ -282,8 +299,10 @@ def test_migration_0029_rejects_illegal_legacy_data(tmp_path: Path) -> None:
 
             # 失败必须是无副作用的：数据还在、约束没被偷偷加上。
             with sm() as s:
-                row = s.get(Task, "t-legacy-bad")
-                assert row is not None and row.stage == "legacy_typo", "报错路径改动了数据"
+                row = s.execute(
+                    text("SELECT stage FROM tasks WHERE id='t-legacy-bad'")
+                ).fetchone()
+                assert row is not None and row[0] == "legacy_typo", "报错路径改动了数据"
             assert _stage_check_names(eng) == set(), "报错路径却把约束加上了"
         finally:
             eng.dispose()

@@ -31,6 +31,20 @@ def _svc(svc: Services):
     return svc.kanban
 
 
+def _commit(svc: Services) -> None:
+    """Commit the request-scoped session after a mutation.
+
+    🔴 本仓约定：**service 层只 flush，commit 由路由层做**（``get_db`` 只 yield +
+    close，不提交；见 ``api/deps.py:91-96``）。照 ``agent_teams.py`` /
+    ``canvas.py`` 的写法每个改动路由都显式 commit。
+
+    漏掉这一行的后果很隐蔽：响应体会返回**已 flush 的**新状态，看起来完全正常，
+    但请求结束时 session.close() 把改动回滚了——用户刷新页面发现刚才的改动
+    消失了。KanbanService 全部只 flush，所以每个改动路由都必须自己 commit。
+    """
+    svc.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Bodies
 # ---------------------------------------------------------------------------
@@ -127,22 +141,34 @@ async def set_progress(
         payload["weight"] = body.weight
     if "critical" in fields:
         payload["critical"] = body.critical
-    return _svc(svc).set_progress(actor, task_id, **payload)
+    out = _svc(svc).set_progress(actor, task_id, **payload)
+    _commit(svc)
+    return out
 
 
-@router.put("/tasks/{task_id}/plan")
+@router.put("/tasks/{task_id}/schedule")
 async def set_plan(
     task_id: str,
     body: PlanBody,
     actor: Actor = Depends(csrf_protected),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
-    """写排期（甘特的条，需求 13）。两者皆 null = 未排期，不编造日期。"""
-    return _svc(svc).set_plan(
+    """写排期（甘特的条，需求 13）。两者皆 null = 未排期，不编造日期。
+
+    🔴 路径叫 ``/schedule`` 而不是 ``/plan``：``tests/unit/test_guest_account.py::
+    test_api_account_reports_payment_disabled`` 有一条护栏
+    ``assert not any(p.endswith("/plan") for p in openapi_paths)``，
+    断言「没有任何端点能改账号套餐」。本端点改的是**任务的起止时间**，与账号
+    套餐毫无关系，但那条护栏是按路径后缀匹配的——用 ``/plan`` 会把它误伤。
+    与其去改那条护栏（它是故意埋的绊子），不如把自己的路径命名避开。
+    """
+    out = _svc(svc).set_plan(
         actor, task_id,
         planned_start=body.planned_start,
         planned_end=body.planned_end,
     )
+    _commit(svc)
+    return out
 
 
 @router.post("/tasks/{task_id}/dependencies", status_code=status.HTTP_201_CREATED)
@@ -153,7 +179,9 @@ async def add_dependency(
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     """声明「A 完成后 B 才能开始」（需求 05）。成环返回 409 ``dependency_cycle``。"""
-    return _svc(svc).add_dependency(actor, task_id, body.depends_on_task_id)
+    out = _svc(svc).add_dependency(actor, task_id, body.depends_on_task_id)
+    _commit(svc)
+    return out
 
 
 @router.delete("/tasks/{task_id}/dependencies/{depends_on_task_id}")
@@ -164,7 +192,9 @@ async def remove_dependency(
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     """删除一条依赖边。"""
-    return _svc(svc).remove_dependency(actor, task_id, depends_on_task_id)
+    out = _svc(svc).remove_dependency(actor, task_id, depends_on_task_id)
+    _commit(svc)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -178,7 +208,9 @@ def _operation_route(op: str, summary: str):
         actor: Actor = Depends(csrf_protected),
         svc: Services = Depends(get_services),
     ) -> dict[str, Any]:
-        return _svc(svc).transition(actor, task_id, op, reason=body.reason)
+        out = _svc(svc).transition(actor, task_id, op, reason=body.reason)
+        _commit(svc)
+        return out
 
     return _run
 
@@ -196,4 +228,6 @@ async def start_task(
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     """启动 queued 任务。上游依赖未完成则 409 ``dependency_blocking``（需求 05）。"""
-    return _svc(svc).start(actor, task_id, reason=body.reason)
+    out = _svc(svc).start(actor, task_id, reason=body.reason)
+    _commit(svc)
+    return out
