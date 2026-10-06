@@ -26,6 +26,8 @@ dependencies = [
   "argon2-cffi>=25.1.0",
   "pypdf>=5,<7",
   "python-docx>=1.1,<2",
+  # MCP WebSocket 传输（补齐包3 A-统一接入-02；uvicorn[standard] 已传递引入，此处显式声明）
+  "websockets>=14,<17",
 ]
 
 [project.optional-dependencies]

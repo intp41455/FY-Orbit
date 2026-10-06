@@ -1,0 +1,905 @@
+/* ==========================================================================
+   包 B · 画布域样式（/canvas, /dsl-canvas）
+   --------------------------------------------------------------------------
+   独占文件：本文件归包 B 所有。所有颜色一律 var(--ui-*)，不写裸色值。
+   状态语义走九档色；薄荷青仅用于装饰泛光，不承载状态。
+   ========================================================================== */
+
+.cv-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+}
+
+/* ------------------------------------------------------------ 顶部工具栏 */
+.cv-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+.cv-topbar .cv-field {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+}
+.cv-topbar .cv-field > label {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  white-space: nowrap;
+}
+.cv-topbar select,
+.cv-topbar input[type='text'] {
+  /* 总纲 §7.2：可交互控件整块可点，最小命中区 --ui-hit(44px) */
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-2);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-1);
+  font-size: var(--ui-fs-sm);
+  max-width: 200px;
+}
+.cv-topbar select:focus,
+.cv-topbar input:focus {
+  outline: none;
+  border-color: var(--ui-mint-400);
+  box-shadow: var(--ui-ring);
+}
+.cv-topbar .cv-spacer { margin-left: auto; }
+.cv-team-tabs {
+  display: inline-flex;
+  /* 必须显式 nowrap：全局遗留规则 styles.css 的 .tabs-container 声明了
+     flex-wrap: wrap，本类未声明该属性时会继承它，于是页签被折成一座
+     「页签塔」——实测 40 个团队时容器高 340px、顶栏被撑到 462px，
+     画布被顶出视口，点击也被顶栏拦截。这里恢复单行横向滚动的原意。 */
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-line-2);
+  max-width: 100%;
+  /* 作为顶栏 flex item 必须允许收缩，否则宁可撑宽顶栏也不肯内部滚动。 */
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.cv-team-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* R4：命中区提到 44px（审核单 R4「视觉可小，命中区不许小」+ 总纲 §7.2） */
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border: 0;
+  border-radius: var(--ui-r-pill);
+  background: transparent;
+  color: var(--ui-ink-3);
+  font-size: var(--ui-fs-xs);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease);
+}
+.cv-team-tab:hover { color: var(--ui-sky-600); }
+.cv-team-tab.is-active {
+  background: var(--ui-glass-3);
+  color: var(--ui-sky-700);
+  box-shadow: var(--ui-shadow-1);
+}
+
+/* ------------------------------------------------------------ 画布区 */
+.cv-canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 520px;
+  border-radius: var(--ui-r-3);
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-2);
+  box-shadow: inset 0 0 60px -30px var(--ui-glow-sky);
+  overflow: hidden;
+}
+
+.cv-canvas {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+}
+.cv-canvas.panning { cursor: grabbing; }
+
+.cv-canvas-inner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.cv-connections {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* ------------------------------------------------------------ 节点 */
+.cv-node {
+  position: absolute;
+  min-width: 220px;
+  max-width: 260px;
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  cursor: pointer;
+  transition: box-shadow var(--ui-t) var(--ui-ease),
+    transform var(--ui-t) var(--ui-ease),
+    border-color var(--ui-t) var(--ui-ease);
+}
+.cv-node:hover {
+  transform: translateY(calc(-1 * var(--ui-lift)));
+  box-shadow: var(--ui-shadow-2);
+}
+.cv-node.is-active {
+  border-color: var(--ui-teal-400);
+  box-shadow: var(--ui-shadow-2), var(--ui-ring), 0 0 26px -6px var(--ui-glow-teal);
+}
+.cv-node[role='button']:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-ring);
+}
+
+.cv-node__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-s-2);
+  margin-bottom: var(--ui-s-2);
+}
+.cv-node__role-tag {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ui-ink-4);
+  font-weight: 600;
+}
+.cv-node__title {
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  margin: 0 0 2px;
+  line-height: 1.3;
+}
+.cv-node__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.cv-node__rows strong { color: var(--ui-ink-2); font-weight: 600; }
+.cv-node__blocked {
+  margin-top: var(--ui-s-2);
+  padding: 4px var(--ui-s-2);
+  border-radius: var(--ui-r-0);
+  background: var(--ui-st-failed-bg);
+  color: var(--ui-st-failed);
+  font-size: var(--ui-fs-xs);
+}
+
+/* 状态徽章：四通道 = 点 + 图标 + 文字 */
+.cv-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: var(--ui-r-pill);
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+.cv-status__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+.cv-status--running .cv-status__dot { animation: cv-breathe 1.8s var(--ui-ease-out) infinite; }
+.cv-status--verifying .cv-status__dot { animation: cv-breathe 1.4s var(--ui-ease-out) infinite; }
+@keyframes cv-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.cv-status--complete  { color: var(--ui-st-complete);  background: var(--ui-st-complete-bg); }
+.cv-status--running   { color: var(--ui-st-running);   background: var(--ui-st-running-bg); }
+.cv-status--waiting   { color: var(--ui-st-waiting);   background: var(--ui-st-waiting-bg); }
+.cv-status--verifying { color: var(--ui-st-verifying); background: var(--ui-st-verifying-bg); }
+.cv-status--rework    { color: var(--ui-st-rework);    background: var(--ui-st-rework-bg); }
+.cv-status--failed    { color: var(--ui-st-failed);    background: var(--ui-st-failed-bg); }
+.cv-status--blocked   { color: var(--ui-st-blocked);   background: var(--ui-st-blocked-bg); }
+.cv-status--paused    { color: var(--ui-st-paused);    background: var(--ui-st-paused-bg); }
+.cv-status--external { color: var(--ui-st-external); background: var(--ui-st-external-bg); }
+
+.cv-node__duration {
+  margin-top: var(--ui-s-2);
+  font-size: 10px;
+  color: var(--ui-ink-4);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.cv-node--coordinator {
+  border-color: var(--ui-sky-400);
+  /* 装饰性淡蓝，不借用九档状态色：否则协调者底色会与状态徽章互相打架 */
+  background: linear-gradient(135deg, var(--ui-glass-3), var(--ui-sky-200));
+}
+.cv-node--verifier {
+  border-style: dashed;
+  border-color: var(--ui-st-external);
+}
+
+/* ------------------------------------------------------------ 连线 */
+.cv-edge {
+  fill: none;
+  stroke-width: 1.8;
+  transition: stroke var(--ui-t) var(--ui-ease), opacity var(--ui-t) var(--ui-ease);
+}
+.cv-edge--idle      { stroke: var(--ui-line-1); }
+.cv-edge--running   { stroke: var(--ui-st-running); }
+.cv-edge--complete  { stroke: var(--ui-st-complete); }
+.cv-edge--waiting   { stroke: var(--ui-st-waiting); stroke-dasharray: 5 4; }
+.cv-edge--verifying { stroke: var(--ui-st-verifying); }
+.cv-edge--rework    { stroke: var(--ui-st-rework); stroke-dasharray: 6 4; }
+.cv-edge--failed    { stroke: var(--ui-st-failed); }
+.cv-edge--blocked   { stroke: var(--ui-st-blocked); stroke-dasharray: 2 4; }
+.cv-edge--paused    { stroke: var(--ui-st-paused); }
+.cv-edge--external  { stroke: var(--ui-st-external); stroke-dasharray: 2 4; }
+/* 包 B §4：悬停节点时它的入边出边加亮到 --ui-sky-400，其余降到 --ui-line-2 */
+.cv-edge--focus     { stroke: var(--ui-sky-400); stroke-width: 2.4; }
+.cv-edge--dim       { stroke: var(--ui-line-2); }
+
+/* 光点流动：仅传输类边 */
+.cv-edge-flow {
+  fill: none;
+  stroke: var(--ui-mint-300);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 14;
+  animation: cv-flow 1.2s linear infinite;
+  /* 总纲 §5：泛光只用 --ui-glow-teal / --ui-glow-sky；半径 ≤26px、透明度 ≤.55 */
+  filter: drop-shadow(0 0 3px var(--ui-glow-sky));
+}
+@keyframes cv-flow {
+  to { stroke-dashoffset: -16; }
+}
+
+/* ------------------------------------------------------------ 右侧抽屉（浮层） */
+.cv-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(380px, 90%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--ui-glass-3);
+  border-left: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-3);
+  backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  animation: cv-slide-in var(--ui-t-slow) var(--ui-ease);
+}
+@keyframes cv-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.cv-drawer__hd {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-bottom: 1px solid var(--ui-line-2);
+}
+.cv-drawer__hd h3 { margin: 0; font-size: var(--ui-fs-md); color: var(--ui-ink-1); }
+.cv-drawer__bd {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--ui-s-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+}
+.cv-drawer__ft {
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-top: 1px solid var(--ui-line-2);
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.cv-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ui-s-3);
+  font-size: var(--ui-fs-sm);
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--ui-line-2);
+}
+.cv-kv > span:first-child { color: var(--ui-ink-3); flex: 0 0 auto; }
+.cv-kv > span:last-child { color: var(--ui-ink-1); text-align: right; word-break: break-all; }
+
+.cv-drawer details {
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  background: var(--ui-glass-1);
+}
+.cv-drawer details summary {
+  cursor: pointer;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------ 底部工具条 */
+.cv-bottombar {
+  position: absolute;
+  left: var(--ui-s-3);
+  bottom: var(--ui-s-3);
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  padding: 4px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  z-index: 4;
+}
+.cv-bottombar button {
+  min-width: 44px;
+  height: 44px;
+  padding: 0 var(--ui-s-2);
+  border: 0;
+  border-radius: var(--ui-r-pill);
+  background: transparent;
+  color: var(--ui-ink-2);
+  cursor: pointer;
+  font-size: var(--ui-fs-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: background var(--ui-t-fast) var(--ui-ease), color var(--ui-t-fast) var(--ui-ease);
+}
+.cv-bottombar button:hover {
+  background: var(--ui-glass-1);
+  color: var(--ui-sky-700);
+}
+.cv-bottombar .cv-zoom-label {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  min-width: 44px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 图例 */
+.cv-legend-pop {
+  position: absolute;
+  left: var(--ui-s-3);
+  bottom: 64px;
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-3);
+  backdrop-filter: blur(var(--ui-glass-blur-strong));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur-strong));
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 4px var(--ui-s-4);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+}
+.cv-legend-pop .cv-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cv-legend-pop .cv-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------------ 事件日志 */
+.cv-event-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ui-fs-xs);
+}
+.cv-event-log li {
+  display: flex;
+  gap: var(--ui-s-2);
+  align-items: baseline;
+  padding: 3px var(--ui-s-2);
+  border-radius: var(--ui-r-0);
+  background: var(--ui-glass-1);
+}
+.cv-event-log .cv-seq { color: var(--ui-ink-4); font-family: ui-monospace, monospace; }
+.cv-event-log .cv-et { color: var(--ui-sky-700); font-weight: 600; }
+
+/* ------------------------------------------------------------ 通知 */
+.cv-notice {
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  font-size: var(--ui-fs-sm);
+}
+.cv-notice--error {
+  background: var(--ui-st-failed-bg);
+  color: var(--ui-st-failed);
+  border: 1px solid var(--ui-st-failed);
+}
+.cv-notice--warn {
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  border: 1px solid var(--ui-st-waiting);
+}
+
+/* ------------------------------------------------------------ 弹层与右键菜单 */
+.cv-modal-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ui-scrim);
+  backdrop-filter: blur(2px);
+}
+.cv-modal {
+  min-width: 320px;
+  max-width: calc(100% - 32px);
+  border-radius: var(--ui-r-3);
+  border: 1px solid var(--ui-glass-line);
+  background: var(--ui-glass-3);
+  box-shadow: var(--ui-shadow-3);
+}
+.cv-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  font-size: 0.8rem;
+  color: var(--ui-ink-2);
+  margin: var(--ui-s-2) 0;
+}
+.cv-modal-field input {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+  color: var(--ui-ink-1);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+.cv-modal-field input:focus-visible {
+  outline: 2px solid var(--ui-teal-400);
+  outline-offset: 1px;
+}
+.cv-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ui-s-2);
+  margin-top: var(--ui-s-2);
+}
+.cv-ctx-menu {
+  position: fixed;
+  z-index: 40;
+  min-width: 168px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-glass-line);
+  background: var(--ui-glass-3);
+  box-shadow: var(--ui-shadow-3);
+  padding: 6px;
+}
+.cv-ctx-menu-title {
+  font-size: 0.7rem;
+  color: var(--ui-ink-3);
+  padding: 2px 6px 4px;
+}
+.cv-ctx-menu .ui-btn { text-align: left; justify-content: flex-start; }
+
+/* ------------------------------------------------------------ DSL 工坊页壳 */
+.cv-dsl-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+}
+.cv-dsl-canvas-deck {
+  border-radius: var(--ui-r-3);
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-2);
+  box-shadow: inset 0 0 60px -30px var(--ui-glow-sky);
+  padding: var(--ui-s-3);
+}
+
+/* G5：DSL 内层升级（.fy-flow-* 工坊 + .fy-ir-* 诊断），全部限定在 .cv-dsl-shell */
+
+/* —— 工坊画布压暗 —— */
+.cv-dsl-shell .fy-flow-canvas {
+  background: var(--ui-bg-gradient-deep);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  box-shadow: inset 0 0 60px -30px var(--ui-glow-sky);
+}
+.cv-dsl-shell .fy-flow-edges { color: var(--ui-st-verifying); }
+.cv-dsl-shell .fy-flow-edge { stroke: currentColor; stroke-width: 2; fill: none; }
+
+/* —— 节点玻璃壳 —— */
+.cv-dsl-shell .fy-flow-node {
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-glass-line);
+  background: var(--ui-glass-2);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+.cv-dsl-shell .fy-flow-node.is-selected {
+  outline: 2px solid var(--ui-teal-400);
+  outline-offset: 1px;
+  box-shadow: var(--ui-shadow-2), 0 0 22px -8px var(--ui-glow-teal);
+}
+.cv-dsl-shell .fy-flow-node.type-input     { border-top: 3px solid var(--ui-st-verifying); }
+.cv-dsl-shell .fy-flow-node.type-transform { border-top: 3px solid var(--ui-st-running); }
+.cv-dsl-shell .fy-flow-node.type-output    { border-top: 3px solid var(--ui-st-external); }
+
+/* —— 连接端口：armed 用琥珀（等待连接）—— */
+.cv-dsl-shell .fy-flow-port {
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+}
+.cv-dsl-shell .fy-flow-port.is-armed {
+  background: var(--ui-st-waiting-bg);
+  border-color: var(--ui-st-waiting);
+}
+
+/* —— 空态 —— */
+.cv-dsl-shell .fy-flow-empty {
+  color: var(--ui-ink-3);
+  background: var(--ui-glass-1);
+  border: 1px dashed var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+}
+
+/* —— 代码区 —— */
+.cv-dsl-shell .fy-flow-code {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+  color: var(--ui-ink-2);
+}
+
+/* —— 生成面板 badge —— */
+.cv-dsl-shell .fy-flow-badge {
+  border-radius: var(--ui-r-pill);
+  border: 1px solid var(--ui-st-complete);
+  color: var(--ui-st-complete);
+  background: var(--ui-st-complete-bg);
+}
+.cv-dsl-shell .fy-flow-badge.is-warn {
+  border-color: var(--ui-st-waiting);
+  color: var(--ui-st-waiting);
+  background: var(--ui-st-waiting-bg);
+}
+
+/* —— 错误条 —— */
+.cv-dsl-shell .fy-flow-error {
+  background: var(--ui-st-failed-bg);
+  border: 1px solid var(--ui-st-failed);
+  color: var(--ui-st-failed);
+  border-radius: var(--ui-r-1);
+}
+
+/* —— IR 诊断面板（文本模式）—— */
+.cv-dsl-shell .fy-ir-diagnostics {
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-st-complete);
+  background: var(--ui-st-complete-bg);
+  padding: var(--ui-s-3);
+}
+.cv-dsl-shell .fy-ir-diagnostics .badge.accent {
+  background: var(--ui-st-complete);
+  color: var(--ui-ink-inv);
+  border-radius: var(--ui-r-pill);
+}
+.cv-dsl-shell .fy-ir-diagnostics.fy-ir-invalid {
+  border-color: var(--ui-st-failed);
+  background: var(--ui-st-failed-bg);
+}
+.cv-dsl-shell .fy-ir-diagnostics.fy-ir-invalid .badge.danger {
+  background: var(--ui-st-failed);
+  color: var(--ui-ink-inv);
+  border-radius: var(--ui-r-pill);
+}
+.cv-dsl-shell .fy-ir-diagnostics .fy-ir-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.cv-dsl-shell .fy-ir-diagnostics .fy-ir-item {
+  margin: 2px 0;
+  word-break: break-all;
+}
+.cv-dsl-shell .fy-ir-diagnostics .fy-ir-item code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--ui-glass-3);
+  border-radius: var(--ui-r-0);
+  padding: 0 4px;
+}
+.cv-dsl-shell .fy-ir-diagnostics .fy-ir-message {
+  color: var(--ui-st-failed);
+}
+
+/* ------------------------------------------------------------ 响应式 */
+@media (max-width: 1200px) {
+  .cv-node { min-width: 190px; max-width: 220px; }
+  .cv-drawer { width: min(340px, 92%); }
+}
+@media (max-width: 860px) {
+  .cv-page { height: auto; min-height: 0; }
+  .cv-canvas-wrap { height: 60vh; min-height: 420px; }
+  .cv-topbar { flex-direction: column; align-items: stretch; }
+  .cv-topbar .cv-field { flex-wrap: wrap; }
+  .cv-drawer { width: 100%; }
+  .cv-bottombar { flex-wrap: wrap; right: var(--ui-s-3); }
+}
+
+/* 窄屏检查器堆叠区：检查器在 ≤860px 时移到 .cv-canvas-wrap 之外，
+   必须从「覆盖画布的浮层」切成「跟在画布下方的块」，否则不构成 stack。 */
+.cv-inspector-stack {
+  margin-top: var(--ui-s-3);
+}
+.cv-inspector-stack .cv-drawer {
+  position: static;
+  width: 100%;
+  max-height: none;
+  animation: none;
+  border-left: 1px solid var(--ui-glass-line);
+  border-top: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-md);
+  box-shadow: var(--ui-shadow-2);
+}
+.cv-inspector-stack .cv-drawer__bd {
+  overflow: visible;
+  max-height: none;
+}
+/* 未选中节点的占位态：常驻但明确「暂无内容」，不伪装成已选中。 */
+.cv-drawer--empty .cv-drawer__hd h3 {
+  color: var(--ui-ink-2);
+}
+
+/* 旧设计器 / 05 号协作拓扑的根作用域。只加包裹层，不改其内部布局。 */
+.cv-legacy-root { display: block; }
+
+/* ==========================================================================
+   对现有 TeamDesigner / TeamCanvas 的视觉升级（限定在 .cv-legacy-root 作用域内）
+   保证 e2e/ui-team.spec.ts 全部选择器与文字继续工作。
+   ========================================================================== */
+
+.cv-legacy-root .card.glass-panel[aria-label='团队工具条'],
+.cv-legacy-root .card.glass-panel[aria-label='团队画布'] {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-3);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+
+.cv-page .team-toolbar,
+.cv-legacy-root .team-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-s-3);
+  align-items: flex-end;
+}
+.cv-legacy-root .team-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.cv-page .team-toolbar select,
+.cv-page .team-toolbar input,
+.cv-legacy-root .team-toolbar select,
+.cv-legacy-root .team-toolbar input {
+  min-height: 36px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  padding: 0 var(--ui-s-2);
+}
+
+.cv-legacy-root .team-grid {
+  position: relative;
+  display: block;
+  border-radius: var(--ui-r-2);
+  overflow: visible;
+}
+.cv-page .team-map,
+.cv-legacy-root .team-map {
+  min-height: 520px;
+  border-radius: var(--ui-r-2);
+}
+
+.cv-legacy-root .team-canvas {
+  border-radius: var(--ui-r-2);
+  background: var(--ui-bg-gradient-deep) !important;
+  box-shadow: inset 0 0 60px -30px var(--ui-glow-sky);
+}
+
+.cv-legacy-root .team-canvas .team-node {
+  background: var(--ui-glass-2) !important;
+  border: 1px solid var(--ui-glass-line) !important;
+  border-radius: var(--ui-r-2) !important;
+  box-shadow: var(--ui-shadow-1) !important;
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  transition: box-shadow var(--ui-t) var(--ui-ease),
+    transform var(--ui-t) var(--ui-ease),
+    border-color var(--ui-t) var(--ui-ease);
+}
+.cv-legacy-root button.team-node:hover {
+  transform: translateY(calc(-1 * var(--ui-lift))) !important;
+  box-shadow: var(--ui-shadow-2) !important;
+}
+.cv-legacy-root .team-node.selected {
+  border-color: var(--ui-teal-400) !important;
+  box-shadow: var(--ui-shadow-2), var(--ui-ring) !important;
+}
+.cv-legacy-root .team-node.coordinator {
+  border-color: var(--ui-sky-400) !important;
+}
+.cv-legacy-root .team-node.blocked {
+  background: var(--ui-st-failed-bg) !important;
+  border-color: var(--ui-st-failed) !important;
+}
+.cv-legacy-root .team-node.paused {
+  background: var(--ui-st-paused-bg) !important;
+}
+
+.cv-legacy-root .team-edge {
+  fill: none;
+  stroke-width: 1.8;
+  transition: stroke var(--ui-t) var(--ui-ease);
+}
+.cv-legacy-root .team-edge.edge-idle { stroke: var(--ui-line-1); }
+.cv-legacy-root .team-edge.edge-running { stroke: var(--ui-st-running); }
+.cv-legacy-root .team-edge.edge-complete { stroke: var(--ui-st-complete); }
+.cv-legacy-root .team-edge.edge-waiting { stroke: var(--ui-st-waiting); stroke-dasharray: 5 4; }
+.cv-legacy-root .team-edge.edge-rework { stroke: var(--ui-st-rework); stroke-dasharray: 6 4; }
+.cv-legacy-root .team-edge.edge-failed { stroke: var(--ui-st-failed); }
+.cv-legacy-root .team-edge.edge-blocked { stroke: var(--ui-st-blocked); stroke-dasharray: 2 4; }
+.cv-legacy-root .team-edge.edge-paused { stroke: var(--ui-st-paused); }
+.cv-legacy-root .team-edge.edge-unknown { stroke: var(--ui-st-external); stroke-dasharray: 2 4; }
+
+.cv-legacy-root .team-inspector {
+  position: absolute !important;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(360px, 92%);
+  overflow-y: auto;
+  z-index: 5;
+  border-radius: var(--ui-r-2);
+  padding: var(--ui-s-4) !important;
+  background: var(--ui-glass-3) !important;
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-3);
+  backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+}
+.cv-legacy-root .team-inspector .kv {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ui-s-3);
+  font-size: var(--ui-fs-sm);
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--ui-line-2);
+}
+.cv-legacy-root .team-inspector .kv > span:first-child { color: var(--ui-ink-3); }
+.cv-legacy-root .team-inspector .kv > span:last-child { color: var(--ui-ink-1); text-align: right; }
+
+.cv-legacy-root .status-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur));
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+}
+
+.cv-legacy-root .canvas-controls {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur));
+}
+
+@media (max-width: 860px) {
+  .cv-legacy-root .team-inspector {
+    position: static !important;
+    width: 100%;
+    max-height: 50vh;
+  }
+  .cv-legacy-root .team-map { min-height: 380px; }
+}
+
+/* ------------------------------------------------------------ 尊重系统减弱动效 */
+@media (prefers-reduced-motion: reduce) {
+  .cv-node,
+  .cv-drawer,
+  .cv-status__dot,
+  .cv-edge-flow,
+  .cv-bottombar button,
+  .cv-team-tab,
+  .cv-edge,
+  .cv-legacy-root .team-node,
+  .cv-legacy-root .team-edge {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .cv-edge-flow { animation: none; stroke-dasharray: 4 4; }
+  .cv-node:hover,
+  .cv-legacy-root button.team-node:hover { transform: none !important; }
+}
