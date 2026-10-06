@@ -58,6 +58,13 @@ import {
 } from './cabinPixels';
 import { resolveViewport } from './cabinViewport';
 import {
+  getLoadedTinySwordsAssets,
+  loadTinySwordsAssets,
+  getPawnFrames,
+  getSheepFrames,
+  type TinySwordsAssets,
+} from './cabinTinySwordsArt';
+import {
   CLOUD_ROWS,
   CABIN_HOUSE_ART,
   HOUSE_GLOWS,
@@ -1007,13 +1014,23 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     );
   };
 
-  // W11 注入：外部传入的个性化小人矩阵优先；不传（或帧数不足）时逐像素回退默认。
+  // W11 注入：外部传入的个性化小人矩阵优先；不传（或帧数不足）时统一与室内完全一致使用 Tiny Swords Pawn & Sheep 高精微像素手绘
   const customFrames = options.personWalkFrames;
   const useCustomPerson = Array.isArray(customFrames) && customFrames.length >= 2;
   const personFrames = useCustomPerson ? customFrames : PERSON_WALK_FRAMES;
   const personPalette = useCustomPerson ? (options.personPalette ?? PERSON_PALETTE) : PERSON_PALETTE;
   // 缓存 key 带来源标记：自定义角色与默认小人各走各的缓存，避免切换角色后取到旧纹理。
   const personTag = useCustomPerson ? 'person-custom' : 'person';
+
+  let characterMode: 'custom' | 'pawn' | 'fallback' = useCustomPerson ? 'custom' : 'fallback';
+  let petMode: 'sheep' | 'fallback' = 'fallback';
+  let pawnIdleTextures: Texture[] = [];
+  let pawnWalkTextures: Texture[] = [];
+  let sheepTextures: Texture[] = [];
+  let personBaseScaleX = 1;
+  let personBaseScaleY = 1;
+  let petBaseScale = 1;
+  let headTopOffset = -38;
 
   const walkFrames: Texture[] = personFrames.map((rows, i) =>
     spriteFromMatrix(
@@ -1033,6 +1050,41 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     ).texture;
 
   const petColorMeta = () => PET_COLORS.find((c) => c.id === config.petColor) ?? PET_COLORS[0];
+
+  function syncTinySwords(assets: TinySwordsAssets): void {
+    if (!useCustomPerson && assets.pawnYellow) {
+      characterMode = 'pawn';
+      const pawn = getPawnFrames(assets.pawnYellow);
+      pawnIdleTextures = pawn.idle;
+      pawnWalkTextures = pawn.walk;
+      headTopOffset = -38;
+      personBaseScaleX = 0.46;
+      personBaseScaleY = 0.46;
+      personBody.anchor.set(0.5, 0.72);
+      personBody.scale.set(personBaseScaleX, personBaseScaleY);
+      personBody.texture = pawnIdleTextures[0]!;
+    }
+    if (assets.sheep) {
+      petMode = 'sheep';
+      sheepTextures = getSheepFrames(assets.sheep);
+      petBaseScale = 0.42;
+      petBody.anchor.set(0.5, 0.68);
+      petBody.scale.set(petBaseScale);
+      petBody.texture = sheepTextures[0]!;
+    }
+    nameTagC.position.set(0, headTopOffset);
+  }
+
+  const loadedAssets = getLoadedTinySwordsAssets();
+  if (loadedAssets) {
+    syncTinySwords(loadedAssets);
+  } else {
+    nameTagC.position.set(0, headTopOffset);
+    void loadTinySwordsAssets().then((assets) => {
+      if (destroyed || !assets) return;
+      syncTinySwords(assets);
+    });
+  }
 
   /* ---- 布局 ---- */
 
@@ -1368,8 +1420,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   const positionBubble = () => {
     if (!bubbleRoot.visible) return;
     const anchorY = bubbleSpeaker === 'person'
-      ? person.y - 27 * person.scale.y - 6
-      : pet.y - 18 * pet.scale.y - 2;
+      ? person.y + (headTopOffset - 16) * person.scale.y
+      : pet.y - 24 * pet.scale.y;
     const halfW = bubbleG.width / 2 + 8;
     bubbleRoot.position.set(
       clamp(bubbleSpeaker === 'person' ? person.x : pet.x, halfW, Math.max(width - halfW, halfW)),
@@ -1575,10 +1627,21 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       Math.round(groundY - cameraY * worldScale),
     );
 
-    // 走路两帧动画（换帧）；显示位置取整到像素网格并融合透视、跳跃与下蹲
-    const frame = walking ? Math.floor(timeMs / 150) % 2 : 0;
-    personBody.texture = walkFrames[frame];
-    const bob = walking && frame === 1 ? Math.max(1, Math.round(worldScale * 0.5)) : 0;
+    // 角色与宠物动画：与室内小屋完全统一（Tiny Swords Pawn & Sheep 优先）
+    if (characterMode === 'pawn' && pawnIdleTextures.length > 0) {
+      const isMoving = isKeyboardMoving || walking;
+      const frames = isMoving ? pawnWalkTextures : pawnIdleTextures;
+      const speed = isMoving ? 120 : 160;
+      const idx = Math.floor(timeMs / speed) % frames.length;
+      personBody.texture = frames[idx]!;
+      personBody.scale.set(personBaseScaleX, personBaseScaleY);
+    } else {
+      const frame = walking ? Math.floor(timeMs / 150) % 2 : 0;
+      personBody.texture = walkFrames[frame];
+      personBody.scale.set(1, 1);
+    }
+
+    const bob = walking && characterMode !== 'pawn' ? Math.max(1, Math.round(worldScale * 0.5)) : 0;
     person.scale.set(
       personDir * ps * perspectiveScale * crouchScaleX * bounceScaleX,
       ps * perspectiveScale * crouchScaleY * bounceScaleY,
@@ -1597,7 +1660,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     );
     personShadow.alpha = 0.32 * shadowJumpFactor;
 
-    // 宠物跟随（世界坐标 + 相机投影）+ 小跳 + 两帧动画（换色 = 调色板重生成纹理）
+    // 宠物跟随（世界坐标 + 相机投影）+ 小跳 + 动画（与室内统一为 HappySheep）
     const followX = snapToGrid(personWorldX - personDir * TILE * 1.5);
     const followDepth = personDepth + PET_DEPTH_OFFSET;
     const petEase = 1 - Math.pow(0.004, dt / 1000);
@@ -1609,9 +1672,18 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     petDepth += (followDepth - hopDepth - petDepth) * petEase;
     if (Math.abs(pdx) * worldScale > 6) petDir = Math.sign(pdx) || 1;
     const petMoving = walking || Math.abs(pdx) * worldScale > 2;
-    const petFrameIdx = petMoving ? Math.floor(timeMs / 220) % 2 : 0;
-    const meta = petColorMeta();
-    petBody.texture = petFrame(meta.id, hexToNumber(meta.hex), petFrameIdx);
+
+    if (petMode === 'sheep' && sheepTextures.length > 0) {
+      const idx = Math.floor(timeMs / 180) % sheepTextures.length;
+      petBody.texture = sheepTextures[idx]!;
+      petBody.scale.set(petBaseScale, petBaseScale);
+    } else {
+      const petFrameIdx = petMoving ? Math.floor(timeMs / 220) % 2 : 0;
+      const meta = petColorMeta();
+      petBody.texture = petFrame(meta.id, hexToNumber(meta.hex), petFrameIdx);
+      petBody.scale.set(1, 1);
+    }
+
     pet.scale.set(petDir * ps * 0.95 * petPerspectiveScale, ps * 0.95 * petPerspectiveScale);
     pet.position.set(
       Math.round(worldToScreenX(petWorldX, cameraX) * worldScale),
