@@ -3,35 +3,39 @@ import { DslCanvas } from '../components/dsl/DslCanvas';
 import { FlowEditor } from '../components/workflow/FlowEditor';
 import { GeneratePanel } from '../components/workflow/GeneratePanel';
 import type { DslDocument } from '../api/dslCanvas';
+import { LineIcon } from '../components/ui/LineIcon';
+import '../styles/pages/canvas.css';
 
 /**
- * 工作流工坊页面壳（W5）。
+ * 工作流工坊页面壳（包 B 视觉层）。
  *
- * 两个页签**同源**（任务§2.4）：
- *  - 「工坊模式」= 一句话生成 + 拖拽画布 + 代码视图 + 导出脚本（三视图合一）；
- *  - 「DSL 文本模式」= 原有 P1-18 画布，功能**保留不删**。
- * 两页签编辑的是同一个 DSL 语义模型，切换不丢数据（各自持有组件状态）。
+ * 业务组件（FlowEditor / GeneratePanel / DslCanvas）保持原样，
+ * 本壳只提供：压暗画布区、玻璃面板、九档状态色诊断的视觉氛围。
  */
 export function DslCanvasPage() {
   const [tab, setTab] = useState<'workshop' | 'text'>('workshop');
-  // 生成器产出的文档，作为工坊模式画布的初始输入。
   const [generated, setGenerated] = useState<DslDocument | null>(null);
   const [sourcePrompt, setSourcePrompt] = useState('');
 
   return (
-    <>
-      <div className="page-head"><h2>工作流工坊</h2></div>
-      <div className="muted" style={{ marginBottom: 8 }}>
-        三层是同一个 Agent 的不同视图：一句话生成 → 拖拽调整 → 代码与脚本导出，数据互通。
-        布局坐标与 DSL 模型分离：DSL 只包含节点（受限动词集）与数据流边。
+    <div className="cv-dsl-shell">
+      <div className="ui-panel ui-panel--flat ui-panel--pad" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <LineIcon name="flow" size={22} />
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0, fontSize: 'var(--ui-fs-xl)', color: 'var(--ui-ink-1)' }}>工作流工坊</h2>
+          <p className="ui-hint" style={{ margin: '2px 0 0' }}>
+            一句话生成 → 拖拽调整 → 代码与脚本导出，数据互通。
+            节点为受限动词，只能从面板拖入；诊断用九档状态色定位。
+          </p>
+        </div>
       </div>
 
-      <div className="tabs-container" style={{ marginBottom: '1rem' }} role="tablist" aria-label="工作流工坊页签">
+      <div className="ui-tabs" role="tablist" aria-label="工作流工坊页签">
         <button
           type="button"
           role="tab"
           aria-selected={tab === 'workshop'}
-          className={`btn btn-sm ${tab === 'workshop' ? 'active' : ''}`}
+          className="ui-tab"
           onClick={() => setTab('workshop')}
           data-testid="tab-workshop"
         >
@@ -41,7 +45,7 @@ export function DslCanvasPage() {
           type="button"
           role="tab"
           aria-selected={tab === 'text'}
-          className={`btn btn-sm ${tab === 'text' ? 'active' : ''}`}
+          className="ui-tab"
           onClick={() => setTab('text')}
           data-testid="tab-text"
         >
@@ -49,21 +53,20 @@ export function DslCanvasPage() {
         </button>
       </div>
 
-      {tab === 'workshop' ? (
-        <div data-testid="workshop-panel">
-          <GeneratePanel
-            onGenerated={(doc, prompt) => {
-              setGenerated(doc);
-              setSourcePrompt(prompt);
-            }}
-          />
-          <FlowEditor initialDoc={generated} sourcePrompt={sourcePrompt} />
-        </div>
-      ) : (
-        <div data-testid="text-panel">
-          <DslCanvas />
-        </div>
-      )}
-    </>
+      <div className="cv-dsl-canvas-deck">
+        {tab === 'workshop' ? (
+          <div data-testid="workshop-panel">
+            <GeneratePanel
+              onGenerated={(doc, prompt) => { setGenerated(doc); setSourcePrompt(prompt); }}
+            />
+            <FlowEditor initialDoc={generated} sourcePrompt={sourcePrompt} />
+          </div>
+        ) : (
+          <div data-testid="text-panel">
+            <DslCanvas />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

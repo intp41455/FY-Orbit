@@ -18,6 +18,8 @@ import {
   type MountRole,
 } from '../api/assets';
 import { AssetCard } from '../components/assets/AssetCard';
+import { LineIcon } from '../components/ui/LineIcon';
+import '../styles/pages/system.css';
 import { AssetDropzone } from '../components/assets/AssetDropzone';
 import { GeneratePanel } from '../components/assets/GeneratePanel';
 
@@ -25,11 +27,12 @@ const KINDS: AssetKind[] = ['image', 'audio', 'music'];
 // 拖入的文档类文件也会入库；单列一个区展示（无挂载按钮），避免「存了但看不见」。
 const OTHER_KINDS: AssetKind[] = ['doc'];
 
+// 标题不带 emoji：渲染处已配 1.5px 线条图标（LineIcon），图标不得是彩色实心。
 const SECTION_TITLE: Record<AssetKind, string> = {
-  image: '🖼 图片',
-  audio: '🔊 音频',
-  music: '🎵 音乐',
-  doc: '📄 文档与其他',
+  image: '图片',
+  audio: '音频',
+  music: '音乐',
+  doc: '文档与其他',
 };
 
 function describeError(err: unknown): string {
@@ -161,26 +164,31 @@ export function PrivateSpacePage() {
 
   return (
     <>
-      <div className="page-head cabin-page-head">
+      <div className="pr-head">
+        <LineIcon name="database" size={24} />
         <h2>私人空间</h2>
-        <div className="row" style={{ gap: '0.5rem' }}>
-          {/* W11：角色工坊入口 —— 个人空间是任务的两个入口之一（另一个是小屋更衣镜） */}
-          <button type="button" className="cabin-entry-btn" onClick={() => navigate('/avatar')}>
-            <span aria-hidden="true">🧑‍🎨</span> 角色工坊
-          </button>
-          <button type="button" className="cabin-entry-btn" onClick={() => navigate('/cabin')}>
-            <span aria-hidden="true">🏠</span> 我的小屋
-          </button>
-        </div>
+        <span className="ui-spacer" />
+        {/* W11：角色工坊入口 —— 个人空间是任务的两个入口之一（另一个是小屋更衣镜） */}
+        <button type="button" className="ui-chip" onClick={() => navigate('/avatar')}>
+          <LineIcon name="avatar" size={18} /> 角色工坊
+        </button>
+        <button type="button" className="ui-chip" onClick={() => navigate('/cabin')}>
+          <LineIcon name="cabin" size={18} /> 我的小屋
+        </button>
       </div>
-      <p className="muted">
-        图片、音频、音乐与创作任务的产物引用。文件只存在你自己的电脑（FY_ASSETS_DIR），
-        字节一律经鉴权后的 /api/assets 读取，浏览器拿不到磁盘路径。
+      <p className="pr-notice">
+        <LineIcon name="lock" size={16} />
+        <span>
+          图片、音频、音乐与创作任务的产物引用。文件只存在你自己的电脑（FY_ASSETS_DIR），
+          字节一律经鉴权后的 /api/assets 读取，浏览器拿不到磁盘路径。
+        </span>
       </p>
 
       {/* W11：角色工坊入口卡 */}
-      <button type="button" className="card avatar-entry-card" onClick={() => navigate('/avatar')}>
-        <strong>🧑‍🎨 角色工坊 · 生成我的专属像素小人</strong>
+      <button type="button" className="card avatar-entry-card ui-panel ui-panel--hoverable" onClick={() => navigate('/avatar')}>
+        <strong className="pr-section-title" style={{ marginTop: 0 }}>
+          <LineIcon name="avatar" size={18} /> 角色工坊 · 生成我的专属像素小人
+        </strong>
         <span className="muted">
           用 MBTI、八字五行、星盘、姓名等画像，在本地生成独属于自己的 24×32 像素角色。
           全程不调用大模型，同画像必得同一角色；画像数据不离开你的电脑。
@@ -204,7 +212,7 @@ export function PrivateSpacePage() {
       />
 
       {notice && (
-        <p className="notice info" data-testid="assets-notice" role="status">
+        <p className="ui-toast" data-testid="assets-notice" role="status" style={{ maxWidth: '100%' }}>
           {notice}
         </p>
       )}
@@ -212,8 +220,10 @@ export function PrivateSpacePage() {
       {[...KINDS, ...OTHER_KINDS].map((kind) => (
         <section key={kind} className="assets-section" data-testid={`assets-section-${kind}`}>
           <div className="row" style={{ justifyContent: 'space-between' }}>
-            <strong>{SECTION_TITLE[kind]}</strong>
-            <span className="muted">{byKind(kind).length} 项</span>
+            <strong className="pr-section-title" style={{ margin: 0 }}>
+              <LineIcon name="folder" size={16} /> {SECTION_TITLE[kind]}
+            </strong>
+            <span className="ui-badge">{byKind(kind).length} 项</span>
           </div>
           {byKind(kind).length === 0 ? (
             <p className="muted" data-testid={`assets-empty-${kind}`}>

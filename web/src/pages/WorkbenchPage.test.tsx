@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { WorkbenchPage } from './WorkbenchPage';
 
 // The heavy children are stubbed: this file is only about WHICH workspace the
@@ -16,14 +17,44 @@ vi.mock('../components/workbench/CodeEditor', () => ({
 vi.mock('../components/workbench/GitPanel', () => ({
   GitPanel: () => <div data-testid="git-panel" />,
 }));
-vi.mock('../components/workbench/TerminalPane', () => ({
-  TerminalPane: ({ workspaceId }: { workspaceId: string }) => (
-    <div data-testid="terminal-pane">{workspaceId}</div>
-  ),
-}));
 // P1-A 实时预览窗：重型子组件按本文件口径打桩（本文件只关注工作区选择）。
 vi.mock('../components/workbench/PreviewPanel', () => ({
   PreviewPanel: () => <div data-testid="preview-panel" />,
+}));
+vi.mock('../components/workbench/PreviewPane', () => ({
+  PreviewPane: () => <div data-testid="preview-pane" />,
+}));
+vi.mock('../components/workbench/DispatchDialog', () => ({
+  DispatchDialog: () => null,
+}));
+vi.mock('../components/workbench/WorkbenchDispatchDialog', () => ({
+  WorkbenchDispatchDialog: () => null,
+}));
+vi.mock('../components/workbench/DocumentTree', () => ({
+  DocumentTree: () => <div data-testid="document-tree" />,
+}));
+vi.mock('../components/workbench/CommitGraph', () => ({
+  CommitGraph: () => <div data-testid="commit-graph" />,
+}));
+vi.mock('../components/workbench/DiffView', () => ({
+  DiffView: () => <div data-testid="diff-view" />,
+}));
+vi.mock('../components/workbench/OutlinePanel', () => ({
+  OutlinePanel: () => null,
+}));
+vi.mock('../components/workbench/BackupRestorePanel', () => ({
+  BackupRestorePanel: () => <div data-testid="backup-panel" />,
+}));
+vi.mock('../components/workbench/TerminalDock', () => ({
+  TerminalDock: ({ workspaceId }: { workspaceId: string }) => (
+    <div data-testid="terminal-pane">{workspaceId}</div>
+  ),
+}));
+vi.mock('../components/workbench/CommandPalette', () => ({
+  CommandPalette: () => null,
+}));
+vi.mock('../components/workbench/VerifyStatusCard', () => ({
+  VerifyStatusCard: () => <div data-testid="verify-card" />,
 }));
 
 vi.mock('../api/workbench', () => ({
@@ -64,7 +95,7 @@ describe('WorkbenchPage 工作区选择', () => {
       count: 2,
     });
 
-    render(<WorkbenchPage />);
+    render(<MemoryRouter><WorkbenchPage /></MemoryRouter>);
 
     await waitFor(() => {
       expect(screen.getByTestId('terminal-pane')).toHaveTextContent('ws-2');
@@ -79,7 +110,7 @@ describe('WorkbenchPage 工作区选择', () => {
       count: 2,
     });
 
-    render(<WorkbenchPage />);
+    render(<MemoryRouter><WorkbenchPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('terminal-pane')).toHaveTextContent('ws-1'));
 
     await userEvent.setup().click(screen.getByRole('button', { name: /e2e-term-abc/ }));
@@ -94,7 +125,7 @@ describe('WorkbenchPage 工作区选择', () => {
       items: [ws('ws-1', 'concurrency-ws')], count: 1,
     });
 
-    render(<WorkbenchPage />);
+    render(<MemoryRouter><WorkbenchPage /></MemoryRouter>);
 
     await waitFor(() => {
       expect(screen.getByTestId('terminal-pane')).toHaveTextContent('ws-1');

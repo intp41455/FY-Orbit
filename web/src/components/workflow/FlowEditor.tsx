@@ -306,9 +306,11 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
   // （权威拦截仍在执行路径与「载入」的 validate 调用上）。
   useEffect(() => {
     const t = window.setTimeout(() => {
-      dslCanvasApi.validateIr(doc)
-        .then((r) => setIrDiagnostics(r.diagnostics))
-        .catch(() => undefined);
+      if (typeof dslCanvasApi?.validateIr === 'function') {
+        dslCanvasApi.validateIr(doc)
+          .then((r) => setIrDiagnostics(r?.diagnostics ?? []))
+          .catch(() => undefined);
+      }
     }, 300);
     return () => window.clearTimeout(t);
   }, [doc]);

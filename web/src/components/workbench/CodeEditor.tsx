@@ -20,9 +20,20 @@ interface Props {
   editorApiRef?: React.MutableRefObject<EditorJumpApi | null>;
   /** P1 交互双件：传入时显示「派发给 Agent」入口，点击带上选中片段弹出派发对话框。 */
   onDispatch?: (ctx: CodeDispatchContext) => void;
+  /**
+   * 读盘后把真实 FileContent（sha256 / revision / size_bytes）回传父层，
+   * 供右区「验证状态卡」显示制品哈希——不另发一次请求，也不许自己算假哈希。
+   */
+  onFileMeta?: (fc: FileContent | null) => void;
 }
 
-export function CodeEditor({ workspaceId, path, editorApiRef, onDispatch }: Props) {
+export function CodeEditor({
+  workspaceId,
+  path,
+  editorApiRef,
+  onDispatch,
+  onFileMeta,
+}: Props) {
   const [content, setContent] = useState<string>('');
   const [meta, setMeta] = useState<FileContent | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,6 +103,7 @@ export function CodeEditor({ workspaceId, path, editorApiRef, onDispatch }: Prop
       setError(null);
       setSavedNote(null);
       setLargeFile(false);
+      onFileMeta?.(null);
       publishPreviewDraft({ path: null, content: '' }); // P1-10：清空预览
       return;
     }
@@ -104,6 +116,7 @@ export function CodeEditor({ workspaceId, path, editorApiRef, onDispatch }: Prop
       .then((fc) => {
         if (cancelled) return;
         setMeta(fc);
+        onFileMeta?.(fc);
         setContent(fc.content);
         setDirty(false);
         publishPreviewDraft({ path, content: fc.content }); // P1-10：首载内容进入预览
@@ -136,7 +149,11 @@ export function CodeEditor({ workspaceId, path, editorApiRef, onDispatch }: Prop
         content,
         expected_revision: meta.revision,
       });
-      setMeta((m) => (m ? { ...m, revision: res.revision, sha256: res.sha256 } : m));
+      setMeta((m) => {
+        const next = m ? { ...m, revision: res.revision, sha256: res.sha256 } : m;
+        onFileMeta?.(next);
+        return next;
+      });
       setDirty(false);
       setSavedNote(`已保存（新版本 r${res.revision}）`);
     } catch (e) {
