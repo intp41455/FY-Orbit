@@ -15,9 +15,17 @@
 // 注：Vite fs.deny 拒绝 web 根外文件导入，故测试从 web/e2e/fixtures/ 读取。
 import { describe, it, expect } from 'vitest';
 import { parseUnifiedDiff, type DiffLine } from './diffParse';
-import raw from '../../../e2e/fixtures/p1-11/two-commit.diff?raw';
-import nameOnlyRaw from '../../../e2e/fixtures/p1-11/name-only.txt?raw';
-import numstatRaw from '../../../e2e/fixtures/p1-11/numstat.txt?raw';
+import rawImported from '../../../e2e/fixtures/p1-11/two-commit.diff?raw';
+import nameOnlyImported from '../../../e2e/fixtures/p1-11/name-only.txt?raw';
+import numstatImported from '../../../e2e/fixtures/p1-11/numstat.txt?raw';
+
+// 2026-10-07 审核：autocrlf=true 的 checkout 会把 LF fixture 转成 CRLF，
+// `?raw` 读盘拿到 \r 导致对照假红。测试对行尾鲁棒（.gitattributes 已治本，
+// 此处兜底已存在的 CRLF checkout）。
+const norm = (s: string): string => s.replace(/\r\n/g, '\n');
+const raw = norm(rawImported);
+const nameOnlyRaw = norm(nameOnlyImported);
+const numstatRaw = norm(numstatImported);
 
 function kindChar(l: DiffLine): string {
   return l.kind === 'add' ? '+' : l.kind === 'del' ? '-' : l.kind === 'context' ? ' ' : '\\';

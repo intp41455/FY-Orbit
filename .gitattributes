@@ -1,0 +1,4 @@
+# 测试 fixtures 归档必须逐字节稳定（P1-11 一致性测试等以原文对照）：
+# 关闭行尾转换，防止 autocrlf=true 的 checkout 把 LF 转成 CRLF 导致
+# "解析器 vs git 原文"对照假红（2026-10-07 worktree 实测踩坑）。
+web/e2e/fixtures/** -text
