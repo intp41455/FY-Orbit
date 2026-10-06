@@ -7,11 +7,12 @@
   新 thread / 参数覆盖 / 两侧结果快照 / 分支状态。分叉**只写新行**，
   绝不改动父点数据（不覆盖原历史）。
 
-⚠️ 编号申领：本迁移编号由主控分配。若主控发号与本文件 ``revision`` 不一致，
-以主控发号为准（改 ``revision`` 与 ``down_revision``，不改表结构）。
-注意：P5 同批也申领了一个 0044（task_claims）——两者必须由主控串成线性链。
+编号申领（主控 2026-10-07 裁定）：P4 保持 **0044**，但**文件名不带 ``_p4_`` 标记**
+（主控要求迁移文件名只留编号 + 语义，不留包号）。本文件由
+``0044_p4_archive_forks.py`` 改名为 ``0044_archive_forks.py``；``revision`` 同步
+改为 ``0044_archive_forks``（主控裁定 P4=0044 / P9=0045 / P5=0046 线性串链）。
 
-Revision ID: 0044_p4_archive_forks
+Revision ID: 0044_archive_forks
 Revises: 0043_claw_preferences_participation
 """
 
@@ -20,7 +21,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0044_p4_archive_forks"
+revision: str = "0044_archive_forks"
 down_revision: str | None = "0043_claw_preferences_participation"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
