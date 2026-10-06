@@ -43,6 +43,7 @@ from ..services.preview_sources import PreviewSourceService
 from ..services.orchestrator_lease import OrchestratorLeaseService
 from ..services.agent_teams import AgentTeamService
 from ..services.hitl import HitlInterruptService
+from ..services.kanban import KanbanService
 from ..services.model_catalog import ModelCatalog
 
 SESSION_COOKIE = "fy_session"
@@ -77,6 +78,7 @@ class Services:
     teams: AgentTeamService
     # 需求12 Human-in-the-loop 执行中断/恢复（跨 Task/Agent Team/lease 三个执行面）
     hitl: HitlInterruptService
+    kanban: KanbanService
     # 统一能力网关（补齐包1）：能力裁决唯一入口；默认 None，
     # 仅 get_services 装配（直接构造 Services 的旧测试不受影响）。
     capability: CapabilityBroker | None = None
@@ -132,6 +134,8 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         ),
         # HITL 复用同一个 audit 哈希链：暂停与决策都要留痕。
         hitl=HitlInterruptService(db, audit),
+        # 任务看板：红带的预算阈值取自同一个 budget_svc 实例，避免两处各算一份
+        kanban=KanbanService(db, audit, budget=budget_svc),
         # 统一能力网关（补齐包1）：本机能力与跨 agent 能力的唯一裁决入口，
         # RBAC/automation 四档/五级/四元组授予/档位在此多路取最严。
         capability=build_capability_broker(db, audit, settings),
