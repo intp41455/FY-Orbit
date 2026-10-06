@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...services.actor import Actor
 from ..deps import Services, csrf_protected, get_actor, get_services
@@ -214,6 +214,34 @@ async def update_team(
     svc.teams.update_team(
         actor, team_id, expected_version=body.expected_version,
         patch=body.patch, reason=body.reason,
+    )
+    svc.session.commit()
+    return svc.teams.get_snapshot(actor, team_id)
+
+
+class MemberRenameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=200)
+    expected_version: int = Field(ge=1)
+    reason: str = Field(default="member rename", max_length=500)
+
+
+@router.patch("/{team_id}/members/{role}/rename")
+async def rename_team_member(
+    team_id: str,
+    role: str,
+    body: MemberRenameRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """T2：成员重命名（双击改名）——只改 title，绑定/依赖/模型配置不动。
+
+    版本并发沿用团队 PATCH 语义：版本不符 → 409；role 不存在 → 404 信封。
+    """
+    svc.teams.rename_member(
+        actor, team_id, role=role, title=body.title,
+        expected_version=body.expected_version, reason=body.reason,
     )
     svc.session.commit()
     return svc.teams.get_snapshot(actor, team_id)

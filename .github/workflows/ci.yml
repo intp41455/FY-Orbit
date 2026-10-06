@@ -39,6 +39,14 @@ jobs:
           uv pip install --system -e .
           uv pip install --system pytest pytest-asyncio ruff
 
+      # 清理项 C（2026-10-07）：HEAD 曾出现"迁移未提交+模块未提交"的断裂而所有
+      # gate 都在污染工作树上跑、全部看不见。actions/checkout 检出的就是 HEAD
+      # 纯净树——在此先跑迁移链门禁 + 路由 import 冒烟，断裂在 CI 即红。
+      - name: HEAD Clean-Tree Gate (migration chain + route import smoke)
+        run: |
+          PYTHONPATH=src python -m pytest tests/unit/test_migration_chain_gate.py -q
+          PYTHONPATH=src python -c "import find_yourself.api.routes; print('IMPORT_OK')"
+
       - name: Lint (Ruff)
         run: |
           ruff check src tests

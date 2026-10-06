@@ -282,3 +282,56 @@ def test_binding_inheritance_chain_is_reported(client, auth):
     assert client.get(
         f"/api/teams/{team_id}/members/implementer/binding", headers=auth
     ).json()["inherited_from"] == "role"
+
+
+# ---------------------------------------------------------------------------
+# T2：成员重命名端点（UI 组实测缺口——PATCH 团队不支持成员 rename）
+# ---------------------------------------------------------------------------
+
+def test_member_rename_updates_title_only_and_bumps_version(client, auth):
+    snap = create_team(client, auth).json()
+    team_id = snap["team"]["id"]
+    members = snap["team"]["members"]
+    role = members[0]["role"]
+    version = snap["team"]["version"]
+    before = {m["role"]: dict(m) for m in members}
+
+    r = client.patch(
+        f"/api/teams/{team_id}/members/{role}/rename",
+        json={"title": "新名字·首席工程师", "expected_version": version,
+              "reason": "rename-acceptance"},
+        headers=auth,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    after = {m["role"]: dict(m) for m in body["team"]["members"]}
+    assert after[role]["title"] == "新名字·首席工程师"
+    assert body["team"]["version"] == version + 1
+    # 其他成员与被改名成员的其余字段（绑定/依赖/模型配置）原样保留
+    for m_role, old in before.items():
+        expected = dict(old)
+        if m_role == role:
+            expected["title"] = "新名字·首席工程师"
+        assert after[m_role] == expected
+
+
+def test_member_rename_unknown_role_404(client, auth):
+    snap = create_team(client, auth).json()
+    team_id = snap["team"]["id"]
+    r = client.patch(
+        f"/api/teams/{team_id}/members/no-such-role/rename",
+        json={"title": "x", "expected_version": snap["team"]["version"]},
+        headers=auth,
+    )
+    assert r.status_code == 404, r.text
+
+
+def test_member_rename_version_conflict_409(client, auth):
+    snap = create_team(client, auth).json()
+    team_id = snap["team"]["id"]
+    r = client.patch(
+        f"/api/teams/{team_id}/members/implementer/rename",
+        json={"title": "x", "expected_version": 999},
+        headers=auth,
+    )
+    assert r.status_code == 409, r.text

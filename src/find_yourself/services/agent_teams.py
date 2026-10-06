@@ -262,6 +262,46 @@ class AgentTeamService:
         )
         return team
 
+    def rename_member(
+        self,
+        actor: Actor,
+        team_id: str,
+        *,
+        role: str,
+        title: str,
+        expected_version: int,
+        reason: str,
+    ) -> TeamDefinition:
+        """T2（UI 组实测缺口）：成员重命名——只改某成员的 title。
+
+        复用 ``update_team`` 的 members 替换语义：乐观并发、version 递增、
+        running 态 plan_version 传播、审计事件全部继承。绑定/依赖/模型配置
+        原样保留（调用方拿到的成员 dict 已含这些键，原值回填）。role 不存在
+        显式 404，绝不静默 no-op。
+        """
+        actor.require_owner()
+        team = self.get_team(actor, team_id)
+        if team.version != expected_version:
+            raise Conflict(
+                f"Team {team_id} is at version {team.version}; expected {expected_version}"
+            )
+        members = [dict(m) for m in (team.members or [])]
+        hit = False
+        for m in members:
+            if m.get("role") == role:
+                m["title"] = str(title)[:200]
+                hit = True
+        if not hit:
+            raise NotFound(
+                "member_role_not_found",
+                f"Member role {role!r} not found in team {team_id}",
+                404,
+            )
+        return self.update_team(
+            actor, team_id, expected_version=expected_version,
+            patch={"members": members}, reason=reason,
+        )
+
     # ------------------------------------------------------------------
     # Model binding inheritance (19 §3): node > role > team > global
     # ------------------------------------------------------------------
