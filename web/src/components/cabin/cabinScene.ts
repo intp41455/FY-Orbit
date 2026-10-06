@@ -16,12 +16,16 @@ import {
   VIRTUAL_W,
   WORLD,
   cameraTargetX,
+  cameraTargetY,
   clampCameraToPerson,
   clampCameraX,
+  clampCameraY,
   clampToWorld,
+  depthPerspectiveScale,
   edgeFadeAlpha,
   layerVirtualWidth,
   lerpCameraX,
+  lerpCameraY,
   screenToWorldX,
   snapToGrid,
   worldToScreenX,
@@ -32,6 +36,15 @@ import {
   type DialogueSpeaker,
   type TimeOfDay,
 } from './cabinConfig';
+import {
+  createCabinInput,
+  type CabinInputSystem,
+} from './cabinInput';
+import {
+  buildWindingPathGraphics,
+  getWindingPathDef,
+  type WindingPathThemeDef,
+} from './cabinWindingPaths';
 import {
   PixelBuffer,
   bayer4,
@@ -561,8 +574,22 @@ export interface CabinScene {
   /** B4 家具放置与管理（28 种家具） */
   setPlacedFurniture?: (items: PlacedItem[]) => void;
   getPlacedFurniture?: () => PlacedItem[];
-  /** 镜头跟随状态 */
-  getCameraState?: () => { cameraX: number; targetX: number; isSmooth: boolean };
+  /** 镜头跟随状态（双轴 2.5D 平滑摄像机） */
+  getCameraState?: () => {
+    cameraX: number;
+    cameraY?: number;
+    targetX: number;
+    targetY?: number;
+    isSmooth: boolean;
+  };
+  /** 键盘与动作输入系统 */
+  getInputSystem?: () => CabinInputSystem;
+  /** 当前地图纵深小道与地貌配置 */
+  getWindingPath?: () => WindingPathThemeDef;
+  /** 当前角色纵深微透视缩放比例 */
+  getPerspectiveScale?: () => number;
+  /** 跳跃物理状态（抛物线物理、滞空与回弹） */
+  getJumpState?: () => { jumpY: number; isJumping: boolean; isGrounded: boolean };
 }
 
 export interface CreateCabinSceneOptions {
@@ -590,6 +617,7 @@ export interface CreateCabinSceneOptions {
    *    本渲染层只负责「认矩阵」，不参与角色设计。
    */
   personWalkFrames?: readonly (readonly string[])[];
+  personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
   /** B10 大世界地块网格（可选，未传时生成标准 160×100） */
   worldGrid?: { cols: number; rows: number; tiles: TerrainId[][] };
@@ -642,8 +670,26 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   let walking = false;
   /** 相机 x（虚拟像素，世界坐标系）：场景的横向视口原点。G3 新增。 */
   let cameraX = 0;
+  /** 2.5D 双轴纵深相机 Y 轴平滑偏移（虚拟像素） */
+  let cameraY = 0;
   /** 角色是否已完成首次落位（只落一次，后续 resize 不重置位置）。G3 新增。 */
   let actorsSeeded = false;
+
+  /** 键盘控制与输入系统（支持 WASD、方向键、空格跳跃、S 长按下蹲） */
+  const input = createCabinInput({
+    target: (options.host as HTMLElement | null | undefined) ?? (typeof window !== 'undefined' ? window : null),
+  });
+
+  /** 跳跃物理参数与实时状态 */
+  const JUMP_SPEED = 185;
+  const GRAVITY = 520;
+  const LANDING_BOUNCE_MS = 140;
+  let jumpY = 0;
+  let jumpVelocity = 0;
+  let isJumping = false;
+  let isGrounded = true;
+  let landingBounceTimer = 0;
+  let crouchProgress = 0;
 
   /* ---- 主题纹理（先于图层创建；模块级缓存，切背景零重建） ---- */
 
@@ -898,7 +944,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
         spr.scale.set(worldScale);
         spr.position.set(
           Math.round(worldToScreenX(c * TILE, cameraX) * worldScale),
-          Math.round(groundY + r * (TILE * 0.5) * worldScale),
+          Math.round(groundY + r * (TILE * 0.5) * worldScale - cameraY * worldScale),
         );
         spr.visible = true;
       }
@@ -916,15 +962,26 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       if (!def) continue;
       spr.scale.set(worldScale);
       const screenX = Math.round(worldToScreenX(item.x * TILE, cameraX) * worldScale);
-      const screenY = Math.round(groundY + (item.y - 48) * (TILE * 0.4) * worldScale);
+      const screenY = Math.round(groundY + (item.y - 48) * (TILE * 0.4) * worldScale - cameraY * worldScale);
       spr.position.set(screenX, screenY);
       spr.visible = screenX + spr.width >= -64 && screenX <= width + 64;
     }
   };
 
+  /* ---- 2.5D 纵深小道与地貌轮廓图层 ---- */
+  const pathLayer = new Container();
+  pathLayer.label = 'WindingPathLayer';
+  let currentWindingPathDef: WindingPathThemeDef = getWindingPathDef(config.background);
+
+  const syncWindingPath = () => {
+    currentWindingPathDef = getWindingPathDef(config.background);
+    buildWindingPathGraphics(pathLayer, currentWindingPathDef, GROUND_VH, WORLD.width);
+  };
+
   app.stage.addChild(
     bgLayer,
     worldTileLayer,
+    pathLayer,
     furnitureUnderLayer,
     houseC,
     furnitureFloorLayer,
@@ -1084,7 +1141,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   const syncHouseToCamera = () => {
     houseC.position.set(
       Math.round(worldToScreenX(WORLD.houseX, cameraX) * worldScale),
-      Math.round(groundY + (height - groundY) * 0.5),
+      Math.round(groundY + (height - groundY) * 0.5 - cameraY * worldScale),
     );
   };
 
@@ -1106,8 +1163,9 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     };
   };
 
-  /** depth（地面带比例）→ 屏幕 y。 */
-  const depthToScreenY = (depth: number) => groundY + (height - groundY) * depth;
+  /** depth（地面带比例）→ 屏幕 y（结合 2.5D 双轴纵深平滑摄像机 Y 轴）。 */
+  const depthToScreenY = (depth: number) =>
+    Math.round(groundY + (height - groundY) * depth - cameraY * worldScale);
 
   /** G3-2：人物钳制到**世界**范围（旧版是钳到屏幕内 30px..width-30px）。 */
   const clampWalk = () => {
@@ -1133,13 +1191,16 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       walkTarget.x = personWorldX;
       walkTarget.y = personDepth;
       cameraX = clampCameraX(cameraTargetX(personWorldX, viewWidth()), viewWidth());
+      cameraY = clampCameraY(cameraTargetY(personDepth, Math.ceil(height / worldScale)));
     }
     clampWalk();
     petWorldX = clampToWorld(petWorldX);
-    person.scale.set(personDir * ps, ps);
-    pet.scale.set(petDir * ps * 0.95, ps * 0.95);
-    personShadow.scale.set(30 / 48, 7 / 14);
-    petShadow.scale.set(26 / 48, 5.5 / 14);
+    const pScale = depthPerspectiveScale(personDepth);
+    const petScale = depthPerspectiveScale(petDepth);
+    person.scale.set(personDir * ps * pScale, ps * pScale);
+    pet.scale.set(petDir * ps * 0.95 * petScale, ps * 0.95 * petScale);
+    personShadow.scale.set((30 / 48) * pScale, (7 / 14) * pScale);
+    petShadow.scale.set((26 / 48) * petScale, (5.5 / 14) * petScale);
   };
 
   const buildHouse = (house: CabinHouseId) => {
@@ -1238,6 +1299,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       });
       worldGrid = generateDeterministicWorldGrid('player', config.background);
       rebuildFurnitureSprites();
+      syncWindingPath();
     }
     bindParticles();
   };
@@ -1257,6 +1319,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     applyTheme();
     // resize 后视口宽变了，相机必须重新钳制（否则可能停在世界之外）。
     cameraX = clampCameraX(cameraX, viewWidth());
+    cameraY = clampCameraY(cameraY);
+    syncWindingPath();
     layoutLayers();
     layoutHouse();
     layoutActors();
@@ -1280,8 +1344,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     const { min, max } = depthLimits();
     const screenVirtualX = e.global.x / worldScale;
     walkTarget.x = snapToGrid(clampToWorld(screenToWorldX(screenVirtualX, cameraX)));
-    // Y 直接用屏幕 px → depth（groundY/height 是屏幕量，转 depth 后与 depthToScreenY 互逆）
-    walkTarget.y = clamp((e.global.y - groundY) / Math.max(1, height - groundY), min, max);
+    // Y 直接用屏幕 px → depth（groundY/height 是屏幕量，反投影计入 cameraY）
+    walkTarget.y = clamp((e.global.y + cameraY * worldScale - groundY) / Math.max(1, height - groundY), min, max);
     walking = true;
   });
 
@@ -1401,8 +1465,46 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     timeMs += dt;
     const ps = worldScale * PERSON_SCALE;
 
-    // G3-1/2：行走在**世界坐标**里，dx 单位是虚拟像素（不再受屏幕宽度钳制）。
-    if (walking) {
+    // 键盘输入更新与状态提取
+    input.update(dt);
+    const move = input.getMovementAxis();
+    const isKeyboardMoving = move.x !== 0 || move.depth !== 0;
+
+    // 下蹲判定：非水平奔跑时，若长按下蹲键且处于地面，触发下蹲（Squash & Stretch 纵向压缩 0.72x、横向延展 1.15x）
+    const crouchRequested = input.isCrouchHeld() && isGrounded;
+    if (crouchRequested) {
+      crouchProgress = Math.min(1, crouchProgress + dt / 80);
+    } else {
+      crouchProgress = Math.max(0, crouchProgress - dt / 80);
+    }
+    const isCrouching = crouchProgress > 0.05;
+
+    // 跳跃判定：若处于地面且输入了起跳指令（Space / W / ArrowUp），触发抛物线跳跃
+    if (isGrounded && input.consumeJump()) {
+      isJumping = true;
+      isGrounded = false;
+      jumpVelocity = JUMP_SPEED;
+      jumpY = 0;
+      crouchProgress = 0;
+    }
+
+    // 移动逻辑（键盘输入优先，无键盘按压时回退鼠标点击寻路）
+    if (isKeyboardMoving && !isCrouching) {
+      walking = true;
+      const SPEED_X = 145; // 虚拟像素/秒
+      const SPEED_DEPTH = 0.38; // 深度轴速度/秒
+
+      if (move.x !== 0) {
+        personWorldX += move.x * SPEED_X * (dt / 1000);
+        personDir = move.x > 0 ? 1 : -1;
+      }
+      if (move.depth !== 0) {
+        personDepth += move.depth * SPEED_DEPTH * (dt / 1000);
+      }
+      clampWalk();
+      walkTarget.x = personWorldX;
+      walkTarget.y = personDepth;
+    } else if (walking) {
       const ease = 1 - Math.pow(0.0018, dt / 1000);
       const dx = walkTarget.x - personWorldX;
       const dDepth = walkTarget.y - personDepth;
@@ -1417,26 +1519,83 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       }
     }
 
-    // G3-5：相机 lerp 平滑跟随（帧率无关指数插值）。
-    // 再钳两道：① 世界范围内 ② 人物必在视口内（否则快走时相机会滞后把人甩出画面）。
+    // 跳跃抛物线物理与着陆回弹
+    if (isJumping) {
+      jumpVelocity -= GRAVITY * (dt / 1000);
+      jumpY += jumpVelocity * (dt / 1000);
+      if (jumpY <= 0) {
+        jumpY = 0;
+        jumpVelocity = 0;
+        isJumping = false;
+        isGrounded = true;
+        landingBounceTimer = LANDING_BOUNCE_MS; // 触发落地回弹 Squash & Stretch
+      }
+    }
+
+    let bounceScaleX = 1;
+    let bounceScaleY = 1;
+    if (landingBounceTimer > 0) {
+      landingBounceTimer = Math.max(0, landingBounceTimer - dt);
+      const bt = landingBounceTimer / LANDING_BOUNCE_MS;
+      const impact = Math.sin(bt * Math.PI);
+      bounceScaleY = 1 - 0.16 * impact;
+      bounceScaleX = 1 + 0.14 * impact;
+    }
+
+    // 下蹲 Squash & Stretch（纵向压缩 0.72x、横向延展 1.15x）
+    const crouchScaleY = 1 - (1 - 0.72) * crouchProgress;
+    const crouchScaleX = 1 + (1.15 - 1) * crouchProgress;
+
+    // 空中滞空微动帧（顶点速度接近 0 且高度足够时微浮动）
+    const isApexHang = isJumping && Math.abs(jumpVelocity) < 45 && jumpY > 12;
+    const apexBob = isApexHang ? Math.sin(timeMs * 0.02) * 1.5 : 0;
+
+    // 纵深微透视（近大远小：0.82x .. 1.05x）
+    const perspectiveScale = depthPerspectiveScale(personDepth);
+    const petPerspectiveScale = depthPerspectiveScale(petDepth);
+
+    // G3-5：2.5D 双轴纵深平滑摄像机跟随
     const vw = viewWidth();
-    const camTarget = cameraTargetX(personWorldX, vw);
-    cameraX = clampCameraToPerson(lerpCameraX(cameraX, camTarget, dt), personWorldX, vw);
+    const vh = Math.ceil(height / worldScale);
+    const camTargetX = cameraTargetX(personWorldX, vw);
+    cameraX = clampCameraToPerson(lerpCameraX(cameraX, camTargetX, dt), personWorldX, vw);
     cameraX = clampCameraX(cameraX, vw);
+
+    const camTargetY = cameraTargetY(personDepth, vh);
+    cameraY = clampCameraY(lerpCameraY(cameraY, camTargetY, dt));
+
     syncHouseToCamera();
     syncWorldTiles();
     syncFurnitureToCamera();
 
-    // 走路两帧动画（换帧）；显示位置取整到像素网格
+    // 更新小道图层与双轴摄像机同步
+    pathLayer.scale.set(worldScale);
+    pathLayer.position.set(
+      Math.round(worldToScreenX(0, cameraX) * worldScale),
+      Math.round(groundY - cameraY * worldScale),
+    );
+
+    // 走路两帧动画（换帧）；显示位置取整到像素网格并融合透视、跳跃与下蹲
     const frame = walking ? Math.floor(timeMs / 150) % 2 : 0;
     personBody.texture = walkFrames[frame];
     const bob = walking && frame === 1 ? Math.max(1, Math.round(worldScale * 0.5)) : 0;
-    person.scale.set(personDir * ps, ps);
+    person.scale.set(
+      personDir * ps * perspectiveScale * crouchScaleX * bounceScaleX,
+      ps * perspectiveScale * crouchScaleY * bounceScaleY,
+    );
     person.position.set(
       Math.round(worldToScreenX(personWorldX, cameraX) * worldScale),
-      Math.round(depthToScreenY(personDepth) - bob),
+      Math.round(depthToScreenY(personDepth) - (jumpY + apexBob) * worldScale - bob),
     );
     nameTagC.scale.x = personDir; // 名牌不随身体翻面镜像
+
+    // 影子留在地面，随跳跃高度渐隐缩小，随下蹲横向展宽
+    const shadowJumpFactor = Math.max(0.42, 1 - (jumpY / 70) * 0.5);
+    personShadow.scale.set(
+      (30 / 48) * perspectiveScale * shadowJumpFactor * crouchScaleX,
+      (7 / 14) * perspectiveScale * shadowJumpFactor,
+    );
+    personShadow.alpha = 0.32 * shadowJumpFactor;
 
     // 宠物跟随（世界坐标 + 相机投影）+ 小跳 + 两帧动画（换色 = 调色板重生成纹理）
     const followX = snapToGrid(personWorldX - personDir * TILE * 1.5);
@@ -1453,11 +1612,12 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     const petFrameIdx = petMoving ? Math.floor(timeMs / 220) % 2 : 0;
     const meta = petColorMeta();
     petBody.texture = petFrame(meta.id, hexToNumber(meta.hex), petFrameIdx);
-    pet.scale.set(petDir * ps * 0.95, ps * 0.95);
+    pet.scale.set(petDir * ps * 0.95 * petPerspectiveScale, ps * 0.95 * petPerspectiveScale);
     pet.position.set(
       Math.round(worldToScreenX(petWorldX, cameraX) * worldScale),
       Math.round(depthToScreenY(petDepth)),
     );
+    petShadow.scale.set((26 / 48) * petPerspectiveScale, (5.5 / 14) * petPerspectiveScale);
 
     // G3-3：视差。相机位移直接驱动各层 tilePosition（repeat 无限平铺）；
     // ground=1.0 与人物同速（“站在地面上移动”的实感来源），near=1.15 略快。
@@ -1467,9 +1627,14 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     nebulaLayer.tilePosition.x = -cameraX * PARALLAX.nebula;
     farLayer.tilePosition.x = -cameraX * PARALLAX.far;
     groundLayer.tilePosition.x = -cameraX * PARALLAX.ground;
-    // 中景/近景不走 tilePosition —— 按段位移拼接（tilePosition 重置正是重复感的来源）
-    syncSegments(midSegs, midSegNeed, PARALLAX.mid, MID_VH, groundY - MID_VH * worldScale);
-    syncSegments(nearSegs, nearSegNeed, PARALLAX.near, NEAR_VH, groundY + 4 * worldScale);
+
+    // 纵深相机 Y 轴视差上下偏移
+    farLayer.position.y = Math.round(groundY - FAR_VH * worldScale - cameraY * PARALLAX.far * worldScale);
+    groundLayer.position.y = Math.max(0, Math.round(groundY - 100 * worldScale - cameraY * PARALLAX.ground * worldScale));
+
+    // 中景/近景分段拼接位移（包含 Y 轴纵深平移）
+    syncSegments(midSegs, midSegNeed, PARALLAX.mid, MID_VH, Math.round(groundY - MID_VH * worldScale - cameraY * PARALLAX.mid * worldScale));
+    syncSegments(nearSegs, nearSegNeed, PARALLAX.near, NEAR_VH, Math.round(groundY + 4 * worldScale - cameraY * PARALLAX.near * worldScale));
 
     // G3-6：边界渐隐强度（相机距世界左右缘越近越强）。
     const fade = edgeFadeAlpha(cameraX, vw);
@@ -1547,6 +1712,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      input.destroy();
       app.ticker.remove(tick);
       tileSprites.length = 0;
       furnitureSprites.clear();
@@ -1569,8 +1735,26 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     getCameraState() {
       return {
         cameraX,
+        cameraY,
         targetX: cameraTargetX(personWorldX, viewWidth()),
+        targetY: cameraTargetY(personDepth),
         isSmooth: true,
+      };
+    },
+    getInputSystem() {
+      return input;
+    },
+    getWindingPath() {
+      return getWindingPathDef(config.background);
+    },
+    getPerspectiveScale() {
+      return depthPerspectiveScale(personDepth);
+    },
+    getJumpState() {
+      return {
+        jumpY,
+        isJumping,
+        isGrounded: jumpY === 0 && !isJumping,
       };
     },
   };

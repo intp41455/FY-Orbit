@@ -1,0 +1,856 @@
+/* 治愈系林间小屋创新玩法样式 */
+
+.cozy-fishing-modal,
+.cozy-gardening-modal,
+.cozy-cooking-modal,
+.pet-interaction-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: cozyFadeIn 0.2s ease-out;
+}
+
+@keyframes cozyFadeIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.cozy-fishing-card,
+.cozy-gardening-card,
+.cozy-cooking-card,
+.pet-interaction-card {
+  width: 90%;
+  max-width: 520px;
+  background: #fbf8f1;
+  border: 3px solid #6b553e;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), inset 0 2px 0 #fff;
+  padding: 16px;
+  color: #3e2723;
+  font-family: inherit;
+}
+
+.cozy-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px dashed #d7ccc8;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+
+.cozy-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  color: #4e342e;
+}
+
+.cozy-close-btn {
+  background: #efebe9;
+  border: 1px solid #bcaaa4;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.cozy-water-stage {
+  min-height: 200px;
+  background: #e0f2f1;
+  border: 2px solid #80cbc4;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  position: relative;
+  text-align: center;
+}
+
+.cozy-fish-status .big-icon {
+  font-size: 3rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.cozy-action-btn {
+  padding: 8px 18px;
+  font-size: 0.95rem;
+  border: 2px solid #4e342e;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: transform 0.1s;
+}
+
+.cozy-action-btn:active {
+  transform: scale(0.95);
+}
+
+.cozy-action-btn.primary {
+  background: #a5d6a7;
+  color: #1b5e20;
+}
+
+.pulse-btn {
+  background: #ffab91;
+  color: #bf360c;
+  font-size: 1.1rem;
+  padding: 10px 24px;
+  animation: pulse 0.8s infinite;
+}
+
+.tension-bar-track {
+  width: 220px;
+  height: 14px;
+  background: #b2dfdb;
+  border: 2px solid #004d40;
+  border-radius: 7px;
+  overflow: hidden;
+  margin: 12px auto;
+}
+
+.tension-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4caf50, #ff9800, #f44336);
+  transition: width 0.1s;
+}
+
+/* 园艺 */
+.cozy-seed-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.seed-chip {
+  padding: 4px 10px;
+  border: 1px solid #a1887f;
+  background: #efebe9;
+  border-radius: 14px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.seed-chip.active {
+  background: #c8e6c9;
+  border-color: #388e3c;
+  font-weight: bold;
+}
+
+.cozy-plot-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.cozy-plot-tile {
+  background: #d7ccc8;
+  border: 2px solid #8d6e63;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: center;
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plot-soil {
+  width: 100%;
+}
+
+.harvest-btn {
+  background: #ffd54f;
+  border: 1px solid #ff8f00;
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 6px;
+}
+
+/* 烹饪 */
+.cozy-recipe-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.cozy-recipe-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #d7ccc8;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.recipe-icon {
+  font-size: 2rem;
+}
+
+.recipe-details {
+  flex: 1;
+}
+
+.recipe-details h4 {
+  margin: 0 0 4px 0;
+  font-size: 0.95rem;
+}
+
+.recipe-ingredients, .recipe-buff {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #5d4037;
+}
+
+.cook-action-btn {
+  background: #ffe082;
+  border: 1px solid #ffb300;
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+/* 宠物 */
+.pet-stage-view {
+  text-align: center;
+  padding: 10px;
+}
+
+.pet-avatar-circle {
+  width: 80px;
+  height: 80px;
+  border-radius: 40px;
+  background: #ffe0b2;
+  border: 3px solid #ffb74d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 10px auto;
+}
+
+.big-pet-emoji {
+  font-size: 2.6rem;
+}
+
+.pet-hearts-row {
+  margin-bottom: 12px;
+}
+
+.heart-icon {
+  font-size: 1.2rem;
+  margin: 0 2px;
+}
+
+.pet-dialogue-bubble {
+  background: #fff;
+  border: 1px solid #d7ccc8;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 14px;
+  font-size: 0.9rem;
+}
+
+.pet-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.cozy-pet-btn {
+  padding: 8px;
+  background: #ede7f6;
+  border: 1px solid #b39ddb;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.cozy-pet-btn.highlight {
+  background: #fff9c4;
+  border-color: #fbc02d;
+  font-weight: bold;
+}
+
+/* ========================================================================== */
+/* AI 专属画像小人生成器                                                       */
+/* ========================================================================== */
+.ai-avatar-modal {
+  max-width: 620px;
+}
+.ai-avatar-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ai-avatar-card {
+  background: #fdfaf3;
+  border: 2px solid #8d6e63;
+  border-radius: 8px;
+  padding: 14px;
+}
+.ai-avatar-badge-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.ai-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: bold;
+}
+.ai-badge.mbti { background: #e1bee7; color: #4a148c; }
+.ai-badge.element { background: #c8e6c9; color: #1b5e20; }
+.ai-badge.day-master { background: #ffe0b2; color: #e65100; }
+.ai-badge.mood { background: #bbdefb; color: #0d47a1; }
+.ai-avatar-title {
+  margin: 0 0 6px 0;
+  color: #3e2723;
+  font-size: 1.25rem;
+}
+.ai-avatar-desc {
+  margin: 0 0 8px 0;
+  font-size: 0.88rem;
+  color: #5d4037;
+  line-height: 1.5;
+}
+.ai-avatar-aura {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: #2e7d32;
+  font-weight: 600;
+}
+.ai-avatar-controls {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ai-control-group {
+  flex: 1;
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ai-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4e342e;
+}
+.ai-avatar-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+.ai-avatar-result {
+  background: #e8f5e9;
+  border: 2px solid #81c784;
+  border-radius: 6px;
+  padding: 12px;
+}
+.result-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  color: #1b5e20;
+}
+.fingerprint-tag {
+  font-family: monospace;
+  font-size: 0.82rem;
+  background: #c8e6c9;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.result-tip {
+  margin: 0 0 10px 0;
+  font-size: 0.84rem;
+  color: #2e7d32;
+}
+.result-buttons {
+  display: flex;
+  gap: 10px;
+}
+.ai-avatar-success {
+  background: #e8f5e9;
+  color: #2e7d32;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
+/* ========================================================================== */
+/* 大世界舆图与场景探索                                                       */
+/* ========================================================================== */
+.world-map-modal {
+  max-width: 720px;
+}
+.world-map-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.travel-banner {
+  background: #fff8e1;
+  color: #f57f17;
+  padding: 8px 12px;
+  border: 1px solid #ffe082;
+  border-radius: 6px;
+  font-weight: bold;
+}
+.world-map-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.world-map-card {
+  background: #fff;
+  border: 2px solid #d7ccc8;
+  border-radius: 6px;
+  padding: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.world-map-card:hover {
+  border-color: #8d6e63;
+  transform: translateY(-2px);
+}
+.world-map-card.selected {
+  border-color: #3e2723;
+  background: #efebe9;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+}
+.world-map-card.current {
+  border-color: #43a047;
+}
+.map-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.map-card-badge {
+  font-size: 0.72rem;
+  background: #e0f2f1;
+  color: #00695c;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+.map-current-pill {
+  font-size: 0.7rem;
+  background: #c8e6c9;
+  color: #1b5e20;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: bold;
+}
+.map-card-name {
+  margin: 0 0 4px 0;
+  font-size: 0.95rem;
+  color: #3e2723;
+}
+.map-card-tagline {
+  margin: 0 0 6px 0;
+  font-size: 0.78rem;
+  color: #6d4c41;
+  line-height: 1.4;
+}
+.map-card-climate {
+  font-size: 0.72rem;
+  color: #795548;
+}
+.world-map-detail {
+  background: #fdfaf3;
+  border: 2px solid #8d6e63;
+  border-radius: 8px;
+  padding: 14px;
+}
+.detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.detail-header h3 {
+  margin: 0;
+  color: #3e2723;
+}
+.detail-climate {
+  font-size: 0.82rem;
+  color: #5d4037;
+  font-weight: 600;
+}
+.detail-lore {
+  margin: 0 0 10px 0;
+  font-size: 0.86rem;
+  color: #4e342e;
+  line-height: 1.5;
+}
+.specialty-pills {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.specialty-pill {
+  background: #e8f5e9;
+  color: #2e7d32;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid #c8e6c9;
+  font-weight: 500;
+}
+.detail-footer {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* ========================================================================== */
+/* 星空观星台与流星祈愿                                                       */
+/* ========================================================================== */
+.stargazing-modal {
+  max-width: 640px;
+}
+.stargazing-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.stargazing-notice {
+  background: #ede7f6;
+  color: #4a148c;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: bold;
+}
+.night-sky-canvas {
+  height: 180px;
+  background: radial-gradient(circle at 50% 30%, #1e1b4b 0%, #0f172a 100%);
+  border-radius: 8px;
+  border: 2px solid #312e81;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 30px rgba(99, 102, 241, 0.2);
+}
+.sky-nebula-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 70% 60%, rgba(168, 85, 247, 0.25) 0%, transparent 60%);
+  pointer-events: none;
+}
+.twinkling-stars .star {
+  position: absolute;
+  color: #fff;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  animation: starTwinkle 2s infinite alternate ease-in-out;
+}
+@keyframes starTwinkle {
+  0% { opacity: 0.3; transform: scale(0.8); }
+  100% { opacity: 1; transform: scale(1.2); }
+}
+.meteor-btn {
+  position: absolute;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  animation: meteorGlide 1.6s ease-in-out infinite;
+}
+@keyframes meteorGlide {
+  0% { transform: translate(0, 0) scale(0.9); }
+  50% { transform: translate(25px, 20px) scale(1.1); }
+  100% { transform: translate(0, 0) scale(0.9); }
+}
+.meteor-trail {
+  background: linear-gradient(90deg, #fef08a, #f43f5e);
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: bold;
+  font-size: 1rem;
+  text-shadow: 0 0 10px rgba(253, 224, 71, 0.8);
+}
+.sky-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: #cbd5e1;
+  pointer-events: none;
+}
+.stargazing-status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 10px 14px;
+  border-radius: 6px;
+}
+.constellation-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.constellation-card {
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+.constellation-card.discovered {
+  border-color: #818cf8;
+  background: #f5f3ff;
+}
+.constellation-card.locked {
+  opacity: 0.6;
+  background: #f1f5f9;
+}
+.constellation-header {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.84rem;
+  margin-bottom: 4px;
+}
+.constellation-lore {
+  font-size: 0.76rem;
+  color: #64748b;
+  margin: 0 0 6px 0;
+  line-height: 1.35;
+}
+.constellation-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: #475569;
+}
+
+/* ========================================================================== */
+/* 森林留声机与声景                                                           */
+/* ========================================================================== */
+.soundscape-modal {
+  max-width: 580px;
+}
+.soundscape-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.gramophone-display {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  background: #fdf6ec;
+  border: 2px solid #d4a373;
+  border-radius: 8px;
+  padding: 16px;
+}
+.vinyl-disc {
+  width: 90px;
+  height: 90px;
+  background: #1e1e1e;
+  border-radius: 50%;
+  border: 4px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.3);
+}
+.vinyl-disc.spinning {
+  animation: vinylSpin 3s linear infinite;
+}
+@keyframes vinylSpin {
+  100% { transform: rotate(360deg); }
+}
+.vinyl-center {
+  width: 32px;
+  height: 32px;
+  background: #d4a373;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+}
+.now-playing-info {
+  flex: 1;
+}
+.track-badge {
+  font-size: 0.74rem;
+  background: #faedcd;
+  color: #8c5825;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: bold;
+}
+.track-name {
+  margin: 4px 0;
+  font-size: 1.1rem;
+  color: #4a3525;
+}
+.track-desc {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #795548;
+}
+.soundscape-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.vol-label {
+  font-size: 0.82rem;
+  font-weight: bold;
+}
+.track-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.track-item-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #d7ccc8;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.track-item-btn.active {
+  background: #ede7f6;
+  border-color: #7e57c2;
+  font-weight: bold;
+}
+.t-name { font-size: 0.84rem; }
+.t-cat { font-size: 0.72rem; color: #8d6e63; }
+
+/* ========================================================================== */
+/* 心境清泉与回响瓶                                                           */
+/* ========================================================================== */
+.echo-fountain-modal {
+  max-width: 580px;
+}
+.echo-fountain-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.fountain-pool {
+  background: #e0f2f1;
+  border: 2px solid #80cbc4;
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+.pool-glow {
+  font-size: 1.1rem;
+  color: #004d40;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+.pool-desc {
+  margin: 0 0 14px 0;
+  font-size: 0.86rem;
+  color: #00796b;
+}
+.echo-bottle-card {
+  background: #fff8e1;
+  border: 2px solid #ffe082;
+  border-radius: 8px;
+  padding: 14px;
+}
+.bottle-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.bottle-tag {
+  background: #ffecb3;
+  color: #b78103;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  font-weight: bold;
+}
+.bottle-bonus {
+  font-size: 0.82rem;
+  font-weight: bold;
+  color: #e65100;
+}
+.echo-quote {
+  margin: 8px 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #3e2723;
+  font-style: italic;
+}
+.echo-source {
+  text-align: right;
+  font-size: 0.82rem;
+  color: #6d4c41;
+  margin-bottom: 10px;
+}
+.echo-reflection {
+  font-size: 0.84rem;
+  color: #4e342e;
+  line-height: 1.5;
+  border-top: 1px dashed #ffe082;
+  padding-top: 8px;
+}
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+.history-item {
+  font-size: 0.8rem;
+  background: #fff;
+  border: 1px solid #d7ccc8;
+  padding: 6px 10px;
+  border-radius: 4px;
+  display: flex;
+  justify-content: space-between;
+}

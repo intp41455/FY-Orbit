@@ -134,6 +134,7 @@ describe('W11 · 小屋有专属小人', () => {
   it('提供「去角色工坊调整」入口', async () => {
     houseApi.getHouseAvatar.mockResolvedValue(houseProfile());
     renderPage();
+    await screen.findByTestId('cabin-house-avatar');
     expect(await screen.findByRole('button', { name: /去角色工坊调整/ })).toBeInTheDocument();
   });
 });

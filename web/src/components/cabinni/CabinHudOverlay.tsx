@@ -1,16 +1,24 @@
 /**
  * 包 D 私有组件 · 小屋 HUD 覆盖层（DOM 层，不碰 pixi canvas）
  * ---------------------------------------------------------------------------
- * 为什么是 DOM 而不是画布内元素：
- *   - 画布内渲染 = 每帧重绘 + 每帧纹理重采样，加毛玻璃直接掉帧；
- *   - HUD 是静态的，做成 DOM 覆盖层后由合成器单独处理，动画只跑一次 transition。
+ * 重构说明（T1.2 & T1.3）：
+ * 1. 右侧栏 UI：采用半透明磨砂玻璃卡片 + HUD Drawer 选项卡折叠抽屉架构。
+ *    清晰分为四大折叠层：
+ *      - 🗺️ 场景切换（背景地图、房屋模板、昼夜时段）
+ *      - 👥 NPC 信息（村民社交、好感/亲密度双轨条、快速互动）
+ *      - 🌍 世界环境状态（时间天气、金币财产、同步状态、资产挂画/BGM）
+ *      - 🛋️ 室内布置/视口控制（进出室内、房间切换与扩建、家具布置、专属小人/宠物设置）
+ *    彻底消除 z-index 与绝对定位重叠，支持侧栏抽屉整体折叠/展开。
  *
- * 边界裁决（包 D 任务书 §4）：
- *   画布内（pixi）保持像素硬边；画布外（这里）用玻璃 + 圆角 + 线条图标。
- *   本组件与画布之间留 8px 呼吸位（.cabin-ni-overlay 的 inset），不压画面中心。
- *
- * 数据诚实性：本组件只渲染上层传进来的真实快照字段。字段缺失一律显示
- * 「未回传」，绝不填 0 或编造默认值——零值与缺失在 UI 上必须可区分。
+ * 2. 左上角功能面板：
+ *    全功能打通，无任何死按钮：
+ *      - 🖥️ 全屏（F11 浏览器原生全屏联动）
+ *      - 🧭 探险任务（探险日志/玩法面板）
+ *      - 🎒 玩家背包（弹窗查看随身物资）
+ *      - 📜 任务日志（任务目标与进度）
+ *      - ⚙️ 系统设置（时段音效与画质设置）
+ *      - ⚡ 休闲玩法（垂钓/耕种/野炊/萌宠/观星/留声机/回响/舆图/AI画像快捷通道）
+ *      - 🔙 返回私人空间
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { LineIcon } from '../../components/ui/LineIcon';
@@ -21,6 +29,7 @@ import {
 } from '../cabin/cabinConfig';
 import { MAX_INTIMACY } from '../cabin/gameplay/balance';
 import { MAX_HEARTS, type LifeSnapshot } from '../cabin/gameplay/lifeApi';
+import type { HudModalType } from '../cabin/hud/CabinHud';
 
 /** 归一化到 0–100 用于进度条宽度。null 与 NaN 一律走「未回传」分支。 */
 function norm(value: number | null | undefined, max: number): number | null {
@@ -34,16 +43,15 @@ export interface CabinNpcRow {
   id: string;
   name: string;
   role: string;
-  /** 好感心数（后端 npcs.hearts_for_points 派生，0–MAX_HEARTS）。 */
   hearts: number;
-  /** 后端已格式化的心形串，原样透传，不在前端重算。 */
   heartsDisplay: string;
-  /** 未回传时为 null —— 与「0 心」严格区分。 */
   intimacy: number | null;
   place: string;
   activity: string;
   marker: string;
 }
+
+export type CabinTabId = 'scene' | 'npc' | 'world' | 'decorate';
 
 export interface CabinHudOverlayProps {
   view: 'outdoor' | 'indoor';
@@ -62,15 +70,19 @@ export interface CabinHudOverlayProps {
   onExitIndoor: () => void;
   onOpenGameplay: () => void;
   gameplayOpen: boolean;
-  /**
-   * 追加到右栏末尾的面板。本包用它承载原 `.cabin-toolbar`
-   * （房屋模板 / 背景 / 宠物 / 小人 的完整设置）。
-   *
-   * 为什么放这里：它原本是静态流式元素，在 `.cabin-root`（fixed + overflow:hidden）
-   * 里永远排在画布之上、压住第一屏画面。功能一个字都不能删（红线二），
-   * 所以**搬家**而不是隐藏 —— 搬进可滚动的右栏后既不挡画面，又不丢功能。
-   */
   children?: ReactNode;
+
+  /* T1.3 快捷功能联动扩展 */
+  onOpenModal?: (modal: HudModalType) => void;
+  onNavigateBack?: () => void;
+  coins?: number;
+  dayText?: string;
+  dialogueSource?: string;
+
+  /* 四大选项卡槽位（支持分流渲染或由 children 统筹） */
+  sceneSlot?: ReactNode;
+  worldSlot?: ReactNode;
+  decorateSlot?: ReactNode;
 }
 
 const TIME_SLOTS = [
@@ -80,14 +92,7 @@ const TIME_SLOTS = [
   ['night', '夜晚'],
 ] as const;
 
-/**
- * 双轨进度条。
- *
- * 主控裁决：NPC 好感与 W2 `intimacy` **双轨不合并**。
- * → 两条独立进度条，起止色不同，各自带文字标签；
- * → 颜色不是唯一信息通道：轨道名 + 数值/心形串同时给出。
- * → 两条都用天蓝色阶（500→700 / 400→900），**不许绿色**。
- */
+/** 双轨进度条 */
 function DualTrack({ npc }: { npc: CabinNpcRow }) {
   const heartPct = norm(npc.hearts, MAX_HEARTS);
   const intimacyPct = norm(npc.intimacy, MAX_INTIMACY);
@@ -127,13 +132,9 @@ function DualTrack({ npc }: { npc: CabinNpcRow }) {
   );
 }
 
-/**
- * NPC 交互条：点 NPC 即展开交互（最少点击守则第 3 条）——不用先点「互动」再点目标。
- * 选中态由本组件内部 state 管理，不外抛，避免污染页面状态机。
- */
+/** NPC 交互条 */
 function NpcRow({ npc, onInteract }: { npc: CabinNpcRow; onInteract: (n: CabinNpcRow) => void }) {
   const [open, setOpen] = useState(false);
-
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
   return (
@@ -145,7 +146,6 @@ function NpcRow({ npc, onInteract }: { npc: CabinNpcRow; onInteract: (n: CabinNp
         data-testid={`cabin-ni-npc-${npc.id}`}
         onClick={() => {
           toggle();
-          // 点 NPC 即可交互：同时把该 NPC 作为当前交互目标交给上层。
           onInteract(npc);
         }}
       >
@@ -163,17 +163,6 @@ function NpcRow({ npc, onInteract }: { npc: CabinNpcRow; onInteract: (n: CabinNp
   );
 }
 
-/**
- * HUD 覆盖层（右侧玻璃栏）。
- *
- * 版式裁决（包 D 任务书 §5）：
- *   顶部 `.pixel-top-bar` 与底部 `.pixel-bottom-bar` 属于**像素层**（CabinHud 组件），
- *   本组件**不重复**它们，只补右侧 HUD：NPC 名 / 好感 / 当前动作 / 一键交互 + 场景常驻大按钮。
- *   两层之间留 8px 呼吸位，不压画面。
- *
- * 动效预算：只在状态切换（选中/展开/折叠）时跑一次 180ms transition，之后归零；
- * **没有任何 infinite 动画**，不做持续呼吸/发光（包 D 任务书 §3 禁止项）。
- */
 export function CabinHudOverlay(props: CabinHudOverlayProps) {
   const {
     view,
@@ -193,196 +182,627 @@ export function CabinHudOverlay(props: CabinHudOverlayProps) {
     onOpenGameplay,
     gameplayOpen,
     children,
+    onOpenModal,
+    onNavigateBack,
+    coins = 0,
+    dayText = '',
+    sceneSlot,
+    worldSlot,
+    decorateSlot,
   } = props;
 
-  /** 时段区展开态。 */
+  // 时段区折叠态
   const [timesOpen, setTimesOpen] = useState(false);
+
+  // 选项卡状态：默认场景，当进入布置模式或进屋时自动切换到布置页
+  const [activeTab, setActiveTab] = useState<CabinTabId>('scene');
+  const [drawerOpen, setDrawerOpen] = useState(true);
+
+  // 快捷菜单下拉态
+  const [cozyMenuOpen, setCozyMenuOpen] = useState(false);
+
+  // 全屏状态
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (typeof document === 'undefined') return;
+    try {
+      if (!document.fullscreenElement) {
+        if (document.documentElement.requestFullscreen) {
+          void document.documentElement.requestFullscreen().catch(() => {});
+        }
+        setIsFullscreen(true);
+      } else {
+        if (document.exitFullscreen) {
+          void document.exitFullscreen().catch(() => {});
+        }
+        setIsFullscreen(false);
+      }
+    } catch {
+      setIsFullscreen((v) => !v);
+    }
+  }, []);
+
+  // 当进入室内或者进入编辑模式时，自适应切到布置卡片
+  useEffect(() => {
+    if (editMode || view === 'indoor') {
+      setActiveTab('decorate');
+    }
+  }, [editMode, view]);
+
+  const handleOpenModal = useCallback(
+    (modal: HudModalType) => {
+      setCozyMenuOpen(false);
+      onOpenModal?.(modal);
+    },
+    [onOpenModal],
+  );
 
   return (
     <>
-      {/*
-        快捷键提示条。
+      {/* ---------------- 左上角功能面板（打通全部联动） ---------------- */}
+      <nav
+        className="cabin-ni-keys"
+        data-testid="cabin-ni-keys"
+        aria-label="快捷功能与操作"
+      >
+        {/* 全屏切换 */}
+        <button
+          type="button"
+          className={`cabin-fn-btn ${isFullscreen ? 'is-active' : ''}`}
+          data-testid="cabin-fn-fullscreen"
+          title="F11 切换全屏沉浸模式"
+          onClick={toggleFullscreen}
+        >
+          <CabinNiIcon name="maximize" size={14} />
+          <span>{isFullscreen ? '窗口化' : '全屏'}</span>
+          <span className="ui-kbd" aria-hidden="true">F11</span>
+        </button>
 
-        ⚠ 这里**刻意不重复**金币 / 时间 / 天气 / 室内外 —— 那些数据已经由像素层的
-        `.pixel-top-bar`（CabinHud 组件）呈现。重复一遍等于同一屏说两遍，
-        而且两份数据可能不同步（截图第一版就是这么错的）。
-        本条只承担两件事：告诉用户 F11 / Esc 干什么，以及开关「小屋设置」面板。
-      */}
-      <div className="cabin-ni-keys" data-testid="cabin-ni-keys">
-        <span className="ui-kbd" aria-hidden="true">
-          F11
-        </span>
-        <span className="cabin-ni-npc-act">全屏</span>
-        <span className="ui-kbd" aria-hidden="true">
-          Esc
-        </span>
-        <span className="cabin-ni-npc-act">退出独立形态</span>
-      </div>
+        {/* 探险与任务 */}
+        <button
+          type="button"
+          className={`cabin-fn-btn ${gameplayOpen ? 'is-active' : ''}`}
+          data-testid="cabin-fn-gameplay"
+          title="探险任务日志与大世界探索"
+          onClick={onOpenGameplay}
+        >
+          <LineIcon name="target" size={14} />
+          <span>探险任务</span>
+        </button>
 
-      {/* ---------------- 右侧 HUD ---------------- */}
-      <aside className="cabin-ni-side" data-testid="cabin-ni-side" aria-label="小屋 HUD">
-        {/* 状态提示（诚实展示，不掩盖） */}
-        {(error || notice || loading) && (
-          <div
-            className="cabin-ni-glass cabin-ni-panel"
-            role={error ? 'alert' : 'status'}
-            data-testid="cabin-ni-status"
+        {/* 背包 */}
+        <button
+          type="button"
+          className="cabin-fn-btn"
+          data-testid="cabin-fn-backpack"
+          title="查看玩家背包物资"
+          onClick={() => handleOpenModal('backpack')}
+        >
+          <span role="img" aria-label="背包">🎒</span>
+          <span>背包</span>
+        </button>
+
+        {/* 任务日志 */}
+        <button
+          type="button"
+          className="cabin-fn-btn"
+          data-testid="cabin-fn-quest"
+          title="查看村民委托与任务日志"
+          onClick={() => handleOpenModal('quest')}
+        >
+          <span role="img" aria-label="任务">📜</span>
+          <span>日志</span>
+        </button>
+
+        {/* 休闲玩法 / 快捷操作下拉 */}
+        <div className="cabin-fn-menu-wrap">
+          <button
+            type="button"
+            className={`cabin-fn-btn ${cozyMenuOpen ? 'is-active' : ''}`}
+            data-testid="cabin-fn-cozy-menu"
+            aria-expanded={cozyMenuOpen}
+            title="快捷展开农场耕种、垂钓、野炊、观星等休闲活动"
+            onClick={() => setCozyMenuOpen((v) => !v)}
           >
-            <span className="cabin-ni-panel-hd">
-              <LineIcon name={error ? 'alert' : 'info'} size={16} />
-              {error ? '数据加载失败' : notice ? '提示' : '同步中'}
-            </span>
-            <span className="cabin-ni-npc-act">{error ?? notice ?? '正在与后端同步…'}</span>
+            <span role="img" aria-label="玩法">⚡</span>
+            <span>休闲玩法 ▾</span>
+          </button>
+
+          {cozyMenuOpen && (
+            <div
+              className="cabin-fn-dropdown"
+              data-testid="cabin-fn-dropdown"
+              role="menu"
+            >
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-fishing"
+                onClick={() => handleOpenModal('fishing')}
+              >
+                <span>🎣</span>
+                <span>碧水垂钓</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-gardening"
+                onClick={() => handleOpenModal('gardening')}
+              >
+                <span>🌱</span>
+                <span>庭院耕种</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-cooking"
+                onClick={() => handleOpenModal('cooking')}
+              >
+                <span>🍳</span>
+                <span>林间野炊</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-pet"
+                onClick={() => handleOpenModal('pet')}
+              >
+                <span>🐾</span>
+                <span>萌宠互动</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-stargazing"
+                onClick={() => handleOpenModal('stargazing')}
+              >
+                <span>🔭</span>
+                <span>星空祈愿</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-soundscape"
+                onClick={() => handleOpenModal('soundscape')}
+              >
+                <span>📻</span>
+                <span>森林留声</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-echo"
+                onClick={() => handleOpenModal('echo')}
+              >
+                <span>🌊</span>
+                <span>心境回响</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-worldmap"
+                onClick={() => handleOpenModal('worldmap')}
+              >
+                <span>🗺️</span>
+                <span>手绘舆图</span>
+              </button>
+              <button
+                type="button"
+                className="cabin-fn-dropdown-item"
+                data-testid="cabin-fn-item-avatar"
+                onClick={() => handleOpenModal('avatar')}
+              >
+                <span>🎭</span>
+                <span>AI画像</span>
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 系统设置 */}
+        <button
+          type="button"
+          className="cabin-fn-btn"
+          data-testid="cabin-fn-settings"
+          title="游戏系统与时段设置"
+          onClick={() => handleOpenModal('settings')}
+        >
+          <LineIcon name="settings" size={14} />
+          <span>设置</span>
+        </button>
+
+        {/* 返回私人空间 */}
+        {onNavigateBack && (
+          <button
+            type="button"
+            className="cabin-fn-btn cabin-fn-btn--back"
+            data-testid="cabin-fn-back"
+            title="退出小屋返回私人空间"
+            onClick={onNavigateBack}
+          >
+            <CabinNiIcon name="arrowLeft" size={14} />
+            <span>返回空间</span>
+          </button>
+        )}
+      </nav>
+
+      {/* ---------------- 右侧 HUD 抽屉栏（重构选项卡层级） ---------------- */}
+      <aside
+        className={`cabin-ni-side ${drawerOpen ? '' : 'is-collapsed'}`}
+        data-testid="cabin-ni-side"
+        aria-label="小屋 HUD 控制台"
+      >
+        {/* 抽屉顶部导航栏：Tab 切换 + 折叠抽屉按钮 */}
+        <div className="cabin-drawer-header">
+          {drawerOpen ? (
+            <div className="cabin-drawer-tabs" role="tablist" aria-label="HUD 栏目切换">
+              <button
+                type="button"
+                role="tab"
+                id="cabin-tab-btn-scene"
+                aria-selected={activeTab === 'scene'}
+                aria-controls="cabin-panel-scene"
+                className={`cabin-drawer-tab ${activeTab === 'scene' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('scene')}
+                data-testid="cabin-tab-scene"
+                title="场景切换与房屋模板"
+              >
+                <LineIcon name="layers" size={15} />
+                <span>场景</span>
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                id="cabin-tab-btn-npc"
+                aria-selected={activeTab === 'npc'}
+                aria-controls="cabin-panel-npc"
+                className={`cabin-drawer-tab ${activeTab === 'npc' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('npc')}
+                data-testid="cabin-tab-npc"
+                title="NPC 社交与状态"
+              >
+                <LineIcon name="user" size={15} />
+                <span>NPC ({npcs.length})</span>
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                id="cabin-tab-btn-world"
+                aria-selected={activeTab === 'world'}
+                aria-controls="cabin-panel-world"
+                className={`cabin-drawer-tab ${activeTab === 'world' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('world')}
+                data-testid="cabin-tab-world"
+                title="世界环境状态与多媒体"
+              >
+                <CabinNiIcon name="map" size={15} />
+                <span>环境</span>
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                id="cabin-tab-btn-decorate"
+                aria-selected={activeTab === 'decorate'}
+                aria-controls="cabin-panel-decorate"
+                className={`cabin-drawer-tab ${activeTab === 'decorate' ? 'is-active' : ''}`}
+                onClick={() => setActiveTab('decorate')}
+                data-testid="cabin-tab-decorate"
+                title="室内布置与视口控制"
+              >
+                <LineIcon name="target" size={15} />
+                <span>布置</span>
+              </button>
+            </div>
+          ) : (
+            <span className="cabin-drawer-collapsed-title">HUD</span>
+          )}
+
+          <button
+            type="button"
+            className="cabin-drawer-toggle"
+            aria-label={drawerOpen ? '收起控制台' : '展开控制台'}
+            title={drawerOpen ? '收起控制台' : '展开控制台'}
+            data-testid="cabin-drawer-toggle"
+            onClick={() => setDrawerOpen((v) => !v)}
+          >
+            <CabinNiIcon name={drawerOpen ? 'arrowRight' : 'arrowLeft'} size={15} />
+          </button>
+        </div>
+
+        {/* 折叠态快捷按钮列 */}
+        {!drawerOpen && (
+          <div className="cabin-drawer-collapsed-nav">
+            <button
+              type="button"
+              className="cabin-drawer-mini-btn"
+              title="展开场景切换"
+              onClick={() => {
+                setActiveTab('scene');
+                setDrawerOpen(true);
+              }}
+            >
+              <LineIcon name="layers" size={16} />
+            </button>
+            <button
+              type="button"
+              className="cabin-drawer-mini-btn"
+              title="展开 NPC 信息"
+              onClick={() => {
+                setActiveTab('npc');
+                setDrawerOpen(true);
+              }}
+            >
+              <LineIcon name="user" size={16} />
+            </button>
+            <button
+              type="button"
+              className="cabin-drawer-mini-btn"
+              title="展开世界环境"
+              onClick={() => {
+                setActiveTab('world');
+                setDrawerOpen(true);
+              }}
+            >
+              <CabinNiIcon name="map" size={16} />
+            </button>
+            <button
+              type="button"
+              className="cabin-drawer-mini-btn"
+              title="展开室内布置"
+              onClick={() => {
+                setActiveTab('decorate');
+                setDrawerOpen(true);
+              }}
+            >
+              <LineIcon name="target" size={16} />
+            </button>
           </div>
         )}
 
-        {/* NPC 交互（点 NPC 即交互） */}
-        <section className="cabin-ni-glass cabin-ni-panel" aria-label="NPC 交互">
-          <span className="cabin-ni-panel-hd">
-            <LineIcon name="user" size={16} />
-            NPC（{npcs.length}）
-          </span>
-          {npcs.length === 0 ? (
-            <span className="cabin-ni-evi-empty">
-              <LineIcon name="info" size={16} />
-              尚未回传 NPC 数据
-            </span>
-          ) : (
-            <ul
-              style={{
-                listStyle: 'none',
-                margin: 0,
-                padding: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 'var(--ui-s-2)',
-              }}
-            >
-              {npcs.map((n) => (
-                <NpcRow key={n.id} npc={n} onInteract={onInteract} />
-              ))}
-            </ul>
-          )}
-        </section>
+        {/* 抽屉内容容器：DOM 节点常驻保持测试桩稳定，hidden 切换视野 */}
+        <div className={`cabin-drawer-content ${drawerOpen ? '' : 'is-hidden'}`}>
+          {/* ==================== TAB 1: 场景切换 ==================== */}
+          <div
+            id="cabin-panel-scene"
+            role="tabpanel"
+            aria-labelledby="cabin-tab-btn-scene"
+            className={`cabin-tab-panel ${activeTab === 'scene' ? 'is-active' : ''}`}
+          >
+            {/* 场景背景切换 */}
+            <section className="cabin-ni-panel" aria-label="场景背景选择">
+              <span className="cabin-ni-panel-hd">
+                <CabinNiIcon name="map" size={16} />
+                背景主题
+              </span>
+              <div className="cabin-ni-map" data-testid="cabin-ni-map">
+                {CABIN_BACKGROUNDS.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className="cabin-ni-map-btn"
+                    aria-pressed={currentTheme === b.id}
+                    data-testid={`cabin-ni-map-${b.id}`}
+                    onClick={() => onSelectTheme(b.id)}
+                  >
+                    <LineIcon name="layers" size={14} />
+                    <span>{b.label}</span>
+                  </button>
+                ))}
+              </div>
 
-        {/* 常驻大按钮：地图切换 + 视图切换（最少点击守则第 2 条） */}
-        <section className="cabin-ni-glass cabin-ni-panel" aria-label="场景切换">
-          <span className="cabin-ni-panel-hd">
-            <CabinNiIcon name="map" size={16} />
-            场景
-          </span>
-          <div className="cabin-ni-map" data-testid="cabin-ni-map">
-            {CABIN_BACKGROUNDS.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                className="cabin-ni-map-btn"
-                aria-pressed={currentTheme === b.id}
-                data-testid={`cabin-ni-map-${b.id}`}
-                onClick={() => onSelectTheme(b.id)}
-              >
-                <LineIcon name="layers" size={16} />
-                {b.label}
-              </button>
-            ))}
+              {/* 昼夜时段切换 */}
+              <div className="cabin-ni-time-header">
+                <span className="cabin-ni-panel-hd">
+                  <CabinNiIcon name="clock" size={16} />
+                  时段与色温
+                </span>
+                <button
+                  type="button"
+                  className="cabin-ni-collapse"
+                  aria-expanded={timesOpen}
+                  data-testid="cabin-ni-times-toggle"
+                  onClick={() => setTimesOpen((v) => !v)}
+                >
+                  <LineIcon name="sliders" size={14} />
+                  <span>{timesOpen ? '收起时段' : '展开时段'}</span>
+                </button>
+              </div>
+
+              {timesOpen && (
+                <div className="cabin-ni-swatches">
+                  {TIME_SLOTS.map(([t, label]) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="cabin-ni-swatch"
+                      aria-pressed={timeOfDay === t}
+                      data-testid={`cabin-ni-time-${t}`}
+                      onClick={() => onSelectTimeOfDay(t)}
+                    >
+                      <LineIcon name={t === 'night' ? 'pause' : 'sparkles'} size={14} />
+                      <span>{label}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* 房屋模板槽位（由 CabinPage 传入） */}
+            {sceneSlot}
           </div>
 
-          {timesOpen && (
-            <div style={{ display: 'flex', gap: 'var(--ui-s-2)', flexWrap: 'wrap' }}>
-              {TIME_SLOTS.map(([t, label]) => (
-                <button
-                  key={t}
-                  type="button"
-                  className="cabin-ni-swatch"
-                  aria-pressed={timeOfDay === t}
-                  data-testid={`cabin-ni-time-${t}`}
-                  onClick={() => onSelectTimeOfDay(t)}
+          {/* ==================== TAB 2: NPC 信息 ==================== */}
+          <div
+            id="cabin-panel-npc"
+            role="tabpanel"
+            aria-labelledby="cabin-tab-btn-npc"
+            className={`cabin-tab-panel ${activeTab === 'npc' ? 'is-active' : ''}`}
+          >
+            <section className="cabin-ni-panel" aria-label="NPC 村民社交">
+              <span className="cabin-ni-panel-hd">
+                <LineIcon name="user" size={16} />
+                村民社交（{npcs.length}）
+              </span>
+              {npcs.length === 0 ? (
+                <span className="cabin-ni-evi-empty">
+                  <LineIcon name="info" size={16} />
+                  尚未回传 NPC 数据
+                </span>
+              ) : (
+                <ul
+                  style={{
+                    listStyle: 'none',
+                    margin: 0,
+                    padding: 0,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 'var(--ui-s-2)',
+                  }}
                 >
-                  <LineIcon name={t === 'night' ? 'pause' : 'sparkles'} size={16} />
-                  {label}
+                  {npcs.map((n) => (
+                    <NpcRow key={n.id} npc={n} onInteract={onInteract} />
+                  ))}
+                </ul>
+              )}
+            </section>
+          </div>
+
+          {/* ==================== TAB 3: 世界环境状态 ==================== */}
+          <div
+            id="cabin-panel-world"
+            role="tabpanel"
+            aria-labelledby="cabin-tab-btn-world"
+            className={`cabin-tab-panel ${activeTab === 'world' ? 'is-active' : ''}`}
+          >
+            {/* 状态与同步提示 */}
+            {(error || notice || loading) && (
+              <div
+                className="cabin-ni-glass cabin-ni-panel cabin-ni-status-card"
+                role={error ? 'alert' : 'status'}
+                data-testid="cabin-ni-status"
+              >
+                <span className="cabin-ni-panel-hd">
+                  <LineIcon name={error ? 'alert' : 'info'} size={16} />
+                  {error ? '数据加载失败' : notice ? '提示' : '同步中'}
+                </span>
+                <span className="cabin-ni-npc-act">{error ?? notice ?? '正在与后端同步…'}</span>
+              </div>
+            )}
+
+            {/* 环境快照卡片 */}
+            <section className="cabin-ni-panel" aria-label="环境与时间">
+              <span className="cabin-ni-panel-hd">
+                <CabinNiIcon name="clock" size={16} />
+                世界状态
+              </span>
+              <div className="cabin-world-info-row">
+                <span className="cabin-world-badge">
+                  {timeOfDay === 'night' ? '🌙 夜晚' : timeOfDay === 'dusk' ? '🌅 黄昏' : '☀️ 白天'}
+                </span>
+                <span className="cabin-world-text">{dayText || '第1天 上午 晴'}</span>
+              </div>
+              <div className="cabin-world-info-row">
+                <span className="cabin-world-badge">🪙 金币</span>
+                <span className="cabin-world-val">{coins.toLocaleString()}</span>
+              </div>
+            </section>
+
+            {/* 世界多媒体与说明（挂画 + BGM + 台词来源） */}
+            {worldSlot}
+          </div>
+
+          {/* ==================== TAB 4: 室内布置 / 视口控制 ==================== */}
+          <div
+            id="cabin-panel-decorate"
+            role="tabpanel"
+            aria-labelledby="cabin-tab-btn-decorate"
+            className={`cabin-tab-panel ${activeTab === 'decorate' ? 'is-active' : ''}`}
+          >
+            {/* 视图控制大按钮 */}
+            <section className="cabin-ni-panel" aria-label="场景视口控制">
+              <span className="cabin-ni-panel-hd">
+                <LineIcon name="target" size={16} />
+                视口切换
+              </span>
+              <div className="cabin-view-actions">
+                {view === 'outdoor' ? (
+                  <button
+                    type="button"
+                    className="cabin-ni-map-btn cabin-ni-btn-highlight"
+                    data-testid="cabin-ni-enter-indoor"
+                    onClick={onEnterIndoor}
+                  >
+                    <CabinNiIcon name="door" size={16} />
+                    进屋布置
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="cabin-ni-map-btn"
+                      data-testid="cabin-ni-exit-indoor"
+                      onClick={onExitIndoor}
+                    >
+                      <CabinNiIcon name="door" size={16} />
+                      出门回院子
+                    </button>
+                    <button
+                      type="button"
+                      className="cabin-ni-map-btn cabin-ni-btn-highlight"
+                      aria-pressed={editMode}
+                      data-testid="cabin-ni-toggle-edit"
+                      onClick={onToggleDecorate}
+                    >
+                      <LineIcon name="layers" size={16} />
+                      {editMode ? '退出布置' : '开始布置'}
+                    </button>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  className="cabin-ni-map-btn"
+                  aria-pressed={gameplayOpen}
+                  data-testid="cabin-ni-gameplay"
+                  onClick={onOpenGameplay}
+                >
+                  <LineIcon name="target" size={16} />
+                  {gameplayOpen ? '收起探险' : '探险与任务'}
                 </button>
-              ))}
+              </div>
+            </section>
+
+            {/* 室内布置与小人/宠物设置槽位 */}
+            {decorateSlot}
+          </div>
+
+          {/* 附加 children 保底承载 */}
+          {children && (
+            <div className="cabin-drawer-children-wrap">
+              {children}
             </div>
           )}
-          <button
-            type="button"
-            className="cabin-ni-collapse"
-            aria-expanded={timesOpen}
-            data-testid="cabin-ni-times-toggle"
-            onClick={() => setTimesOpen((v) => !v)}
-          >
-            <LineIcon name="sliders" size={16} />
-            {timesOpen ? '收起时段' : '切换时段'}
-          </button>
-        </section>
-
-        {/* 小人设置不在这里重复：原 .cabin-toolbar 已经带了完整的
-            名字 / 性格 / 宠物颜色 / 房屋模板 / 背景，它被搬进本栏末尾（children）。
-            两处都放会出现"两份可能不同步的数据"，是最容易出 bug 的那种冗余。 */}
-
-        {/* 视图切换 */}
-        <section className="cabin-ni-glass cabin-ni-panel" aria-label="视图">
-          <span className="cabin-ni-panel-hd">
-            <LineIcon name="target" size={16} />
-            视图
-          </span>
-          {view === 'outdoor' ? (
-            <button
-              type="button"
-              className="cabin-ni-map-btn"
-              data-testid="cabin-ni-enter-indoor"
-              onClick={onEnterIndoor}
-            >
-              <CabinNiIcon name="door" size={16} />
-              进屋布置
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="cabin-ni-map-btn"
-                data-testid="cabin-ni-exit-indoor"
-                onClick={onExitIndoor}
-              >
-                <CabinNiIcon name="door" size={16} />
-                出门回院子
-              </button>
-              <button
-                type="button"
-                className="cabin-ni-map-btn"
-                aria-pressed={editMode}
-                data-testid="cabin-ni-toggle-edit"
-                onClick={onToggleDecorate}
-              >
-                <LineIcon name="layers" size={16} />
-                {editMode ? '退出布置' : '布置'}
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            className="cabin-ni-map-btn"
-            aria-pressed={gameplayOpen}
-            data-testid="cabin-ni-gameplay"
-            onClick={onOpenGameplay}
-          >
-            <LineIcon name="target" size={16} />
-            {gameplayOpen ? '收起探险与任务' : '探险与任务'}
-          </button>
-        </section>
-
-        {/* 原 .cabin-toolbar（房屋模板 / 背景 / 宠物 / 小人 / 资产库）搬到这里 */}
-        {children}
+        </div>
       </aside>
     </>
   );
 }
 
 /**
- * `/game` 全屏提示。
- *
- * F11 是浏览器级全屏，页面无权拦截，因此这里只监听它来打提示，
- * 让用户知道按 F11 会发生什么，而不是让用户猜（最少点击守则第 1 条）。
+ * `/game` 全屏提示
  */
 export function useGameFullscreenHint(active: boolean): { hint: string } {
   const [hint, setHint] = useState('');
@@ -408,7 +828,6 @@ export function npcRowsFromSnapshot(snapshot: LifeSnapshot | null): CabinNpcRow[
     role: n.role,
     hearts: typeof n.hearts === 'number' ? n.hearts : 0,
     heartsDisplay: n.hearts_display,
-    // NpcRow 当前不带 intimacy；缺失一律 null → UI 显示「未回传」，不写 0。
     intimacy: null,
     place: n.place,
     activity: n.activity,

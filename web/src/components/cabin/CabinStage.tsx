@@ -22,6 +22,7 @@ interface CabinStageProps {
    * 帧数 <2 时cabinScene 会明确回退默认小人，本层不拦截（真相在渲染层）。
    */
   personWalkFrames?: readonly (readonly string[])[];
+  personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
 }
 
@@ -34,7 +35,7 @@ interface CabinStageProps {
  * 因此它们变化时必须重建场景。重建放在一个**由调用方 key 控制的子组件**里，
  * 本组件自身既有行为（config / speech 同步、resize、防泄漏）保持不变。
  */
-export function CabinStage({ config, speech, onSpeak, personWalkFrames, personPalette }: CabinStageProps) {
+export function CabinStage({ config, speech, onSpeak, personWalkFrames, personIdleFrames, personPalette }: CabinStageProps) {
   // 自定义小人身份串：帧矩阵 + 调色板任一变化即视为换了角色，需要重建纹理。
   // 用矩阵首帧做身份代表（内容变即身份变），避免每次渲染都重建场景。
   const [personIdentity, setPersonIdentity] = useState(() => personKey(personWalkFrames, personPalette));
@@ -50,6 +51,7 @@ export function CabinStage({ config, speech, onSpeak, personWalkFrames, personPa
       speech={speech}
       onSpeak={onSpeak}
       personWalkFrames={personWalkFrames}
+      personIdleFrames={personIdleFrames}
       personPalette={personPalette}
     />
   );
@@ -76,12 +78,14 @@ function CabinStageCanvas({
   speech,
   onSpeak,
   personWalkFrames,
+  personIdleFrames,
   personPalette,
 }: {
   config: CabinConfig;
   speech: CabinSpeechRequest | null;
   onSpeak?: (speaker: DialogueSpeaker) => void;
   personWalkFrames?: readonly (readonly string[])[];
+  personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -97,37 +101,17 @@ function CabinStageCanvas({
     if (!host) return undefined;
     let disposed = false;
     let cleanup: (() => void) | null = null;
-    /**
-     * 每次 effect 运行都**新建独立 canvas**（而不是渲染一个 React <canvas> 复用）。
-     *
-     * 为什么必须这样：React StrictMode（dev）会对 effect 双调用 —— 先建一个场景、立刻
-     * cleanup、再建一个。若两者共用同一个 React <canvas>，先建后弃的那个 `destroy()`
-     * （Pixi `app.destroy(true, …)`）会**销毁共享的 WebGL 上下文并把 canvas 从 DOM 移除**，
-     * 于是活着的场景上下文失效：Pixi 报 `Could not initialize shader (WebGL context may be lost)`，
-     * 画面完全不渲染，只剩 HTML 工具条（线上表现为「小屋是最粗糙的草稿」）。
-     * 独立 canvas ⇒ 每个场景各自独立上下文，StrictMode 安全。
-     */
     const canvas = document.createElement('canvas');
     canvas.className = 'cabin-canvas';
     canvas.setAttribute('aria-hidden', 'true');
     host.appendChild(canvas);
-    /**
-     * I3 · 双形态：视口取自**宿主元素**而非 window。
-     *
-     * 内嵌工作台形态下 canvas 宿主可能远小于窗口（如挂进一个 1280×720 的容器），
-     * 若仍按 window 渲染，PixiJS 会把画面按整窗尺寸铺满并被 CSS 裁切 —— 相机、
-     * 视差、点击反投影全部按错误视口计算。这里改为：创建时传 host，
-     * 之后用 observeViewport 同时监听「宿主尺寸变化（ResizeObserver）」与
-     * 「window resize」，两者都重新量宿主。
-     *
-     * 宿主未布局（0 尺寸）时 resolveViewport 自动回退 window，行为与改造前一致。
-     */
     void createCabinScene({
       canvas,
       host,
       config: configRef.current,
       callbacks: { onSpeak: (s) => onSpeakRef.current?.(s) },
       personWalkFrames,
+      personIdleFrames,
       personPalette,
     })
       .then((scene) => {
@@ -172,6 +156,17 @@ function CabinStageCanvas({
   return (
     <>
       <div ref={hostRef} className="cabin-canvas-host" data-testid="cabin-canvas" aria-hidden="true" />
+      <div className="cabin-keyboard-hint" data-testid="cabin-keyboard-hint" aria-label="键盘操作提示">
+        <span className="cabin-hint-item">
+          <kbd className="cabin-key-badge">WASD / 方向键</kbd> 移动·纵深
+        </span>
+        <span className="cabin-hint-item">
+          <kbd className="cabin-key-badge">Space / W</kbd> 跳跃
+        </span>
+        <span className="cabin-hint-item">
+          <kbd className="cabin-key-badge">S 长按</kbd> 下蹲
+        </span>
+      </div>
       {initError && (
         <div className="cabin-fallback" role="alert">
           图形引擎初始化失败：当前环境可能不支持 WebGL。装扮设置仍可正常使用与保存。

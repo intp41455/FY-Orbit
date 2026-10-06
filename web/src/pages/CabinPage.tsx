@@ -12,6 +12,7 @@ import {
   type PersonalityId,
 } from '../components/cabin/cabinConfig';
 import { cabinDialogue, type DialogueSource } from '../components/cabin/cabinDialogueProvider';
+import { getExclusiveNpcByTheme, interactWithNpc } from '../components/cabin/cabinNpcSystem';
 import { InteriorStage } from '../components/cabin/interior/InteriorStage';
 import { InteriorDecoratePanel } from '../components/cabin/interior/InteriorDecoratePanel';
 import {
@@ -44,7 +45,7 @@ import {
   isAvatarNotFound,
   type HouseAvatar,
 } from '../api/avatar';
-import { toPixelPalette, walkFrames } from '../components/avatar/avatarPixels';
+import { toPixelPalette, walkFrames, idleFrames } from '../components/avatar/avatarPixels';
 // W9 个人资产库联动（墙面挂画 + BGM）。只读 /api/assets，不改 cabinScene 内部。
 import {
   CabinBgmCard,
@@ -54,7 +55,7 @@ import {
 } from '../components/assets/CabinMedia';
 import { assetsApi, type AssetRecord } from '../api/assets';
 import { ApiError } from '../api/client';
-import { CabinHud } from '../components/cabin/hud/CabinHud';
+import { CabinHud, type HudModalType } from '../components/cabin/hud/CabinHud';
 import { lifeApi, type LifeSnapshot, type GatherRow } from '../components/cabin/gameplay/lifeApi';
 import {
   GatherAnimationPlayer,
@@ -139,6 +140,13 @@ export function CabinPage() {
   }, []);
 
   const handleSpeak = (speaker: DialogueSpeaker) => {
+    if (speaker === 'npc') {
+      const npc = getExclusiveNpcByTheme(config.background);
+      const res = interactWithNpc(npc.id, 'chat');
+      speechSeq.current += 1;
+      setSpeech({ speaker: 'npc', text: res.dialogue.text, seq: speechSeq.current });
+      return;
+    }
     const personality = speaker === 'person' ? config.personPersonality : config.petPersonality;
     speechSeq.current += 1;
     const seq = speechSeq.current;
@@ -472,9 +480,13 @@ export function CabinPage() {
     return () => { cancelled = true; };
   }, []);
 
-  // 行走两帧 + 调色板：交给 cabinScene 认矩阵，本页不参与角色设计。
+  // 行走与待机帧 + 调色板：交给 cabinScene 认矩阵，本页不参与角色设计。
   const houseWalkFrames = useMemo(
     () => (houseAvatar ? walkFrames(houseAvatar.layers).map((f) => f.matrix) : undefined),
+    [houseAvatar],
+  );
+  const houseIdleFrames = useMemo(
+    () => (houseAvatar ? idleFrames(houseAvatar.layers).map((f) => f.matrix) : undefined),
     [houseAvatar],
   );
   const housePalette = useMemo(
@@ -554,6 +566,7 @@ export function CabinPage() {
    */
   const [gameplayOpen, setGameplayOpen] = useState(false);
   const toggleGameplay = useCallback(() => setGameplayOpen((v) => !v), []);
+  const [hudModal, setHudModal] = useState<HudModalType>(null);
 
   /* ------------------------------------------------------------------ */
   /* W9 · 资产库联动：墙面挂画 + BGM（DOM 覆盖层，不碰 cabinScene）      */
@@ -584,6 +597,7 @@ export function CabinPage() {
           speech={speech}
           onSpeak={handleSpeak}
           personWalkFrames={houseWalkFrames}
+          personIdleFrames={houseIdleFrames}
           personPalette={housePalette}
         />
       ) : (
@@ -596,6 +610,10 @@ export function CabinPage() {
           sleepToken={sleepToken}
           sayToken={sayToken}
           personToken={personToken}
+          personWalkFrames={houseWalkFrames}
+          personIdleFrames={houseIdleFrames}
+          personPalette={housePalette}
+          personName={config.personName}
           callbacks={{
             onFurnitureTap: handleFurnitureTap,
             onFloorTap: handleFloorTap,
@@ -638,6 +656,11 @@ export function CabinPage() {
         loading={lifeLoading}
         error={lifeError}
         onAction={handleLifeAction}
+        onOpenAvatar={() => navigate('/avatar')}
+        onApplyAvatar={(av) => setHouseAvatar(av)}
+        currentHouseAvatar={houseAvatar}
+        activeModal={hudModal}
+        onActiveModalChange={setHudModal}
       />
 
       <button type="button" className="cabin-back" onClick={() => navigate('/private')}>
@@ -768,6 +791,7 @@ export function CabinPage() {
         </div>
       )}
 
+      {/* 选项卡插槽定义 */}
       <CabinHudOverlay
         view={view}
         editMode={editMode}
@@ -803,209 +827,214 @@ export function CabinPage() {
         onExitIndoor={handleExitIndoor}
         onOpenGameplay={toggleGameplay}
         gameplayOpen={gameplayOpen}
-      >
-        {/* 原 .cabin-toolbar 整块搬进右侧 HUD 栏（children）。
-            它原本是静态流式元素，在 .cabin-root（fixed + overflow:hidden）里
-            永远排在画布之上、压住第一屏画面；功能一个字都不能删（红线二），
-            所以搬家而不是隐藏 —— 搬进可滚动右栏后既不挡画面又不丢功能。 */}
-        <section className="cabin-toolbar" aria-label="我的小屋设置">
+        onOpenModal={setHudModal}
+        onNavigateBack={() => navigate('/private')}
+        coins={lifeSnapshot?.save?.coins ?? 0}
+        dayText={lifeSnapshot?.hud_line ?? '第1天 上午 晴 · 0 金币'}
+        sceneSlot={
+          <div className="cabin-tab-slot-body">
+            <fieldset className="cabin-group">
+              <legend>房屋模板</legend>
+              <div className="cabin-chip-row">
+                {CABIN_HOUSES.map((h) => (
+                  <button
+                    key={h.id}
+                    type="button"
+                    className={config.house === h.id ? 'cabin-chip active' : 'cabin-chip'}
+                    aria-pressed={config.house === h.id}
+                    data-testid={`house-${h.id}`}
+                    onClick={() => update({ house: h.id })}
+                  >
+                    {h.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
 
-      {/* A6 · UI 像素化重构：顶部状态栏 32px + 底部工具栏 40px (6×32px圆按钮) + 64×64小地图 + 4px像素弹窗 */}
-        <div className="cabin-toolbar-title">
-          <strong>🏠 我的小屋</strong>
-          <span className="cabin-vr-badge" title="本页面的小人与宠物台词均为虚拟演绎内容">
-            虚拟演绎
-          </span>
-          <span
-            className="cabin-source-badge"
-            data-testid="cabin-dialogue-source"
-            title="台词来源：模型生成 = 后端管家 Agent 实时生成；预生成台词池 = 本地静态台词（模型未配置或调用失败时诚实回退）"
-          >
-            台词来源：{DIALOGUE_SOURCE_LABEL[dialogueSource ?? 'pool']}
-          </span>
-        </div>
-
-        <div className="cabin-toolbar-body">
-          <fieldset className="cabin-group">
-            <legend>房屋模板</legend>
-            <div className="cabin-chip-row">
-              {CABIN_HOUSES.map((h) => (
-                <button
-                  key={h.id}
-                  type="button"
-                  className={config.house === h.id ? 'cabin-chip active' : 'cabin-chip'}
-                  aria-pressed={config.house === h.id}
-                  data-testid={`house-${h.id}`}
-                  onClick={() => update({ house: h.id })}
+            <fieldset className="cabin-group">
+              <legend>背景风格</legend>
+              <div className="cabin-chip-row">
+                {CABIN_BACKGROUNDS.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className={config.background === b.id ? 'cabin-chip active' : 'cabin-chip'}
+                    aria-pressed={config.background === b.id}
+                    data-testid={`bg-${b.id}`}
+                    onClick={() => update({ background: b.id })}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+            {/* 宠物设置 */}
+            <fieldset className="cabin-group">
+              <legend>宠物设置</legend>
+              <div className="cabin-chip-row">
+                {PET_COLORS.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={config.petColor === c.id ? 'cabin-swatch active' : 'cabin-swatch'}
+                    style={{ backgroundColor: c.hex }}
+                    title={c.label}
+                    aria-label={`宠物颜色 ${c.label}`}
+                    aria-pressed={config.petColor === c.id}
+                    data-testid={`pet-color-${c.id}`}
+                    onClick={() => update({ petColor: c.id })}
+                  />
+                ))}
+                <select
+                  className="cabin-select"
+                  aria-label="宠物性格"
+                  data-testid="pet-personality"
+                  value={config.petPersonality}
+                  onChange={(e) => update({ petPersonality: e.target.value as PersonalityId })}
                 >
-                  {h.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
+                  {PERSONALITIES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </fieldset>
 
-          <fieldset className="cabin-group">
-            <legend>背景</legend>
-            <div className="cabin-chip-row">
-              {CABIN_BACKGROUNDS.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  className={config.background === b.id ? 'cabin-chip active' : 'cabin-chip'}
-                  aria-pressed={config.background === b.id}
-                  data-testid={`bg-${b.id}`}
-                  onClick={() => update({ background: b.id })}
-                >
-                  {b.label}
-                </button>
-              ))}
-            </div>
-          </fieldset>
-
-          <fieldset className="cabin-group">
-            <legend>宠物</legend>
-            <div className="cabin-chip-row">
-              {PET_COLORS.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={config.petColor === c.id ? 'cabin-swatch active' : 'cabin-swatch'}
-                  style={{ backgroundColor: c.hex }}
-                  title={c.label}
-                  aria-label={`宠物颜色 ${c.label}`}
-                  aria-pressed={config.petColor === c.id}
-                  data-testid={`pet-color-${c.id}`}
-                  onClick={() => update({ petColor: c.id })}
+            {/* 小人设置 */}
+            <fieldset className="cabin-group">
+              <legend>小人设置</legend>
+              <div className="cabin-chip-row">
+                <input
+                  className="cabin-input"
+                  aria-label="小人名字"
+                  data-testid="person-name"
+                  value={config.personName}
+                  maxLength={16}
+                  placeholder="给小人起个名字"
+                  autoComplete="off"
+                  onChange={(e) => update({ personName: e.target.value })}
                 />
-              ))}
-              <select
-                className="cabin-select"
-                aria-label="宠物性格"
-                data-testid="pet-personality"
-                value={config.petPersonality}
-                onChange={(e) => update({ petPersonality: e.target.value as PersonalityId })}
-              >
-                {PERSONALITIES.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </fieldset>
+                <select
+                  className="cabin-select"
+                  aria-label="小人性格"
+                  data-testid="person-personality"
+                  value={config.personPersonality}
+                  onChange={(e) => update({ personPersonality: e.target.value as PersonalityId })}
+                >
+                  {PERSONALITIES.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </fieldset>
 
-          <fieldset className="cabin-group">
-            <legend>小人</legend>
-            <div className="cabin-chip-row">
-              <input
-                className="cabin-input"
-                aria-label="小人名字"
-                data-testid="person-name"
-                value={config.personName}
-                maxLength={16}
-                placeholder="给小人起个名字"
-                autoComplete="off"
-                onChange={(e) => update({ personName: e.target.value })}
+            {/* 专属小人卡片 */}
+            {houseAvatarError && (
+              <p className="cabin-load-error" data-testid="cabin-avatar-error" role="alert">
+                {houseAvatarError}
+              </p>
+            )}
+
+            {!houseAvatar && !houseAvatarError && (
+              <p className="cabin-note" data-testid="cabin-no-house-avatar">
+                院子里的还是默认小人。
+                <button type="button" className="cabin-btn" onClick={() => navigate('/avatar')}>
+                  🪞 去角色工坊生成专属小人
+                </button>
+              </p>
+            )}
+
+            {houseAvatar && (
+              <p className="cabin-note" data-testid="cabin-house-avatar">
+                院子里走动的已是你的专属小人（短码{' '}
+                <code>{houseAvatar.fingerprint.slice(0, 8)}</code>）。
+                <button type="button" className="cabin-btn" onClick={() => navigate('/avatar')}>
+                  🪞 去角色工坊调整
+                </button>
+              </p>
+            )}
+          </div>
+        }
+        worldSlot={
+          <div className="cabin-tab-slot-body">
+            <div className="cabin-toolbar-title">
+              <strong>🏠 我的小屋</strong>
+              <span className="cabin-vr-badge" title="本页面的小人与宠物台词均为虚拟演绎内容">
+                虚拟演绎
+              </span>
+              <span
+                className="cabin-source-badge"
+                data-testid="cabin-dialogue-source"
+                title="台词来源：模型生成 = 后端管家 Agent 实时生成；预生成台词池 = 本地静态台词（模型未配置或调用失败时诚实回退）"
+              >
+                台词来源：{DIALOGUE_SOURCE_LABEL[dialogueSource ?? 'pool']}
+              </span>
+            </div>
+
+            <div className="cabin-note">
+              台词来源：{DIALOGUE_SOURCE_LABEL[dialogueSource ?? 'pool']}
+              （模型未配置或调用失败时诚实回退本地台词池，绝不伪装模型生成）；
+              点击地面移动小人（宠物会跟随），点击小人 / 宠物触发对话。
+            </div>
+
+            {/* ---- W9 资产库联动：墙面挂画 + BGM 设置卡 ---- */}
+            <CabinWallArtCard controller={media} onUnmount={handleUnmount} />
+            <CabinBgmCard controller={media} />
+            {mediaError && (
+              <p className="cabin-load-error" data-testid="w9-media-error" role="alert">
+                资产库联动失败：{mediaError}
+              </p>
+            )}
+          </div>
+        }
+        decorateSlot={
+          <div className="cabin-tab-slot-body">
+            {view === 'indoor' && (
+              <span className="cabin-ni-sr-only" role="status" data-testid="cabin-selection-status">
+                {selectedLabel ? `已选中：${selectedLabel}` : '未选中家具'}
+              </span>
+            )}
+
+            {view === 'indoor' && loadError && (
+              <p className="cabin-load-error" data-testid="cabin-load-error" role="alert">
+                {loadError}
+              </p>
+            )}
+
+            {view === 'indoor' && editMode && (
+              <InteriorDecoratePanel
+                layout={layout}
+                selectedId={selectedId}
+                cabinLevel={cabinLevel}
+                dirty={dirty}
+                snapEnabled={snapEnabled}
+                onSelect={setSelectedId}
+                onAdd={handleAdd}
+                onFlip={handleFlip}
+                onCycleColorway={handleCycleColorway}
+                onLayer={handleLayer}
+                onRemove={handleRemove}
+                onDice={handleDice}
+                onSave={handleSave}
+                onReset={handleReset}
+                onExitEdit={handleExitEdit}
+                onToggleSnap={handleToggleSnap}
               />
-              <select
-                className="cabin-select"
-                aria-label="小人性格"
-                data-testid="person-personality"
-                value={config.personPersonality}
-                onChange={(e) => update({ personPersonality: e.target.value as PersonalityId })}
-              >
-                {PERSONALITIES.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </fieldset>
-        </div>
+            )}
 
-        <div className="cabin-note">
-          台词来源：{DIALOGUE_SOURCE_LABEL[dialogueSource ?? 'pool']}
-          （模型未配置或调用失败时诚实回退本地台词池，绝不伪装模型生成）；
-          点击地面移动小人（宠物会跟随），点击小人 / 宠物触发对话。
-        </div>
-
-        {view === 'indoor' && (
-          <span className="cabin-ni-sr-only" role="status" data-testid="cabin-selection-status">
-            {selectedLabel ? `已选中：${selectedLabel}` : '未选中家具'}
-          </span>
-        )}
-
-        {view === 'indoor' && loadError && (
-          <p className="cabin-load-error" data-testid="cabin-load-error" role="alert">
-            {loadError}
-          </p>
-        )}
-
-        {view === 'indoor' && editMode && (
-          <InteriorDecoratePanel
-            layout={layout}
-            selectedId={selectedId}
-            cabinLevel={cabinLevel}
-            dirty={dirty}
-            snapEnabled={snapEnabled}
-            onSelect={setSelectedId}
-            onAdd={handleAdd}
-            onFlip={handleFlip}
-            onCycleColorway={handleCycleColorway}
-            onLayer={handleLayer}
-            onRemove={handleRemove}
-            onDice={handleDice}
-            onSave={handleSave}
-            onReset={handleReset}
-            onExitEdit={handleExitEdit}
-            onToggleSnap={handleToggleSnap}
-          />
-        )}
-
-        {view === 'indoor' && !editMode && (
-          <p className="cabin-note" data-testid="cabin-indoor-hint">
-            点「🚪 出门回院子」回到室外；点「🪑 布置」进入布置模式。
-            非布置模式下点家具会有反馈（床→睡觉、书架→报书名、鱼缸→看鱼），
-            更衣镜会打开角色工坊。
-          </p>
-        )}
-
-        {houseAvatarError && (
-          <p className="cabin-load-error" data-testid="cabin-avatar-error" role="alert">
-            {houseAvatarError}
-          </p>
-        )}
-
-        {!houseAvatar && !houseAvatarError && (
-          <p className="cabin-note" data-testid="cabin-no-house-avatar">
-            院子里的还是默认小人。
-            <button type="button" className="cabin-btn" onClick={() => navigate('/avatar')}>
-              🪞 去角色工坊生成专属小人
-            </button>
-          </p>
-        )}
-
-        {houseAvatar && (
-          <p className="cabin-note" data-testid="cabin-house-avatar">
-            院子里走动的已是你的专属小人（短码{' '}
-            <code>{houseAvatar.fingerprint.slice(0, 8)}</code>）。
-            <button type="button" className="cabin-btn" onClick={() => navigate('/avatar')}>
-              🪞 去角色工坊调整
-            </button>
-          </p>
-        )}
-
-        {/* ---- W9 资产库联动：墙面挂画 + BGM 设置卡 ---- */}
-        <CabinWallArtCard controller={media} onUnmount={handleUnmount} />
-        <CabinBgmCard controller={media} />
-        {mediaError && (
-          <p className="cabin-load-error" data-testid="w9-media-error" role="alert">
-            资产库联动失败：{mediaError}
-          </p>
-        )}
-        </section>
-      </CabinHudOverlay>
+            {view === 'indoor' && !editMode && (
+              <p className="cabin-note" data-testid="cabin-indoor-hint">
+                点「🚪 出门回院子」回到室外；点「🪑 布置」进入布置模式。
+                非布置模式下点家具会有反馈（床→睡觉、书架→报书名、鱼缸→看鱼），
+                更衣镜会打开角色工坊。
+              </p>
+            )}
+          </div>
+        }
+      />
     </div>
   );
 }

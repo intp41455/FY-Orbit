@@ -25,7 +25,9 @@ interface InteriorStageProps {
    * 角色由 `components/avatar/` 生成，本组件只透传给渲染层；不传则用默认小人。
    */
   personWalkFrames?: readonly (readonly string[])[];
+  personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
+  personName?: string;
 }
 
 /**
@@ -44,7 +46,9 @@ export function InteriorStage({
   sayToken,
   personToken,
   personWalkFrames,
+  personIdleFrames,
   personPalette,
+  personName,
 }: InteriorStageProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<InteriorScene | null>(null);
@@ -77,7 +81,9 @@ export function InteriorStage({
       layout: initialRef.current.layout,
       editMode: initialRef.current.editMode,
       personWalkFrames,
+      personIdleFrames,
       personPalette,
+      personName,
       callbacks: {
         onFurnitureTap: (i) => cbRef.current?.onFurnitureTap?.(i),
         onFloorTap: (x, y) => cbRef.current?.onFloorTap?.(x, y),

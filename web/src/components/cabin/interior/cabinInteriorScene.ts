@@ -4,6 +4,7 @@ import {
   Graphics,
   Sprite,
   Text,
+  Texture,
   TilingSprite,
 } from 'pixi.js';
 import {
@@ -36,6 +37,13 @@ import {
   type InteriorItem,
   type InteriorLayout,
 } from './interiorLayout';
+import {
+  getLoadedTinySwordsAssets,
+  loadTinySwordsAssets,
+  getPawnFrames,
+  getSheepFrames,
+  type TinySwordsAssets,
+} from '../cabinTinySwordsArt';
 
 /**
  * W1 · 室内场景渲染层（PixiJS）
@@ -175,26 +183,54 @@ function toTexture(buf: PixelBuffer, label: string): PixelTexture {
   return bufferToTexture(buf, { label });
 }
 
-/** 墙：渐变 + 壁纸竖纹 + 护墙板 + 踢脚线（静态预渲染一次）。 */
+/** 墙：高精实木梁架 + 护墙板 + 细致木纹（静态预渲染一次）。 */
 function buildWallTexture(theme: RoomTheme): PixelTexture {
   const key = `wall:${theme.id}`;
   const hit = roomTexCache.get(key);
   if (hit) return hit;
   const buf = new PixelBuffer(INTERIOR_WIDTH, FLOOR_Y);
   buf.vGradient(0, 0, INTERIOR_WIDTH, FLOOR_Y, theme.wall, 16);
-  for (let x = 0; x < INTERIOR_WIDTH; x += 8) {
-    buf.rect(x, 0, 1, FLOOR_Y, shade(theme.wall[1]!.color, 0.96), 0.5);
+
+  // 1. 顶部天花板主梁 (Ceiling Timber Beam)
+  buf.rect(0, 0, INTERIOR_WIDTH, 8, shade(theme.trim, 1.25));
+  buf.rect(0, 7, INTERIOR_WIDTH, 1, lighten(theme.trim, 1.25), 0.65);
+  buf.rect(0, 8, INTERIOR_WIDTH, 3, 0x120c18, 0.28);
+
+  // 2. 上部实木壁板横向长条木纹 (Shiplap Horizontal Planks)
+  const railY = Math.round(FLOOR_Y * 0.62); // ~59
+  for (let y = 10; y < railY; y += 12) {
+    buf.rect(0, y, INTERIOR_WIDTH, 1, shade(theme.wall[1]!.color, 0.94), 0.55);
+    buf.rect(0, y + 1, INTERIOR_WIDTH, 1, lighten(theme.wall[0]!.color, 1.08), 0.35);
   }
-  const railY = Math.round(FLOOR_Y * 0.62);
-  buf.rect(0, railY, INTERIOR_WIDTH, 2, theme.trim, 0.55);
-  buf.rect(0, railY + 2, INTERIOR_WIDTH, 1, lighten(theme.trim, 1.4), 0.35);
-  buf.rect(0, FLOOR_Y - 4, INTERIOR_WIDTH, 4, theme.trim, 0.8);
+  const prng = mulberry32(theme.id.length * 3721 + 7);
+  for (let x = 4; x < INTERIOR_WIDTH; x += 16) {
+    const rx = x + Math.floor((prng() - 0.5) * 6);
+    buf.rect(rx, 10, 1, railY - 10, shade(theme.wall[1]!.color, 0.96), 0.35);
+  }
+
+  // 3. 腰线雕花装饰护墙带 (Carved Chair Rail Moulding)
+  buf.rect(0, railY - 2, INTERIOR_WIDTH, 1, lighten(theme.trim, 1.35), 0.7);
+  buf.rect(0, railY - 1, INTERIOR_WIDTH, 3, theme.trim, 0.95);
+  buf.rect(0, railY + 2, INTERIOR_WIDTH, 1, shade(theme.trim, 1.4), 0.8);
+  buf.rect(0, railY + 3, INTERIOR_WIDTH, 2, 0x100812, 0.25);
+
+  // 4. 下半部复古竖向护壁板 (Vertical Beadboard Wainscoting)
+  for (let x = 0; x < INTERIOR_WIDTH; x += 8) {
+    buf.rect(x, railY + 3, 1, FLOOR_Y - railY - 7, shade(theme.trim, 1.2), 0.45);
+    buf.rect(x + 1, railY + 3, 1, FLOOR_Y - railY - 7, lighten(theme.trim, 1.15), 0.25);
+  }
+
+  // 5. 底部厚实踢脚线 (Sturdy Baseboard)
+  buf.rect(0, FLOOR_Y - 6, INTERIOR_WIDTH, 1, lighten(theme.trim, 1.35), 0.6);
+  buf.rect(0, FLOOR_Y - 5, INTERIOR_WIDTH, 5, theme.trim, 0.95);
+  buf.rect(0, FLOOR_Y - 1, INTERIOR_WIDTH, 1, shade(theme.trim, 1.5), 0.85);
+
   const tex = toTexture(buf, `room-wall-${theme.id}`);
   roomTexCache.set(key, tex);
   return tex;
 }
 
-/** 地板：拼板 + 错缝 + 木纹（横向可平铺）。 */
+/** 地板：高精错缝拼花实木地板 + 倒角高光 + 木节年轮（横向无缝平铺）。 */
 function buildFloorTexture(theme: RoomTheme): PixelTexture {
   const key = `floor:${theme.id}`;
   const hit = roomTexCache.get(key);
@@ -203,42 +239,115 @@ function buildFloorTexture(theme: RoomTheme): PixelTexture {
   const h = INTERIOR_HEIGHT - FLOOR_Y;
   const buf = new PixelBuffer(w, h);
   buf.rect(0, 0, w, h, theme.floor);
-  for (let y = 0; y < h; y += 8) buf.rect(0, y, w, 1, theme.floorDark, 0.75);
-  const prng = mulberry32(theme.id.length * 7919 + 13);
-  for (let y = 0; y < h; y += 8) {
-    const offset = Math.floor(prng() * 32);
-    buf.rect((offset + 32) % w, y, 1, 8, theme.floorDark, 0.45);
+
+  const prng = mulberry32(theme.id.length * 7919 + 43);
+  const plankH = 14;
+
+  // 横向实木拼板缝隙与倒角高光
+  for (let y = 0; y < h; y += plankH) {
+    buf.rect(0, y, w, 1, shade(theme.floorDark, 1.25), 0.85);
+    if (y + 1 < h) {
+      buf.rect(0, y + 1, w, 1, lighten(theme.floor, 1.15), 0.4);
+    }
+    // 纵向端缝错位（每行交错）
+    const rowIdx = Math.floor(y / plankH);
+    const seamOffset = (rowIdx % 2 === 0 ? 0 : 32) + Math.floor(prng() * 4);
+    buf.rect(seamOffset % w, y, 1, plankH, shade(theme.floorDark, 1.25), 0.7);
+    buf.rect((seamOffset + 32) % w, y, 1, plankH, shade(theme.floorDark, 1.25), 0.7);
   }
-  for (let i = 0; i < 90; i++) {
+
+  // 丰富木质肌理、微小木节与漫反射斑纹
+  for (let i = 0; i < 110; i++) {
     const gx = Math.floor(prng() * w);
     const gy = Math.floor(prng() * h);
-    buf.rect(gx, gy, 2 + Math.floor(prng() * 3), 1, theme.floorDark, 0.3);
+    const len = 2 + Math.floor(prng() * 4);
+    buf.rect(gx, gy, len, 1, theme.floorDark, 0.28);
+    if (prng() > 0.85) {
+      buf.rect(gx + 1, gy, 1, 1, lighten(theme.floor, 1.2), 0.35);
+    }
   }
+
   const tex = toTexture(buf, `room-floor-${theme.id}`);
   tex.texture.source.addressMode = 'repeat';
   roomTexCache.set(key, tex);
   return tex;
 }
 
-/** 窗：窗框 + 玻璃渐变 + 窗棂 + 窗台（点光源载体）。 */
+/** 窗：2000K 温暖晚霞天色 + 远山剪影 + 黄铜窗帘杆与褶皱束帘 + 雕花实木窗棂。 */
 function buildWindowTexture(theme: RoomTheme): PixelTexture {
   const key = `window:${theme.id}`;
   const hit = roomTexCache.get(key);
   if (hit) return hit;
-  const w = 56;
-  const h = 40;
+  const w = 60;
+  const h = 46;
   const buf = new PixelBuffer(w, h);
-  buf.vGradient(2, 2, w - 4, h - 8, [
-    { t: 0, color: lighten(theme.windowLight, 1.15) },
-    { t: 1, color: shade(theme.windowLight, 0.82) },
-  ], 12);
-  buf.rect(Math.floor(w / 2) - 1, 2, 2, h - 8, theme.trim);
-  buf.rect(2, Math.floor(h / 2) - 1, w - 4, 2, theme.trim);
-  buf.rect(0, 0, w, 2, theme.trim);
-  buf.rect(0, h - 6, w, 2, theme.trim);
-  buf.rect(0, 0, 2, h, theme.trim);
-  buf.rect(w - 2, 0, 2, h, theme.trim);
-  buf.rect(0, h - 4, w, 4, lighten(theme.trim, 1.25));
+
+  // 1. 窗外 2000K 琥珀金与晚霞天光渐变
+  buf.vGradient(8, 6, w - 16, h - 14, [
+    { t: 0, color: hexToNumber('#ffd494') },
+    { t: 0.55, color: hexToNumber('#fca85d') },
+    { t: 1, color: hexToNumber('#e06d53') },
+  ], 10);
+
+  // 窗外远山剪影 (Distant Mountain Silhouette)
+  const mountainBase = h - 14;
+  for (let x = 8; x < w - 8; x++) {
+    const mh = Math.max(2, Math.round(5 + Math.sin((x - 8) * 0.18) * 3 + Math.cos((x - 8) * 0.35) * 2));
+    buf.rect(x, mountainBase - mh, 1, mh, hexToNumber('#5a3d5c'), 0.72);
+  }
+
+  // 2. 实木外窗框与内十字窗棂 (Timber Frame & Muntin)
+  const paneLeft = 8;
+  const paneTop = 6;
+  const paneW = w - 16;
+  const paneH = h - 14;
+  const midX = Math.floor(paneLeft + paneW / 2);
+  const midY = Math.floor(paneTop + paneH / 2);
+
+  // 窗棂
+  buf.rect(midX - 1, paneTop, 2, paneH, theme.trim);
+  buf.rect(paneLeft, midY - 1, paneW, 2, theme.trim);
+  buf.rect(midX - 1, paneTop, 1, paneH, lighten(theme.trim, 1.25), 0.5);
+  buf.rect(paneLeft, midY - 1, paneW, 1, lighten(theme.trim, 1.25), 0.5);
+
+  // 3. 黄铜窗帘杆与球形端头 (Brass Curtain Rod & Finials)
+  buf.rect(3, 2, w - 6, 2, hexToNumber('#c89b3c'));
+  buf.rect(4, 2, w - 8, 1, hexToNumber('#fce38a'), 0.8);
+  buf.rect(1, 1, 3, 4, hexToNumber('#b88728'));
+  buf.rect(2, 2, 1, 2, hexToNumber('#ffea9f'));
+  buf.rect(w - 4, 1, 3, 4, hexToNumber('#b88728'));
+  buf.rect(w - 3, 2, 1, 2, hexToNumber('#ffea9f'));
+
+  // 4. 束起垂坠窗帘布 (Tied-back Draped Curtains)
+  const curtainBase = hexToNumber('#fbf3e4');
+  const curtainShadow = hexToNumber('#d4c5a9');
+  const curtainTie = hexToNumber('#b84a39');
+
+  // 左侧窗帘
+  for (let y = 4; y < h - 4; y++) {
+    const curW = y < midY ? 8 - Math.floor((y - 4) * 0.2) : 6 + Math.floor((y - midY) * 0.25);
+    buf.rect(3, y, curW, 1, curtainBase);
+    buf.rect(3 + curW - 1, y, 1, 1, curtainShadow, 0.7);
+    if ((y + 1) % 4 === 0) buf.rect(4, y, 2, 1, curtainShadow, 0.4);
+  }
+  buf.rect(3, midY + 1, 6, 2, curtainTie);
+
+  // 右侧窗帘
+  for (let y = 4; y < h - 4; y++) {
+    const curW = y < midY ? 8 - Math.floor((y - 4) * 0.2) : 6 + Math.floor((y - midY) * 0.25);
+    const rx = w - 3 - curW;
+    buf.rect(rx, y, curW, 1, curtainBase);
+    buf.rect(rx, y, 1, 1, curtainShadow, 0.7);
+    if ((y + 1) % 4 === 0) buf.rect(rx + curW - 3, y, 2, 1, curtainShadow, 0.4);
+  }
+  buf.rect(w - 9, midY + 1, 6, 2, curtainTie);
+
+  // 5. 加宽厚实实木窗台板 (Wide Timber Window Sill)
+  buf.rect(paneLeft - 3, h - 8, paneW + 6, 2, theme.trim);
+  buf.rect(paneLeft - 4, h - 6, paneW + 8, 3, lighten(theme.trim, 1.28));
+  buf.rect(paneLeft - 4, h - 6, paneW + 8, 1, 0xffffff, 0.35);
+  buf.rect(paneLeft - 2, h - 3, paneW + 4, 1, shade(theme.trim, 1.35), 0.75);
+
   const tex = toTexture(buf, `room-window-${theme.id}`);
   roomTexCache.set(key, tex);
   return tex;
@@ -388,7 +497,9 @@ export interface CreateInteriorSceneOptions {
    * 可选；不传或帧数 <2 时回退默认小人，行为与注入前完全一致。
    */
   personWalkFrames?: readonly (readonly string[])[];
+  personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
+  personName?: string;
 }
 
 const PARTICLE_POOL = 48;
@@ -450,6 +561,12 @@ export async function createCabinInteriorScene(
     width: INTERIOR_WIDTH,
     height: INTERIOR_HEIGHT - FLOOR_Y,
   });
+  floorSpr.y = FLOOR_Y;
+
+  // 2000K 晨光地面漫射梯形光斑 (Trapezoidal sunlight beam on hardwood floor)
+  const windowFloorLight = new Graphics();
+  windowFloorLight.blendMode = 'add';
+  floorLayer.addChild(floorSpr, windowFloorLight);
 
   // 层 3：角色 + 家具（按伪深度重排）
   const actorLayer = new Container();
@@ -480,47 +597,148 @@ export async function createCabinInteriorScene(
   const DOOR_Y = FLOOR_Y - DOOR_H;
 
   wallLayer.addChild(wallSpr, windowGlow, windowSpr, doorGlow, doorSpr);
-  floorLayer.addChild(floorSpr);
   root.addChild(wallLayer, ambient, floorLayer, gridOverlay, actorLayer, vignette);
 
-  /* ------------------------------ 角色 ------------------------------ */
+  /* ------------------------------ 角色与宠物 ------------------------------ */
   const personShadow = new Sprite(getShadowTexture().texture);
   personShadow.anchor.set(0.5, 0.5);
   personShadow.alpha = 0.55;
   const personBody = new Sprite();
-  personBody.anchor.set(0.5, 1);
   personBody.roundPixels = true;
+
   const petShadow = new Sprite(getShadowTexture().texture);
   petShadow.anchor.set(0.5, 0.5);
   petShadow.alpha = 0.45;
   const petBody = new Sprite();
-  petBody.anchor.set(0.5, 1);
   petBody.roundPixels = true;
 
-  // W11 注入：个性化小人矩阵（≥2 帧）优先，不传或帧数不足则回退默认小人。
-  const customFrames = options.personWalkFrames;
-  const useCustomPerson = Array.isArray(customFrames) && customFrames.length >= 2;
-  const personFrames = useCustomPerson ? customFrames : PERSON_WALK_FRAMES;
-  const personPal = useCustomPerson ? (options.personPalette ?? PERSON_PALETTE) : PERSON_PALETTE;
-  const personTag = useCustomPerson ? 'room-person-custom' : 'room-person';
-  const personTexA = spriteFromMatrix(personFrames[0]!, personPal, { label: `${personTag}-a` }, `${personTag}-a`);
-  const personTexB = spriteFromMatrix(personFrames[1]!, personPal, { label: `${personTag}-b` }, `${personTag}-b`);
-  const petPal = petPalette(hexToNumber('#7fc8e8'));
-  const petTexA = spriteFromMatrix(PET_WALK_FRAMES[0]!, petPal, { label: 'room-pet-a' }, 'room-pet-a');
-  const petTexB = spriteFromMatrix(PET_WALK_FRAMES[1]!, petPal, { label: 'room-pet-b' }, 'room-pet-b');
-  personBody.texture = personTexA.texture;
-  petBody.texture = petTexA.texture;
+  // 名牌容器（像素暗牌 + 高光边 + 粗体名字）
+  const nameTagC = new Container();
+  const namePlateG = new Graphics();
+  const nameTag = new Text({
+    text: options.personName || '旅人',
+    style: {
+      fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+      fontSize: 10,
+      fill: 0xf8fafc,
+      fontWeight: 'bold',
+    },
+  });
+  nameTag.anchor.set(0.5, 0.5);
+  nameTag.position.set(0, -8);
+  nameTagC.addChild(namePlateG, nameTag);
+
+  function updateNamePlate(): void {
+    const tw = nameTag.width;
+    namePlateG.clear();
+    namePlateG.rect(-tw / 2 - 4, -14, tw + 8, 12).fill({ color: 0x0f172a, alpha: 0.72 });
+    namePlateG.rect(-tw / 2 - 4, -14, tw + 8, 1).fill({ color: 0x94a3b8, alpha: 0.9 });
+  }
+  updateNamePlate();
 
   const personHolder = new Container();
-  personHolder.addChild(personShadow, personBody);
+  personHolder.addChild(personShadow, personBody, nameTagC);
   const petHolder = new Container();
   petHolder.addChild(petShadow, petBody);
   actorLayer.addChild(personHolder, petHolder);
 
   let personX = 6 * GRID;
   let personY = 5;
+  let targetX = personX;
+  let targetY = personY;
+  let isMoving = false;
+  let personDir = 1;
   let sleeping = false;
   let sleepUntil = 0;
+
+  let headTopOffset = -26;
+  let personBaseScaleX = 1;
+  let personBaseScaleY = 1;
+  let petBaseScale = 1;
+
+  let characterMode: 'custom' | 'pawn' | 'fallback' = 'fallback';
+  let petMode: 'sheep' | 'fallback' = 'fallback';
+
+  let customWalkTextures: Texture[] = [];
+  let customIdleTextures: Texture[] = [];
+  let pawnWalkTextures: Texture[] = [];
+  let pawnIdleTextures: Texture[] = [];
+  let sheepTextures: Texture[] = [];
+  let fallbackPersonWalkTextures: Texture[] = [];
+  let fallbackPetWalkTextures: Texture[] = [];
+
+  // W11 个性化小人矩阵优先（≥2 帧），用户有专属头像时渲染 24×48 高清微像素角色
+  const customFrames = options.personWalkFrames;
+  const useCustomPerson = Array.isArray(customFrames) && customFrames.length >= 2;
+  const personPal = options.personPalette ?? PERSON_PALETTE;
+
+  if (useCustomPerson) {
+    characterMode = 'custom';
+    headTopOffset = -50;
+    personBaseScaleX = 1;
+    personBaseScaleY = 1;
+    personBody.anchor.set(0.5, 1);
+    customWalkTextures = customFrames.map((m, idx) =>
+      spriteFromMatrix(m, personPal, { label: `room-custom-walk-${idx}` }, `rcw:${idx}`).texture,
+    );
+    const idleList = Array.isArray(options.personIdleFrames) && options.personIdleFrames.length >= 2
+      ? options.personIdleFrames
+      : customFrames;
+    customIdleTextures = idleList.map((m, idx) =>
+      spriteFromMatrix(m, personPal, { label: `room-custom-idle-${idx}` }, `rci:${idx}`).texture,
+    );
+    personBody.texture = customIdleTextures[0]!;
+  } else {
+    // 默认回退 16×24 小人帧
+    fallbackPersonWalkTextures = PERSON_WALK_FRAMES.map((m, idx) =>
+      spriteFromMatrix(m, PERSON_PALETTE, { label: `room-person-${idx}` }, `rp:${idx}`).texture,
+    );
+    personBody.anchor.set(0.5, 1);
+    personBody.texture = fallbackPersonWalkTextures[0]!;
+  }
+
+  // 宠物默认回退小宠
+  const petPal = petPalette(hexToNumber('#7fc8e8'));
+  fallbackPetWalkTextures = PET_WALK_FRAMES.map((m, idx) =>
+    spriteFromMatrix(m, petPal, { label: `room-pet-${idx}` }, `rpet:${idx}`).texture,
+  );
+  petBody.anchor.set(0.5, 1);
+  petBody.texture = fallbackPetWalkTextures[0]!;
+
+  function syncTinySwords(assets: TinySwordsAssets): void {
+    if (!useCustomPerson && assets.pawnYellow) {
+      characterMode = 'pawn';
+      const pawn = getPawnFrames(assets.pawnYellow);
+      pawnIdleTextures = pawn.idle;
+      pawnWalkTextures = pawn.walk;
+      headTopOffset = -38;
+      personBaseScaleX = 0.46;
+      personBaseScaleY = 0.46;
+      personBody.anchor.set(0.5, 0.72);
+      personBody.scale.set(personBaseScaleX, personBaseScaleY);
+      personBody.texture = pawnIdleTextures[0]!;
+    }
+    if (assets.sheep) {
+      petMode = 'sheep';
+      sheepTextures = getSheepFrames(assets.sheep);
+      petBaseScale = 0.42;
+      petBody.anchor.set(0.5, 0.68);
+      petBody.scale.set(petBaseScale);
+      petBody.texture = sheepTextures[0]!;
+    }
+    nameTagC.position.set(0, headTopOffset);
+  }
+
+  const loadedAssets = getLoadedTinySwordsAssets();
+  if (loadedAssets) {
+    syncTinySwords(loadedAssets);
+  } else {
+    nameTagC.position.set(0, headTopOffset);
+    void loadTinySwordsAssets().then((assets) => {
+      if (disposed || !assets) return;
+      syncTinySwords(assets);
+    });
+  }
 
   /* ------------------------------ 气泡 ------------------------------ */
   const bubbleLayer = new Container();
@@ -672,10 +890,13 @@ export async function createCabinInteriorScene(
 
   function canvasPoint(ev: PointerEvent): { x: number; y: number } {
     const rect = options.canvas.getBoundingClientRect();
-    // 画布 CSS 尺寸 → 480×270 虚拟坐标
-    const scaleX = INTERIOR_WIDTH / Math.max(1, rect.width);
-    const scaleY = INTERIOR_HEIGHT / Math.max(1, rect.height);
-    return { x: (ev.clientX - rect.left) * scaleX, y: (ev.clientY - rect.top) * scaleY };
+    const screenX = ev.clientX - rect.left;
+    const screenY = ev.clientY - rect.top;
+    const currentScale = root.scale.x || 1;
+    return {
+      x: (screenX - root.x) / currentScale,
+      y: (screenY - root.y) / currentScale,
+    };
   }
 
   function hitFurniture(px: number, py: number): InteriorItem | null {
@@ -757,23 +978,34 @@ export async function createCabinInteriorScene(
   let viewH = window.innerHeight;
 
   function applyScale(): void {
-    const scale = Math.max(1, Math.floor(Math.min(viewW / INTERIOR_WIDTH, viewH / INTERIOR_HEIGHT)));
+    const scale = Math.max(0.5, Math.min(viewW / INTERIOR_WIDTH, viewH / INTERIOR_HEIGHT));
     root.scale.set(scale);
-    root.x = Math.round((viewW - INTERIOR_WIDTH * scale) / 2);
-    root.y = Math.round((viewH - INTERIOR_HEIGHT * scale) / 2);
+    root.x = (viewW - INTERIOR_WIDTH * scale) / 2;
+    root.y = (viewH - INTERIOR_HEIGHT * scale) / 2;
   }
 
   function layoutStatic(): void {
     wallSpr.texture = buildWallTexture(theme).texture;
     floorSpr.texture = buildFloorTexture(theme).texture;
+    floorSpr.y = FLOOR_Y;
     windowSpr.texture = buildWindowTexture(theme).texture;
     windowSpr.x = Math.round(INTERIOR_WIDTH * 0.16);
-    windowSpr.y = Math.round(FLOOR_Y * 0.24);
+    windowSpr.y = Math.round(FLOOR_Y * 0.22);
     windowGlow.tint = theme.windowLight;
-    windowGlow.x = windowSpr.x + 12;
-    windowGlow.y = windowSpr.y + 14;
-    windowGlow.width = 88;
-    windowGlow.height = 72;
+    windowGlow.x = windowSpr.x + 14;
+    windowGlow.y = windowSpr.y + 16;
+    windowGlow.width = 96;
+    windowGlow.height = 80;
+
+    windowFloorLight.clear();
+    windowFloorLight.poly([
+      windowSpr.x + 8, FLOOR_Y,
+      windowSpr.x + 52, FLOOR_Y,
+      windowSpr.x + 80, FLOOR_Y + 72,
+      windowSpr.x - 20, FLOOR_Y + 72,
+    ]);
+    windowFloorLight.fill({ color: 0xffd17a, alpha: 0.22 });
+
     doorSpr.texture = buildDoorTexture(theme).texture;
     doorSpr.x = DOOR_X;
     doorSpr.y = DOOR_Y;
@@ -806,28 +1038,71 @@ export async function createCabinInteriorScene(
     last = now;
     const t = app.ticker.lastTime;
 
-    // 角色两帧行走
+    // 角色与宠物动画及平滑移动
     if (!sleeping) {
-      personX += 0.06 * (dt / 16);
-      if (personX > INTERIOR_WIDTH - 12) personX = 12;
-      const frame = Math.floor(t / 260) % 2;
-      personBody.texture = frame === 0 ? personTexA.texture : personTexB.texture;
-      petBody.texture = frame === 0 ? petTexA.texture : petTexB.texture;
+      if (isMoving) {
+        const dx = targetX - personX;
+        const dy = targetY - personY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1.2) {
+          personX = targetX;
+          personY = targetY;
+          isMoving = false;
+        } else {
+          personDir = dx >= 0 ? 1 : -1;
+          const stepX = (dx / dist) * 0.9 * (dt / 16);
+          const stepY = (dy / dist) * 0.06 * (dt / 16);
+          personX += Math.abs(dx) > Math.abs(stepX) ? stepX : dx;
+          personY += Math.abs(dy) > Math.abs(stepY) ? stepY : dy;
+        }
+      }
+
+      // 帧动画切换
+      if (characterMode === 'custom') {
+        const frames = isMoving ? customWalkTextures : customIdleTextures;
+        const speed = isMoving ? 140 : 240;
+        const idx = Math.floor(t / speed) % frames.length;
+        personBody.texture = frames[idx]!;
+        personBody.scale.set(personDir * personBaseScaleX, personBaseScaleY);
+      } else if (characterMode === 'pawn') {
+        const frames = isMoving ? pawnWalkTextures : pawnIdleTextures;
+        const speed = isMoving ? 120 : 160;
+        const idx = Math.floor(t / speed) % frames.length;
+        personBody.texture = frames[idx]!;
+        personBody.scale.set(personDir * personBaseScaleX, personBaseScaleY);
+      } else {
+        const idx = isMoving ? Math.floor(t / 220) % 2 : 0;
+        personBody.texture = fallbackPersonWalkTextures[idx]!;
+        personBody.scale.set(personDir * personBaseScaleX, personBaseScaleY);
+      }
+
+      // 宠物动画
+      if (petMode === 'sheep') {
+        const idx = Math.floor(t / 180) % sheepTextures.length;
+        petBody.texture = sheepTextures[idx]!;
+        petBody.scale.set(personDir * petBaseScale, petBaseScale);
+      } else {
+        const idx = Math.floor(t / 260) % 2;
+        petBody.texture = fallbackPetWalkTextures[idx]!;
+        petBody.scale.set(personDir * petBaseScale, petBaseScale);
+      }
     }
+
     personHolder.x = Math.round(personX);
     personHolder.y = Math.round(FLOOR_Y + personY * GRID + GRID);
-    petHolder.x = Math.round(personX - 14);
+    petHolder.x = Math.round(personX - personDir * 16);
     petHolder.y = Math.round(FLOOR_Y + personY * GRID + GRID - 2);
     personShadow.y = 2;
     petShadow.y = 2;
 
     if (sleeping && now > sleepUntil) {
       sleeping = false;
-      personBody.scale.set(1);
+      personBody.scale.set(personDir * personBaseScaleX, personBaseScaleY);
     }
 
-    // 窗光呼吸（11 号 §3.1 第 3 条：house 窗光必须呼吸闪烁）
-    windowGlow.alpha = 0.4 + Math.sin(t / 900) * 0.13;
+    // 窗光呼吸与地面晨光漫射
+    windowGlow.alpha = 0.42 + Math.sin(t / 900) * 0.12;
+    windowFloorLight.alpha = 0.22 + Math.sin(t / 900) * 0.05;
     doorGlow.alpha = 0.16 + Math.sin(t / 1400 + 1.2) * 0.07;
 
     // 粒子：浮尘上飘 + 明灭
@@ -863,14 +1138,14 @@ export async function createCabinInteriorScene(
       g.spr.y = Math.round(g.y - g.spr.height / 2);
     }
 
-    // 气泡跟随 + 到期
+    // 气泡跟随 + 到期（严格在名牌与头顶上方，永不遮挡面部）
     if (bubbleRoot.visible) {
       const halfW = bubbleG.width / 2 + 6;
       bubbleRoot.x = Math.round(
-        Math.min(INTERIOR_WIDTH - halfW, Math.max(halfW, personBody.x + personHolder.x)),
+        Math.min(INTERIOR_WIDTH - halfW, Math.max(halfW, personHolder.x)),
       );
       bubbleRoot.y = Math.round(
-        Math.max(bubbleG.height + 2, personHolder.y - bubbleG.height - 14),
+        Math.max(bubbleG.height + 2, personHolder.y + headTopOffset - bubbleG.height - 12),
       );
       if (now > bubbleUntil) bubbleRoot.visible = false;
     }
@@ -915,8 +1190,9 @@ export async function createCabinInteriorScene(
       applySelection();
     },
     movePerson(gx, gy) {
-      personX = gx * GRID + GRID / 2;
-      personY = gy;
+      targetX = gx * GRID + GRID / 2;
+      targetY = gy;
+      isMoving = true;
       reorder();
     },
     playPlaceGlow(itemId) {
@@ -939,7 +1215,7 @@ export async function createCabinInteriorScene(
     playSleep() {
       sleeping = true;
       sleepUntil = performance.now() + 2600;
-      personBody.scale.set(1, 0.62);
+      personBody.scale.set(personDir * personBaseScaleX, personBaseScaleY * 0.62);
       showBubble('晚安…');
     },
     say(text: string) {
