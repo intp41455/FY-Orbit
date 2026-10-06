@@ -230,6 +230,23 @@ class AutomationPermissionManager:
         )
         return self._mode
 
+    def verdict(self, action: str, *, min_mode: str, tool_level: int) -> tuple[bool, str]:
+        """非抛出版权限判定：返回 ``(allowed, reason)``。
+
+        补齐包1（A-能力网关-01）收编点：统一能力网关的 AutomationModeGate
+        用本方法取这一路的裁决输入，语义与 :meth:`require` 完全一致
+        （权重比较 + full 档 TTL 过期回落）。``require`` 现在也复用本判定，
+        保证「直接调用」与「经网关裁决」永远同一真相，不会漂移成两套门。
+        """
+        current = self.current()
+        allowed = current.weight >= MODE_ORDER[min_mode]
+        if not allowed:
+            return False, (
+                f"GUI automation mode '{min_mode}' required, currently "
+                f"'{current.mode}' (tool_level={tool_level})"
+            )
+        return True, f"automation mode '{current.mode}' permits (min '{min_mode}')"
+
     def require(self, action: str, *, min_mode: str, tool_level: int) -> None:
         """权限门：当前档是否允许执行 ``action``。不允许则抛 PermissionDenied。
 
@@ -244,7 +261,7 @@ class AutomationPermissionManager:
             因为档位与风险类的映射在本服务里集中管理，避免两处真相）。
         """
         current = self.current()
-        allowed = current.weight >= MODE_ORDER[min_mode]
+        allowed, reason = self.verdict(action, min_mode=min_mode, tool_level=tool_level)
         details = {
             "min_mode": min_mode,
             "current_mode": current.mode,

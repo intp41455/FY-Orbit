@@ -54,6 +54,19 @@ class Settings(BaseSettings):
     # —— 冻结契约 §7：单价未知不得按零费用放行。
     image_price_usd: str = ""
 
+    # ---- 统一能力网关（补齐包1 A-能力网关-01~06）----
+    # 授权档位：novice（小白友好档，粗粒度零配置，默认）| fine（细粒度档，
+    # 按「能力×资源×时限×可撤回」四元组细配）。切档即时生效并入审计哈希链。
+    capability_profile: str = "novice"
+    # 五级触达的级别开关覆盖（默认 L1/L2 开、L3/L4/L5 关）：
+    # {"L3": true, "L4": false, ...}，未列出的级别用内置默认。
+    # 运行期开关与一键降级由网关（services/capability/levels.py）持久化在
+    # .runtime/capability_levels.json，本配置只定初值。
+    capability_levels: dict[str, bool] = {}
+    # 补齐包3 使用：A2A client 通道的上游服务地址（None = 未配置）。
+    # 包3 的跨 agent 调度在执行前必须经能力网关（capability broker）裁决。
+    a2a_upstream_url: str | None = None
+
     @model_validator(mode="after")
     def validate_security(self):
         if self.environment not in {"local", "production", "test"}:

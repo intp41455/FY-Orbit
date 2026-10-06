@@ -88,3 +88,14 @@ class Actor:
         if self.bound_task_id is not None and self.bound_task_id != task_id:
             raise PermissionDenied("task_mismatch",
                                    f"Service credential is bound to task {self.bound_task_id}, not {task_id}", 403)
+
+    def capability_subject(self) -> str:
+        """能力网关（services/capability）使用的主体标识。
+
+        收编说明（补齐包1 A-能力网关-01）：本方法**不改变任何既有 RBAC 语义**，
+        只把 actor 归一成网关四元组授予里的 ``subject`` 字符串，供
+        ``CapabilityBroker`` 在裁决时核对「请求主体 == 凭据主体」。
+        """
+        if self.subject_type == "owner":
+            return f"owner:{self.owner_id}" if self.owner_id else "owner:"
+        return f"service:{self.service_id}" if self.service_id else "service:"

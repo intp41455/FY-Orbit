@@ -24,6 +24,7 @@ from ..services.agent import AgentService
 from ..services.audit import AuditService
 from ..services.auth import AuthService
 from ..services.budget import BudgetService
+from ..services.capability import CapabilityBroker, build_capability_broker
 from ..services.deletion import DeletionService
 from ..services.errors import PermissionDenied, Unauthenticated, ValidationFailed
 from ..services.grant import GrantService
@@ -76,6 +77,9 @@ class Services:
     teams: AgentTeamService
     # 需求12 Human-in-the-loop 执行中断/恢复（跨 Task/Agent Team/lease 三个执行面）
     hitl: HitlInterruptService
+    # 统一能力网关（补齐包1）：能力裁决唯一入口；默认 None，
+    # 仅 get_services 装配（直接构造 Services 的旧测试不受影响）。
+    capability: CapabilityBroker | None = None
 
 
 def get_settings(request: Request) -> Settings:
@@ -128,6 +132,9 @@ def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get
         ),
         # HITL 复用同一个 audit 哈希链：暂停与决策都要留痕。
         hitl=HitlInterruptService(db, audit),
+        # 统一能力网关（补齐包1）：本机能力与跨 agent 能力的唯一裁决入口，
+        # RBAC/automation 四档/五级/四元组授予/档位在此多路取最严。
+        capability=build_capability_broker(db, audit, settings),
     )
 
 

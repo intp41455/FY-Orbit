@@ -150,13 +150,23 @@ class AuditService:
     # answer for "not mine" as for "does not exist" — no existence leak.
 
     @staticmethod
-    def _identity(actor: Actor) -> str | None:
-        """The ``audit_events.actor`` value this caller is allowed to read."""
+    def identity_of(actor: Actor) -> str | None:
+        """The ``audit_events.actor`` value this caller is allowed to read.
+
+        Public since 补齐包1 (A-能力网关-06): the capability gateway's audit
+        integration (:mod:`find_yourself.services.capability.audit`) reuses
+        this exact ownership-isolation predicate for its ``capability.*``
+        frames, so both audit surfaces share one identity truth.
+        """
         if actor.subject_type == "owner":
             return actor.owner_id or None
         if actor.subject_type == "service":
             return actor.service_id or None
         return None
+
+    @classmethod
+    def _identity(cls, actor: Actor) -> str | None:
+        return cls.identity_of(actor)
 
     def frames_for_message(self, actor: Actor, message_id: str) -> list[AuditEvent]:
         """Return the frames produced by ``message_id``, ordered by ``seq``.
