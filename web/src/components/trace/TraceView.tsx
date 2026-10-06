@@ -325,10 +325,10 @@ const traceStyles = `
 .fy-trace-upload input { display: block; margin-top: 4px; font-size: 12px; }
 .fy-trace-error { padding: 10px 12px; background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 6px; margin-bottom: 12px; }
 .fy-trace-validation { padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
-.fy-trace-validation.ok { background: #f0fdf4; border: 1px solid #86efac; color: #166534; }
+.fy-trace-validation.ok { background: var(--ui-st-complete-bg); border: 1px solid var(--ui-sky-300); color: var(--ui-st-complete); }
 .fy-trace-validation.bad { background: #fef2f2; border: 1px solid #fca5a5; color: #b91c1c; }
 .fy-trace-issues { margin: 8px 0 0; padding-left: 18px; max-height: 220px; overflow: auto; }
-.fy-trace-issues li.pass { color: #166534; }
+.fy-trace-issues li.pass { color: var(--ui-st-complete); }
 .fy-trace-issues li.fail { color: #b91c1c; font-weight: 600; }
 .fy-trace-canvas-wrap { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
 .fy-trace-svg { display: block; }
@@ -337,7 +337,7 @@ const traceStyles = `
 .fy-trace-lane-line { stroke: #e2e8f0; stroke-width: 1; }
 .fy-trace-link { stroke: #94a3b8; stroke-width: 1.5; stroke-dasharray: 4 3; }
 .fy-trace-related { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 2 3; }
-.fy-trace-tick.role-actor { fill: #16a34a; }
+.fy-trace-tick.role-actor { fill: var(--ui-st-running); }
 .fy-trace-tick.role-target { fill: #f59e0b; }
 .fy-trace-node { cursor: pointer; }
 .fy-trace-node rect { stroke: rgba(15, 23, 42, 0.25); }

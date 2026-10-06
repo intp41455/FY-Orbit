@@ -40,10 +40,15 @@ const NODE_LABELS: Record<DslNodeType, string> = {
   output: '输出 output',
 };
 
+/**
+ * 节点类型配色。原先 input 用 #2f6f4f（绿），违反基线「禁止绿色」，
+ * 已换成九档令牌里的琥珀；三种类型仍保持色相分离（琥珀 / 天蓝 / 紫灰），
+ * 不会因去绿而变得难以区分。走 var() 顺带清掉三处裸色。
+ */
 const NODE_COLORS: Record<DslNodeType, string> = {
-  input: '#2f6f4f',
-  transform: '#3a5f8a',
-  output: '#7a4a8a',
+  input: 'var(--ui-st-waiting)',
+  transform: 'var(--ui-sky-600)',
+  output: 'var(--ui-st-external)',
 };
 
 const CANVAS_W = 640;

@@ -648,8 +648,10 @@ export function AvatarWorkshopPage() {
                         style={
                           current
                             ? {
-                                borderColor: 'rgba(45, 212, 191, 0.65)',
-                                boxShadow: '0 0 0 1px rgba(45, 212, 191, 0.22)',
+                                /* 同 ProfileDimensions：薄荷高亮环改由令牌派生，
+                                   不再写死 rgba(45,212,191,…) 裸色。 */
+                                borderColor: 'color-mix(in srgb, var(--ui-mint-400) 65%, transparent)',
+                                boxShadow: '0 0 0 1px color-mix(in srgb, var(--ui-mint-400) 22%, transparent)',
                               }
                             : undefined
                         }

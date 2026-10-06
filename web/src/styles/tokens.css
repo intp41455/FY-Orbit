@@ -146,6 +146,11 @@
 
   /* 层级 */
   --ui-z-nav: 40;
+  /* 遮罩必须压在它所遮的那层「之下」：遮罩 50 < 抽屉 60 < 模态 80。
+     修复前 .ui-overlay 用的是 --ui-z-modal(80) > .ui-drawer(60)，
+     结果遮罩盖住抽屉，抽屉里的按钮点不到（包 E 已实测报
+     `<div class="ui-overlay"> intercepts pointer events`）。 */
+  --ui-z-overlay: 50;
   --ui-z-drawer: 60;
   --ui-z-modal: 80;
   --ui-z-toast: 90;
@@ -448,7 +453,7 @@
 .ui-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--ui-z-modal);
+  z-index: var(--ui-z-overlay);
   background: rgba(148, 178, 208, 0.28);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
@@ -612,4 +617,47 @@
   .ui-dot--running,
   .ui-dot--verifying { animation: none; }
   .ui-skel { animation: none; }
+}
+
+/* ==========================================================================
+   零绿色覆写层（收口包）
+
+   基线「禁止绿色」是红线，但 styles.css 有一批「成功/新增」语义色仍停留在
+   绿色时代的遗留值：diff 新增行、diff 统计、哈希校验通过、插件低风险徽标。
+   用户天天看得见，必须清掉。
+
+   为什么放在 tokens.css 而不是改 styles.css：
+     - styles.css 是冻结件；
+     - main.tsx 的导入顺序是 styles.css(L3) → tokens.css(L5)，
+       同特异性下后加载者胜出，所以这里用**相同选择器**即可覆盖，
+       不需要 !important，也不需要提高特异性去硬压；
+     - 替换目标一律指向已存在的九档状态令牌（--ui-st-complete 深蓝 /
+       --ui-st-complete-bg 冰蓝底），不新造颜色 —— 绿色本来就是
+       「零绿色」规则之前的历史遗留，设计系统里并没有对应的绿色令牌。
+
+   增删仍必须可区分：新增=深蓝，删除=红（.diff-del 保持不动）。
+
+   像素画 / 风景渐变（.cabin-scene-* 的草绿天空、components/cabin/** 的
+   furnitureArt 与 cabinConfig 调色板）不在此层：它们是美术资产而非界面
+   状态色，套状态令牌会毁掉画作。
+   ========================================================================== */
+.diff-stat-add {
+  color: var(--ui-st-complete);
+}
+.commit-diff-file .diff-add,
+.commit-diff-file .diff-row.diff-add {
+  background: color-mix(in srgb, var(--ui-st-complete) 16%, transparent);
+}
+.diff-add {
+  background: var(--ui-st-complete-bg);
+  color: var(--ui-st-complete);
+}
+.hash-verify.ok {
+  background: var(--ui-st-complete-bg);
+  border-color: var(--ui-st-complete);
+  color: var(--ui-st-complete);
+}
+.fy-plugin-risk-low {
+  background: var(--ui-st-complete-bg);
+  color: var(--ui-st-complete);
 }

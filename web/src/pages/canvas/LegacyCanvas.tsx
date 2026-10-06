@@ -496,7 +496,7 @@ export function LegacyCanvas() {
                   <div>
                     <strong>{c.name}</strong> · <span style={{ color: '#64748b' }}>{c.protocol} ({c.role})</span>
                     {c.binary_path && (
-                      <div style={{ fontSize: '0.72rem', color: '#10b981', marginTop: '2px' }}>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--ui-st-complete)', marginTop: '2px' }}>
                         可执行路径: <code>{c.binary_path}</code>
                       </div>
                     )}
