@@ -1151,13 +1151,44 @@
 .cdbg-shell .page-head.cdbg-page-head h2 { margin: 0; }
 
 .cdbg-badges { display: flex; flex-wrap: wrap; gap: var(--ui-s-2); }
-.cdbg-grid {
-  display: grid;
-  gap: var(--ui-s-4);
-  grid-template-columns: 320px minmax(0, 1fr) 300px;
-  align-items: start;
-}
-.cdbg-col { display: flex; flex-direction: column; gap: var(--ui-s-3); min-width: 0; }
+  .cdbg-grid {
+    display: grid;
+    gap: var(--ui-s-4);
+    /* 三列改为比例列。原先是 `320px minmax(0,1fr) 300px` —— 两侧写死像素、
+       只有中间自适应，于是「对话」拿到 436px 而两侧各占 ~300/320px，
+       窗口变化时两侧不动、中间被挤。改成两侧 minmax 下限 + 中间更大权重，
+       三列同呼吸：对话是主交互面，给它 1.7 份。 */
+    grid-template-columns:
+      minmax(288px, 1fr)
+      minmax(0, 1.7fr)
+      minmax(288px, 1fr);
+    /* 原为 align-items: start —— 三列各自按内容收缩，实测高度 389 / 168 / 85px，
+       作为主角的「对话」反而最矮，页面 900px 高只用掉 389px。改为 stretch 后
+       三栏等高，并由下面的 min-height 占满可用视口高度。 */
+    align-items: stretch;
+    /* 占满首屏：减去 page-head 与外壳间距，剩余高度留给三栏。
+       100dvh 而非 100vh，避免移动端浏览器地址栏导致溢出。 */
+    min-height: calc(100dvh - var(--app-head-h, 76px) - 96px);
+  }
+  .cdbg-col { display: flex; flex-direction: column; gap: var(--ui-s-3); min-width: 0; min-height: 0; }
+
+  /* 窄屏：三栏先并为「配置 + 对话」一行，trace 落到第二行整宽，
+     而不是三栏硬挤导致每栏都读不下去。 */
+  @media (max-width: 1180px) {
+    .cdbg-grid {
+      grid-template-columns: minmax(260px, 1fr) minmax(0, 1.4fr);
+      min-height: 0;
+    }
+    .cdbg-col:last-child { grid-column: 1 / -1; }
+  }
+  @media (max-width: 760px) {
+    .cdbg-grid { grid-template-columns: minmax(0, 1fr); }
+    .cdbg-col:last-child { grid-column: auto; }
+    /* 单栏时取消等高强制，交给内容自然高度，避免大片空白。 */
+    .cdbg-grid { align-items: start; }
+    .cdbg-messages { max-height: none; }
+  }
+
 
 .cdbg-panel {
   display: flex;
@@ -1169,8 +1200,21 @@
   background: var(--ui-glass-2);
   box-shadow: var(--ui-shadow-1);
 }
-.cdbg-panel-hd { display: flex; align-items: center; gap: var(--ui-s-2); }
-.cdbg-panel-hd strong { font-size: var(--ui-fs-sm); color: var(--ui-ink-1); }
+  .cdbg-panel-hd { display: flex; align-items: center; gap: var(--ui-s-2); }
+  /* 面板头用 h3：三个「配置 / 对话 / 工具调用 trace」是同级分区标题，
+     用 <strong> 读屏无法按标题导航，也拿不到 heading 语义。
+     视觉不变（字号字重与原 .cdbg-panel-hd strong 一致）。 */
+  .cdbg-panel-hd h3 {
+    margin: 0;
+    font-size: var(--ui-fs-sm);
+    font-weight: 700;
+    color: var(--ui-ink-1);
+  }
+  /* 面板需在等高栏内撑满，消息区才能靠 flex 吃到剩余高度 */
+  .cdbg-panel > .cdbg-panel-hd { flex: 0 0 auto; }
+  /* 面板本身吃掉所在栏的高度，否则 .cdbg-messages 的 flex:1 无处可长——
+     实测加了等高栏但没加这条时，消息区仍停在 min-height 的 120px。 */
+  .cdbg-col > .cdbg-panel { flex: 1 1 auto; min-height: 0; }
 
 /* 联动高亮：glow ≤600ms，一次性 */
 .cdbg-linked {
@@ -1197,7 +1241,19 @@
 }
 .cdbg-tool-row:nth-child(odd) { background: color-mix(in srgb, var(--ui-st-paused-bg) 66.7%, transparent); }
 
-.cdbg-messages { display: flex; flex-direction: column; gap: var(--ui-s-3); max-height: 46vh; overflow: auto; }
+  .cdbg-messages {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ui-s-3);
+    /* 原为 max-height: 46vh 的固定上限，导致消息区高度与所在栏无关、
+       对话栏被压成整页最矮的一栏（实测 168px vs 配置栏 389px）。
+       改为在面板内自适应并吃掉剩余高度，滚动交给消息区自己，
+       这样「发消息」这个主交互面拿到最大可视面积。 */
+    flex: 1 1 auto;
+    min-height: 120px;
+    max-height: none;
+    overflow: auto;
+  }
 .cdbg-msg { display: flex; }
 .cdbg-msg[data-role='user'] { justify-content: flex-end; }
 .cdbg-bubble {

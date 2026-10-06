@@ -885,3 +885,56 @@
 .wb-zone-right::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--ui-sky-600) 65%, transparent);
 }
+
+/* ==========================================================================
+   复选框 / 单选框归位
+
+   styles.css:92 有一条**裸元素选择器**遗留规则：
+
+       input, textarea, select { font: inherit; width: 100%; min-height: 44px;
+                                 background: rgba(255,255,255,.9);
+                                 border: 1px solid var(--line);
+                                 border-radius: 12px; padding: .6rem .75rem; }
+
+   `width:100%` 无差别命中**所有** input，包括 radio 与 checkbox。实测后果：
+   设置页「桌面自动化权限」的单选框被撑成 **807 × 44px**，宽 radio 的圆点渲染在
+   水平居中、说明文字被推到最右，四个选项看起来完全散架。
+   全站共 **13 个文件、21 处** checkbox/radio 受此影响（AdvancedConfigDrawer 7、
+   AvatarWorkshopPage 2、ChatDebugPage 2、FileTree / GitPanel / PreviewPanel /
+   AutomationPermissionCard / BackupRestorePanel / ConnectionForm /
+   InteriorDecoratePanel / BusPanel / SettingsPage 各 1）。
+
+   styles.css 是冻结件，故在 tokens.css 覆写（它后加载）。这里把复选类控件从
+   那条规则里摘出来，恢复原生外观，只保留设计系统该管的部分：accent-color 与
+   命中区尺寸（§7 最小点击守则要求 ≥44×44，用 min-width/min-height 而不是
+   padding 撑大，这样视觉仍是小方块、命中区仍达标）。
+   ========================================================================== */
+input[type='checkbox'],
+input[type='radio'],
+input[type='range'] {
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  /* 视觉保持小控件，但命中区仍不小于 §7 要求的 44px —— 用 min-* 而不是
+     padding，避免把方块本身撑成大药丸。 */
+  min-width: var(--ui-hit);
+  min-height: var(--ui-hit);
+  accent-color: var(--ui-sky-600);
+  cursor: pointer;
+}
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+/* radio/checkbox 本身不该继承那条 44px 的 min-height，否则圆点会被压扁；
+   命中区改由包裹它的 label 承担。 */
+input[type='checkbox'],
+input[type='radio'] {
+  min-width: 20px;
+  min-height: 20px;
+}

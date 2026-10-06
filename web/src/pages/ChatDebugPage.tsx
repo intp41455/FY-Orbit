@@ -5,6 +5,7 @@ import {
   type PromptTemplateSummary, type StreamChatBody, type TemplateMetaBadge,
   type ToolMeta, type ToolTraceEntry,
 } from '../api/chatDebug';
+import './../styles/pages/workbench.css';
 
 /** 变量填值表单的字符串状态（bool 用 checkbox，list 用逗号分隔）。 */
 type VarDraft = Record<string, string | boolean>;
@@ -84,6 +85,10 @@ export function ChatDebugPage() {
   const [error, setError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+
+  // 联动高亮 ref：流式 tool_call 时高亮工具段对应行
+  const toolHighlightRef = useRef<string | null>(null);
+  const [, forceGlow] = useState(0);
 
   // 初次加载模板库 + 工具注册表；命中试跑深链时自动填充变量。
   useEffect(() => {
@@ -178,6 +183,9 @@ export function ChatDebugPage() {
         if (event === 'tool_call') {
           entry.name = String(data.name ?? entry.name);
           entry.arguments = (data.arguments as Record<string, unknown>) ?? {};
+          // 联动：高亮工具段对应行
+          toolHighlightRef.current = entry.name;
+          forceGlow((n) => n + 1);
         } else {
           entry.call_id = data.call_id ? String(data.call_id) : entry.call_id;
           entry.result = data.result;
@@ -204,172 +212,230 @@ export function ChatDebugPage() {
 
   const schemaEntries = Object.entries(activeTemplate?.variables_schema ?? {});
 
+  // 变量名 ↔ 工具参数同名匹配（§1.2 联动）
+  const linkedVarNames = useMemo(() => {
+    const toolParamKeys = new Set<string>();
+    for (const t of tools) {
+      if (boundTools.includes(t.name)) {
+        const params = (t as { parameters?: { properties?: Record<string, unknown> } }).parameters;
+        if (params?.properties) {
+          for (const k of Object.keys(params.properties)) toolParamKeys.add(k);
+        }
+      }
+    }
+    return schemaEntries
+      .filter(([name]) => toolParamKeys.has(name))
+      .map(([name]) => name);
+  }, [tools, boundTools, schemaEntries]);
+
+  const linkedToolNames = useMemo(() => {
+    const varNames = new Set(schemaEntries.map(([name]) => name));
+    return tools
+      .filter((t) => {
+        if (!boundTools.includes(t.name)) return false;
+        const params = (t as { parameters?: { properties?: Record<string, unknown> } }).parameters;
+        if (!params?.properties) return false;
+        return Object.keys(params.properties).some((k) => varNames.has(k));
+      })
+      .map((t) => t.name);
+  }, [tools, boundTools, schemaEntries]);
+
   return (
-    <div data-testid="chat-debug-root">
-      <div className="page-head">
+    <div className="cdbg-shell" data-testid="chat-debug-root">
+      <div className="page-head cdbg-page-head">
         <h2>Chat 调试预览</h2>
-        <div className="row" data-testid="chat-debug-badges">
+        <div className="cdbg-badges" data-testid="chat-debug-badges">
           {streamMeta && (
             <>
-              <span className="badge ok" data-testid="badge-template">
+              <span className="ui-badge ui-badge--ok" data-testid="badge-template">
                 {streamMeta.name} v{streamMeta.version}
               </span>
-              <span className="badge" title="审计链一致（P1-01 §4）">
+              <span className="ui-badge" title="审计链一致（P1-01 §4）">
                 variables_hash: {streamMeta.variables_hash.slice(0, 12)}
               </span>
             </>
           )}
           {boundTools.length > 0 && (
-            <span className="badge accent" data-testid="badge-tools">
+            <span className="ui-badge ui-badge--accent" data-testid="badge-tools">
               工具 × {boundTools.length}
             </span>
           )}
         </div>
       </div>
 
-      <div className="grid cols-2" style={{ gridTemplateColumns: '340px 1fr', alignItems: 'start' }}>
-        {/* 左侧：配置区（模板 + 变量 + 工具 + 模型） */}
-        <div className="card" data-testid="chat-debug-config">
-          <strong>配置</strong>
-          <div style={{ marginTop: '0.75rem' }}>
-            <label htmlFor="tpl-select">提示词模板</label>
-            <select
-              id="tpl-select"
-              data-testid="template-select"
-              value={selectedTemplate}
-              onChange={(e) => onSelectTemplate(e.target.value)}
-            >
-              <option value="">（不使用模板）</option>
-              {prompts.map((p) => (
-                <option key={p.name} value={p.name} disabled={!p.is_active}>
-                  {p.name} v{p.latest_version}{p.is_active ? '' : '（未启用）'}
-                </option>
-              ))}
-            </select>
-          </div>
+      <div className="cdbg-grid">
+        {/* ① 模板段（320px） */}
+        <div className="cdbg-col" data-testid="chat-debug-config">
+          <div className="cdbg-panel">
+            <div className="cdbg-panel-hd"><h3>配置</h3></div>
 
-          {schemaEntries.length > 0 && (
-            <fieldset data-testid="variable-form" style={{ marginTop: '0.75rem' }}>
-              <legend>变量填值</legend>
-              {schemaEntries.map(([name, spec]) => (
-                <div key={name} style={{ marginBottom: '0.5rem' }}>
-                  <label htmlFor={`var-${name}`}>
-                    {name}
-                    {spec?.required ? ' *' : ''}
-                    {spec?.type ? ` (${spec.type})` : ''}
-                  </label>
-                  {spec?.type === 'bool' ? (
-                    <input
-                      id={`var-${name}`} type="checkbox" data-testid={`var-input-${name}`}
-                      checked={varDraft[name] === true}
-                      onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.checked }))}
-                    />
-                  ) : (
-                    <input
-                      id={`var-${name}`} data-testid={`var-input-${name}`}
-                      type={spec?.type === 'int' || spec?.type === 'float' ? 'number' : 'text'}
-                      value={String(varDraft[name] ?? '')}
-                      onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.value }))}
-                    />
-                  )}
-                </div>
-              ))}
-            </fieldset>
-          )}
+            <div>
+              <label htmlFor="tpl-select">提示词模板</label>
+              <select
+                id="tpl-select"
+                data-testid="template-select"
+                value={selectedTemplate}
+                onChange={(e) => onSelectTemplate(e.target.value)}
+              >
+                <option value="">（不使用模板）</option>
+                {prompts.map((p) => (
+                  <option key={p.name} value={p.name} disabled={!p.is_active}>
+                    {p.name} v{p.latest_version}{p.is_active ? '' : '（未启用）'}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <fieldset style={{ marginTop: '0.75rem' }}>
-            <legend>绑定工具（{tools.length}）</legend>
-            {tools.length === 0 && loaded && (
-              <div className="muted">暂无已注册工具（可在 /api/tools/register 登记）。</div>
+            {schemaEntries.length > 0 && (
+              <fieldset data-testid="variable-form">
+                <legend>变量填值</legend>
+                {schemaEntries.map(([name, spec]) => (
+                  <div
+                    key={name}
+                    className={`cdbg-var-row${linkedVarNames.includes(name) ? ' cdbg-linked' : ''}`}
+                  >
+                    <label htmlFor={`var-${name}`}>
+                      {name}
+                      {spec?.required ? ' *' : ''}
+                      {spec?.type ? ` (${spec.type})` : ''}
+                    </label>
+                    {spec?.type === 'bool' ? (
+                      <input
+                        id={`var-${name}`} type="checkbox" data-testid={`var-input-${name}`}
+                        checked={varDraft[name] === true}
+                        onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.checked }))}
+                      />
+                    ) : (
+                      <input
+                        id={`var-${name}`} data-testid={`var-input-${name}`}
+                        type={spec?.type === 'int' || spec?.type === 'float' ? 'number' : 'text'}
+                        value={String(varDraft[name] ?? '')}
+                        onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.value }))}
+                      />
+                    )}
+                  </div>
+                ))}
+                {linkedVarNames.length === 0 && boundTools.length > 0 && (
+                  <div className="cdbg-nomatch">该模板变量与工具参数无同名项</div>
+                )}
+              </fieldset>
             )}
-            {tools.map((t) => (
-              <label key={t.name} className="row" style={{ gap: '0.4rem', margin: '0.2rem 0' }}>
-                <input
-                  type="checkbox" data-testid={`tool-check-${t.name}`}
-                  checked={boundTools.includes(t.name)}
-                  onChange={(e) => setBoundTools((list) => e.target.checked
-                    ? [...list, t.name]
-                    : list.filter((n) => n !== t.name))}
-                />
-                <span title={t.description}>{t.name}</span>
-              </label>
-            ))}
-          </fieldset>
 
-          <div style={{ marginTop: '0.75rem' }}>
-            <label htmlFor="model-input">模型</label>
-            <input
-              id="model-input" data-testid="model-input" value={model}
-              onChange={(e) => setModel(e.target.value)}
-            />
+            <fieldset>
+              <legend>绑定工具（{tools.length}）</legend>
+              {tools.length === 0 && loaded && (
+                <div className="cdbg-nomatch">暂无已注册工具（可在 /api/tools/register 登记）。</div>
+              )}
+              {tools.map((t) => {
+                const isLinked = linkedToolNames.includes(t.name);
+                const isHighlighted = toolHighlightRef.current === t.name;
+                return (
+                  <label
+                    key={t.name}
+                    className={`cdbg-tool-row${isLinked || isHighlighted ? ' cdbg-linked' : ''}`}
+                  >
+                    <input
+                      type="checkbox" data-testid={`tool-check-${t.name}`}
+                      checked={boundTools.includes(t.name)}
+                      onChange={(e) => setBoundTools((list) => e.target.checked
+                        ? [...list, t.name]
+                        : list.filter((n) => n !== t.name))}
+                    />
+                    <span title={t.description}>{t.name}</span>
+                  </label>
+                );
+              })}
+              {linkedToolNames.length === 0 && schemaEntries.length > 0 && boundTools.length > 0 && (
+                <div className="cdbg-nomatch">未发现与已绑工具同名的变量</div>
+              )}
+            </fieldset>
+
+            <div>
+              <label htmlFor="model-input">模型</label>
+              <input
+                id="model-input" data-testid="model-input" value={model}
+                onChange={(e) => setModel(e.target.value)}
+              />
+            </div>
           </div>
         </div>
 
-        {/* 右侧：对话区 + 工具 trace 面板 */}
-        <div className="card" data-testid="chat-debug-conversation">
-          <div className="chat-scroll" data-testid="chat-messages" aria-live="polite">
-            {messages.length === 0 && (
-              <div className="muted">选择模板与工具后发送消息，观察流式回复与真实工具调用。</div>
-            )}
-            {messages.map((m, i) => (
-              <div key={i} className={`bubble ${m.role}`} data-testid={`chat-msg-${m.role}`}>
-                <div>{m.content}</div>
-              </div>
-            ))}
-          </div>
+        {/* ② 流式段（flex） */}
+        <div className="cdbg-col" data-testid="chat-debug-conversation">
+          <div className="cdbg-panel">
+            <div className="cdbg-panel-hd"><h3>对话</h3></div>
+            <div className="cdbg-messages" data-testid="chat-messages" aria-live="polite">
+              {messages.length === 0 && (
+                <div className="cdbg-nomatch">选择模板与工具后发送消息，观察流式回复与真实工具调用。</div>
+              )}
+              {messages.map((m, i) => (
+                <div key={i} className="cdbg-msg" data-role={m.role} data-testid={`chat-msg-${m.role}`}>
+                  <div className="cdbg-bubble">{m.content}</div>
+                </div>
+              ))}
+            </div>
 
-          <div className="chat-composer">
-            <textarea
-              aria-label="调试消息" data-testid="chat-input"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="例如：调用 add 计算 3 和 4 的和"
-              disabled={streaming}
-            />
-            <button
-              className="primary" data-testid="chat-send"
-              onClick={() => void send()}
-              disabled={streaming || !input.trim()}
-            >
-              {streaming ? '流式回复中…' : '发送'}
-            </button>
-          </div>
+            <div className="cdbg-composer">
+              <textarea
+                aria-label="调试消息" data-testid="chat-input"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="例如：调用 add 计算 3 和 4 的和"
+                disabled={streaming}
+              />
+              <button
+                type="button"
+                className="ui-btn ui-btn--sm ui-btn--primary"
+                data-testid="chat-send"
+                onClick={() => void send()}
+                disabled={streaming || !input.trim()}
+              >
+                {streaming ? '流式回复中…' : '发送'}
+              </button>
+            </div>
 
-          <div data-testid="chat-trace-panel" style={{ marginTop: '0.75rem' }}>
-            <strong>工具调用 trace</strong>
+            {error && <div className="ui-error-text" role="alert">{error}</div>}
+          </div>
+        </div>
+
+        {/* ③ 工具段（300px） */}
+        <div className="cdbg-col">
+          <div className="cdbg-panel" data-testid="chat-trace-panel">
+            <div className="cdbg-panel-hd"><h3>工具调用 trace</h3></div>
             {trace.length === 0 ? (
-              <div className="muted">本轮未触发工具调用。</div>
+              <div className="cdbg-nomatch">本轮未触发工具调用。</div>
             ) : (
-              trace.map((t) => (
-                <div key={t.index} className="card" data-testid="chat-trace-entry"
-                     style={{ marginTop: '0.4rem' }}>
-                  <div>
-                    触发了工具 <strong>{t.name}</strong>
-                    {t.executed ? (
-                      <span className="badge ok">已真实执行</span>
-                    ) : (
-                      <span className="badge">未执行</span>
+              <div className="cdbg-trace">
+                {trace.map((t) => (
+                  <div
+                    key={t.index}
+                    className={`cdbg-trace-entry${toolHighlightRef.current === t.name ? ' cdbg-linked' : ''}`}
+                    data-testid="chat-trace-entry"
+                  >
+                    <div className="cdbg-trace-entry-hd">
+                      触发了工具 <strong>{t.name}</strong>
+                      {t.executed ? (
+                        <span className="ui-badge ui-badge--ok">已真实执行</span>
+                      ) : (
+                        <span className="ui-badge">未执行</span>
+                      )}
+                    </div>
+                    <div className="cdbg-nomatch">
+                      参数：{JSON.stringify(t.arguments)}
+                    </div>
+                    {t.result !== undefined && (
+                      <div className="cdbg-nomatch">
+                        结果：{JSON.stringify(t.result)}
+                      </div>
+                    )}
+                    {t.call_id && (
+                      <code>call_id: {t.call_id}</code>
                     )}
                   </div>
-                  <div className="muted" style={{ fontSize: '0.8rem' }}>
-                    参数：{JSON.stringify(t.arguments)}
-                  </div>
-                  {t.result !== undefined && (
-                    <div className="muted" style={{ fontSize: '0.8rem' }}>
-                      结果：{JSON.stringify(t.result)}
-                    </div>
-                  )}
-                  {t.call_id && (
-                    <div className="muted" style={{ fontSize: '0.75rem' }}>
-                      call_id: {t.call_id}
-                    </div>
-                  )}
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
-
-          {error && <div className="error-text" role="alert">{error}</div>}
         </div>
       </div>
     </div>
