@@ -3,9 +3,21 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
 import { NotificationBell } from './NotificationBell';
+import { LineIcon, type LineIconName } from './ui/LineIcon';
 
 /**
  * 工作台优先、个人空间独立切换。团队画布收在「协作画布」内，不新增一级菜单。
+ *
+ * 收口包改造（07-收口与验收.md §2）：emoji → LineIcon 线条图标，
+ * 顺序按工作流而非字母（高频项在最上），1–9 项带 .ui-kbd 数字角标。
+ *
+ * 口径说明：
+ * - §2 标题写「全部 21 项重排」，但表里只列了 18 项（工作台 10 + 个人 8），
+ *   代码里也正好 18 项。以表为准，18 是实际项数；21 疑为早期含 /private 等
+ *   已裁决项的旧数，已记入总报告待主控确认。
+ * - /skills 只登记一条（个人空间那条死条目「知识与技能」已按裁决删除），
+ *   §2 明确要求不要写成两条，这里保持单条。
+ * - /private 按裁决保留路由但本轮不做导航入口，§2 表里也没有它，故不加项。
  */
 type Space = 'workbench' | 'personal';
 
@@ -13,29 +25,34 @@ interface NavItem {
   to: string;
   label: string;
   sub: string;
-  icon: string;
+  /** 数字键直切角标：1–9；null 表示不显示。 */
+  kbd: number | null;
+  icon: LineIconName;
   space: Space;
 }
 
 const NAV: NavItem[] = [
-  { to: '/workbench', label: '任务工作台', sub: '指挥 · 终端 · 验收', icon: '🎯', space: 'workbench' },
-  { to: '/canvas', label: '协作画布', sub: '内部团队 · 逐成员选模型', icon: '🧭', space: 'workbench' },
-  { to: '/dsl-canvas', label: '工作流工坊', sub: '受限动词 · 数据流执行', icon: '🧱', space: 'workbench' },
-  { to: '/chat-debug', label: 'Chat 调试', sub: '模板 · 工具 · 流式联动', icon: '🛠️', space: 'workbench' },
-  { to: '/agent-dispatch', label: '子 Agent 派发', sub: 'Task 协议 · 独立验收', icon: '📨', space: 'workbench' },
-  { to: '/skills', label: 'Agent 与技能', sub: 'MCP · 经验沉淀', icon: '🧩', space: 'workbench' },
-  { to: '/hub', label: '超级中台', sub: '统一适配层 · 能力路由', icon: '🧲', space: 'workbench' },
-  { to: '/chat', label: '对话', sub: '流式会话', icon: '💬', space: 'personal' },
-  { to: '/cabin', label: '我的小屋', sub: '数码小人 · 经营模拟', icon: '🏠', space: 'personal' },
-  { to: '/history', label: '历史', sub: '会话留痕', icon: '🕘', space: 'personal' },
-  { to: '/growth', label: '成长记录', sub: '阶段与复盘', icon: '🌱', space: 'personal' },
-  { to: '/assessments', label: '测评', sub: '结构化评估', icon: '📐', space: 'personal' },
-  { to: '/profiles', label: '多维画像', sub: '个人与对象', icon: '🪞', space: 'personal' },
-  { to: '/avatar', label: '角色工坊', sub: '专属像素小人', icon: '🧑‍🎨', space: 'personal' },
-  { to: '/knowledge', label: '知识库', sub: '本地文档 RAG · 适配器', icon: '📚', space: 'personal' },
-  { to: '/approvals', label: '审批中心', sub: '提案与授权', icon: '✅', space: 'workbench' },
-  { to: '/settings', label: '设置与数据', sub: '同步 · 权限', icon: '⚙️', space: 'workbench' },
-  { to: '/plugins', label: '插件市场', sub: '签名 · 扫描 · 授权安装', icon: '🛍️', space: 'workbench' },  // P6 追加一项
+  // ---- 工作台空间（§2 表顺序 1–10） ----
+  { to: '/workbench', label: '任务工作台', sub: '指挥 · 终端 · 验收', kbd: 1, icon: 'workbench', space: 'workbench' },
+  { to: '/canvas', label: '协作画布', sub: '内部团队 · 逐成员选模型', kbd: 2, icon: 'canvas', space: 'workbench' },
+  { to: '/dsl-canvas', label: '工作流工坊', sub: '受限动词 · 数据流执行', kbd: 3, icon: 'flow', space: 'workbench' },
+  { to: '/chat-debug', label: 'Chat 调试', sub: '模板 · 工具 · 流式联动', kbd: 4, icon: 'sliders', space: 'workbench' },
+  { to: '/agent-dispatch', label: '子 Agent 派发', sub: 'Task 协议 · 独立验收', kbd: 5, icon: 'dispatch', space: 'workbench' },
+  { to: '/skills', label: 'Agent 与技能', sub: 'MCP · 经验沉淀', kbd: 6, icon: 'skills', space: 'workbench' },
+  { to: '/hub', label: '超级中台', sub: '统一适配层 · 能力路由', kbd: 7, icon: 'hub', space: 'workbench' },
+  { to: '/approvals', label: '审批中心', sub: '提案与授权', kbd: 8, icon: 'approvals', space: 'workbench' },
+  { to: '/plugins', label: '插件市场', sub: '签名 · 扫描 · 授权安装', kbd: 9, icon: 'plugins', space: 'workbench' },
+  { to: '/settings', label: '设置与数据', sub: '同步 · 权限', kbd: null, icon: 'settings', space: 'workbench' },
+
+  // ---- 个人空间（§2 表顺序 11–18） ----
+  { to: '/chat', label: '对话', sub: '流式会话', kbd: null, icon: 'chat', space: 'personal' },
+  { to: '/cabin', label: '我的小屋', sub: '数码小人 · 经营模拟', kbd: null, icon: 'cabin', space: 'personal' },
+  { to: '/history', label: '历史', sub: '会话留痕', kbd: null, icon: 'history', space: 'personal' },
+  { to: '/growth', label: '成长记录', sub: '阶段与复盘', kbd: null, icon: 'growth', space: 'personal' },
+  { to: '/assessments', label: '测评', sub: '结构化评估', kbd: null, icon: 'assessments', space: 'personal' },
+  { to: '/profiles', label: '多维画像', sub: '个人与对象', kbd: null, icon: 'profiles', space: 'personal' },
+  { to: '/avatar', label: '角色工坊', sub: '专属像素小人', kbd: null, icon: 'avatar', space: 'personal' },
+  { to: '/knowledge', label: '知识库', sub: '本地文档 RAG · 适配器', kbd: null, icon: 'knowledge', space: 'personal' },
 ];
 
 function spaceForPath(pathname: string): Space {
@@ -73,7 +90,7 @@ export function Layout() {
             aria-pressed={space === 'workbench'}
             onClick={() => setSpace('workbench')}
           >
-            <span aria-hidden="true">💼</span> 工作台空间
+            <LineIcon name="workbench" size={16} /> 工作台空间
           </button>
           <button
             type="button"
@@ -81,7 +98,7 @@ export function Layout() {
             aria-pressed={space === 'personal'}
             onClick={() => setSpace('personal')}
           >
-            <span aria-hidden="true">🌌</span> 个人空间
+            <LineIcon name="avatar" size={16} /> 个人空间
           </button>
         </div>
 
@@ -97,11 +114,18 @@ export function Layout() {
                 end
                 className={({ isActive }) => (isActive ? 'active' : '')}
               >
-                <span className="nav-icon" aria-hidden="true">{n.icon}</span>
+                {/* 图标为装饰：可访问名由紧随其后的 label 文本承担，
+                    所以 LineIcon 必须 aria-hidden，不能让它进无名。 */}
+                <span className="nav-icon" aria-hidden="true">
+                  <LineIcon name={n.icon} size={20} />
+                </span>
                 <span>
                   {n.label}
                   <span className="nav-sub">{n.sub}</span>
                 </span>
+                {n.kbd !== null && (
+                  <kbd className="ui-kbd nav-kbd" aria-hidden="true">{n.kbd}</kbd>
+                )}
               </NavLink>
             ))}
           </nav>

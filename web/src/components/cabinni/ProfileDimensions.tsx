@@ -201,9 +201,9 @@ export function EvidenceChain({ node, onLocate, onFeedback, locatedId }: Evidenc
               locatedId === ref
                 ? {
                     /* 薄荷高亮环走 color-mix 派生：原先写死 rgba(45,212,191,.55)
-                       是裸色且不在令牌体系内（#2dd4bf 与 --ui-mint-400 #22d3ee
-                       也不是同一个值）。alpha 由令牌派生后改薄荷深浅只需改一处。 */
-                    borderColor: 'color-mix(in srgb, var(--ui-mint-400) 55%, transparent)',
+                       是裸色。#2dd4bf 正是 --ui-teal-400 的精确值，用它可保证
+                       转换前后渲染完全一致。alpha 由令牌派生，改薄荷深浅只需改一处。 */
+                    borderColor: 'color-mix(in srgb, var(--ui-teal-400) 55%, transparent)',
                     boxShadow: '0 0 22px -8px var(--ui-glow-teal)',
                   }
                 : undefined

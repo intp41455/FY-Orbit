@@ -648,10 +648,10 @@ export function AvatarWorkshopPage() {
                         style={
                           current
                             ? {
-                                /* 同 ProfileDimensions：薄荷高亮环改由令牌派生，
-                                   不再写死 rgba(45,212,191,…) 裸色。 */
-                                borderColor: 'color-mix(in srgb, var(--ui-mint-400) 65%, transparent)',
-                                boxShadow: '0 0 0 1px color-mix(in srgb, var(--ui-mint-400) 22%, transparent)',
+                                /* 同 ProfileDimensions：薄荷高亮环改由令牌派生。
+                                   #2dd4bf == --ui-teal-400，渲染与原字面量等价。 */
+                                borderColor: 'color-mix(in srgb, var(--ui-teal-400) 65%, transparent)',
+                                boxShadow: '0 0 0 1px color-mix(in srgb, var(--ui-teal-400) 22%, transparent)',
                               }
                             : undefined
                         }

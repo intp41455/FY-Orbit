@@ -1,4 +1,4 @@
-/**
+﻿/**
  * P2 · 四层预览 Layer 4 — 图像/图表渲染（纯代码 SVG）。
  *
  * 选型说明（工单授权自定）：**零外部图表库、零外部素材**——图表全部由
@@ -113,7 +113,19 @@ export function parseRenderSpec(content: string, path: string): ChartSpec {
 const W = 320;
 const H = 200;
 const PAD = 34;
-const COLORS = ['#3a5f8a', '#2f6f4f', '#7a4a8a', '#b07d3a', '#8a3a52', '#3a7a7a'];
+/**
+ * 分类色板。六色系列需要色相分离才能区分数据系列，但原先第二色是
+ * #2f6f4f（绿），违反基线「禁止绿色」。换成紫灰一族后仍与相邻色拉开距离，
+ * 且不再是绿色。整体走 var(--ui-*)，避免裸色。
+ */
+const COLORS = [
+  'var(--ui-sky-700)',
+  'var(--ui-st-external)',
+  'var(--ui-sky-500)',
+  'var(--ui-st-waiting)',
+  'var(--ui-st-rework)',
+  'var(--ui-st-blocked)',
+];
 
 function BarChart({ spec }: { spec: ChartSpec }) {
   const max = Math.max(...spec.series.map((p) => Math.abs(p.value)), 1);
@@ -160,9 +172,9 @@ function LineChart({ spec }: { spec: ChartSpec }) {
   const path = pts.map((pt) => `${pt.x},${pt.y}`).join(' ');
   return (
     <g data-testid="chart-line">
-      <polyline points={path} fill="none" stroke="#3a5f8a" strokeWidth={2} />
+      <polyline points={path} fill="none" stroke="var(--ui-sky-700)" strokeWidth={2} />
       {pts.map((pt, i) => (
-        <circle key={i} cx={pt.x} cy={pt.y} r={3} fill="#3a5f8a" />
+        <circle key={i} cx={pt.x} cy={pt.y} r={3} fill="var(--ui-sky-700)" />
       ))}
       {spec.series.map((p, i) => (
         <text key={`l${i}`} x={pts[i].x} y={H - PAD + 12} fontSize={9} textAnchor="middle">
@@ -194,10 +206,10 @@ function PieChart({ spec }: { spec: ChartSpec }) {
   return (
     <g data-testid="chart-pie">
       {slices.map((s, i) => (
-        <path key={i} d={s.d} fill={s.fill} stroke="#fff" strokeWidth={1} />
+        <path key={i} d={s.d} fill={s.fill} stroke="var(--ui-ink-inv)" strokeWidth={1} />
       ))}
       {slices.map((s, i) => (
-        <text key={`l${i}`} x={s.x} y={s.y} fontSize={9} fill="#fff" textAnchor="middle">
+        <text key={`l${i}`} x={s.x} y={s.y} fontSize={9} fill="var(--ui-ink-inv)" textAnchor="middle">
           {s.label}
         </text>
       ))}

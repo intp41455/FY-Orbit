@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { gitRepoApi, type GitCommit } from '../../api/gitRepo';
 import { errorMessage } from '../ui';
 import { parseUnifiedDiff, type ParsedDiff } from './diffParse';
@@ -18,7 +18,28 @@ import { parseUnifiedDiff, type ParsedDiff } from './diffParse';
 const ROW_H = 48;
 const LANE_W = 16;
 const GRAPH_LEFT = 12;
-const LANE_COLORS = ['#38bdf8', '#a78bfa', '#34d399', '#fbbf24', '#f87171', '#f472b6'];
+/**
+ * 提交图 lane 配色 —— 07-收口与验收.md §3 B 的**具名例外**（逐条判定结论）。
+ *
+ * 这是数据可视化的分类色板：六条 lane 必须彼此可分辨，色相分离度是功能需求。
+ * tokens.css 的九档状态令牌是为「状态语义」设计的，不是为「分类系列」设计的，
+ * 把六条 lane 硬塞进状态令牌会让相邻 lane 撞色（例如 sky-400 与 sky-600
+ * 在细线宽度下难以区分），那是拿可分辨性换治理度，属于功能倒退。
+ *
+ * 例外成立的前提是「不含绿色」，此处逐值核过：
+ *   #38bdf8 R56/G189/B248  非绿
+ *   #a78bfa R167/G139/B250 非绿
+ *   #a5b4fc R165/G180/B252 非绿
+ *   #fbbf24 R251/G191/B36  非绿
+ *   #f87171 R248/G113/B113 非绿
+ *   #f472b6 R244/G114/B182 非绿
+ * 原先第三色是 #5eead4（R94/G234/B212，G 明显高于 R 与 B，判定为绿），已剔除，
+ * 换成靛蓝 #a5b4fc 保持六色分离度。
+ *
+ * 若日后要收编，建议在 tokens.css 新增一条 --ui-cat-1..6 的分类色阶，
+ * 而不是挪用状态令牌。已列入总报告「下一批」。
+ */
+const LANE_COLORS = ['#38bdf8', '#a78bfa', '#a5b4fc', '#fbbf24', '#f87171', '#f472b6'];
 const STORAGE_KEY = 'fy.commitgraph.workspace';
 
 export interface LaidOutCommit extends GitCommit {
@@ -293,7 +314,7 @@ export function CommitGraph() {
                 cy={n.row * ROW_H + ROW_H / 2}
                 r={5}
                 fill={laneColor(n.lane)}
-                stroke={selected === n.sha || second === n.sha ? '#0f172a' : 'none'}
+                stroke={selected === n.sha || second === n.sha ? 'var(--ui-ink-1)' : 'none'}
                 strokeWidth={2}
               />
             ))}

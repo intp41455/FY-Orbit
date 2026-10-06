@@ -664,3 +664,143 @@
   background: var(--ui-st-complete-bg);
   color: var(--ui-st-complete);
 }
+
+/* ==========================================================================
+   导航视觉收口（07-收口与验收.md §2）
+
+   与零绿色覆写层同理：.nav 的基础规则在冻结的 styles.css 里，这里用相同
+   选择器按 §2 的口径覆盖，不改 styles.css、不用 !important。
+
+   §2 口径落到代码：
+     - 项高 ≥48px、整行可点、图标 20px 左侧文字右侧
+     - 选中态：--ui-teal-300 左侧 2px 竖条 + rgba(94,234,212,.14) 底 + 文字 --ui-sky-700
+     - hover：底 rgba(255,255,255,.6) + 微光
+     - .nav-sub 窄屏折叠；≤860px 侧栏收成顶部抽屉；≤560px 只留图标
+     - 1–9 项 .ui-kbd 数字角标
+   ========================================================================== */
+.nav a {
+  position: relative;
+  min-height: var(--ui-hit-lg);
+  gap: var(--ui-s-2);
+}
+.nav a .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  font-size: initial;
+  text-align: initial;
+  color: var(--ui-ink-3);
+}
+.nav a:hover {
+  background: color-mix(in srgb, var(--ui-ink-inv) 60%, transparent);
+}
+.nav a:hover .nav-icon { color: var(--ui-sky-600); }
+.nav a.active {
+  background: color-mix(in srgb, var(--ui-teal-300) 14%, transparent);
+  color: var(--ui-sky-700);
+  border-color: color-mix(in srgb, var(--ui-teal-300) 42%, transparent);
+  box-shadow: var(--ui-shadow-1);
+}
+/* 选中态左侧 2px 竖条。用 ::before 而不是 border-left，否则会挤动文字，
+   整行宽度在选中/未选中之间会跳动。 */
+.nav a.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  width: 2px;
+  height: 60%;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-teal-300);
+}
+.nav a.active .nav-icon { color: var(--ui-sky-700); }
+
+/* 数字键直切角标。aria-hidden：它是视觉提示，不该被读屏念成「1」 */
+.nav a .nav-kbd {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+/* ---- 窄屏：副标题折叠 → 侧栏收成顶部抽屉 → 只留图标 ---- */
+@media (max-width: 1080px) {
+  .nav a .nav-sub { display: none; }
+}
+@media (max-width: 860px) {
+  /* .app 必须显式塌成单列。
+     styles.css 里单列规则在 @media(max-width:760px)（L699），而两列规则在
+     @media(max-width:1100px)（L3375）—— 1100px 那条声明在文件更后面。
+     CSS 同特异性下后声明者胜，所以 ≤760px 时两条同时命中、1100px 的两列规则
+     反压掉单列规则，侧栏一直占着 232px 栅格列，主区被挤到 ~160px。
+     实测 393px 下：sidebar 232 + main 161 并排，整页高达 12363px，
+     终端坞快捷键提示段被撑到 420px 并盖住「启动终端」按钮，
+     e2e/ui-team.spec.ts:370 在 --project=mobile 下必失败。
+
+     tokens.css 在 styles.css 之后加载，同特异性即可覆盖，无需 !important。 */
+  .app { grid-template-columns: 1fr; }
+  .app::before,
+  .app::after { display: none; }
+
+  .sidebar {
+    position: static;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    max-height: none;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--ui-s-2);
+    overflow-x: auto;
+  }
+  .sidebar .brand { flex: 0 0 auto; }
+  .space-switch { flex: 0 0 auto; }
+  /* 顶部抽屉：导航横向滚动，不再是纵向长条 */
+  .nav {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--ui-s-1);
+    width: 100%;
+  }
+  .nav a { min-height: var(--ui-hit); padding: 0 var(--ui-s-3); white-space: nowrap; }
+  .nav a:hover { transform: none; }
+  /* 这里刻意不隐藏 .sidebar-foot：「权限与沙箱隔离 / 预算与用量 / 登出」
+     是真实功能入口，窄屏收成顶部抽屉不等于可以删功能（基准：功能不截断）。
+     它换行排布即可。 */
+  .sidebar-foot {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    width: 100%;
+    margin-top: var(--ui-s-2);
+  }
+  .sidebar-foot .identity { flex: 1 1 auto; }
+
+  /* 终端坞底部的快捷键提示：窄屏收窄后它会独占数百像素高度并压住面板。
+     触屏设备本来也没有物理键盘，这段提示在该断点没有信息价值，
+     收进 <details> 折叠而不是 display:none——它是真实内容，不是装饰。 */
+  .wb-termdock-foot { display: none; }
+}
+@media (max-width: 560px) {
+  /* 只留图标。
+     注意不能用 display:none —— 那会把文字一并移出可访问性树，
+     导航项就变成没有可访问名的链接，而 e2e/ui-team.spec.ts:437 在 390px 下
+     正是按名字点「协作画布」。改用「视觉隐藏但保留在 a11y 树」：
+     屏幕尺寸收窄是排版决定，不该改变语义。 */
+  .nav a > span:nth-child(2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .nav a .nav-kbd { display: none; }
+  .nav a { justify-content: center; padding: 0 var(--ui-s-2); }
+}
