@@ -1,0 +1,301 @@
+/* ==========================================================================
+   开箱模板域样式（/templates）
+   --------------------------------------------------------------------------
+   独占文件：本文件归 P13 开箱模板所有。颜色一律 var(--ui-*)，**不写裸色值**。
+   状态语义走九档色（--ui-st-*）：结构问题用 --ui-st-failed（红只给真错误），
+   往返一致 / 边界检查通过用 --ui-st-complete。
+   窄屏不横向滚动：列表与详情在窄屏改为纵向堆叠。
+   ========================================================================== */
+
+.fy-tpl-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-width: 0;
+}
+
+.fy-tpl-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-s-4);
+  flex-wrap: wrap;
+}
+
+.fy-tpl-page-head h1 {
+  margin: 0;
+  font-size: var(--ui-fs-2xl);
+  color: var(--ui-ink-1);
+}
+
+.fy-tpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-tpl-field select {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-md);
+  color: var(--ui-ink-1);
+  padding: var(--ui-s-1) var(--ui-s-2);
+}
+
+.fy-tpl-layer-note {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.fy-tpl-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: var(--ui-s-4);
+  align-items: start;
+  min-width: 0;
+}
+
+.fy-tpl-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+
+.fy-tpl-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  align-items: flex-start;
+  text-align: left;
+  padding: var(--ui-s-3);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  color: var(--ui-ink-1);
+  cursor: pointer;
+}
+
+.fy-tpl-card.active {
+  border-color: var(--ui-st-running);
+  box-shadow: inset 0 0 0 1px var(--ui-st-running);
+}
+
+.fy-tpl-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-width: 0;
+}
+
+/* ---- 构成摘要（需求 -07①）---- */
+.fy-tpl-overview {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-3);
+}
+
+.fy-tpl-overview-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  font-size: var(--ui-fs-lg);
+}
+
+.fy-tpl-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--ui-s-3);
+  margin: var(--ui-s-3) 0;
+}
+
+.fy-tpl-facts dt {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+.fy-tpl-facts dd {
+  margin: 0;
+  color: var(--ui-ink-2);
+}
+
+.fy-tpl-estimate-badge {
+  border: 1px solid var(--ui-line-strong, var(--ui-line-2));
+  border-radius: var(--ui-r-md);
+  padding: 0 var(--ui-s-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+.fy-tpl-members {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-tpl-members th,
+.fy-tpl-members td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--ui-s-2);
+  border-top: 1px solid var(--ui-line-1);
+}
+
+.fy-tpl-members caption {
+  text-align: left;
+  font-size: var(--ui-fs-xs);
+  padding-bottom: var(--ui-s-1);
+}
+
+/* ---- 必备条件与提示词面板 ---- */
+.fy-tpl-essentials,
+.fy-tpl-controller {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-3);
+}
+
+.fy-tpl-essentials h3,
+.fy-tpl-controller h3 {
+  margin: 0;
+  font-size: var(--ui-fs-lg);
+  color: var(--ui-ink-1);
+}
+
+.fy-tpl-essential-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+
+.fy-tpl-essential-list > li {
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-2);
+}
+
+.fy-tpl-essential-list > li.overridden {
+  border-color: var(--ui-st-verifying);
+}
+
+.fy-tpl-essential-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.fy-tpl-essential-value {
+  margin: var(--ui-s-1) 0;
+  color: var(--ui-ink-2);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-tpl-essential-obj {
+  margin: 0;
+  padding-left: var(--ui-s-4);
+  list-style: disc;
+}
+
+.fy-tpl-essential-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+
+.fy-tpl-essential-edit textarea,
+.fy-tpl-prompt-label textarea {
+  width: 100%;
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-md);
+  color: var(--ui-ink-1);
+  font-family: inherit;
+  padding: var(--ui-s-2);
+}
+
+.fy-tpl-prompt-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+}
+
+.fy-tpl-warning {
+  display: flex;
+  gap: var(--ui-s-2);
+  border: 1px solid var(--ui-st-failed);
+  background: var(--ui-st-failed-bg);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-2);
+  color: var(--ui-ink-1);
+}
+
+.fy-tpl-ok {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  color: var(--ui-st-complete);
+}
+
+.fy-tpl-dirty {
+  color: var(--ui-st-verifying);
+  font-size: var(--ui-fs-sm);
+}
+
+/* ---- 动作区与结果 ---- */
+.fy-tpl-actions {
+  display: flex;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.fy-tpl-result,
+.fy-tpl-trial,
+.fy-tpl-code {
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-3);
+}
+
+.fy-tpl-result.ok {
+  border-color: var(--ui-st-complete);
+  background: var(--ui-st-complete-bg);
+}
+
+.fy-tpl-result.bad {
+  border-color: var(--ui-st-failed);
+  background: var(--ui-st-failed-bg);
+}
+
+.fy-tpl-warn-line {
+  color: var(--ui-st-rework);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-tpl-error {
+  color: var(--ui-st-failed);
+}
+
+.fy-tpl-code-block {
+  max-height: 420px;
+  overflow: auto;
+  background: var(--ui-glass-2);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+}
+
+@media (max-width: 900px) {
+  .fy-tpl-layout {
+    grid-template-columns: 1fr;
+  }
+}
