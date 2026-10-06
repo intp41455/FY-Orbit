@@ -1,4 +1,4 @@
-"""Alembic migration 0044: P5 共享任务板 —— task_claims 表.
+"""Alembic migration 0046: P5 共享任务板 —— task_claims 表.
 
 一张新表（ORM 同构注册在 ``db/claim_models.py``）：
 
@@ -6,11 +6,12 @@
   ``pending → claimed → done|failed`` 状态机，``claimed`` 带 ``lease_expires_at``
   租约（持有者崩溃后回收放回板上）。所有权由条件 UPDATE + RETURNING 原子裁决。
 
-⚠️ 编号申领：本迁移编号由主控分配。若主控发号与本文件 ``revision`` 不一致，
-以主控发号为准（改 ``revision`` 与 ``down_revision``，不改表结构）。
+编号申领（主控 2026-10-07 裁定）：本文件原为 ``0044_p5_task_claims``，因与
+P4 的 0044 撞车，主控裁决 **P4=0044 / P5=0045**；但 P9 亦需迁移，主控再裁
+**P9=0045、P5=0046**，故本迁移改为 0046 并挂到 ``0045_p9_review_notes`` 之后。
 
-Revision ID: 0044_p5_task_claims
-Revises: 0043_claw_preferences_participation
+Revision ID: 0046_p5_task_claims
+Revises: 0045_p9_review_notes
 """
 
 from collections.abc import Sequence
@@ -18,8 +19,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0044_p5_task_claims"
-down_revision: str | None = "0043_claw_preferences_participation"
+revision: str = "0046_p5_task_claims"
+down_revision: str | None = "0045_p9_review_notes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
