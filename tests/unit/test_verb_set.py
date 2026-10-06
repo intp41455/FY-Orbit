@@ -36,6 +36,7 @@ from find_yourself.db.types import TZDateTime
 from find_yourself.services.dsl_canvas import (
     AGGREGATE_OPS,
     MAP_OPS,
+    NODE_TYPES,
     MERGE_OPS,
     OUTPUT_FORMATS,
     TRANSFORM_VERBS,
@@ -811,7 +812,8 @@ class TestParserIsRestricted:
 class TestHttpSurface:
     def test_schema_exposes_full_verb_catalog(self, client: TestClient):
         body = client.get("/api/dsl-canvas/schema").json()
-        assert body["node_types"] == ["input", "transform", "output"]
+        # A-画布搭建器-01：节点库扩到 16 类，此处对齐单一真源 NODE_TYPES。
+        assert body["node_types"] == list(NODE_TYPES)
         assert body["transform_verbs"] == list(TRANSFORM_VERBS)
         assert [v["name"] for v in body["verb_catalog"]] == list(TRANSFORM_VERBS)
         assert body["aggregate_ops"] == list(AGGREGATE_OPS)

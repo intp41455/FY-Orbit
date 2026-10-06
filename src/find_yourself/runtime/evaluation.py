@@ -70,6 +70,58 @@ class EvalSample:
     safety_checks: list[str]
 
 
+@dataclass
+class BatchCase:
+    """CSV 批量测试集的一行（A-画布搭建器-06）。
+
+    与 :class:`EvalSample`（编排策略矩阵的固定样本）不同：批量评估的用例来自
+    用户上传的 CSV，逐行喂给**一张画布流程**（runner），按 expected 判分。
+    """
+
+    case_id: str
+    input: str
+    expected: str = ""
+    category: str = "generic"
+
+
+def parse_eval_csv(text: str) -> List[BatchCase]:
+    """解析批量评估 CSV（表头必须含 ``input``；``case_id`` / ``expected`` /
+    ``category`` 可选，缺列时 case_id 自动编号、expected 视为不判分）。
+
+    UTF-8（带 BOM 兼容）；空行跳过；缺 input 列的行明确报错并给出行号。
+    """
+    import csv
+    import io
+
+    reader = csv.reader(io.StringIO((text or "").lstrip("\ufeff")))
+    rows = [row for row in reader if any((cell or "").strip() for cell in row)]
+    if not rows:
+        return []
+    header = [(cell or "").strip().lower() for cell in rows[0]]
+    if "input" not in header:
+        raise ValueError("CSV 表头必须包含 input 列（可选: case_id/expected/category）")
+    idx = {name: header.index(name) for name in ("case_id", "input", "expected", "category")
+           if name in header}
+    cases: List[BatchCase] = []
+    for line_no, row in enumerate(rows[1:], start=2):
+        input_at = idx["input"]
+        value = row[input_at].strip() if input_at < len(row) else ""
+        if not value:
+            raise ValueError(f"CSV 第 {line_no} 行缺少 input 值")
+        cases.append(BatchCase(
+            case_id=(row[idx["case_id"]].strip()
+                     if "case_id" in idx and idx["case_id"] < len(row)
+                     else f"case-{line_no - 1}"),
+            input=value,
+            expected=(row[idx["expected"]].strip()
+                      if "expected" in idx and idx["expected"] < len(row) else ""),
+            category=(row[idx["category"]].strip()
+                      if "category" in idx and idx["category"] < len(row)
+                      else "generic"),
+        ))
+    return cases
+
+
 EVAL_SAMPLES = [
     EvalSample(
         sample_id="SMP-01",
@@ -330,6 +382,91 @@ class UnifiedEvaluator:
             safety_score=safety_score,
             notes=notes,
         )
+
+    def evaluate_flow_batch(
+        self,
+        cases: List["BatchCase"],
+        runner: "Callable[[str], Any]",
+        *,
+        runs_per_case: int = 1,
+    ) -> dict[str, Any]:
+        """批量测试集评估（A-画布搭建器-06 的统一接线入口）。
+
+        每个用例交给 ``runner(case.input)``（DSL 画布侧为
+        ``services/dsl_canvas.make_flow_runner`` 产出的适配器）：
+
+        * runner 正常返回且（给了 expected 时）输出文本包含 expected → 成功；
+        * runner 抛异常 → 该用例失败，notes 记 ``exception:<类型>: <首行>``；
+        * 每例计时，汇总成功率 / 时延均值与标准差 / 分类成功率。
+
+        :param runs_per_case: 每例重复次数（>1 时按多次运行的均值判分）。
+        """
+        if runs_per_case < 1:
+            raise ValueError("runs_per_case must be >= 1")
+        results: List[dict[str, Any]] = []
+        for case in cases:
+            latencies: List[float] = []
+            oks: List[bool] = []
+            output_text = ""
+            note = "OK"
+            for _ in range(runs_per_case):
+                start = time.perf_counter()
+                try:
+                    out = runner(case.input)
+                    elapsed = (time.perf_counter() - start) * 1000
+                    latencies.append(elapsed)
+                    if isinstance(out, dict) and "output" in out:
+                        output_obj = out["output"]
+                    else:
+                        output_obj = out
+                    output_text = (output_obj if isinstance(output_obj, str)
+                                   else str(output_obj))
+                    ok = (not case.expected) or (case.expected in output_text)
+                    oks.append(ok)
+                    if not ok:
+                        note = f"expected {case.expected!r} not in output"
+                except Exception as exc:
+                    latencies.append((time.perf_counter() - start) * 1000)
+                    oks.append(False)
+                    first_line = str(exc).splitlines()[0] if str(exc) else ""
+                    note = f"exception:{type(exc).__name__}: {first_line}"
+            success = all(oks)
+            results.append({
+                "case_id": case.case_id,
+                "category": case.category,
+                "success": success,
+                "runs": runs_per_case,
+                "latency_mean_ms": round(sum(latencies) / len(latencies), 2)
+                if latencies else 0.0,
+                "output_excerpt": output_text[:200],
+                "notes": note,
+            })
+
+        total = len(results)
+        passed = sum(1 for r in results if r["success"])
+        all_latencies = [r["latency_mean_ms"] for r in results]
+        by_category: dict[str, dict[str, float]] = {}
+        for r in results:
+            bucket = by_category.setdefault(r["category"], {"total": 0, "passed": 0})
+            bucket["total"] += 1
+            bucket["passed"] += 1 if r["success"] else 0
+        return {
+            "evaluated_at_utc": utcnow().isoformat(),
+            "total_cases": total,
+            "passed": passed,
+            "failed": total - passed,
+            "success_rate": round(passed / total, 4) if total else 0.0,
+            "latency_mean_ms": round(statistics.mean(all_latencies), 2)
+            if all_latencies else 0.0,
+            "latency_stddev_ms": round(statistics.stdev(all_latencies), 2)
+            if len(all_latencies) > 1 else 0.0,
+            "category_summary": {
+                cat: {"total": int(b["total"]), "success_rate":
+                      round(b["passed"] / b["total"], 4) if b["total"] else 0.0}
+                for cat, b in sorted(by_category.items())
+            },
+            "cases": results,
+        }
 
     def run_matrix(self, runs_per_combination: int = 3) -> dict[str, Any]:
         """Runs the complete evaluation matrix and aggregates statistics with variance."""

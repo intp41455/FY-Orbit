@@ -18,6 +18,7 @@ from __future__ import annotations
 import pytest
 
 from find_yourself.services.dsl_canvas import (
+    NODE_PARAMS_SCHEMAS,
     TRANSFORM_VERBS,
     VERB_REGISTRY,
     DslValidationError,
@@ -207,7 +208,8 @@ class TestStructuralDiagnostics:
         assert _find(validate_ir(doc), "t", "params", "invalid_type") is not None
 
     def test_unknown_node_type(self):
-        doc = _doc([{"id": "t", "type": "loop", "params": {}}])
+        # A-画布搭建器-01：loop 已是合法节点类型；未知类型换一个真不存在的。
+        doc = _doc([{"id": "t", "type": "quantum_flip", "params": {}}])
         assert _find(validate_ir(doc), "t", "type", "invalid_enum") is not None
 
     def test_invalid_node_id_is_located(self):
@@ -246,7 +248,8 @@ class TestStructuralDiagnostics:
 class TestDerivationHasNoDrift:
     def test_transform_models_cover_the_registry_exactly(self):
         assert set(TRANSFORM_PARAMS_MODELS) == set(TRANSFORM_VERBS)
-        assert set(NODE_PARAMS_MODELS) == {"input", "output"}
+        # A-画布搭建器-01：全部节点类型的 params 模型都由 NODE_PARAMS_SCHEMAS 派生。
+        assert set(NODE_PARAMS_MODELS) == set(NODE_PARAMS_SCHEMAS)
 
     @pytest.mark.parametrize("verb", list(TRANSFORM_VERBS))
     def test_derived_fields_match_registry_schema(self, verb: str):

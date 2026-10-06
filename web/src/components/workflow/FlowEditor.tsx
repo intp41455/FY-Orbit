@@ -255,6 +255,7 @@ export function paramsForVerb(verb: DslTransformVerb): Record<string, unknown> {
     case 'agent': return { agent: 'summarizer' };
     case 'confirm': return { prompt: '请确认是否继续', role: 'owner' };
     case 'artifact': return { name: '产物', kind: 'generic' };
+    default: return {};
   }
 }
 

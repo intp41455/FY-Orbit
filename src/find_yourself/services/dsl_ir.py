@@ -55,6 +55,7 @@ from pydantic import (
 
 from .dsl_canvas import (
     CONDITION_OPS,
+    FLOW_TYPES,
     NODE_PARAMS_SCHEMAS,
     NODE_TYPES,
     TRANSFORM_VERBS,
@@ -63,7 +64,8 @@ from .dsl_canvas import (
 )
 
 #: DSL 文档允许的顶层字段（模型/视图分离：``layout`` 等视图状态不得进入 DSL）。
-DOCUMENT_KEYS = frozenset({"version", "nodes", "edges"})
+#: A-画布搭建器-05：``flow_type``（chatflow/workflow）是语义字段，允许进入文档。
+DOCUMENT_KEYS = frozenset({"version", "nodes", "edges", "flow_type"})
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +147,14 @@ def _annotation_for(sub: dict[str, Any]) -> Any:
     if kind == "boolean":
         # TODO(ADR-02): 同上。
         return bool
+    if kind == "array":
+        # A-画布搭建器-01：knowledge_retrieval.document_ids / classifier.classes /
+        # extractor.fields / http.allow_domains / human_input.options 等。
+        return list
+    if kind == "object":
+        # iteration/loop.subflow、http_request.headers、tool.arguments、
+        # trigger.config 等。
+        return dict
     return Any
 
 
@@ -173,10 +183,11 @@ TRANSFORM_PARAMS_MODELS: dict[str, type[BaseModel]] = {
     for verb in TRANSFORM_VERBS
 }
 
-#: ``input`` / ``output`` 节点的 params 模型（由 ``NODE_PARAMS_SCHEMAS`` 派生）。
+#: 全部节点类型的 params 模型（由 ``NODE_PARAMS_SCHEMAS`` 派生；A-画布搭建器-01
+#: 起 16 类节点全部有封闭契约，不再只有 input/output 两类）。
 NODE_PARAMS_MODELS: dict[str, type[BaseModel]] = {
     node_type: _build_model(f"{node_type}_params", NODE_PARAMS_SCHEMAS[node_type])
-    for node_type in ("input", "output")
+    for node_type in NODE_PARAMS_SCHEMAS
 }
 
 
@@ -334,6 +345,13 @@ def validate_ir(doc: Any) -> list[Diagnostic]:
     if doc.get("version") != "1":
         diags.append(Diagnostic("", "version", "invalid_version",
                                 'version 必须为 "1"'))
+
+    # A-画布搭建器-05：可选 flow_type 的枚举校验（缺省即 workflow，向后兼容）。
+    doc_flow_type = doc.get("flow_type")
+    if doc_flow_type is not None and doc_flow_type not in FLOW_TYPES:
+        diags.append(Diagnostic(
+            "", "flow_type", "invalid_enum",
+            f"flow_type 必须是 {FLOW_TYPES}，实际是 {doc_flow_type!r}"))
 
     raw_nodes = doc.get("nodes")
     if not isinstance(raw_nodes, list) or not raw_nodes:

@@ -10,6 +10,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from find_yourself.api.routes import dsl_canvas
+from find_yourself.services.dsl_canvas import NODE_TYPES
 from helpers import login_owner
 
 _THREE_NODE_DOC = {
@@ -29,7 +30,8 @@ def test_schema_endpoint(client: TestClient):
     r = client.get("/api/dsl-canvas/schema")
     assert r.status_code == 200
     body = r.json()
-    assert body["node_types"] == ["input", "transform", "output"]
+    # A-画布搭建器-01：节点库扩到 16 类，此处对齐单一真源 NODE_TYPES。
+    assert body["node_types"] == list(NODE_TYPES)
     assert body["schema"]["properties"]["version"]["const"] == "1"
 
 
