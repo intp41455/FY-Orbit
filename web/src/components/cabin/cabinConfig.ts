@@ -264,6 +264,10 @@ export interface CabinWorld {
   cameraLag: number;
   /** 相机相对人物的前瞻比例（0.5 = 人物居中）。 */
   cameraLead: number;
+  /** 纵深相机最大纵向位移跨度（虚拟像素，默认 80px） */
+  cameraYSpan?: number;
+  /** 纵深相机插值基数 */
+  cameraLagY?: number;
 }
 
 export const WORLD: CabinWorld = {
@@ -275,6 +279,8 @@ export const WORLD: CabinWorld = {
   edgeFadeMax: 0.82,
   cameraLag: 0.0015,
   cameraLead: 0.5,
+  cameraYSpan: 80,
+  cameraLagY: 0.002,
 };
 
 /**
@@ -370,6 +376,38 @@ export function lerpCameraX(current: number, target: number, dtMs: number, world
 }
 
 /**
+ * 2.5D 纵深相机目标 Y（虚拟像素）。
+ * 人物向地图深处走（depth 减小）时，相机平滑向上推移（负值），展现远山、深径与高处美景；
+ * 人物向近处走（depth 增大）时，相机平滑向下移动（正值），展现近景花草与河岸。
+ */
+export function cameraTargetY(personDepth: number, _viewHeight: number = VIRTUAL_H, world: CabinWorld = WORLD): number {
+  const span = world.cameraYSpan ?? 80;
+  // 基准 neutral depth 为 0.55
+  const norm = clampNum((personDepth - 0.55) / 0.45, -1, 1);
+  return clampNum(norm * span, -span, span);
+}
+
+/** 钳制纵深相机 Y 到合法位移区间 [-cameraYSpan, cameraYSpan] */
+export function clampCameraY(cameraY: number, world: CabinWorld = WORLD): number {
+  const span = world.cameraYSpan ?? 80;
+  return clampNum(cameraY, -span, span);
+}
+
+/** 纵深相机平滑插值 */
+export function lerpCameraY(current: number, target: number, dtMs: number, world: CabinWorld = WORLD): number {
+  if (!Number.isFinite(current) || !Number.isFinite(target) || !(dtMs > 0)) return current;
+  const lag = world.cameraLagY ?? world.cameraLag;
+  const t = 1 - Math.pow(lag, Math.min(dtMs, 250) / 1000);
+  return current + (target - current) * clampNum(t, 0, 1);
+}
+
+/** 纵深微透视比例：depth∈[0, 1] 映射到 0.82x（深处远景）~ 1.05x（近景边缘） */
+export function depthPerspectiveScale(depth: number, minScale = 0.82, maxScale = 1.05): number {
+  const t = clampNum(depth, 0, 1);
+  return minScale + t * (maxScale - minScale);
+}
+
+/**
  * G3-6 边界视觉收束强度（0-1）：相机距左右世界边缘越近越强，两侧同时生效。
  * 玩家到边缘时看到的是渐隐（像走进雾里），而不是撞墙反弹。
  */
@@ -398,7 +436,7 @@ export function layerVirtualWidth(viewWidth: number, margin: number): number {
 /* 台词池（预生成台词 · 模型生成待接入）+ 模型接口位                     */
 /* ------------------------------------------------------------------ */
 
-export type DialogueSpeaker = 'person' | 'pet';
+export type DialogueSpeaker = 'person' | 'pet' | 'npc';
 
 /**
  * 内置台词池，按「性格」字段挑选。诚实原则：这些是预生成静态台词，
@@ -418,6 +456,11 @@ export const DIALOGUE_LINES: Record<PersonalityId, Record<DialogueSpeaker, reado
       '新地方！好想闻一闻每个角落！',
       '一起玩球！现在！马上！',
     ],
+    npc: [
+      '小友，今天也是神采奕奕的一天呀！',
+      '这片天地灵气充沛，常来转转最能涤荡心境！',
+      '大自然到处都是宝藏，快随老夫四处走走！',
+    ],
   },
   cool: {
     person: [
@@ -431,6 +474,11 @@ export const DIALOGUE_LINES: Record<PersonalityId, Record<DialogueSpeaker, reado
       '……不是想理你，只是恰好路过。',
       '哼，摸可以，限三秒。',
       '（尾巴慢慢晃了一下，算是回应）',
+    ],
+    npc: [
+      '……心静自然凉，且随天地运转。',
+      '来者皆是客，不必多礼，自便即可。',
+      '世间万物自有其时，不可操之过急。',
     ],
   },
   melancholy: {
@@ -446,6 +494,11 @@ export const DIALOGUE_LINES: Record<PersonalityId, Record<DialogueSpeaker, reado
       '我把最喜欢的小球埋起来了，怕弄丢。',
       '（轻轻靠过来，什么也没说）',
     ],
+    npc: [
+      '岁月忽已晚，唯有这片山水长存如初。',
+      '微风吹起落花时，总叫人感叹浮生若梦。',
+      '若有心事，便在这美景前静坐片刻吧。',
+    ],
   },
   chatty: {
     person: [
@@ -459,6 +512,11 @@ export const DIALOGUE_LINES: Record<PersonalityId, Record<DialogueSpeaker, reado
       '第一件事，我看见了蝴蝶；第二件事，还是那只蝴蝶；第三件事，算了太长了。',
       '你的鞋带开了——哦你没穿鞋。',
       '我有一个绝妙的主意，虽然还没想好是什么。',
+    ],
+    npc: [
+      '哈哈，小友你可算来了！我今日正有一件奇趣之事要与你细细说道！',
+      '昨日我瞧见那草木花鸟之间有奇异光泽闪烁，当真玄妙！',
+      '这天时物候、奇花异草，若是细细讲来，三天三夜也讲不完！',
     ],
   },
 };

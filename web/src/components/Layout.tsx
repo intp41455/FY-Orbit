@@ -5,6 +5,7 @@ import { OfflineBadge } from './ui';
 import { NotificationBell } from './NotificationBell';
 import { LineIcon, type LineIconName } from './ui/LineIcon';
 import { BRAND } from '../brand';
+import { DeskPetCompanion } from './pet/DeskPetCompanion';
 
 /**
  * 工作台优先、个人空间独立切换。团队画布收在「协作画布」内，不新增一级菜单。
@@ -177,6 +178,7 @@ export function Layout() {
         <OfflineBadge />
         <Outlet />
       </main>
+      <DeskPetCompanion />
     </div>
   );
 }

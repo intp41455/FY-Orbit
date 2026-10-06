@@ -12,6 +12,9 @@
  *   - map     （地图 / 场景切换）
  *   - gems    （宝石 / 素材库）
  *   - heart   （心 / 好感轨道）
+ *   - maximize（全屏切换 / 展开）
+ *   - arrowLeft（返回上级 · 抽屉收起）
+ *   - arrowRight（抽屉展开）
  *   - clock   ⚠ 总纲 §3 状态表要求「等待/审批 搭配 LineIcon clock」，
  *             但当前 LineIcon.tsx 集里**没有** clock —— 这是地基缺陷，
  *             本包按规范自建局部实现并上报补录，不擅自改冻结文件。
@@ -57,6 +60,23 @@ const LOCAL_ICONS = {
     </>
   ),
   heart: <path d="M12 20.4S3.6 15.2 3.6 9.4a4.4 4.4 0 0 1 8.4-1.8 4.4 4.4 0 0 1 8.4 1.8c0 5.8-8.4 11-8.4 11Z" {...S} />,
+  maximize: (
+    <>
+      <path d="M9 3.8H4.6a.8.8 0 0 0-.8.8V9M15 3.8h4.4a.8.8 0 0 1 .8.8V9M9 20.2H4.6a.8.8 0 0 1-.8-.8V15M15 20.2h4.4a.8.8 0 0 0 .8-.8V15" {...S} />
+    </>
+  ),
+  arrowLeft: (
+    <>
+      <path d="M20 12H4.4" {...S} />
+      <path d="m10.6 5.8-6 6.2 6 6.2" {...S} />
+    </>
+  ),
+  arrowRight: (
+    <>
+      <path d="M4 12h15.6" {...S} />
+      <path d="m13.4 5.8 6 6.2-6 6.2" {...S} />
+    </>
+  ),
 } as const;
 
 export type CabinNiIconName = keyof typeof LOCAL_ICONS;
@@ -98,4 +118,7 @@ export const CABIN_NI_ICON_NAMES: readonly CabinNiIconName[] = [
   'map',
   'gems',
   'heart',
+  'maximize',
+  'arrowLeft',
+  'arrowRight',
 ];

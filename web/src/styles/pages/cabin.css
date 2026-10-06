@@ -251,31 +251,21 @@
 }
 
 .cabin-ni-side {
-  /* ⚠ 必须绝对定位：.cabin-root 是 position:fixed 的容器，里面还有
-     CabinStage（绝对定位）。若这里用静态流式布局，HUD 会被挤到左上角并
-     压在画布上（第一版就是这么错的，靠截图才发现）。 */
   position: absolute;
-  top: calc(32px + var(--ui-s-6));
+  top: calc(32px + var(--ui-s-2));
   right: var(--ui-s-2);
   bottom: calc(40px + var(--ui-s-2));
-  z-index: 20;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  z-index: 25;
   pointer-events: none;
   scrollbar-width: thin;
 
   display: flex;
   flex-direction: column;
   gap: var(--ui-s-2);
-  width: 236px;
-  max-width: 34vw;
+  width: 330px;
+  max-width: min(360px, 92vw);
   flex: 0 0 auto;
 
-  /* ⚠ 性能实测驱动的写法（见交付报告 FPS 表）：
-     初版给**每个** .cabin-ni-panel 单独铺一层半透明玻璃，右侧同时存在 4–5 层
-     叠放的半透明矩形；canvas 每帧变化时合成器要把这 4–5 块都重新混合一遍。
-     现在改成：<aside> 铺**一整块**半透明玻璃，内部 panel 全透明。
-     —— 教训：半透明合成的成本按"矩形块数"计，不按"是否 blur"计。 */
   background: var(--ui-glass-3);
   border: 1px solid var(--ui-glass-line);
   border-radius: var(--ui-r-3);
@@ -283,15 +273,208 @@
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   padding: var(--ui-s-2);
+  transition: width var(--ui-t) var(--ui-ease), max-width var(--ui-t) var(--ui-ease),
+    padding var(--ui-t) var(--ui-ease);
+}
+.cabin-ni-side.is-collapsed {
+  width: auto;
+  max-width: none;
+  min-width: 44px;
+  padding: var(--ui-s-1);
 }
 .cabin-ni-side > * {
   pointer-events: auto;
-  /* ⚠ 关键：弹性/网格子项默认 min-width:auto，内容（长标签、chip 行）
-     会把 236px 的窄栏**撑破**并横向溢出到视口外。
-     窄栏里必须显式 min-width:0 + 让内部 chip 行换行。 */
   min-width: 0;
 }
-/* 搬进右栏的 .cabin-toolbar 内部：chip 行必须能换行，不能横向撑破窄栏 */
+
+/* ---- 抽屉顶部选项卡栏与折叠控制 ---- */
+.cabin-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-s-1);
+  padding-bottom: var(--ui-s-2);
+  border-bottom: 1px solid var(--ui-line-2);
+  min-height: 36px;
+}
+.cabin-drawer-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cabin-drawer-tabs::-webkit-scrollbar {
+  display: none;
+}
+.cabin-drawer-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  min-height: 28px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-2);
+  color: var(--ui-ink-3);
+  font: inherit;
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-drawer-tab:hover {
+  color: var(--ui-sky-700);
+  border-color: var(--cabin-a-teal-50);
+  background: var(--ui-glass-3);
+}
+.cabin-drawer-tab.is-active {
+  color: var(--ui-sky-900);
+  border-color: var(--cabin-a-teal-65);
+  background: var(--cabin-a-teal-22);
+  box-shadow: 0 0 10px -2px var(--ui-glow-teal);
+}
+.cabin-drawer-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-2);
+  color: var(--ui-ink-2);
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-drawer-toggle:hover {
+  color: var(--ui-sky-700);
+  border-color: var(--cabin-a-teal-50);
+  background: var(--ui-glass-3);
+}
+.cabin-drawer-collapsed-title {
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  color: var(--ui-sky-700);
+  writing-mode: vertical-lr;
+  padding: var(--ui-s-1) 0;
+}
+.cabin-drawer-collapsed-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  align-items: center;
+  padding: var(--ui-s-1) 0;
+}
+.cabin-drawer-mini-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-2);
+  color: var(--ui-ink-2);
+  cursor: pointer;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-drawer-mini-btn:hover {
+  color: var(--ui-sky-700);
+  border-color: var(--cabin-a-teal-50);
+  background: var(--ui-glass-3);
+}
+
+/* ---- 抽屉主体内容区 ---- */
+.cabin-drawer-content {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  min-height: 0;
+}
+.cabin-drawer-content.is-hidden {
+  display: none;
+}
+.cabin-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  min-width: 0;
+}
+.cabin-tab-panel:not(.is-active) {
+  display: none !important;
+}
+
+/* ---- 各类卡片内容槽 ---- */
+.cabin-tab-slot-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  min-width: 0;
+}
+.cabin-world-info-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+  padding: 4px 0;
+}
+.cabin-world-badge {
+  font-weight: 600;
+  color: var(--ui-ink-1);
+}
+.cabin-world-text {
+  color: var(--ui-ink-2);
+}
+.cabin-world-val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ui-sky-800);
+}
+.cabin-view-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+.cabin-ni-btn-highlight {
+  border-color: var(--cabin-a-teal-65);
+  color: var(--ui-sky-800);
+  font-weight: 700;
+}
+.cabin-room-tabs-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  padding: var(--ui-s-2) 0;
+  border-bottom: 1px solid var(--ui-line-2);
+}
+.cabin-chip--expand {
+  border-style: dashed;
+  color: var(--ui-sky-700);
+}
+
+/* 搬进右栏的 .cabin-toolbar 内部：重置绝对定位与过大宽度 */
+.cabin-ni-side .cabin-toolbar {
+  position: static !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
 .cabin-ni-side .cabin-chip-row,
 .cabin-ni-side .cabin-toolbar-body {
   display: flex;
@@ -303,12 +486,19 @@
 .cabin-ni-side .cabin-group {
   min-width: 0;
   max-width: 100%;
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+  padding: var(--ui-s-2);
+  background: var(--ui-glass-2);
 }
 .cabin-ni-side .cabin-group > legend {
   font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  color: var(--ui-sky-700);
+  padding: 0 4px;
 }
 .cabin-ni-side .cabin-chip {
-  min-height: 32px;
+  min-height: 28px;
   padding: 0 var(--ui-s-2);
   font-size: var(--ui-fs-xs);
   border-radius: var(--ui-r-1);
@@ -321,49 +511,80 @@
   background: var(--ui-glass-3);
   color: var(--ui-ink-2);
   cursor: pointer;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-ni-side .cabin-chip:hover {
+  border-color: var(--cabin-a-teal-50);
+  color: var(--ui-sky-700);
 }
 .cabin-ni-side .cabin-chip.active {
   border-color: var(--cabin-a-teal-65);
+  background: var(--cabin-a-teal-22);
   color: var(--ui-sky-800);
+  font-weight: 700;
 }
 .cabin-ni-side .cabin-swatch {
-  width: 26px;
-  height: 26px;
-  min-height: 26px;
+  width: 24px;
+  height: 24px;
+  min-height: 24px;
   border-radius: var(--ui-r-1);
   border: 1px solid var(--ui-line-1);
   cursor: pointer;
   flex: 0 0 auto;
 }
+.cabin-ni-side .cabin-swatch.active {
+  box-shadow: 0 0 0 2px var(--ui-sky-600);
+}
 .cabin-ni-side .cabin-input,
 .cabin-ni-side .cabin-select {
   min-width: 0;
   max-width: 100%;
-  min-height: 32px;
+  min-height: 28px;
   font-size: var(--ui-fs-xs);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  padding: 0 var(--ui-s-1);
 }
 .cabin-ni-side .cabin-note,
 .cabin-ni-side .cabin-load-error {
   font-size: var(--ui-fs-xs);
-  line-height: 1.6;
+  line-height: 1.5;
   margin: 0;
   overflow-wrap: anywhere;
 }
-.cabin-ni-side .cabin-btn {
-  min-height: 32px;
-  font-size: var(--ui-fs-xs);
+.cabin-ni-side .cabin-load-error {
+  color: var(--ui-st-error, #b91c1c);
 }
-/* 地图切换在窄栏里排 2 列，按钮不再溢出 */
+.cabin-ni-side .cabin-btn {
+  min-height: 28px;
+  font-size: var(--ui-fs-xs);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  padding: 0 var(--ui-s-2);
+  cursor: pointer;
+}
+/* 地图切换排 2 列，按钮自适应 */
 .cabin-ni-side .cabin-ni-map {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ui-s-1);
 }
 .cabin-ni-side .cabin-ni-map-btn {
   min-width: 0;
+  min-height: 32px;
   padding: 0 var(--ui-s-2);
   font-size: var(--ui-fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.cabin-ni-time-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--ui-s-2);
 }
 
 .cabin-ni-panel {
@@ -554,28 +775,132 @@
   position: absolute;
   top: calc(32px + var(--ui-s-2));
   left: var(--ui-s-2);
-  z-index: 21;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: var(--ui-s-2);
-  padding: var(--ui-s-1) var(--ui-s-3);
+  padding: 4px 8px;
   border-radius: var(--ui-r-pill);
-  background: var(--ui-glass-2);
-  border: 1px solid var(--ui-glass-line);
-  box-shadow: var(--ui-shadow-1);
-  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
-  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
-  font-size: var(--ui-fs-xs);
-  color: var(--ui-ink-3);
-  max-width: calc(100% - var(--ui-s-4));
-  overflow-x: auto;
-  /* 同样压在 canvas 上 → 不用毛玻璃 */
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
   background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-2);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-2);
+  max-width: calc(100vw - 370px);
+  overflow-x: auto;
+  scrollbar-width: none;
+  pointer-events: auto;
 }
-.cabin-ni-keys > svg {
-  color: var(--ui-sky-600);
+.cabin-ni-keys::-webkit-scrollbar {
+  display: none;
+}
+
+/* 左上角功能按钮 */
+.cabin-fn-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  min-height: 26px;
+  border-radius: var(--ui-r-pill);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-2);
+  color: var(--ui-ink-1);
+  font: inherit;
+  font-size: var(--ui-fs-xs);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-fn-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--cabin-a-teal-50);
+  background: var(--ui-glass-3);
+  color: var(--ui-sky-800);
+}
+.cabin-fn-btn.is-active {
+  border-color: var(--cabin-a-teal-65);
+  background: var(--cabin-a-teal-22);
+  color: var(--ui-sky-900);
+  box-shadow: 0 0 8px -2px var(--ui-glow-teal);
+}
+.cabin-fn-btn--back {
+  border-color: var(--ui-line-2);
+  color: var(--ui-ink-3);
+}
+.cabin-fn-btn--back:hover {
+  color: var(--ui-ink-1);
+  border-color: var(--ui-line-1);
+}
+
+/* 休闲玩法下拉菜单 */
+.cabin-fn-menu-wrap {
+  position: relative;
+}
+.cabin-fn-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 35;
+  min-width: 220px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  box-shadow: var(--ui-shadow-3);
+}
+.cabin-fn-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-xs);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+  transition: all var(--ui-t-fast) var(--ui-ease);
+}
+.cabin-fn-dropdown-item:hover {
+  background: var(--cabin-a-teal-22);
+  border-color: var(--cabin-a-teal-50);
+  color: var(--ui-sky-900);
+}
+
+/* 室内顶部状态栏避让与居中 */
+.cabin-indoor-bar {
+  position: absolute;
+  top: calc(32px + var(--ui-s-2));
+  left: 50%;
+  transform: translateX(-50%);
+  right: auto !important;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: 4px 12px;
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-pill);
+  box-shadow: var(--ui-shadow-2);
+  max-width: calc(100vw - 380px);
+  overflow-x: auto;
+}
+
+/* 隐藏旧版冲突按钮（由新功能面板与顶栏全量接管） */
+.cabin-back {
+  display: none !important;
+}
+.w2-toggle {
+  display: none !important;
 }
 
 /* HUD 内既有按钮的玻璃质感覆盖。
@@ -1141,4 +1466,45 @@
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* ==========================================================================
+   §8 键盘控制与 2.5D 深度探索操作提示（纯令牌化无裸色值）
+   ========================================================================== */
+.cabin-keyboard-hint {
+  position: absolute;
+  left: var(--ui-s-4, 16px);
+  bottom: var(--ui-s-3, 12px);
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--ui-s-2, 8px);
+  padding: 6px 12px;
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-sky-200);
+  border-radius: var(--ui-radius-sm, 6px);
+  box-shadow: var(--ui-shadow-1, 0 2px 8px rgba(11, 16, 48, 0.08));
+  font-size: var(--ui-font-size-xs, 12px);
+  color: var(--ui-sky-900);
+  pointer-events: none;
+  user-select: none;
+}
+
+.cabin-key-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  background: var(--ui-sky-100);
+  border: 1px solid var(--ui-sky-300);
+  border-radius: 4px;
+  font-family: monospace;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--ui-sky-800);
+}
+
+.cabin-hint-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
