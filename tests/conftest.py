@@ -20,6 +20,7 @@ import find_yourself.db.sync_models  # noqa: F401
 import find_yourself.db.workbench_models  # noqa: F401
 import find_yourself.db.team_models  # noqa: F401
 import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
+import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
 from find_yourself.services.audit import AuditService
 from find_yourself.services.actor import Actor
 
