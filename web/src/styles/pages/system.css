@@ -1,0 +1,629 @@
+/* ==========================================================================
+   包 F · 系统与独立形态样式（/login /settings /private /pet）
+   --------------------------------------------------------------------------
+   独占文件：本文件归包 F 所有。所有颜色一律 var(--ui-*)，不写裸色值。
+   状态语义走九档色；薄荷青仅用于装饰泛光，不承载状态。
+
+   ⛔ /pet 硬约束（包 F 任务书 §4）
+     1. 页面根元素 background 必须透明，不许 body 白底透出；
+     2. 绝不给透明窗加 backdrop-filter（会渲染成脏灰块）；
+     3. 除宠物本体与 2–3 个控制按钮外，像素区域 pointer-events: none，
+        不许整窗吃掉点击。
+   ⛔ /login 不做假的 macOS 红黄绿窗口控制点（参考截图①④有，产品是
+      Tauri Windows + 网页端，做出来是假按钮）。
+   ========================================================================== */
+
+/* ==========================================================================
+   §1 /login —— 产品第一印象
+   ========================================================================== */
+
+.login-stage {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ui-s-8);
+  padding: var(--ui-s-8) var(--ui-s-10);
+  position: relative;
+  overflow: hidden;
+}
+
+/* --- 左：装饰星图（纯 CSS，无依赖，≤120 节点量级由 DOM 上限保证） --- */
+.login-backdrop {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.login-backdrop svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.35;   /* 不抢表单 */
+}
+
+.login-backdrop .ln-star { fill: var(--ui-sky-500); }
+.login-backdrop .ln-star--alt { fill: var(--ui-teal-300); }   /* 授权装饰色 */
+.login-backdrop .ln-star--v { fill: var(--ui-violet-400); }
+.login-backdrop .ln-edge { stroke: var(--ui-sky-300); stroke-width: 1; opacity: 0.5; }
+
+/* 缓速漂浮：周期 ≥8s、位移 ≤6px（任务书 §3 装饰预算） */
+.login-backdrop .ln-drift { animation: login-drift 14s ease-in-out infinite; }
+.login-backdrop .ln-drift--2 { animation-duration: 18s; animation-delay: -4s; }
+.login-backdrop .ln-drift--3 { animation-duration: 16s; animation-delay: -8s; }
+
+@keyframes login-drift {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(4px, -6px); }
+}
+
+.login-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  padding-right: var(--ui-s-6);
+}
+
+.login-brand-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+}
+
+.login-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--ui-r-2);
+  display: grid;
+  place-items: center;
+  background: linear-gradient(135deg, var(--ui-sky-400), var(--ui-sky-600));
+  color: var(--ui-ink-inv);
+  font-weight: 700;
+  font-size: var(--ui-fs-md);
+  letter-spacing: 0.04em;
+  box-shadow: 0 8px 22px -8px color-mix(in srgb, var(--ui-sky-600) 45%, transparent);
+}
+
+.login-brand {
+  margin: 0;
+  font-size: var(--ui-fs-3xl);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  letter-spacing: 0.01em;
+}
+
+.login-slogan {
+  margin: 0;
+  font-size: var(--ui-fs-lg);
+  color: var(--ui-ink-3);
+  line-height: 1.7;
+  max-width: 34ch;
+}
+
+.login-features {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  margin-top: var(--ui-s-3);
+}
+
+.login-feature {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-3);
+  font-size: var(--ui-fs-md);
+  color: var(--ui-ink-2);
+  line-height: 1.6;
+}
+
+.login-feature svg { color: var(--ui-sky-600); margin-top: 2px; }
+
+/* --- 右：玻璃表单卡 --- */
+.login-card {
+  position: relative;
+  z-index: 1;
+  padding: var(--ui-s-8);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-4);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+
+.login-card > h2,
+.login-card > h3 { margin-top: 0; }
+
+.login-title {
+  margin: 0 0 var(--ui-s-2);
+  font-size: var(--ui-fs-2xl);
+  color: var(--ui-ink-1);
+}
+
+.login-lead {
+  margin: 0 0 var(--ui-s-6);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-3);
+  line-height: 1.7;
+}
+
+.login-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-2);
+  border: 1px solid color-mix(in srgb, var(--ui-st-waiting) 42%, transparent);
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  font-size: var(--ui-fs-sm);
+  line-height: 1.6;
+  margin-bottom: var(--ui-s-5);
+}
+
+.login-sep {
+  border: 0;
+  border-top: 1px solid var(--ui-line-2);
+  margin: var(--ui-s-6) 0;
+}
+
+.login-subtitle {
+  margin: 0 0 var(--ui-s-2);
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-2);
+}
+
+.login-note {
+  margin: 0 0 var(--ui-s-4);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-4);
+  line-height: 1.7;
+}
+
+.login-field { margin-bottom: var(--ui-s-4); }
+
+.login-foot {
+  margin: var(--ui-s-5) 0 0;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-4);
+  line-height: 1.7;
+}
+
+.login-local-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: var(--ui-s-4);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+/* --- 窄屏：堆成单列居中，不许横向滚动（任务书 §3） --- */
+@media (max-width: 900px) {
+  .login-stage {
+    grid-template-columns: minmax(0, 1fr);
+    padding: var(--ui-s-6) var(--ui-s-4);
+    gap: var(--ui-s-6);
+    align-content: start;
+  }
+  .login-side { padding-right: 0; }
+  .login-card { padding: var(--ui-s-6); }
+  .login-backdrop svg { opacity: 0.2; }
+  .login-brand { font-size: var(--ui-fs-2xl); }
+}
+
+/* ==========================================================================
+   §2 /settings —— 分区、危险操作、预算条
+   ========================================================================== */
+
+.st-sections {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-5);
+}
+
+.st-section { scroll-margin-top: var(--ui-s-6); }
+
+.st-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  margin-bottom: var(--ui-s-3);
+}
+
+.st-section-head h3 { margin: 0; font-size: var(--ui-fs-lg); color: var(--ui-ink-1); }
+.st-section-head p { margin: 0; font-size: var(--ui-fs-xs); color: var(--ui-ink-4); }
+.st-section-head .ui-spacer { margin-left: auto; }
+.st-section-icon { color: var(--ui-sky-600); }
+
+/* --- 开关行：整块可点 ≥48px（最少点击第 2 条） --- */
+.st-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-4);
+  width: 100%;
+  min-height: var(--ui-hit-lg);
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-2);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+
+.st-toggle-row:hover { background: color-mix(in srgb, var(--ui-ink-inv) 70%, transparent); border-color: var(--ui-line-1); }
+.st-toggle-row + .st-toggle-row { margin-top: var(--ui-s-1); }
+
+.st-toggle-body { flex: 1; min-width: 0; }
+.st-toggle-title { font-size: var(--ui-fs-md); color: var(--ui-ink-1); font-weight: 600; }
+.st-toggle-desc { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); line-height: 1.6; margin-top: 2px; }
+
+.st-switch {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 26px;
+  border-radius: var(--ui-r-pill);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  position: relative;
+  transition: background var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+
+.st-switch::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ui-ink-4);
+  transition: transform var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease);
+}
+
+.st-switch[data-on='true'] {
+  background: color-mix(in srgb, var(--ui-sky-400) 22%, transparent);
+  border-color: color-mix(in srgb, var(--ui-teal-400) 60%, transparent);
+}
+.st-switch[data-on='true']::after {
+  transform: translateX(18px);
+  background: var(--ui-sky-600);
+}
+
+/* --- 预算条：天蓝渐变；超限才上琥珀/红（禁绿） --- */
+.st-budget {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+
+.st-budget-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-s-3);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-3);
+}
+
+.st-budget-value {
+  font-size: var(--ui-fs-xl);
+  font-weight: 700;
+  color: var(--ui-ink-1);
+  font-variant-numeric: tabular-nums;
+}
+
+.st-budget-track {
+  height: 8px;
+  border-radius: var(--ui-r-pill);
+  background: color-mix(in srgb, var(--ui-ink-4) 20%, transparent);
+  overflow: hidden;
+}
+
+.st-budget-fill {
+  height: 100%;
+  border-radius: var(--ui-r-pill);
+  background: linear-gradient(90deg, var(--ui-sky-400), var(--ui-sky-700));
+  transition: width var(--ui-t-slow) var(--ui-ease);
+}
+
+.st-budget-fill[data-state='warn'] { background: linear-gradient(90deg, var(--ui-sky-500), var(--ui-st-waiting)); }
+.st-budget-fill[data-state='over'] { background: linear-gradient(90deg, var(--ui-st-waiting), var(--ui-st-failed)); }
+
+.st-budget-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- 危险区：视觉上独立但不用大红铺底（避免抢主色） --- */
+.st-danger {
+  border-color: color-mix(in srgb, var(--ui-st-rework) 32%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--ui-ink-inv) 86%, transparent), color-mix(in srgb, var(--ui-ink-inv) 72%, transparent));
+}
+
+.st-danger-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  margin-bottom: var(--ui-s-3);
+}
+.st-danger-head h3 { margin: 0; font-size: var(--ui-fs-lg); color: var(--ui-st-rework); }
+.st-danger-head svg { color: var(--ui-st-rework); }
+
+.st-danger-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ui-s-3);
+  margin-top: var(--ui-s-4);
+}
+
+.st-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--ui-s-4);
+}
+
+.st-meta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-sm);
+}
+.st-meta-table th,
+.st-meta-table td {
+  text-align: left;
+  padding: var(--ui-s-3) var(--ui-s-2);
+  border-bottom: 1px solid var(--ui-line-2);
+  vertical-align: middle;
+}
+.st-meta-table th { color: var(--ui-ink-3); font-weight: 600; }
+.st-meta-table td:last-child { text-align: right; }
+
+/* ==========================================================================
+   §3 /private —— 最小视觉规范化（入口本轮不做，见总纲裁决表）
+   ========================================================================== */
+
+.pr-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--ui-s-4);
+}
+
+.pr-head h2 { margin: 0; font-size: var(--ui-fs-xl); color: var(--ui-ink-1); }
+.pr-head svg { color: var(--ui-sky-600); }
+.pr-head .ui-spacer { margin-left: auto; }
+
+.pr-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-3);
+  padding: var(--ui-s-4);
+  margin-bottom: var(--ui-s-5);
+  border-radius: var(--ui-r-2);
+  border: 1px solid color-mix(in srgb, var(--ui-sky-400) 42%, transparent);
+  background: var(--ui-st-running-bg);
+  color: var(--ui-sky-800);
+  font-size: var(--ui-fs-sm);
+  line-height: 1.7;
+}
+
+.pr-notice svg { flex: 0 0 auto; color: var(--ui-sky-600); margin-top: 2px; }
+
+.pr-section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  margin: var(--ui-s-5) 0 var(--ui-s-3);
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  color: var(--ui-ink-2);
+}
+
+.pr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ui-s-4);
+}
+
+/* 资产分区（/private 三模块）—— 此前 .assets-section 零样式 */
+.assets-section {
+  padding: var(--ui-s-5);
+  margin-bottom: var(--ui-s-5);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-3);
+  box-shadow: var(--ui-shadow-1);
+  backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur)) saturate(var(--ui-glass-saturate));
+}
+
+.assets-section > .row { flex-wrap: wrap; gap: var(--ui-s-3); }
+
+@media (max-width: 860px) {
+  .assets-section { padding: var(--ui-s-4); }
+}
+
+/* ==========================================================================
+   §4 /pet —— 透明置顶浮窗
+   ========================================================================== */
+
+/* 根：必须透明。不设底色、不设遮罩。 */
+/* 任务书 §4-1「不许 body 白底透出来」实测补漏：
+   styles.css:45 给 body 铺了 `background: var(--bg-gradient)`（整页淡蓝渐变）。
+   .pet-root 自己是透明的，但那层渐变会从底下透上来 —— Tauri 透明窗里就是一个
+   铺满窗口的浅色矩形，宠物根本「透不出去」。
+   styles.css 是冻结文件，改不了；这里用 :has() 只在 /pet 这一条路由上撤掉 body 底色，
+   不影响任何其它页面。 */
+body:has(.pet-root) {
+  background: none;
+  background-image: none;
+}
+
+.pet-root {
+  min-height: 100vh;
+  background: transparent !important;
+  overflow: hidden;
+  /* 任务书 §4-3：整窗不许吃掉点击。除宠物本体与控件外全部穿透。 */
+  pointer-events: none;
+  color: var(--ui-ink-1);
+}
+
+.pet-root,
+.pet-root * { background-clip: padding-box; }
+
+/* 只有宠物本体与控制条恢复命中测试 */
+.pet-stage,
+.pet-controls,
+.pet-menu { pointer-events: auto; }
+
+/* 控制条：hover / focus 时才出现 */
+.pet-controls {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: var(--ui-s-1);
+  opacity: 0;
+  transition: opacity var(--ui-t) var(--ui-ease);
+  z-index: 5;
+}
+
+/* 悬停显形。`.pet-root` 是 pointer-events:none，:hover 能否穿透到它取决于浏览器
+   实现细节，所以同时用 `.pet-stage:hover`（该节点 pointer-events:auto，必定命中）
+   兜底 —— 否则控制条可能永远不出现，而这正是本包最少点击第 5 条的全部内容。 */
+.pet-root:hover .pet-controls,
+.pet-stage:hover .pet-controls,
+.pet-root:focus-within .pet-controls { opacity: 1; }
+
+/* 命中区 44px（总纲 §7.2），视觉小块由 ::before 收进去 —— 浮窗很小，
+   整颗 44px 的实心按钮会显得笨重，但不能因为好看把命中区做小。 */
+.pet-ctl {
+  position: relative;
+  width: var(--ui-hit);
+  height: var(--ui-hit);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ui-ink-3);
+  cursor: pointer;
+  border-radius: var(--ui-r-2);
+}
+
+.pet-ctl::before {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  /* 透明窗不吃 backdrop-filter：不透明玻璃兜底 */
+  background: var(--ui-glass-3);
+  transition: border-color var(--ui-t) var(--ui-ease);
+}
+
+.pet-ctl > svg { position: relative; }
+
+.pet-ctl:hover {
+  color: var(--ui-sky-600);
+}
+
+.pet-ctl:hover::before {
+  border-color: color-mix(in srgb, var(--ui-teal-400) 50%, transparent);
+}
+
+.pet-ctl:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-ring);
+}
+
+/* 右键菜单：同上，不透明玻璃 */
+.pet-menu {
+  position: absolute;
+  min-width: 148px;
+  padding: var(--ui-s-1);
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  box-shadow: var(--ui-shadow-2);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+}
+
+.pet-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-2);
+  border: 0;
+  border-radius: var(--ui-r-1);
+  background: transparent;
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pet-menu-item:hover { background: color-mix(in srgb, var(--ui-teal-300) 16%, transparent); color: var(--ui-sky-700); }
+
+/* 窄屏兜底：浮窗本身是固定小尺寸，这里只防止意外撑破 */
+@media (max-width: 480px) {
+  .pet-controls { opacity: 1; }
+}
+
+/* ==========================================================================
+   §5 减弱动效 —— 本域自有动画必须在这里兜住
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .login-backdrop .ln-drift,
+  .login-backdrop .ln-drift--2,
+  .login-backdrop .ln-drift--3 {
+    animation: none !important;
+  }
+  .st-budget-fill { transition-duration: 1ms !important; }
+  .st-switch::after { transition-duration: 1ms !important; }
+}
+/* ==========================================================================
+   登录页品牌区（命名书 branding-naming-2026-10-06 方案 A）
+
+   层级：母品牌英文（最大）→ 中文功能名（强调）→ 主标语 → 副标语（三段能力）。
+   命名书 §一.3 要求标语直白无修辞，所以这里全部是陈述句，没有形容词堆叠。
+   ========================================================================== */
+.login-slogan {
+  /* 中文功能名：比主标语更「重」，因为它才是产品名 */
+  font-size: var(--ui-fs-xl);
+  font-weight: 700;
+  color: var(--ui-sky-700);
+  letter-spacing: 0.01em;
+  max-width: none;
+  margin: var(--ui-s-4) 0 0;
+}
+.login-slogan-main {
+  margin: var(--ui-s-2) 0 0;
+  font-size: var(--ui-fs-lg);
+  color: var(--ui-ink-2);
+  line-height: 1.6;
+  max-width: none;
+}
+.login-slogan-sub {
+  margin: var(--ui-s-2) 0 0;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-3);
+  line-height: 1.6;
+  max-width: none;
+  /* 三段能力用分隔点连缀，给一点呼吸感但不修辞化 */
+  letter-spacing: 0.02em;
+}

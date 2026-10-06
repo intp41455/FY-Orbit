@@ -47,6 +47,18 @@ const NAV: NavItem[] = [
   // ---- 个人空间（§2 表顺序 11–18） ----
   { to: '/chat', label: '对话', sub: '流式会话', kbd: null, icon: 'chat', space: 'personal' },
   { to: '/cabin', label: '我的小屋', sub: '数码小人 · 经营模拟', kbd: null, icon: 'cabin', space: 'personal' },
+  /**
+   * 私人空间（/private）：图片 / 音频 / 音乐三模块，真实对接 /api/assets。
+   *
+   * 07 §2 曾记录「/private 有路由但导航无入口」，当时用户裁决为「有路由就先留着，
+   * 记为待办」，并要求收口包不要为它加项。**该裁决已被用户推翻**（2026-10-06：
+   * 「私人空间那个页面在左侧栏没有对应的标签导航页，给它加上一个」），
+   * 故此处按「独立一级页」补上入口。
+   *
+   * 位置放在「我的小屋」之后：素材可从私人空间一键挂进小屋，两者相邻便于串联。
+   * 个人空间项一律无 .ui-kbd 角标（§2 只要求 1–9 项），所以插入不影响编号。
+   */
+  { to: '/private', label: '私人空间', sub: '图片 · 音频 · 音乐素材', kbd: null, icon: 'folder', space: 'personal' },
   { to: '/history', label: '历史', sub: '会话留痕', kbd: null, icon: 'history', space: 'personal' },
   { to: '/growth', label: '成长记录', sub: '阶段与复盘', kbd: null, icon: 'growth', space: 'personal' },
   { to: '/assessments', label: '测评', sub: '结构化评估', kbd: null, icon: 'assessments', space: 'personal' },

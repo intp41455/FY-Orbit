@@ -40,8 +40,8 @@ const DISPATCH_ELEMENTS: { label: string; text: string }[] = [
   {
     label: '产品简介段落',
     text:
-      'Find Yourself 是一款单主人自我探索陪伴应用：它记录你的言语与经历，' +
-      '在画像与协作画布上沉淀为可复核的记忆结构，并在隐私边界内提供陪伴式洞察。',
+      '多智能体搭建台（Find Yourself）是一款本地多智能体搭建与调度平台：' +
+      '可视化搭建、代码级自定义，无需注册联网；全部数据来自已鉴权的后端 API。',
   },
   {
     label: '工作台说明段落',

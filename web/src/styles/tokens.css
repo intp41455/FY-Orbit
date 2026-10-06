@@ -811,11 +811,15 @@
    与普通设置区分开，避免误点：左侧 2px 红条 + 淡红底 + 虚线分隔。
    ========================================================================== */
 .st-danger-zone {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--ui-s-3);
-  flex-wrap: wrap;
+  display: grid;
+  /* 上一版用 flex + max-width:46ch，实测把文字区压成 810px 之外的窄条，
+     「建议先导出留存。」被拆成两行且句号单独占一行 —— 自己造的回归。
+     改成两列网格：文字列吃剩余宽度（minmax(0,1fr) 才能真正收缩而不是撑破），
+     按钮列固定宽度并自身 align-items:center，窄屏降为单列。 */
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: var(--ui-s-4);
+  row-gap: var(--ui-s-3);
   margin-top: var(--ui-s-4);
   padding: var(--ui-s-3) var(--ui-s-4);
   border: 1px dashed color-mix(in srgb, var(--ui-st-failed) 42%, transparent);
@@ -823,6 +827,8 @@
   border-radius: var(--ui-r-md);
   background: color-mix(in srgb, var(--ui-st-failed) 6%, transparent);
 }
+.st-danger-zone > div { min-width: 0; }
+.st-danger-zone .ui-btn--danger { align-self: center; white-space: nowrap; }
 .st-danger-zone strong {
   display: block;
   color: var(--ui-st-failed);
@@ -831,5 +837,51 @@
 .st-danger-zone p {
   margin: var(--ui-s-1) 0 0;
   font-size: var(--ui-fs-xs);
-  max-width: 46ch;
+  line-height: 1.65;
+  color: var(--ui-ink-2);
+}
+@media (max-width: 560px) {
+  .st-danger-zone { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ==========================================================================
+   工作台左右侧栏的滚动条
+
+   `.wb-zone-left` / `.wb-zone-right` 声明了 `overflow: auto` 却没有给任何
+   滚动条样式，于是落到浏览器默认细条上：磨砂玻璃底上几乎看不见，用户不知道
+   这一栏还能往下滚。
+
+   这里不是简单调粗，而是补上「轨道」——原来连轨道都是透明的，
+   滚动范围完全不可见。现在：
+     滑块 = --ui-ink-3 45%（比 .ui-scroll 的 38% 略明显，但仍克制）
+     轨道 = --ui-ink-3 9%（很淡，只用来提示可滚动范围）
+     hover = 转 --ui-sky-600 65%，让「能拖」这件事可发现
+   尺寸 10px > .ui-scroll 的 8px，符合「核心区域控件更大」的取向。
+   ========================================================================== */
+.wb-zone-left,
+.wb-zone-right {
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in srgb, var(--ui-ink-3) 45%, transparent)
+    color-mix(in srgb, var(--ui-ink-3) 9%, transparent);
+}
+.wb-zone-left::-webkit-scrollbar,
+.wb-zone-right::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.wb-zone-left::-webkit-scrollbar-track,
+.wb-zone-right::-webkit-scrollbar-track,
+.wb-zone-left::-webkit-scrollbar-corner,
+.wb-zone-right::-webkit-scrollbar-corner {
+  background: color-mix(in srgb, var(--ui-ink-3) 9%, transparent);
+}
+.wb-zone-left::-webkit-scrollbar-thumb,
+.wb-zone-right::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ui-ink-3) 45%, transparent);
+  border-radius: var(--ui-r-pill);
+}
+.wb-zone-left::-webkit-scrollbar-thumb:hover,
+.wb-zone-right::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ui-sky-600) 65%, transparent);
 }
