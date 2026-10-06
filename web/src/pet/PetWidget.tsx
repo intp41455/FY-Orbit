@@ -138,8 +138,10 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
             bottom: '100%',
             left: 0,
             marginBottom: 8,
-            background: 'rgba(15, 23, 42, 0.85)',
-            color: '#e2f3ff',
+            /* 台词气泡：深底 + 冰蓝字。原先写死 rgba(15,23,42,.85) / #e2f3ff，
+               改由令牌派生，改主题时不必回来改这里。 */
+            background: 'color-mix(in srgb, var(--ui-ink-1) 85%, transparent)',
+            color: 'var(--ui-sky-100)',
             fontSize: 12,
             lineHeight: 1.4,
             padding: '6px 10px',
@@ -160,7 +162,7 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
         style={{ display: 'block', imageRendering: 'pixelated' }}
       />
 
-      <div data-testid="pet-mood" style={{ fontSize: 10, color: '#0f172a', marginTop: 2 }}>
+      <div data-testid="pet-mood" style={{ fontSize: 10, color: 'var(--ui-ink-1)', marginTop: 2 }}>
         {mood.label}
         {mood.needsCare ? ' · 点小屋喂我' : ''}
       </div>
@@ -171,10 +173,10 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
             position: 'absolute',
             top: '100%',
             left: 0,
-            background: 'white',
-            border: '1px solid #cbd5e1',
+            background: 'var(--ui-glass-3)',
+            border: '1px solid var(--ui-line-1)',
             borderRadius: 8,
-            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
+            boxShadow: 'var(--ui-shadow-2)',
             fontSize: 12,
             zIndex: 10,
           }}
@@ -199,7 +201,7 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
               setMenuOpen(false);
               resolvedBridge.hideWindow();
             }}
-            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', border: 'none', borderTop: '1px solid #eee', background: 'transparent', cursor: 'pointer' }}
+            style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 12px', border: 'none', borderTop: '1px solid var(--ui-line-1)', background: 'transparent', cursor: 'pointer' }}
           >
             隐藏
           </button>
