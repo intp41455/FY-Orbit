@@ -14,7 +14,21 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
+from ..services.scheduler import (
+    CHANNEL_INTERNAL_AGENT,
+    TASK_FAILED,
+    TASK_RECLAIMED,
+    TASK_SUCCEEDED,
+    DEFAULT_PRIORITY,
+    DispatchRequest,
+    UnifiedScheduler,
+)
+from ..services.scheduler import scheduler as _default_scheduler
+
 logger = logging.getLogger(__name__)
+
+#: 委派子任务在调度中心里的 worker 标识（与外部成品 agent 同池调度）。
+DELEGATION_WORKER_ID = "internal.delegation-subtask"
 
 
 class DelegationError(Exception):
@@ -50,6 +64,7 @@ class DelegationCoordinator:
         max_concurrency: int = 2,
         max_retries: int = 2,
         root_budget_usd: float = 1.0,
+        scheduler: UnifiedScheduler | None = None,
     ):
         self.max_depth = max_depth
         self.max_concurrency = max_concurrency
@@ -57,8 +72,56 @@ class DelegationCoordinator:
         self.root_budget_usd = root_budget_usd
         self.root_spent_usd = 0.0
 
+        # 统一调度中心接线（A-统一接入-08）：子任务执行统一经调度中心派发，
+        # 与外部成品 agent 同池；默认进程级共享单例。
+        self._scheduler = scheduler or _default_scheduler
+
         self._active_subtasks: dict[str, dict] = {}
         self._delegation_tree: dict[str, list[str]] = {}
+
+    def _ensure_worker(self) -> None:
+        if self._scheduler.get_worker(DELEGATION_WORKER_ID) is None:
+            self._scheduler.register_simple_worker(
+                DELEGATION_WORKER_ID,
+                CHANNEL_INTERNAL_AGENT,
+                lambda req: req.payload["runner"](),
+                max_parallel=4,
+                tags=("delegation", "subtask"),
+                description="F4 层级委派子任务执行器",
+            )
+
+    def _run_via_scheduler(
+        self,
+        *,
+        runner_fn: Callable[[], Any],
+        parent_task_id: str,
+        subtask_id: str,
+        current_depth: int,
+    ) -> Any:
+        """经统一调度中心执行一次子任务；失败/回收转为异常走既有重试语义。"""
+        self._ensure_worker()
+        record = self._scheduler.submit_and_wait(
+            DispatchRequest(
+                channel=CHANNEL_INTERNAL_AGENT,
+                action="delegation_subtask",
+                # capability 钉住本通路 worker（同通道还有 dispatch-child 等）。
+                requested_capability="delegation",
+                payload={"runner": runner_fn, "subtask_id": subtask_id},
+                priority=max(1, DEFAULT_PRIORITY - current_depth),
+                timeout_seconds=300.0,
+                meta={"parent_task_id": parent_task_id, "depth": current_depth},
+            ),
+            timeout=300.0,
+        )
+        if record.status == TASK_SUCCEEDED:
+            return record.result
+        if record.status == TASK_RECLAIMED:
+            raise TimeoutError(
+                f"subtask '{subtask_id}' reclaimed by scheduler (deadline exceeded)"
+            )
+        if record.status == TASK_FAILED:
+            raise RuntimeError(f"scheduler task failed: {record.error}")
+        raise RuntimeError(f"scheduler task ended in unexpected status '{record.status}'")
 
     @property
     def remaining_budget_usd(self) -> float:
@@ -115,7 +178,14 @@ class DelegationCoordinator:
         last_err: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
             try:
-                res = runner_fn()
+                # 统一调度中心接线（A-统一接入-08）：runner 不再直接调用，
+                # 一律经调度中心派发（同池/优先级/并发上限/回收/状态回传）。
+                res = self._run_via_scheduler(
+                    runner_fn=runner_fn,
+                    parent_task_id=parent_task_id,
+                    subtask_id=subtask_id,
+                    current_depth=current_depth,
+                )
                 # Deduct cost from root budget upon successful execution
                 self.root_spent_usd += cost_usd
                 self._active_subtasks.pop(subtask_id, None)

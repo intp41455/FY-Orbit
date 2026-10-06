@@ -417,12 +417,20 @@ class ChatModelAdapter:
 
 
 class McpServerAdapter:
-    """MCP server: real ``tools/list`` discovery and ``tools/call`` execution."""
+    """MCP server: real ``tools/list`` discovery and ``tools/call`` execution.
 
-    def __init__(self, config: dict[str, Any], *, client: Any | None = None):
+    传输（A-统一接入-02）：``config.command``（stdio 子进程，原有语义）或
+    ``config.url`` + ``config.transport``（``http`` / ``sse`` / ``ws``）。
+    信任分级（A-统一接入-09）：``config.trust`` ∈ trusted / remote / untrusted，
+    或构造时直接传 ``trust_policy``（携带 confirm 回调）。
+    """
+
+    def __init__(self, config: dict[str, Any], *, client: Any | None = None,
+                 trust_policy: Any | None = None):
         self.kind = KIND_MCP_SERVER
         self.config = dict(config)
         self._client = client
+        self._trust_policy = trust_policy
         self._tools: list[dict[str, Any]] | None = None
         #: 上一次 register_tools 被跳过的名字（命名不合规 / 与他人注册冲突）。
         self.last_skipped: list[str] = []
@@ -431,19 +439,43 @@ class McpServerAdapter:
         return str(self.config.get("server") or "mcp").strip()
 
     # -- connection ---------------------------------------------------------- #
+    def _trust(self) -> Any:
+        if self._trust_policy is not None:
+            return self._trust_policy
+        from ...adapters.mcp import TRUST_LEVELS, TRUST_TRUSTED, McpTrustPolicy
+
+        level = str(self.config.get("trust") or TRUST_TRUSTED).strip().lower()
+        if level not in TRUST_LEVELS:
+            raise ValidationFailed(
+                "hub_mcp_invalid_trust",
+                f"未知 MCP 信任级 '{level}'；可用：{', '.join(TRUST_LEVELS)}",
+            )
+        return McpTrustPolicy(level=level)
+
     def _connect(self) -> Any:
         if self._client is not None:
             return self._client
         from ...adapters.mcp import McpClient
 
         cmd = self.config.get("command")
-        if not (isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd)):
-            raise ValidationFailed(
-                "hub_mcp_invalid_command", "MCP 连接缺少可执行的 command（字符串数组）"
-            )
-        env = self.config.get("env") if isinstance(self.config.get("env"), dict) else None
-        self._client = McpClient.from_subprocess(cmd, env=env)
-        return self._client
+        if isinstance(cmd, list) and cmd and all(isinstance(c, str) for c in cmd):
+            env = self.config.get("env") if isinstance(self.config.get("env"), dict) else None
+            self._client = McpClient.from_subprocess(cmd, env=env, trust=self._trust())
+            return self._client
+        url = str(self.config.get("url") or "").strip()
+        if url:
+            transport = str(self.config.get("transport") or "http").strip().lower()
+            if transport not in {"http", "sse", "ws"}:
+                raise ValidationFailed(
+                    "hub_mcp_invalid_transport",
+                    f"未知 MCP 远端传输 '{transport}'；可用：http / sse / ws",
+                )
+            self._client = McpClient.from_url(url, transport=transport, trust=self._trust())
+            return self._client
+        raise ValidationFailed(
+            "hub_mcp_invalid_command",
+            "MCP 连接需要可执行的 command（字符串数组，stdio）或 url（http/sse/ws）",
+        )
 
     def list_tools(self) -> list[dict[str, Any]]:
         if self._tools is None:
@@ -453,6 +485,11 @@ class McpServerAdapter:
             self._tools = tools if isinstance(tools, list) else []
         return self._tools
 
+    def refresh(self) -> list[dict[str, Any]]:
+        """动态刷新（A-统一接入-09）：丢弃缓存重新发现工具清单。"""
+        self._tools = None
+        return self.list_tools()
+
     def tool_names(self) -> list[str]:
         return [str(t.get("name")) for t in list(self.list_tools()) if isinstance(t, dict) and t.get("name")]
 
@@ -460,58 +497,26 @@ class McpServerAdapter:
     def register_tools(self, registry: Any | None = None) -> list[str]:
         """Register remote tools as ``hub.<server>.<tool>`` in the tool registry.
 
-        Only the public ``register`` / ``attach_mcp_client`` API is used, so the
-        registry's own whitelist and consistency checks still run. Names that
-        would clash with a *different* existing entry are skipped (logged in the
-        returned report via the caller), never overwritten.
+        §八 B1 收敛：本方法只是 :func:`adapters.mcp.assemble_mcp_tools`（**唯一**
+        装配入口）在 ``prefix="hub."`` 命名空间下的委托调用，不再自养一套装配
+        逻辑（重复/漂移风险就此消除）。Names that would clash with a *different*
+        existing entry are skipped (logged in ``last_skipped``), never overwritten.
         """
-        from ..errors import NotFound
-        from ..tool_registry import TOOL_NAME_RE, tool_registry as _default
+        from ...adapters.mcp import assemble_mcp_tools
 
-        registry = registry or _default
+        if registry is None:
+            from ..tool_registry import tool_registry as registry
         server = self.server_key()
         client = self._connect()
-        # 活的客户端必须挂在 registry 上，invoke 才能桥接到远端；
-        # 与 adapters.mcp.assemble_mcp_tools 的做法一致（重启后需重新装配）。
-        registry.attach_mcp_client(server, client)
-        if self._tools is None:
-            client.initialize()
-
-        prefixed: list[str] = []
-        skipped: list[str] = []
-        for tool in self.list_tools():
-            if not isinstance(tool, dict) or not tool.get("name"):
-                continue
-            remote = str(tool["name"])
-            name = f"hub.{server}.{remote}"
-            if not TOOL_NAME_RE.fullmatch(name):
-                skipped.append(name)
-                continue
-            entry = {"type": "mcp", "server": server, "remote_tool": remote}
-            try:
-                existing = registry.get_tool(name)
-            except NotFound:
-                existing = None
-            if existing is not None and existing.get("entry") != entry:
-                # 不覆盖他人注册：冲突就跳过，由调用方决定是否提示。
-                skipped.append(name)
-                continue
-            schema = tool.get("inputSchema")
-            if not isinstance(schema, dict) or schema.get("type") != "object":
-                schema = {"type": "object"}
-            try:
-                registry.register(
-                    name=name,
-                    description=str(tool.get("description") or f"MCP 工具 {remote}（{server}）"),
-                    parameters=schema,
-                    entry=entry,
-                )
-            except Exception:  # noqa: BLE001 — 单个坏工具不拖垮整批
-                skipped.append(name)
-                continue
-            prefixed.append(name)
-        self.last_skipped = skipped
-        return prefixed
+        status = assemble_mcp_tools(
+            registry=registry, clients={server: client}, prefix="hub.",
+        )[0]
+        self.last_skipped = [
+            str(s.get("tool") or s.get("reason") or "") for s in status.get("skipped", [])
+        ]
+        # 装配后丢弃本适配器缓存，下次 list_tools 从远端重新发现。
+        self._tools = None
+        return list(status.get("registered", []))
 
     # -- HubAdapter ---------------------------------------------------------- #
     def health(self, *, timeout_seconds: float = 3.0) -> HealthReport:

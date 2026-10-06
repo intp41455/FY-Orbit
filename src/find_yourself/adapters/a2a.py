@@ -6,11 +6,15 @@ Reference: official A2A protocol publishes an **Agent Card** at
 ``tasks/get``, ``tasks/cancel``, ``tasks/list``. Errors are JSON-RPC error
 objects ``{code, message, data}``.
 
-This is a *compatibility* surface only: it advertises a correct card and
-handles the JSON-RPC envelope, but it never invokes a remote agent. When no
-upstream endpoint/credential is configured it returns a structured
-``-32001 upstream_not_configured`` error instead of a fabricated task result
-(A12). All inputs are synthetic; no private content or secrets are echoed.
+入站派发（§八 C 打通，补齐包3）：``A2ADispatcher`` 现在接受
+``dispatch_handler``——由 HTTP 层把它接到**统一调度中心**
+（``services.scheduler``）的 ``a2a.inbound`` worker 上，``message/send``
+从此成为真实入站通道：入站任务同池调度、状态可经 ``tasks/get`` 轮询。
+未装配 handler 且未配置上游时，仍诚实返回 ``-32001 upstream_not_configured``
+（绝不伪造任务结果，A12）。出站方向（``A2AClient`` + ``TrustedEndpointRegistry``
+防 SSRF 白名单）原样保留并在其上扩展。
+
+All inputs are synthetic; no private content or secrets are echoed.
 """
 
 from __future__ import annotations
@@ -32,6 +36,32 @@ ERR_INTERNAL = -32603
 ERR_UPSTREAM_NOT_CONFIGURED = -32001
 ERR_AGENT_DRAINING = -32002
 ERR_UNAUTHORIZED = -32003
+
+#: 入站 message/send 结果映射到 A2A Task 状态的调度任务状态白名单。
+A2A_TASK_STATES: dict[str, str] = {
+    "succeeded": "completed",
+    "failed": "failed",
+    "reclaimed": "failed",
+    "cancelled": "canceled",
+}
+
+
+class A2AInboundError(Exception):
+    """入站派发器无法承接该 ``message/send``（未配置 / 无可用 worker）。"""
+
+
+def message_text(message: dict) -> str:
+    """从 A2A message.parts 提取纯文本（``kind/type: text`` 形态都认）。"""
+    parts = (message or {}).get("parts") or []
+    texts: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        text = part.get("text")
+        if isinstance(text, str) and (part.get("kind") in (None, "text")
+                                      or part.get("type") in (None, "text")):
+            texts.append(text)
+    return "\n".join(t for t in texts if t.strip())
 
 
 def build_agent_card(*, public_url: str, agent_name: str, version: str,
@@ -68,17 +98,26 @@ def build_agent_card(*, public_url: str, agent_name: str, version: str,
 class A2ADispatcher:
     """JSON-RPC 2.0 dispatcher for the local A2A surface.
 
-    ``upstream_configured`` decides whether ``message/send`` can actually target
-    a remote agent. The local agent itself answers ``tasks/get``/``tasks/cancel``
-    against in-process task state; it never fabricates a remote result.
+    入站 ``message/send``（§八 C 打通）：
+
+    * ``dispatch_handler`` 已装配 —— 消息经 handler 派发（HTTP 层接到统一调度
+      中心），同步返回真实 Task 对象（``{id, status:{state}, ...}``）。
+    * handler 未装配且 ``upstream_configured=False`` —— 诚实返回
+      ``-32001 upstream_not_configured``，绝不伪造任务结果（A12）。
+
+    ``upstream_configured`` 保持向后兼容语义；``tasks/get`` / ``tasks/cancel``
+    继续对 in-process task state 作答。
     """
 
     def __init__(self, *, upstream_configured: bool, draining: bool = False,
-                 task_lookup=None, cancel_task=None):
+                 task_lookup=None, cancel_task=None,
+                 dispatch_handler=None):
         self.upstream_configured = upstream_configured
         self.draining = draining
         self._task_lookup = task_lookup or (lambda task_id: None)
         self._cancel_task = cancel_task or (lambda task_id: False)
+        #: ``handler(params) -> task dict``；可抛 :class:`A2AInboundError`。
+        self._dispatch_handler = dispatch_handler
 
     def dispatch(self, body: Any) -> dict:
         if not isinstance(body, dict):
@@ -113,11 +152,20 @@ class A2ADispatcher:
             raise _RpcError(ERR_INVALID_PARAMS, "message needs role and parts")
         if self.draining:
             raise _RpcError(ERR_AGENT_DRAINING, "Agent is draining; no new tasks accepted")
+        if self._dispatch_handler is not None:
+            try:
+                task = self._dispatch_handler(params)
+            except A2AInboundError as exc:  # 诚实失败：派发器明确说接不了
+                raise _RpcError(ERR_UPSTREAM_NOT_CONFIGURED, str(exc))
+            if not isinstance(task, dict) or not task.get("id"):
+                raise _RpcError(ERR_INTERNAL,
+                                "dispatch handler returned an invalid task object")
+            return _ok(req_id, task)
         if not self.upstream_configured:
             raise _RpcError(ERR_UPSTREAM_NOT_CONFIGURED,
                             "No upstream A2A endpoint/credential configured; "
                             "refusing to fabricate a task result")
-        # If wired, this would return a real Task object. Here we never reach out.
+        # 遗留语义：声明了 upstream 但未装配派发器——仍不伪造结果。
         raise _RpcError(ERR_UPSTREAM_NOT_CONFIGURED, "Upstream not wired (BLOCKED_EXTERNAL)")
 
     def _tasks_get(self, req_id, params: dict) -> dict:

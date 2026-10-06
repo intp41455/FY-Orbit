@@ -32,10 +32,22 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .scheduler import (
+    CHANNEL_INTERNAL_AGENT,
+    TASK_FAILED,
+    TASK_RECLAIMED,
+    TASK_SUCCEEDED,
+    DispatchRequest,
+    UnifiedScheduler,
+)
+from .scheduler import scheduler as _default_scheduler
 from .tool_registry import ToolRegistryService, tool_registry
 
 ACCEPTANCE_TYPES = ("output_contains", "tool_invoked")
 CAPABILITY_RE_MAX = 128
+
+#: 子 Agent 执行在调度中心里的 worker 标识（内部 agent 与外部成品 agent 同池）。
+DISPATCH_WORKER_ID = "internal.dispatch-child"
 
 
 class DispatchValidationError(ValueError):
@@ -57,11 +69,33 @@ class AgentDispatchService:
         self,
         archive_dir: str | os.PathLike | None = None,
         registry: ToolRegistryService | None = None,
+        scheduler: UnifiedScheduler | None = None,
     ):
         self._dir = Path(archive_dir) if archive_dir else None
         self._registry = registry or tool_registry
+        # 统一调度中心（A-统一接入-08 接线）：子 Agent 执行统一经调度中心派发，
+        # 不再由本服务私起线程。默认用进程级共享单例（与 delegation / A2A 同池）。
+        self._scheduler = scheduler or _default_scheduler
         self._lock = threading.Lock()
         self._parents: dict[str, dict[str, Any]] = {}
+
+    def _ensure_worker(self) -> None:
+        """把确定性子 Agent 执行器登记进调度中心（幂等）。
+
+        executor 只从 ``req.payload["run"]`` 取**提交时绑定的闭包**（绑定到提交
+        方 service 实例与该次 child/plan），不在注册时捕获任何实例状态——
+        多个 AgentDispatchService 实例（测试注入/多租户会话）共享同一 worker
+        时互不串扰。
+        """
+        if self._scheduler.get_worker(DISPATCH_WORKER_ID) is None:
+            self._scheduler.register_simple_worker(
+                DISPATCH_WORKER_ID,
+                CHANNEL_INTERNAL_AGENT,
+                lambda req: req.payload["run"](),
+                max_parallel=4,
+                tags=("dispatch", "deterministic-worker"),
+                description="P1-20 确定性子 Agent：按工具清单真实调用 tool_registry",
+            )
 
     # -- Task 协议校验 ----------------------------------------------------------
 
@@ -158,7 +192,36 @@ class AgentDispatchService:
         with self._lock:
             self._parents[parent_id] = parent
 
-        self._run_child(child, plan)
+        # 统一调度中心接线（A-统一接入-08）：子 Agent 执行经调度中心派发，
+        # 与外部成品 agent 同池（统一路由/优先级/并发上限/回收/状态回传）。
+        # requested_capability="dispatch" 把路由钉在本通路 worker 上（同通道
+        # 还有 delegation 等其它内部 worker，靠 tags 精确匹配互不串扰）。
+        self._ensure_worker()
+        record = self._scheduler.submit_and_wait(
+            DispatchRequest(
+                channel=CHANNEL_INTERNAL_AGENT,
+                action="run_child",
+                requested_capability="dispatch",
+                payload={
+                    # 绑定到本次派发的执行闭包（worker 不捕获注册时的实例）。
+                    "run": lambda: self._run_child(child, plan),
+                    "child": child,
+                    "plan": plan,
+                },
+                timeout_seconds=600.0,
+                meta={"parent_task_id": parent_id, "capability": spec["capability"]},
+            ),
+            timeout=600.0,
+        )
+        parent["scheduler_task_id"] = record.task_id
+        if record.status == TASK_RECLAIMED:
+            # 调度中心回收（超时）后迟到结果一律丢弃：子 Agent 诚实标记失败，
+            # 交由独立验收器复核拒绝，绝不冒充成功。
+            child["status"] = TASK_FAILED
+            child["self_report"] = {
+                "status": "failed",
+                "summary": "子 Agent 执行被调度中心回收（超时），结果按迟到丢弃",
+            }
         # 验收中态：验收器接手，与子 Agent 自报无关
         parent["status"] = "verifying"
         child["status"] = "verifying"

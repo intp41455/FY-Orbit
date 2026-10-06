@@ -847,40 +847,31 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
     safe_env = build_safe_env(envelope.allow_provider_keys)
 
     try:
-        popen_kw: dict[str, Any] = {}
-        if os.name != "nt":
-            popen_kw["start_new_session"] = True
-        proc = subprocess.Popen(
+        # A-统一接入-04：subprocess 执行体收敛到通用 CLI 契约
+        # （services/hub/access.run_cli_process —— 统一 Popen/超时/杀树/退出码），
+        # 本函数保留 harness 专有的取消、凭证门禁与执行事件语义。
+        from find_yourself.services.hub.access import CLI_EXIT_TIMEOUT, run_cli_process
+
+        def _on_spawn(proc: Any) -> None:
+            _ACTIVE_EXECUTIONS[execution_id]["process"] = proc
+
+        res = run_cli_process(
             cmd,
             cwd=str(sandbox.fixtures_dir),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             env=safe_env,
-            **popen_kw,
+            timeout_seconds=envelope.deadline_seconds,
+            on_spawn=_on_spawn,
         )
-        _ACTIVE_EXECUTIONS[execution_id]["process"] = proc
-
-        try:
-            stdout, stderr = proc.communicate(timeout=envelope.deadline_seconds)
-            exit_code = proc.returncode
-        except subprocess.TimeoutExpired:
-            # §6.4: terminate the whole tree and verify reclamation, not just the leader.
-            evidence = kill_process_tree(proc.pid)
-            try:
-                stdout, stderr = proc.communicate(timeout=2)
-            except Exception:
-                stdout, stderr = "", ""
-            exit_code = 124
+        if res["timed_out"]:
             _record_execution_event(execution_id, "execution.timeout", {
                 "deadline_seconds": envelope.deadline_seconds,
-                "process_tree_reaped": evidence.get("reaped"),
+                "process_tree_reaped": res.get("reaped"),
             })
-            return _finalize("timeout", exit_code=exit_code, cost_status="unknown",
+            return _finalize("timeout", exit_code=CLI_EXIT_TIMEOUT, cost_status="unknown",
                              error_message=f"Process exceeded deadline of {envelope.deadline_seconds}s",
-                             extra={"process_tree_reaped": evidence.get("reaped")})
+                             extra={"process_tree_reaped": res.get("reaped")})
+        stdout, stderr = res["stdout"], res["stderr"]
+        exit_code = res["exit_code"]
 
         duration_ms = (time.time() - start_time) * 1000
 
