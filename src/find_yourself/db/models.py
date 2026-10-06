@@ -45,6 +45,8 @@ TASK_STATUSES = (
     "completed", "failed", "cancelled",
 )
 ATTEMPT_STATUSES = ("pending", "running", "succeeded", "failed", "cancelled")
+# 任务看板事件类别（A-任务看板-10 历史记录 + 03 进度变更留痕）。
+TASK_EVENT_KINDS = ("created", "status", "progress", "plan", "dependency")
 # Task.stage is the persisted orchestration checkpoint. Its allowed values are
 # **derived** from the workflow ``Stage`` enum (``workflows/models.py``) rather
 # than copied, so the DB CHECK and the workflow's own state machine can never
@@ -247,6 +249,21 @@ class Task(Base):
     failure: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     deadline: Mapped[datetime] = mapped_column(TZDateTime)
     idempotency_key: Mapped[str] = mapped_column(String(100))
+    # --- 任务看板底座（A-任务看板-01～13，迁移 0041_kanban_board） ---
+    # 本行**自身**的进度 0-100；None = 未开始。父任务的加权进度不落冗余，
+    # 由 services/kanban.py 按子任务 weight 现算，避免与子任务漂移（需求 03）。
+    progress_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 加权权重，默认 1（需求 03「按子任务权重计算，非简单平均」）。
+    weight: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # 关键事项标记（需求 02）。
+    critical: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # 红带（需求 11）要带「阻塞原因 + 阻塞时长」，时长需要可信起点，故落两列。
+    blocked_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    blocked_since: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    # 甘特是**规划**视图（需求 13）：按起止时间排条。两者皆空 = 未排期，
+    # 前端据此诚实显示「未排期」，不编造日期。
+    planned_start: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    planned_end: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow, onupdate=utcnow)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -276,6 +293,61 @@ class TaskAttempt(Base):
     __table_args__ = (
         CheckConstraint(_in("status", ATTEMPT_STATUSES), name="ck_attempt_status"),
         UniqueConstraint("task_id", "attempt_no", name="uq_attempt_task_no"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 任务看板（A-任务看板-01～13，迁移 0041_kanban_board）
+# ---------------------------------------------------------------------------
+class TaskDependency(Base):
+    """任务级前置依赖：A 完成后 B 才能开始（A-任务看板-05）。
+
+    与 ``Task.parent_task_id`` **不是一回事**，刻意不复用：parent 是包含树
+    （one-to-many，只能一条父链），依赖是约束图（多前置、可跨树、需要成环
+    检测）。混用会让「跨树依赖」与「环」两种语义都表达不了。
+    """
+
+    __tablename__ = "task_dependencies"
+
+    #: 下游任务（被阻塞的那个）
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    #: 上游任务（先做完它，下游才允许开）。
+    #: ``index=True`` 是刻意的：依赖图的反向查询（「谁在等我」）全走这一列，
+    #: 且命名约定会让 create_all 与迁移 0041 建出**同名**索引，两条建表路径不漂移。
+    depends_on_task_id: Mapped[str] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    owner_id: Mapped[str] = mapped_column(String(200), index=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+
+    __table_args__ = (
+        # 自依赖是环的最短形式，DB 层直接封死；跨行成环由 services/kanban.py 检测
+        CheckConstraint("task_id <> depends_on_task_id", name="ck_task_dep_no_self"),
+    )
+
+
+class TaskEvent(Base):
+    """任务变更流水（A-任务看板-10「历史记录」）。
+
+    append-only：只增不改不删。``kind`` 区分事件类别，状态类事件才填
+    ``from_status``/``to_status``。
+    """
+
+    __tablename__ = "task_events"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    owner_id: Mapped[str] = mapped_column(String(200), index=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    from_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    to_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    detail: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow, index=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            _in("kind", TASK_EVENT_KINDS), name="ck_task_event_kind"
+        ),
     )
 
 
