@@ -1,26 +1,29 @@
 """向量后端注册表（补齐包2 · A-向量库-01：注册表可查已接入后端）。
 
-已接入：``sqlite_vec``（内嵌默认后端，实装）。
+已接入：
 
-**P2 注册位（A-向量库-03~06，不随包2 实装）**：接口已就绪，落一个类 +
-``register_vector_store`` 即接入，检索上层零改动::
+* ``sqlite_vec`` —— 内嵌默认后端（补齐包2 · A-向量库-02，实装）
+* ``lancedb`` —— 嵌入式列存（P10 · A-向量库-03）
+* ``chroma`` —— 本地持久化 / 服务模式（P10 · A-向量库-04）
+* ``faiss`` —— 进程内索引文件（P10 · A-向量库-05）
+* ``qdrant`` —— 本地嵌入式 / 远端服务（P10 · A-向量库-06）
 
-    # LanceDB（本地文件列存）
-    from lancedb import connect
-    class LanceDBStore(VectorStore):
-        name = "lancedb"
-        def __init__(self, uri: str, *, dim: int, table_name: str = "kb_chunks"):
-            self._db = connect(uri); self.dim = dim; self.table_name = table_name
-        ...
-    register_vector_store("lancedb", LanceDBStore)
-
-    # Chroma（本地持久化服务）  register_vector_store("chroma", ChromaStore)
-    # FAISS（进程内索引文件）    register_vector_store("faiss", FaissStore)
-    # Qdrant（独立向量服务）     register_vector_store("qdrant", QdrantStore)
+**P10 注册（A-向量库-03~06）**：接口就绪后按原设计「落一个类 +
+``register_vector_store`` 即接入，检索上层零改动」实装——四个后端各自独立
+模块，缺失依赖时模块仍可导入、``is_available()`` 报 False、检索层自动降级，
+**不改变 ``create_vector_store`` 与 ``vector_backend_status`` 的签名**。
 
 构造约定：注册表把 ``create_vector_store(name, **kwargs)`` 的 kwargs 原样透传
 给后端构造器；调用方（search.py 混合检索）只保证 ``session`` 与 ``dim`` 两个
 语义位。环境变量 ``FIND_YOURSELF_KB_VECTOR_BACKEND`` 可切换默认后端。
+
+构造参数差异（kwargs 透传，各后端自解释）：
+
+* ``sqlite_vec``：``session``（必需）、``dim``、``table_name``、``distance_metric``
+* ``lancedb``：``dim``、``uri``、``table_name``、``distance_metric``
+* ``chroma``：``dim``、``path`` 或 ``host``/``port``、``collection_prefix``、``space``
+* ``faiss``：``dim``、``index_dir``、``metric``（``ip``|``l2``）
+* ``qdrant``：``dim``、``path`` 或 ``url``/``api_key``、``collection_name``、``distance``
 """
 
 from __future__ import annotations
@@ -29,6 +32,10 @@ import os
 from typing import Any, Type
 
 from .base import VectorStore
+from .chroma_backend import HAS_CHROMADB, ChromaStore
+from .faiss_backend import HAS_FAISS, FaissStore
+from .lancedb_backend import HAS_LANCEDB, LanceDBStore
+from .qdrant_backend import HAS_QDRANT, QdrantStore
 from .sqlite_vec_backend import HAS_SQLITE_VEC, SqliteVecStore
 
 #: 内嵌默认后端
@@ -36,7 +43,16 @@ DEFAULT_VECTOR_BACKEND = "sqlite_vec"
 #: 环境变量：按名选择向量后端
 VECTOR_BACKEND_ENV = "FIND_YOURSELF_KB_VECTOR_BACKEND"
 
+#: 可选后端的依赖可用性（运维/诊断用，也供测试 skipif 引用）
+OPTIONAL_BACKEND_DEPS: dict[str, bool] = {
+    "lancedb": HAS_LANCEDB,
+    "chroma": HAS_CHROMADB,
+    "faiss": HAS_FAISS,
+    "qdrant": HAS_QDRANT,
+}
+
 _REGISTRY: dict[str, Type[VectorStore]] = {}
+
 
 
 def register_vector_store(
@@ -71,12 +87,20 @@ def create_vector_store(name: str | None = None, **kwargs: Any) -> VectorStore:
 
 
 def vector_backend_status() -> dict[str, dict[str, Any]]:
-    """注册表状态（运维/诊断用）：类名 + 定义模块 + 内置后端附加信息。"""
+    """注册表状态（运维/诊断用）：类名 + 定义模块 + 内置后端附加信息。
+
+    ``dependency_installed``：依赖包是否可用（False ⇒ 该后端会降级，不影响其他）。
+    """
     status: dict[str, dict[str, Any]] = {}
     for name, store_cls in sorted(_REGISTRY.items()):
         entry: dict[str, Any] = {
             "class": store_cls.__name__,
             "module": store_cls.__module__,
+            "dependency_installed": (
+                HAS_SQLITE_VEC
+                if name == DEFAULT_VECTOR_BACKEND
+                else OPTIONAL_BACKEND_DEPS.get(name, True)
+            ),
         }
         if name == DEFAULT_VECTOR_BACKEND:
             entry["extension_installed"] = HAS_SQLITE_VEC
@@ -87,3 +111,8 @@ def vector_backend_status() -> dict[str, dict[str, Any]]:
 
 # 内置注册（import 即生效）
 register_vector_store("sqlite_vec", SqliteVecStore, override=True)
+register_vector_store("lancedb", LanceDBStore, override=True)
+register_vector_store("chroma", ChromaStore, override=True)
+register_vector_store("faiss", FaissStore, override=True)
+register_vector_store("qdrant", QdrantStore, override=True)
+
