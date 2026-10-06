@@ -33,7 +33,9 @@ from ..services.actor import Actor
 from .local_agents import LocalAgentsHarness, LocalAgentsConfig
 from .delegation import DelegationCoordinator, SubtaskFailed
 from .gateway import CallResult, MockModelProvider, ModelGateway, ModelRequest
-from .graph import TaskGraphState, compile_task_graph
+from .graph import TaskGraphState
+from .hooks import HookBus
+from .kernel import SingleLoopKernel
 from .sandbox import IsolatedScriptRunner, SandboxConfig
 
 #: Deterministic input for the ``engineering_task`` dimension. The script under
@@ -227,9 +229,9 @@ class UnifiedEvaluator:
 
         try:
             if strategy == "single":
-                # Single agent execution through StateGraph single_agent route
-                app = compile_task_graph()
-                state = app.invoke(
+                # Single agent execution through the SingleLoopKernel (唯一执行主干)
+                kernel = SingleLoopKernel(bus=HookBus())
+                result = kernel.run(
                     {
                         "task_id": f"eval-single-{sample.sample_id}-{run_index}",
                         "attempt": 1,
@@ -243,6 +245,7 @@ class UnifiedEvaluator:
                     },
                     config={"configurable": {"thread_id": f"th-single-{sample.sample_id}-{run_index}"}},
                 )
+                state = result.state
                 steps = state.get("step_count", 2)
                 cost = float(state.get("spent_usd", 0.005))
                 success = state.get("status") in ("completed", "validated")
@@ -286,9 +289,9 @@ class UnifiedEvaluator:
                     cost = res["cost_usd"]
 
             elif strategy == "workflow":
-                # Fixed multi-stage pipeline: requirements -> research -> validate
-                app = compile_task_graph()
-                state = app.invoke(
+                # Fixed multi-stage pipeline through the SingleLoopKernel
+                kernel = SingleLoopKernel(bus=HookBus())
+                result = kernel.run(
                     {
                         "task_id": f"eval-workflow-{sample.sample_id}-{run_index}",
                         "attempt": 1,
@@ -303,6 +306,7 @@ class UnifiedEvaluator:
                     },
                     config={"configurable": {"thread_id": f"th-wf-{sample.sample_id}-{run_index}"}},
                 )
+                state = result.state
                 steps = state.get("step_count", 3)
                 cost = float(state.get("spent_usd", 0.01))
                 success = state.get("status") in ("completed", "validated")

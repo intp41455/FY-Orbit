@@ -59,6 +59,7 @@ from . import (  # noqa: F401
     proposals,
     rag_presets,
     recovery,
+    runtime,
     session_state,
     skills,
     stash,
@@ -135,6 +136,7 @@ _CORE_MODULES = [
     plugins,
     rag_presets,
     recovery,
+    runtime,
 ]
 
 for mod in _CORE_MODULES:
