@@ -65,6 +65,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             import find_yourself.db.staging_models  # noqa: F401  (P1-04 work stash)
             import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
             import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
+            import find_yourself.db.claim_models  # noqa: F401  (P5 共享任务板 task_claims)
             import find_yourself.db.session_state_models  # noqa: F401  (P1-21 session-state snapshots)
             import find_yourself.db.kb_models  # noqa: F401  (W3 本地知识库 kb_documents/kb_chunks)
             import find_yourself.db.hitl_models  # noqa: F401  (需求12 HITL 执行中断)
