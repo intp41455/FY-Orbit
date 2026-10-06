@@ -29,6 +29,7 @@ from ...services.knowledge import (
 )
 from ...services.knowledge.ingest import MAX_FILE_BYTES, SUPPORTED_EXTENSIONS
 from ...services.knowledge import hub_bridge
+from ...services.knowledge.graph import GraphService
 from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge"])
@@ -222,4 +223,65 @@ async def sync_source(
 ) -> dict:
     summary = kb.sync_source(actor, owner_id=actor.owner_id, source_id=source_id)
     kb.s.session.commit()
+    return summary
+
+
+# --------------------------------------------------------------------------- #
+# 包6 · A-立体3D知识图谱-04 · 图谱端点（数据层；3D 渲染归前端 canvas 星图）
+#
+# 挂载说明：本模块的 ``router`` 前缀是 /api/kb（存量端点契约不变），而图谱端点
+# 规格是 /api/knowledge/graph —— 故单列 ``graph_router``（prefix=/api/knowledge），
+# 由 ``api/routes/rag_presets.py`` 的组合路由 include 装配（routes/__init__ 的
+# 约定式自动发现会挂载 rag_presets.router）。图谱只存实体/关系/指针，证据文本
+# 按指针现取（``with_evidence_text=true`` 时读时解引用），原文不搬运。
+# --------------------------------------------------------------------------- #
+
+graph_router = APIRouter(prefix="/api/knowledge", tags=["knowledge"])
+
+
+class GraphBuildRequest(BaseModel):
+    doc_ids: list[str] | None = Field(default=None, max_length=100)
+    extractor: str = Field(default="rules", max_length=32)
+    rebuild: bool = True
+
+
+@graph_router.get("/graph")
+async def knowledge_graph(
+    kind: str | None = Query(default=None, max_length=32),
+    limit_nodes: int = Query(default=300, ge=1, le=1000),
+    limit_edges: int = Query(default=600, ge=1, le=2000),
+    with_evidence_text: bool = Query(default=False),
+    actor: Actor = Depends(get_actor),
+    services: Services = Depends(get_services),
+) -> dict:
+    """读当前 owner 的知识图谱（节点/边/计数；空库返回空图 + 重建提示）。"""
+    actor.require_authenticated()
+    svc = GraphService(services.session)
+    return svc.read_graph(
+        actor,
+        owner_id=actor.owner_id,
+        kind=kind,
+        limit_nodes=limit_nodes,
+        limit_edges=limit_edges,
+        with_evidence_text=with_evidence_text,
+    )
+
+
+@graph_router.post("/graph/build")
+async def rebuild_knowledge_graph(
+    body: GraphBuildRequest,
+    actor: Actor = Depends(csrf_protected),
+    services: Services = Depends(get_services),
+) -> dict:
+    """重建图谱：扫描 ready 切片 → 抽取（rules 离线确定性 / llm 可插拔）→ upsert。"""
+    actor.require_authenticated()
+    svc = GraphService(services.session)
+    summary = svc.build(
+        actor,
+        owner_id=actor.owner_id,
+        doc_ids=body.doc_ids,
+        extractor_name=body.extractor,
+        rebuild=body.rebuild,
+    )
+    services.session.commit()
     return summary

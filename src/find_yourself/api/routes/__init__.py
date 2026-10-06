@@ -41,6 +41,7 @@ from . import (  # noqa: F401
     collaboration,
     conversations,
     dsl_canvas,
+    dsl_lifecycle,
     dsl_debug,
     export,
     git_repo,
@@ -56,6 +57,7 @@ from . import (  # noqa: F401
     profiles,
     prompts,
     proposals,
+    rag_presets,
     session_state,
     skills,
     stash,
@@ -109,6 +111,7 @@ _CORE_MODULES = [
     prompts,
     stash,
     dsl_canvas,
+    dsl_lifecycle,
     dsl_debug,
     agent_dispatch,
     session_state,
@@ -129,6 +132,7 @@ _CORE_MODULES = [
     collaboration,
     cabin_life,
     plugins,
+    rag_presets,
 ]
 
 for mod in _CORE_MODULES:
