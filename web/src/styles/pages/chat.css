@@ -1,0 +1,830 @@
+/* ==========================================================================
+   包 C · 对话与记录域样式（/chat /history /growth /assessments）
+   --------------------------------------------------------------------------
+   独占文件：本文件归包 C 所有，由四个页面各自 import。
+   颜色：一律 var(--ui-*)，本文件**不出现任何裸色值**（含 hex / rgb / hsl）。
+   零绿色：不出现纯绿色族；薄荷青 --ui-teal-* 只用于四处装饰
+           （AI 头像底 / 联想与 chip 高亮 / 引用卡竖线 / 聚焦光晕），
+           永不承载状态语义（状态一律 --ui-st-* + 图标 + 中文文字）。
+
+   ⚠ 作用域硬规则（防污染 A/B/D/E/F）
+     本文件打包后全局生效，因此对共享类 .bubble / .chat-* / .composer /
+     .qnav* / .card / .badge / .page-head / .notice 的覆盖**全部**带包 C 前缀
+     （.chat-shell / .chat-layout / .hist-shell / .growth-shell / .assess-shell），
+     绝不裸写 .bubble{}、.card{}、.badge{}、.page-head{}。
+     .kv 属 E 包，本包不碰。
+   ========================================================================== */
+
+/* ==========================================================================
+   §0 基础：屏幕阅读器文本 / 骨架
+   ========================================================================== */
+.chatui-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chatui-skel-body { display: flex; flex-direction: column; gap: var(--ui-s-2); }
+.chatui-skel-row--line { width: 100%; }
+.chatui-skel-row--conv { height: 60px; border-radius: var(--ui-r-2); }
+.chatui-skel-row--msg { height: 54px; width: 82%; border-radius: var(--ui-r-2); }
+.chatui-skel-row--msg:nth-child(even) { align-self: flex-end; width: 66%; }
+.chatui-skel-row--card { height: 128px; border-radius: var(--ui-r-3); }
+
+/* ==========================================================================
+   §1 /chat 外壳与页头
+   ========================================================================== */
+.chat-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-width: 0;
+}
+
+.chat-shell .page-head.chat-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-3);
+  margin: 0;
+}
+.chat-shell .page-head.chat-page-head h2 { margin: 0; }
+.chat-page-head-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-2);
+  margin-left: auto;
+}
+.chatui-mode-label { font-size: var(--ui-fs-sm); color: var(--ui-ink-3); margin: 0; }
+.chatui-mode-select { width: auto; min-width: 220px; min-height: var(--ui-hit); }
+.chatui-entry-link { text-decoration: none; }
+
+.chat-shell .notice.chatui-offline,
+.chat-shell .notice.chatui-abort {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+.chat-shell .notice.chatui-error { border-color: var(--ui-st-failed); }
+
+/* 收起态（hidden 属性）必须压过 .card / .qnav 的 display */
+.chat-shell [hidden] { display: none !important; }
+
+/* ==========================================================================
+   §2 三栏栅格：320 / minmax(0,1fr) / 280
+   DOM 顺序 = Tab 顺序（搜索→列表→新建→消息→上下文条→composer→发送→定位栏），
+   视觉位置全靠 grid-area 排布，禁用 order / 绝对定位打乱焦点序。
+   ========================================================================== */
+.chat-layout {
+  display: grid;
+  gap: var(--ui-s-4);
+  grid-template-columns: 320px minmax(0, 1fr) 280px;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'search   stream   qnav'
+    'new      stream   qnav'
+    'list     stream   qnav'
+    '.        ctx      qnav'
+    '.        composer qnav';
+  height: clamp(560px, calc(100vh - 260px), 900px);
+  min-height: 0;
+  align-items: stretch;
+}
+
+.chat-search { grid-area: search; min-width: 0; }
+.chat-convpanel { grid-area: list; min-height: 0; display: flex; flex-direction: column; }
+.chat-newrow { grid-area: new; }
+.chat-stream-panel { grid-area: stream; min-height: 0; display: flex; flex-direction: column; }
+.chat-ctx { grid-area: ctx; min-width: 0; }
+.chatui-composer-area { grid-area: composer; min-width: 0; }
+.chat-shell .chat-qnav { grid-area: qnav; min-height: 0; }
+
+@media (max-width: 1200px) {
+  .chat-layout { grid-template-columns: 280px minmax(0, 1fr) 240px; }
+}
+
+/* ---- ≤860：单列堆叠；会话列表折叠成「会话（N）」面板；定位栏变右侧抽屉 ---- */
+@media (max-width: 860px) {
+  .chat-layout {
+    height: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      'search'
+      'list'
+      'new'
+      'stream'
+      'ctx'
+      'composer';
+  }
+  .chat-stream-panel { min-height: 52vh; }
+  .chat-convpanel { max-height: 60vh; }
+
+  /* 定位栏：固定右侧抽屉（DOM 始终挂载，收起时靠 hidden + aria-hidden） */
+  .chat-shell .chat-qnav {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(420px, 92vw);
+    z-index: var(--ui-z-drawer);
+    max-height: none;
+    border-radius: var(--ui-r-3) 0 0 var(--ui-r-3);
+    box-shadow: var(--ui-shadow-3);
+    background: var(--ui-glass-3);
+    backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+    -webkit-backdrop-filter: blur(var(--ui-glass-blur-strong)) saturate(var(--ui-glass-saturate));
+  }
+  .chatui-drawer-overlay { z-index: var(--ui-z-modal); }
+}
+
+/* ==========================================================================
+   §3 会话搜索 / 会话列表 / 新建会话
+   ========================================================================== */
+.chatui-search-input { min-height: var(--ui-hit); }
+
+.chat-shell .chat-convpanel.ui-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-conv-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  width: 100%;
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-4);
+  border: 0;
+  border-bottom: 1px solid var(--ui-line-2);
+  background: transparent;
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-md);
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+.chat-conv-toggle:hover { color: var(--ui-sky-600); }
+.chat-shell .chat-convpanel.is-collapsed .chat-conv-body { display: none; }
+.chat-shell .chat-convpanel.is-collapsed .chat-conv-toggle { border-bottom: 0; }
+
+.chat-conv-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+}
+
+.chat-archived-row { display: flex; }
+.chat-shell .chat-archived-row .ui-chip { min-height: 34px; }
+
+.chat-shell .chat-convlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-conv-li {
+  position: relative;
+  list-style: none;
+  border-radius: var(--ui-r-2);
+}
+
+.chat-conv-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--ui-hit-lg);
+  padding: var(--ui-s-2) calc(var(--ui-s-2) + 88px) var(--ui-s-2) var(--ui-s-3);
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-2);
+  background: transparent;
+  color: var(--ui-ink-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+.chat-conv-item:hover { background: var(--ui-glass-1); }
+.chat-conv-item.is-active {
+  background: var(--ui-glass-3);
+  border-color: var(--ui-line-strong);
+  box-shadow: var(--ui-shadow-1);
+}
+.chat-conv-title {
+  font-size: var(--ui-fs-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-conv-meta { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.chat-conv-flag { display: flex; }
+.chatui-hint { font-size: var(--ui-fs-xs); color: var(--ui-ink-4); }
+
+/* ---- hover 浮现操作组（会话条目 / 气泡 / 引用 chip 通用）---- */
+.chat-shell .chatui-hover-actions {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: var(--ui-s-1);
+  opacity: 0;
+  transition: opacity 180ms var(--ui-ease);
+}
+.chat-shell .chatui-hover-actions.chatui-bubble-actions { top: 8px; transform: none; }
+
+.chat-shell .chatui-icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-3);
+  cursor: pointer;
+  transition: color var(--ui-t) var(--ui-ease), border-color var(--ui-t) var(--ui-ease);
+}
+/* 视觉 28×28，命中区 ::after 扩到 44×44 */
+.chat-shell .chatui-icon-btn::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+.chat-shell .chatui-icon-btn:hover { color: var(--ui-sky-600); border-color: var(--ui-line-strong); }
+
+.chat-shell .chat-conv-li:hover .chatui-hover-actions,
+.chat-shell .chat-conv-li:focus-within .chatui-hover-actions,
+.chat-shell .chatui-bubble:hover .chatui-hover-actions,
+.chat-shell .chatui-bubble:focus-within .chatui-hover-actions,
+.chat-shell .chatui-refchip:hover .chatui-refchip-x { opacity: 1; }
+
+@media (hover: none) {
+  .chat-shell .chatui-hover-actions { opacity: 1; }
+  .chat-shell .chatui-refchip-x { opacity: 1; }
+}
+
+/* ==========================================================================
+   §4 消息流与气泡
+   ========================================================================== */
+.chat-shell .chat-stream-panel.ui-panel { padding: 0; overflow: hidden; }
+
+.chat-stream-hd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ui-s-3);
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border-bottom: 1px solid var(--ui-line-2);
+}
+.chat-stream-hd .ui-panel-title { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.chat-shell .chat-scroll.chat-stream {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  flex: 1;
+  min-height: 0;
+  padding: var(--ui-s-4);
+}
+
+/* ---- 气泡：覆盖共享类 .bubble，全部带 .chat-shell 作用域 ---- */
+.chat-shell .bubble.chatui-bubble {
+  position: relative;
+  max-width: min(760px, 94%);
+  padding: var(--ui-s-3) calc(var(--ui-s-3) + 88px) var(--ui-s-3) var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  border: 1px solid var(--ui-line-2);
+  background: var(--ui-glass-1);
+  color: var(--ui-ink-1);
+  box-shadow: var(--ui-shadow-1);
+}
+.chat-shell .bubble.chatui-bubble--user {
+  align-self: flex-end;
+  background: var(--ui-glass-3);
+  border-color: var(--ui-line-1);
+}
+.chat-shell .bubble.chatui-bubble--assistant {
+  align-self: flex-start;
+  background: var(--ui-glass-1);
+  /* AI 气泡左竖线：天蓝（薄荷青不用于这里） */
+  border-left: 2px solid var(--ui-sky-200);
+}
+.chat-shell .bubble.chatui-bubble--system {
+  align-self: center;
+  max-width: 70%;
+  background: var(--ui-glass-1);
+  border: 1px dashed var(--ui-line-2);
+  color: var(--ui-ink-3);
+  font-size: var(--ui-fs-sm);
+  text-align: center;
+  box-shadow: none;
+}
+
+.chatui-bubble-main { min-width: 0; }
+.chatui-bubble-content { white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+.chatui-bubble-meta { margin-top: var(--ui-s-2); font-size: var(--ui-fs-xs); color: var(--ui-ink-4); }
+
+/* AI 头像：薄荷青圆底（纯装饰，aria-hidden）—— 薄荷青四用途之一 */
+.chat-shell .chatui-avatar {
+  position: absolute;
+  left: -14px;
+  top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--ui-teal-300);
+  color: var(--ui-sky-900);
+  box-shadow: var(--ui-shadow-1);
+}
+
+/* ---- 引用来源卡（只渲染用户在 composer 里真实选中的 @ 引用）---- */
+.chat-shell .chatui-cites {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-2);
+  margin-top: var(--ui-s-2);
+}
+.chatui-cites-label { font-size: var(--ui-fs-xs); color: var(--ui-ink-4); }
+/* 引用卡竖线：薄荷青四用途之一 */
+.chat-shell .chatui-cite {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  max-width: 100%;
+  padding: 2px var(--ui-s-2);
+  border: 1px solid var(--ui-line-1);
+  border-left: 3px solid var(--ui-teal-600);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-2);
+  color: var(--ui-sky-700);
+  font-size: var(--ui-fs-xs);
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 生成中 / 停止生成（后端无 SSE：只在 submitting 或重取期间出现）---- */
+.chat-shell .chatui-generating {
+  position: absolute;
+  right: var(--ui-s-2);
+  top: var(--ui-s-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: 2px var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-3);
+  border: 1px solid var(--ui-line-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+.chat-shell .chatui-generating--standalone {
+  position: static;
+  align-self: flex-start;
+  margin-top: var(--ui-s-1);
+}
+.chatui-generating-text { color: var(--ui-sky-700); font-weight: 600; }
+.chat-shell .chatui-stop-btn { min-height: 30px; }
+/* 呼吸点（自写，reduced-motion 下退化为静态） */
+.chat-shell .chatui-dot { animation: chatui-breathe 1.8s var(--ui-ease-out) infinite; }
+@keyframes chatui-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
+/* ==========================================================================
+   §5 智能上下文条
+   ========================================================================== */
+.chat-shell .chatui-ctxbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-3);
+  padding: var(--ui-s-3);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+}
+.chatui-ctxitem { display: flex; align-items: center; gap: var(--ui-s-2); min-width: 0; }
+.chatui-ctxitem--refs { flex: 1 1 240px; flex-wrap: wrap; }
+.chatui-ctxlabel {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  white-space: nowrap;
+}
+.chatui-ctxvalue { font-size: var(--ui-fs-sm); color: var(--ui-ink-2); }
+.chatui-ctxvalue--muted { color: var(--ui-ink-4); }
+.chatui-ctxlink { margin-left: var(--ui-s-2); color: var(--ui-sky-600); font-size: var(--ui-fs-xs); }
+.chatui-ctxactions { display: flex; gap: var(--ui-s-2); margin-left: auto; }
+.chatui-ctx-skel { width: 120px; }
+.chat-shell .chatui-ctx-skel .ui-skel { height: 18px; }
+
+.chatui-refchips { display: flex; flex-wrap: wrap; gap: var(--ui-s-2); }
+.chat-shell .chatui-refchip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  padding-right: 24px;
+  max-width: 100%;
+  border-radius: var(--ui-r-pill);
+  border: 1px solid var(--ui-teal-400);
+  /* chip 高亮：薄荷青四用途之一 */
+  background: var(--ui-teal-100);
+  color: var(--ui-sky-700);
+  font-size: var(--ui-fs-sm);
+}
+.chatui-refchip-text { padding: 0 var(--ui-s-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-shell .chatui-refchip-x {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ui-ink-3);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 180ms var(--ui-ease);
+}
+.chat-shell .chatui-refchip-x::after { content: ''; position: absolute; inset: -8px; }
+.chat-shell .chatui-refchip-x:hover { color: var(--ui-st-failed); }
+.chat-shell .chatui-refchip:hover .chatui-refchip-x,
+.chat-shell .chatui-refchip:focus-within .chatui-refchip-x { opacity: 1; }
+
+.chat-shell .chatui-ctx-recall { display: flex; align-items: center; gap: var(--ui-s-2); }
+.chat-shell .chatui-ctx-recall-btn { min-height: 34px; }
+
+/* ==========================================================================
+   §6 composer 与联想层
+   ========================================================================== */
+.chatui-composer-area {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+.chatui-composer-wrap { position: relative; }
+
+.chat-shell .chatui-composer {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-2);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+}
+.chat-shell .chatui-textarea {
+  flex: 1;
+  min-height: 76px;
+  max-height: 40vh;
+  border: 0;
+  background: transparent;
+  resize: vertical;
+}
+/* 聚焦光晕：薄荷青四用途之一 */
+.chat-shell .chatui-textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ui-glow-teal);
+  border-radius: var(--ui-r-1);
+}
+.chatui-composer-side { display: flex; flex-direction: column; gap: var(--ui-s-2); }
+.chat-shell .chatui-composer-hint { min-height: 34px; }
+
+.chat-shell .chatui-suggest {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + var(--ui-s-1));
+  z-index: var(--ui-z-tooltip);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur));
+  overflow: hidden;
+}
+.chat-shell .chatui-suggest-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--ui-s-1);
+  max-height: 40vh;
+  overflow: auto;
+}
+.chat-shell .chatui-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  width: 100%;
+  min-height: var(--ui-hit);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border: 0;
+  border-radius: var(--ui-r-1);
+  background: transparent;
+  color: var(--ui-ink-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.chat-shell .chatui-suggest-item:disabled { cursor: not-allowed; color: var(--ui-ink-4); }
+/* 联想高亮：薄荷青四用途之一 */
+.chat-shell .chatui-suggest-item.is-active,
+.chat-shell .chatui-suggest-item:hover:not(:disabled) {
+  background: var(--ui-teal-100);
+  box-shadow: inset 0 0 0 1px var(--ui-teal-400);
+}
+.chatui-suggest-main { display: flex; flex-direction: column; min-width: 0; }
+.chatui-suggest-title { font-size: var(--ui-fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chatui-suggest-meta { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.chatui-suggest-flag { margin-left: auto; font-size: var(--ui-fs-xs); color: var(--ui-st-waiting); white-space: nowrap; }
+.chatui-suggest-flag--failed { color: var(--ui-st-failed); }
+.chat-shell .chatui-suggest-note { padding: var(--ui-s-3); }
+.chatui-suggest-note-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-s-2); font-size: var(--ui-fs-sm); color: var(--ui-ink-3); }
+.chatui-suggest-link { color: var(--ui-sky-600); }
+.chat-shell .chatui-suggest-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border-top: 1px solid var(--ui-line-2);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-4);
+}
+
+.chatui-sendrow { display: flex; align-items: center; gap: var(--ui-s-3); }
+.chat-shell .chatui-send { min-height: var(--ui-hit-lg); }
+.chatui-sendhint { font-size: var(--ui-fs-xs); }
+
+/* ==========================================================================
+   §7 定位栏（宽屏 aside / 窄屏抽屉）
+   ========================================================================== */
+.chat-shell .card.qnav.chat-qnav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  max-height: none;
+  min-height: 0;
+  padding: var(--ui-s-3);
+  border: 1px solid var(--ui-glass-line);
+  border-radius: var(--ui-r-3);
+  background: var(--ui-glass-2);
+  overflow: hidden;
+}
+.chat-qnav-hd { display: flex; align-items: center; gap: var(--ui-s-2); }
+.chat-qnav-hd strong { font-size: var(--ui-fs-md); }
+.chat-qnav-hd .chat-qnav-close { margin-left: auto; }
+.chat-shell .chat-qnav-body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: var(--ui-s-2); }
+.chat-qnav-empty { padding: var(--ui-s-2); }
+
+/* ---- 覆盖共享类 .qnav-item（作用域前缀，不裸写）---- */
+.chat-shell .qnav-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--ui-s-2) var(--ui-s-3);
+  border: 1px solid transparent;
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-1);
+  color: var(--ui-ink-1);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--ui-t) var(--ui-ease), background var(--ui-t) var(--ui-ease);
+}
+.chat-shell .qnav-item:hover { background: var(--ui-glass-3); }
+.chat-shell .qnav-item.in-view { border-color: var(--ui-sky-300); box-shadow: var(--ui-shadow-1); }
+.chat-shell .qnav-item .qnav-summary { font-size: var(--ui-fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-shell .qnav-item .qnav-time { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.chat-shell .qnav-item .qnav-inview-tag {
+  align-self: flex-start;
+  padding: 0 var(--ui-s-2);
+  border: 1px solid var(--ui-sky-300);
+  border-radius: var(--ui-r-pill);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-st-complete);
+}
+
+/* ==========================================================================
+   §8 右键菜单 / 模态 / 提示（本域微调）
+   ========================================================================== */
+.chat-shell .chatui-menu,
+.chatui-menu {
+  position: fixed;
+  z-index: var(--ui-z-tooltip);
+  min-width: 208px;
+  padding: var(--ui-s-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  box-shadow: var(--ui-shadow-2);
+  backdrop-filter: blur(var(--ui-glass-blur));
+  -webkit-backdrop-filter: blur(var(--ui-glass-blur));
+}
+.chatui-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  width: 100%;
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border: 0;
+  border-radius: var(--ui-r-1);
+  background: transparent;
+  color: var(--ui-ink-2);
+  font: inherit;
+  font-size: var(--ui-fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+.chatui-menu-item:hover:not(:disabled) { background: var(--ui-glass-1); color: var(--ui-sky-600); }
+.chatui-menu-item:disabled { opacity: 0.5; cursor: not-allowed; }
+.chatui-menu-icon { display: inline-flex; color: var(--ui-ink-3); }
+
+.chatui-modal-layer { position: relative; }
+.chat-shell .chatui-modal,
+.chatui-modal { z-index: calc(var(--ui-z-modal) + 1); }
+.chatui-modal-hint { margin-top: var(--ui-s-2); }
+.chatui-modal-ft { justify-content: flex-end; }
+
+.chat-shell .chatui-toast-stack .chatui-toast { display: flex; align-items: center; gap: var(--ui-s-2); }
+.chatui-toast-text { flex: 1; }
+
+/* ==========================================================================
+   §9 /history —— 筛选条 + 今天/本周/更早 分组卡片
+   ========================================================================== */
+.hist-shell { display: flex; flex-direction: column; gap: var(--ui-s-4); }
+
+.hist-shell .hist-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+}
+.hist-shell .hist-search { flex: 1 1 240px; min-width: 0; }
+.hist-shell .hist-select { width: auto; min-width: 140px; }
+.hist-shell .hist-chip-more { margin-left: auto; }
+
+.hist-group { display: flex; flex-direction: column; gap: var(--ui-s-3); }
+.hist-group-hd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ui-s-2);
+  margin: 0;
+}
+.hist-group-title { font-size: var(--ui-fs-md); font-weight: 700; color: var(--ui-ink-2); }
+.hist-group-count { font-size: var(--ui-fs-xs); color: var(--ui-ink-4); }
+
+.hist-shell .hist-cards {
+  display: grid;
+  gap: var(--ui-s-3);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.hist-shell .card.hist-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  padding-right: calc(var(--ui-s-4) + 88px);
+  cursor: pointer;
+  text-align: left;
+}
+.hist-card-title { font-size: var(--ui-fs-md); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-card-meta { display: flex; flex-wrap: wrap; gap: var(--ui-s-2); font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.hist-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: var(--ui-s-2); }
+/* 「涉及对象 / 时长」后端无字段 → 隐藏且不占位（见后端事实核查） */
+.hist-field-missing { display: none; }
+.hist-count-skel { display: inline-block; width: 44px; height: 14px; }
+
+/* ==========================================================================
+   §10 /growth —— 检索区 + 阶段公告 + 命中卡
+   ========================================================================== */
+.growth-shell { display: flex; flex-direction: column; gap: var(--ui-s-4); }
+
+.growth-shell .growth-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border: 1px solid var(--ui-st-waiting);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-st-waiting-bg);
+  color: var(--ui-st-waiting);
+  font-size: var(--ui-fs-sm);
+}
+.growth-notice-body { color: var(--ui-ink-2); }
+.growth-notice-body strong { color: var(--ui-st-waiting); }
+
+.growth-shell .growth-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-4);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-2);
+}
+.growth-shell .growth-search .ui-input { flex: 1 1 260px; }
+.growth-shell .growth-hits { display: flex; flex-direction: column; gap: var(--ui-s-3); }
+.growth-shell .card.growth-hit { display: flex; flex-direction: column; gap: var(--ui-s-2); padding: var(--ui-s-4); }
+.growth-hit-head { display: flex; align-items: center; gap: var(--ui-s-2); flex-wrap: wrap; }
+.growth-hit-snippet { line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.growth-hit-meta { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+
+/* ==========================================================================
+   §11 /assessments —— 目录 auto-fill / 作答单列 760 居中
+   ========================================================================== */
+.assess-shell { display: flex; flex-direction: column; gap: var(--ui-s-4); }
+
+.assess-shell .assess-catalog {
+  display: grid;
+  gap: var(--ui-s-4);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+.assess-shell .card.assess-card { display: flex; flex-direction: column; gap: var(--ui-s-2); padding: var(--ui-s-4); }
+.assess-card-head { display: flex; align-items: center; gap: var(--ui-s-2); }
+.assess-card-note { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); font-style: italic; }
+.assess-card-foot { margin-top: auto; display: flex; gap: var(--ui-s-2); }
+
+.assess-shell .assess-run {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+}
+.assess-shell .card.assess-run-card { padding: var(--ui-s-5); }
+.assess-item { display: flex; flex-direction: column; gap: var(--ui-s-2); padding: var(--ui-s-3); border: 1px solid var(--ui-line-2); border-radius: var(--ui-r-2); background: var(--ui-glass-1); }
+.assess-item-label { font-size: var(--ui-fs-md); color: var(--ui-ink-2); font-weight: 600; }
+.assess-shell .assess-select { width: auto; min-width: 260px; }
+.assess-result-grid { display: grid; gap: var(--ui-s-3); grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.assess-shell .card.assess-scale { padding: var(--ui-s-3); }
+.assess-scale-value { font-size: var(--ui-fs-xl); font-weight: 700; color: var(--ui-ink-1); }
+
+/* ==========================================================================
+   §12 尊重系统减弱动效：本包自写的动效全部降到 1ms
+   （呼吸点退化为静态「生成中…」文本，而不是什么都不显示）
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .chat-shell .chatui-dot,
+  .chat-shell .ui-dot--running,
+  .chat-shell .ui-dot--verifying,
+  .chat-shell .ui-skel,
+  .chat-shell .chatui-hover-actions,
+  .chat-shell .chatui-refchip-x,
+  .chat-shell .chatui-suggest,
+  .chat-shell .chatui-toast,
+  .hist-shell .ui-skel,
+  .growth-shell .ui-skel,
+  .assess-shell .ui-skel {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  .chat-shell .bubble.msg-flash { animation-duration: 1ms !important; }
+  /* 呼吸点不再闪，但「生成中…」文字始终在场（颜色不是唯一通道） */
+  .chat-shell .chatui-dot { opacity: 1; box-shadow: none; }
+}
