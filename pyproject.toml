@@ -28,6 +28,7 @@ dependencies = [
   "python-docx>=1.1,<2",
   # MCP WebSocket 传输（补齐包3 A-统一接入-02；uvicorn[standard] 已传递引入，此处显式声明）
   "websockets>=14,<17",
+  "sqlite-vec>=0.1,<1",
 ]
 
 [project.optional-dependencies]
