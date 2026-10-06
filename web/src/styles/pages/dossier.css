@@ -1,0 +1,194 @@
+/* ==========================================================================
+   任务档案库与企业模式域样式（/dossier）
+   --------------------------------------------------------------------------
+   独占文件：本文件归 P15 所有。颜色一律 var(--ui-*)，不写裸色值。
+   截断 / 未映射字段这类「必须让用户看见」的提示走 --ui-st-rework 或 --ui-st-failed，
+   绝不弱化成灰色小字。
+   ========================================================================== */
+
+.fy-ds-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-4);
+  min-width: 0;
+}
+
+.fy-ds-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-s-4);
+  flex-wrap: wrap;
+}
+
+.fy-ds-head h1 {
+  margin: 0;
+  font-size: var(--ui-fs-2xl);
+  color: var(--ui-ink-1);
+}
+
+.fy-ds-tabs {
+  display: flex;
+  gap: var(--ui-s-1);
+}
+
+.fy-ds-tab {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-pill);
+  color: var(--ui-ink-2);
+  padding: var(--ui-s-1) var(--ui-s-3);
+  cursor: pointer;
+}
+
+.fy-ds-tab.active {
+  border-color: var(--ui-st-running);
+  color: var(--ui-ink-1);
+}
+
+.fy-ds-search {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  margin-bottom: var(--ui-s-3);
+}
+
+.fy-ds-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-1);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-ds-field input,
+.fy-ds-field select {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-md);
+  color: var(--ui-ink-1);
+  padding: var(--ui-s-1) var(--ui-s-2);
+}
+
+.fy-ds-card {
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-3);
+  margin-bottom: var(--ui-s-3);
+}
+
+.fy-ds-card.ok {
+  border-color: var(--ui-st-complete);
+  background: var(--ui-st-complete-bg);
+}
+
+.fy-ds-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+}
+
+.fy-ds-card h4 {
+  margin: var(--ui-s-3) 0 var(--ui-s-1);
+  font-size: var(--ui-fs-md);
+  color: var(--ui-ink-2);
+}
+
+.fy-ds-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--ui-s-2);
+}
+
+.fy-ds-facts dt {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+}
+
+.fy-ds-facts dd {
+  margin: 0;
+  color: var(--ui-ink-2);
+}
+
+.fy-ds-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-ds-table th,
+.fy-ds-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--ui-s-2);
+  border-top: 1px solid var(--ui-line-1);
+}
+
+.fy-ds-metrics {
+  display: flex;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--ui-s-2);
+  color: var(--ui-ink-3);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-ds-metrics b {
+  color: var(--ui-ink-1);
+}
+
+.fy-ds-warn {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-1);
+  color: var(--ui-st-rework);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-ds-warn-list {
+  color: var(--ui-st-rework);
+  font-size: var(--ui-fs-sm);
+}
+
+.fy-ds-pre {
+  max-height: 460px;
+  overflow: auto;
+  background: var(--ui-glass-2);
+  border-radius: var(--ui-r-md);
+  padding: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  white-space: pre-wrap;
+}
+
+.fy-ds-error {
+  color: var(--ui-st-failed);
+}
+
+.fy-ds-knowledge {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--ui-s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+}
+
+.fy-ds-knowledge-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ui-s-1);
+  width: 100%;
+  text-align: left;
+  padding: var(--ui-s-2);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+  border-radius: var(--ui-r-md);
+  color: var(--ui-ink-1);
+  cursor: pointer;
+}
