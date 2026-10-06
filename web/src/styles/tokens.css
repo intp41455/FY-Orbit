@@ -785,8 +785,7 @@
   .wb-termdock-foot { display: none; }
 }
 @media (max-width: 560px) {
-  /* 只留图标。
-     注意不能用 display:none —— 那会把文字一并移出可访问性树，
+  /* 只留图标。     注意不能用 display:none —— 那会把文字一并移出可访问性树，
      导航项就变成没有可访问名的链接，而 e2e/ui-team.spec.ts:437 在 390px 下
      正是按名字点「协作画布」。改用「视觉隐藏但保留在 a11y 树」：
      屏幕尺寸收窄是排版决定，不该改变语义。 */
@@ -803,4 +802,34 @@
   }
   .nav a .nav-kbd { display: none; }
   .nav a { justify-content: center; padding: 0 var(--ui-s-2); }
+}
+
+/* ==========================================================================
+   危险区（不可逆操作容器）
+
+   07 §5 要求破坏性操作有二次确认，且默认焦点落在取消上。视觉上把危险区
+   与普通设置区分开，避免误点：左侧 2px 红条 + 淡红底 + 虚线分隔。
+   ========================================================================== */
+.st-danger-zone {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ui-s-3);
+  flex-wrap: wrap;
+  margin-top: var(--ui-s-4);
+  padding: var(--ui-s-3) var(--ui-s-4);
+  border: 1px dashed color-mix(in srgb, var(--ui-st-failed) 42%, transparent);
+  border-left: 2px solid var(--ui-st-failed);
+  border-radius: var(--ui-r-md);
+  background: color-mix(in srgb, var(--ui-st-failed) 6%, transparent);
+}
+.st-danger-zone strong {
+  display: block;
+  color: var(--ui-st-failed);
+  font-size: var(--ui-fs-sm);
+}
+.st-danger-zone p {
+  margin: var(--ui-s-1) 0 0;
+  font-size: var(--ui-fs-xs);
+  max-width: 46ch;
 }

@@ -65,6 +65,19 @@ export interface AccountInfo {
   // v1 ships no payment channel; the UI must not pretend otherwise.
   payment_enabled: boolean;
 }
+
+/**
+ * DELETE /api/account 的返回体（后端 services/deletion.py:176）。
+ * `consents_retained` 刻意 > 0：GDPR 允许为合规举证保留同意记录，
+ * 所以「删除账号」不等于抹掉一切痕迹，UI 如实展示这个数字。
+ */
+export interface AccountDeletionResult {
+  status: string;
+  owner_id: string;
+  memories_deleted: number;
+  sessions_revoked: number;
+  consents_retained: number;
+}
 export interface LoginRedirectResponse {
   redirect_url: string;
 }

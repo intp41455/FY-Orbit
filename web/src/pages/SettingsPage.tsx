@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { dataApi } from '../api/data';
 import { modelsApi } from '../api/models';
 import { authApi } from '../api/auth';
@@ -10,11 +10,132 @@ import type {
 } from '../api/models';
 import { useAsync, Spinner, errorMessage } from '../components/ui';
 import { AutomationPermissionCard } from '../components/settings/AutomationPermissionCard';
+import { LineIcon } from '../components/ui/LineIcon';
+import '../styles/pages/system.css';
+
+/**
+ * 不可逆操作二次确认（收口包补，07 §5「.ui-modal 二次确认 + 默认焦点落取消」）。
+ *
+ * 为什么不复用 `chatui/Modal`：那个是「重命名」专用组件，带一个必填输入框，
+ * 且类名与 aria 全部锁在 chatui 域内。破坏性确认不需要输入、也不该借用包 C 作用域，
+ * 所以这里用设计系统的 `.ui-modal` / `.ui-panel` / `.ui-btn` 自建一个最小对话框。
+ *
+ * 三条硬要求：
+ *  1. 打开时焦点落在「取消」——误按 Enter 不等于同意删除；
+ *  2. Esc 关闭且等同于取消；
+ *  3. 关闭后焦点还给触发按钮（R6 回焦）。
+ */
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: React.ReactNode;
+  confirmLabel: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onCancel();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onCancel]);
+
+  return (
+    <>
+      <div className="ui-overlay" onMouseDown={busy ? undefined : onCancel} />
+      <div
+        className="ui-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="st-delete-account-title"
+        data-testid="st-delete-confirm"
+      >
+        <div className="ui-panel-hd">
+          <h3 className="ui-panel-title" id="st-delete-account-title">{title}</h3>
+        </div>
+        <div className="ui-panel-bd">{body}</div>
+        <div className="ui-panel-ft">
+          <button
+            ref={cancelRef}
+            type="button"
+            className="ui-btn"
+            onClick={onCancel}
+            disabled={busy}
+            data-testid="st-delete-cancel"
+          >
+            取消
+          </button>
+          <button
+            ref={confirmRef}
+            type="button"
+            className="ui-btn ui-btn--danger"
+            onClick={onConfirm}
+            disabled={busy}
+            data-testid="st-delete-confirm-btn"
+          >
+            {busy ? '删除中…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
 
 export function SettingsPage() {
   const { data, loading, error } = useAsync(() => dataApi.settings(), []);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
+
+  // 危险区：账号删除。不可逆，必须二次确认（见 ConfirmDialog 注释）。
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement>(null);
+
+  const closeConfirm = useCallback(() => {
+    setConfirmOpen(false);
+    // R6：关闭后把焦点还给触发者
+    requestAnimationFrame(() => deleteTriggerRef.current?.focus());
+  }, []);
+
+  async function deleteAccount() {
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      const r = await authApi.deleteAccount();
+      // 会话已被后端吊销（cookie 已删），此时任何受保护请求都会 401，
+      // 所以整页跳回入口而不是留在设置页假装还能操作。
+      setDeleteMsg(
+        `账号已删除：级联删除记忆 ${r.memories_deleted} 条、吊销会话 ${r.sessions_revoked} 个。` +
+        `按 GDPR 合规要求保留了 ${r.consents_retained} 条同意记录作为举证。正在返回入口…`,
+      );
+      window.setTimeout(() => {
+        window.location.assign('/');
+      }, 2500);
+    } catch (e) {
+      setDeleteErr(errorMessage(e));
+      setDeleting(false);
+    }
+  }
 
   async function requestExport() {
     setExporting(true);
@@ -32,13 +153,20 @@ export function SettingsPage() {
   return (
     <>
       <div className="page-head"><h2>设置与数据</h2></div>
-      {loading && <Spinner />}
-      {error && <div className="notice danger" role="alert">{error}</div>}
-      <AccountCard />
-      {data && (
-        <div className="card">
-          <h3>系统配置状态</h3>
-          <table>
+      <div className="st-sections">
+        {loading && <Spinner />}
+        {error && <div className="notice danger" role="alert">{error}</div>}
+        <AccountCard />
+        {data && (
+        <div className="card st-section">
+          <div className="st-section-head">
+            <LineIcon name="settings" className="st-section-icon" />
+            <div>
+              <h3>系统配置状态</h3>
+              <p>只读。配置项由环境变量与后端配置决定，前端不写入口。</p>
+            </div>
+          </div>
+          <table className="st-meta-table">
             <tbody>
               <tr><td>模型供应商</td><td>{data.model_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置（付费调用关闭）</span>}</td></tr>
               <tr><td>OIDC 登录</td><td>{data.oidc_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置</span>}</td></tr>
@@ -50,20 +178,85 @@ export function SettingsPage() {
       )}
       <ModelAccessCard />
       <AutomationPermissionCard />
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>导出与删除</h3>
-        <p className="muted">导出为短期鉴权下载链接，不含系统密钥；私人原文不进入 Service Worker 缓存。</p>
-        <button className="primary" onClick={() => void requestExport()} disabled={exporting}>
-          {exporting ? '请求中…' : '请求导出我的数据'}
-        </button>
-        {exportMsg && <div className="notice info" style={{ marginTop: '0.6rem' }}>{exportMsg}</div>}
+        <div className="card st-section">
+          <div className="st-section-head">
+            <LineIcon name="download" className="st-section-icon" />
+            <div>
+              <h3>导出与删除</h3>
+              <p>导出为短期鉴权下载链接，不含系统密钥；私人原文不进入 Service Worker 缓存。</p>
+            </div>
+          </div>
+          <button className="primary" onClick={() => void requestExport()} disabled={exporting}>
+            {exporting ? '请求中…' : '请求导出我的数据'}
+          </button>
+          {exportMsg && <div className="notice info" style={{ marginTop: '0.6rem' }}>{exportMsg}</div>}
+
+          {/* 危险区。标题原本写着「导出与删除」却只有导出按钮 —— 后端
+              DELETE /api/account 早已实现并实测通过，前端却零入口，
+              GDPR 删除权无法行使（《上市资格审查报告》P0-6，法务阻断）。
+              收口期补齐入口，而不是把标题里的「删除」删掉把问题埋深。 */}
+          <div className="st-danger-zone">
+            <div>
+              <strong>删除我的账号与数据</strong>
+              <p className="muted">
+                不可逆。将级联删除你的全部记忆、吊销所有会话并匿名化账号；
+                按 GDPR 合规要求会保留同意记录作为举证。
+                <strong>建议先导出留存</strong>。
+              </p>
+            </div>
+            <button
+              ref={deleteTriggerRef}
+              type="button"
+              className="ui-btn ui-btn--danger"
+              onClick={() => { setDeleteMsg(null); setDeleteErr(null); setConfirmOpen(true); }}
+              disabled={deleting}
+              data-testid="st-delete-account-open"
+            >
+              <LineIcon name="trash" size={16} /> 删除我的账号
+            </button>
+          </div>
+          {deleteMsg && <div className="notice info" role="status" data-testid="st-delete-done">{deleteMsg}</div>}
+          {deleteErr && <div className="notice danger" role="alert" data-testid="st-delete-error">{deleteErr}</div>}
+        </div>
+        <div className="card st-section">
+          <div className="st-section-head">
+            <LineIcon name="lock" className="st-section-icon" />
+            <div>
+              <h3>隐私说明</h3>
+              <p>本地优先与缓存边界</p>
+            </div>
+          </div>
+          <p className="muted">
+            Service Worker 仅预缓存静态外壳；API、私人聊天、导出/下载链接与令牌均不被缓存。离线时不可提交。登出会清理敏感客户端状态。
+          </p>
+        </div>
       </div>
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>隐私说明</h3>
-        <p className="muted">
-          Service Worker 仅预缓存静态外壳；API、私人聊天、导出/下载链接与令牌均不被缓存。离线时不可提交。登出会清理敏感客户端状态。
-        </p>
-      </div>
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title="确认删除账号与全部数据？"
+          busy={deleting}
+          confirmLabel="永久删除，无法撤销"
+          onCancel={closeConfirm}
+          onConfirm={() => void deleteAccount()}
+          body={
+            <>
+              <p style={{ marginTop: 0 }}>
+                此操作<strong>不可逆</strong>，也没有恢复入口。将发生：
+              </p>
+              <ul style={{ margin: '8px 0', paddingLeft: 20, fontSize: 13 }}>
+                <li>你名下的全部记忆被级联删除</li>
+                <li>所有会话被吊销（含当前浏览器）</li>
+                <li>账号被匿名化，无法再登录</li>
+                <li>按 GDPR 要求保留同意记录作为合规举证</li>
+              </ul>
+              <p className="ui-hint">
+                还没导出过的话请先关闭本对话框，改用「请求导出我的数据」留存一份。
+              </p>
+            </>
+          }
+        />
+      )}
     </>
   );
 }
@@ -111,8 +304,11 @@ function AccountCard() {
   // All hooks above this line run unconditionally, per the Rules of Hooks.
   if (!auth || !auth.upgradeGuest) {
     return (
-      <div className="card" id="account" data-testid="account-card">
-        <h3 style={{ marginTop: 0 }}>账号</h3>
+      <div className="card st-section" id="account" data-testid="account-card">
+        <div className="st-section-head">
+          <LineIcon name="user" className="st-section-icon" />
+          <div><h3>账号</h3><p>当前未接入会话上下文</p></div>
+        </div>
         <div className="notice danger" role="alert" data-testid="account-no-provider">
           账号信息不可用：当前页面未接入会话上下文（缺少 AuthProvider）。
         </div>
@@ -152,8 +348,14 @@ function AccountCard() {
   }
 
   return (
-    <div className="card" id="account" data-testid="account-card">
-      <h3 style={{ marginTop: 0 }}>账号</h3>
+    <div className="card st-section" id="account" data-testid="account-card">
+      <div className="st-section-head">
+        <LineIcon name="user" className="st-section-icon" />
+        <div>
+          <h3>账号</h3>
+          <p>游客 / 注册 / 会员位三层状态；升级保留原数据</p>
+        </div>
+      </div>
 
       {loading && <Spinner />}
       {error && <div className="notice danger" role="alert">{error}</div>}

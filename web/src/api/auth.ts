@@ -1,5 +1,6 @@
 import { request } from './client';
 import type {
+  AccountDeletionResult,
   AccountInfo,
   DevTokenRequest,
   DevTokenResponse,
@@ -39,4 +40,16 @@ export const authApi = {
   }) => request<GuestResponse>('/auth/guest/upgrade', { method: 'POST', body }),
   /** Settings account card: email, tier, and the honest payment flag. */
   account: () => request<AccountInfo>('/api/auth/account'),
+
+  /**
+   * GDPR 删除权：级联 tombstone 本人全部记忆 + 吊销全部会话 + 匿名化 user 行，
+   * **保留 consent 记录**作为合规举证（后端 auth.py:209）。
+   *
+   * 不可逆，且后端会删掉会话 cookie —— 调用方必须先完成二次确认，
+   * 不要在未经用户明示同意的情况下调用。成功后会话已失效，应重新走游客/登录流程。
+   *
+   * 此前该端点后端已实现并实测通过，但前端零入口，GDPR 删除权无法行使
+   * （《上市资格审查报告》P0-6，法务阻断）。收口期补上入口。
+   */
+  deleteAccount: () => request<AccountDeletionResult>('/api/account', { method: 'DELETE' }),
 };
