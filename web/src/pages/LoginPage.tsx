@@ -1,4 +1,4 @@
-﻿import { useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { LineIcon } from '../components/ui/LineIcon';
