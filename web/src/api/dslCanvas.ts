@@ -1,18 +1,36 @@
 // P1-18 受限 DSL 画布 API 客户端。
 //
-// 类型必须与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY` 逐字对齐：
-// 后端动词集是**封闭白名单**，多写一个字后端就422，所以前端只列真实存在的动词。
+// 动词单一真源：本文件的 `DSL_TRANSFORM_VERBS` 常量（10 个动词，含治理类
+// `approval`），顺序与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY` 插入序
+// 逐字对齐；`DslTransformVerb` 类型由该常量派生，类型与清单不可能漂移。
+// 后端动词集是**封闭白名单**，多写一个字后端就422，所以这里只列真实存在的动词。
+// （B3 修复：旧版注释自称「逐字对齐」却漏了 approval——只有 9 个动词，
+// 三方画布动词集不一致。现在本常量是前端唯一动词清单，画布组件一律 import 它。）
 // 完整契约（分类/ 参数 JSON Schema / 可执行性）走 `schema()` 拿 `verb_catalog`，
 // 不在前端另抄一份。
 import { request } from './client';
 
+/**
+ * 受限动词集单一真源（前端）：顺序 = 后端 `VERB_REGISTRY` 插入序
+ * （map, filter, template, branch, aggregate, merge, agent, confirm, artifact, approval）。
+ * 新增动词时只改这一处：类型、画布下拉、校验全部随之更新。
+ */
+export const DSL_TRANSFORM_VERBS = [
+  'map',                                 // 数据变换
+  'filter',                              // 数据变换
+  'template',                            // 数据变换
+  'branch',                              // 流程控制
+  'aggregate',                           // 流程控制
+  'merge',                               // 流程控制
+  'agent',                               // Agent / 工具调用
+  'confirm',                             // 人机协作（HITL 未接入，执行必定失败）
+  'artifact',                            // 输出产物
+  'approval',                            // 治理（委托 proposal.py，挂起等裁决）
+] as const;
+
+export type DslTransformVerb = (typeof DSL_TRANSFORM_VERBS)[number];
+
 export type DslNodeType = 'input' | 'transform' | 'output';
-export type DslTransformVerb =
-  | 'map' | 'filter' | 'template'      // 数据变换
-  | 'branch' | 'aggregate' | 'merge'    // 流程控制
-  | 'agent'                             // Agent / 工具调用
-  | 'confirm'                           // 人机协作（HITL 未接入，执行必定失败）
-  | 'artifact';                         // 输出产物
 
 /** 动词集元数据（后端 verb_catalog 的一项）。 */
 export interface DslVerbCatalogEntry {
@@ -110,6 +128,9 @@ export interface DslCodeExport {
   node_count: number;
   edge_count: number;
   verbs: DslTransformVerb[];
+  /** B4 自包含导出：随导出物交付的 find_yourself_dsl 运行库源码（相对路径 → 文本）。 */
+  runtime_dirname?: string;
+  runtime_files?: Record<string, string>;
 }
 
 /**

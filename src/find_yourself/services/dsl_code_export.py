@@ -17,11 +17,26 @@
 
 导出**不含任何密钥**（DSL 文档里本来就没有），也不含时间戳 —— 输出是确定性的，
 因此往返测试可以做逐字节比对。
+
+自包含可运行（B4 修复）
+----------------------
+导出脚本 ``import find_yourself_dsl``，而该模块过去并不存在——用户拿到的
+``.py`` import 即崩（ModuleNotFoundError）。现在：
+
+* 仓库根顶层 :mod:`find_yourself_dsl` 是真实可运行的最小运行库（纯 Python
+  零第三方依赖，图定义/状态/执行循环的最小内核，与 :mod:`dsl_canvas` 的图
+  结构语义一致）；
+* :func:`export_dsl_code` 的结果自带 ``runtime_files``（运行库全部源码，
+  相对路径 → 文本），:func:`write_export_bundle` 把脚本 + 运行库一并写出到
+  导出目录——导出产物**自包含**，拷到任何机器都能 ``import`` 并运行；
+  运行库落点可用 env ``FY_DSL_RUNTIME_DIR`` 指定，默认探测仓库根。
 """
 
 from __future__ import annotations
 
 import ast
+import os
+from pathlib import Path
 from typing import Any
 
 from .dsl_canvas import (
@@ -37,6 +52,75 @@ from .dsl_canvas import (
 #: 导出文件里允许出现的函数名（解析器的白名单，封闭）。
 FLOW_CTOR = "Flow"
 NODE_CALLERS = ("input_node", "transform_node", "output_node", "edge")
+
+#: 导出自包含运行库的包名与落点（B4 修复：导出产物 import 即崩的根治）。
+DSL_RUNTIME_PACKAGE = "find_yourself_dsl"
+
+
+def _locate_runtime_dir() -> Path:
+    """定位 ``find_yourself_dsl`` 运行库源码目录。
+
+    env ``FY_DSL_RUNTIME_DIR`` 是**显式覆盖**：设置后只信它（指向不存在的
+    目录是配置错误，明确报错，绝不悄悄回落掩盖配置问题）；未设置时按
+    仓库根顶层（src 布局回推三级）→ 当前工作目录探测。都找不到时明确报错，
+    绝不导出半成品。
+    """
+    env = os.environ.get("FY_DSL_RUNTIME_DIR")
+    candidates = [Path(env)] if env else \
+        [Path(__file__).resolve().parents[3] / DSL_RUNTIME_PACKAGE,
+         Path.cwd() / DSL_RUNTIME_PACKAGE]
+    for cand in candidates:
+        if (cand / "__init__.py").is_file():
+            return cand
+    raise DslValidationError(
+        f"导出失败：找不到 {DSL_RUNTIME_PACKAGE} 运行库源码"
+        "（导出产物需要它才能 import）"
+        "；可用环境变量 FY_DSL_RUNTIME_DIR 指定其所在目录")
+
+
+def runtime_source_files() -> dict[str, str]:
+    """运行库全部 ``*.py`` 源码：``find_yourself_dsl/<name>.py`` → 文本。
+
+    供 :func:`export_dsl_code` 附进结果、:func:`write_export_bundle` 写盘；
+    排除 ``__pycache__``，按路径稳定排序（导出是确定性的）。
+    """
+    root = _locate_runtime_dir()
+    files: dict[str, str] = {}
+    for path in sorted(root.rglob("*.py")):
+        rel = path.relative_to(root)
+        if "__pycache__" in rel.parts:
+            continue
+        files[f"{DSL_RUNTIME_PACKAGE}/{rel.as_posix()}"] = path.read_text(
+            encoding="utf-8")
+    if not files:
+        raise DslValidationError(
+            f"导出失败：{root} 里没有 {DSL_RUNTIME_PACKAGE} 的任何 Python 源文件")
+    return files
+
+
+def write_export_bundle(doc: dict[str, Any], directory: str | os.PathLike[str],
+                        *, filename: str = CODE_EXPORT_FILENAME) -> dict[str, Any]:
+    """把画布导出成**自包含**的目录：``flow_restricted.py`` + ``find_yourself_dsl/``。
+
+    这是「导出产物可运行」的落盘路径：写完的目录拷到任何装有 Python ≥3.9
+    的机器上，``import flow_restricted`` + ``find_yourself_dsl.run()`` 即可执行。
+    非法 DSL 依旧在写盘**之前**抛 :class:`DslValidationError`，绝不写半成品。
+    """
+    exported = export_dsl_code(doc, filename=filename)
+    out_dir = Path(directory)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    written: list[str] = [filename]
+    (out_dir / filename).write_text(exported["code"], encoding="utf-8",
+                                    newline="\n")
+    for rel, source in exported["runtime_files"].items():
+        target = out_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(source, encoding="utf-8", newline="\n")
+        written.append(rel)
+    return {"directory": str(out_dir), "entry": filename,
+            "runtime_dirname": DSL_RUNTIME_PACKAGE, "files": written,
+            "node_count": exported["node_count"],
+            "edge_count": exported["edge_count"]}
 
 #: 构造调用名→ 节点 type（解析时反查）。
 _CALL_TO_TYPE = {
@@ -120,6 +204,10 @@ def export_dsl_code(doc: dict[str, Any], *,
         "edge_count": len(canonical["edges"]),
         # 受限动词集清单随导出物一同交付，读者无需查文档即可核对边界。
         "verbs": list(VERB_REGISTRY),
+        # B4 自包含：随导出物交付可运行库源码（相对路径 → 文本），
+        # 消费方落盘后脚本即可 import；详见 write_export_bundle。
+        "runtime_dirname": DSL_RUNTIME_PACKAGE,
+        "runtime_files": runtime_source_files(),
     }
 
 
@@ -281,7 +369,10 @@ def parse_dsl_code(code: str) -> dict[str, Any]:
 
 __all__ = [
     "CODE_EXPORT_FILENAME",
+    "DSL_RUNTIME_PACKAGE",
     "NODE_PARAMS_SCHEMAS",
     "export_dsl_code",
     "parse_dsl_code",
+    "runtime_source_files",
+    "write_export_bundle",
 ]

@@ -4,14 +4,16 @@
  * 蓝本（claw-dialogue-extraction §1.2/§1.3）：
  *  - 视图/模型分离：DslDocument（语义模型）与 LayoutState（坐标）是两个
  *    独立的 state；生成 DSL 时只序列化模型，坐标永不进入 DSL。
- *  - 受限动词集：input / transform(9 个受限 verb) / output，节点面板只暴露
- *    这三类；连线表示数据流（from → to）。动词清单以
- *    `api/dslCanvas.ts` 的 `DslTransformVerb` 为准（与后端注册表逐字对齐）。
+ *  - 受限动词集：input / transform(10 个受限 verb，含治理类 approval) /
+ *    output，节点面板只暴露这三类；连线表示数据流（from → to）。
+ *    动词清单单一真源是 `api/dslCanvas.ts` 的 `DSL_TRANSFORM_VERBS` 常量
+ *    （B5 修复：本组件不再自抄一份下拉清单，杜绝与后端注册表三方漂移）。
  *  - 「生成 DSL」实时显示 JSON；「执行」调后端真实执行并回显逐步日志；
  *    「导出代码」把画布导出成受限 Python（`dslCanvasApi.exportCode`）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DSL_TRANSFORM_VERBS,
   dslCanvasApi,
   type DslDiagnostic,
   type DslDocument,
@@ -38,6 +40,23 @@ const NODE_LABELS: Record<DslNodeType, string> = {
   input: '输入 input',
   transform: '变换 transform',
   output: '输出 output',
+};
+
+/**
+ * 动词的中文说明（下拉项文案；键由 `Record<DslTransformVerb, string>` 强制
+ * 与单一真源 `DSL_TRANSFORM_VERBS` 穷尽对齐——新增动词漏文案即 tsc 报错）。
+ */
+const VERB_LABELS: Record<DslTransformVerb, string> = {
+  map: '逐条映射',
+  filter: '条件过滤',
+  template: '模板插值',
+  branch: '条件分支',
+  aggregate: '循环聚合',
+  merge: '并行汇聚',
+  agent: '调用 Agent，未接解析器会失败',
+  confirm: '人工确认，HITL 未接入会失败',
+  artifact: '产出产物',
+  approval: '治理审批，挂起待裁决（ADR-04）',
 };
 
 /**
@@ -386,22 +405,21 @@ export function DslCanvas() {
                     <select
                       value={selected.verb ?? 'template'}
                       onChange={(e) => {
-                        // 动词集是后端封闭白名单；下拉项与paramsForVerb 一一对应，
-                        // 切换时整体替换 params，绝不残留上一个动词的字段。
+                        // 动词集单一真源：api/dslCanvas.ts 的 DSL_TRANSFORM_VERBS
+                        //（与后端 VERB_REGISTRY 对齐，含 approval）。
+                        // 切换时整体替换 params，绝不残留上一个动词的字段；
+                        // paramsForVerb 属包5 的 FlowEditor，approval 缺省分支
+                        // 由 ?? {} 兜底（不假设它已补齐）。
                         const verb = e.target.value as DslTransformVerb;
-                        updateSelected({ verb, params: paramsForVerb(verb) });
+                        updateSelected({ verb, params: paramsForVerb(verb) ?? {} });
                       }}
                       data-testid="prop-verb"
                     >
-                      <option value="template">template（模板插值）</option>
-                      <option value="map">map（逐条映射）</option>
-                      <option value="filter">filter（条件过滤）</option>
-                      <option value="branch">branch（条件分支）</option>
-                      <option value="aggregate">aggregate（循环聚合）</option>
-                      <option value="merge">merge（并行汇聚）</option>
-                      <option value="artifact">artifact（产出产物）</option>
-                      <option value="agent">agent（调用 Agent，未接解析器会失败）</option>
-                      <option value="confirm">confirm（人工确认，HITL 未接入会失败）</option>
+                      {DSL_TRANSFORM_VERBS.map((verb) => (
+                        <option key={verb} value={verb}>
+                          {verb}（{VERB_LABELS[verb]}）
+                        </option>
+                      ))}
                     </select>
                   </label>
                   {selected.verb === 'template' && (
