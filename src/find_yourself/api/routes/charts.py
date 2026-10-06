@@ -84,6 +84,7 @@ def interpret_chart(
         web_citations = retrieval_svc.retrieve_public_knowledge(
             query=f"{chart.system} {body.perspective}",
             system=chart.system,
+            actor=actor,
         )
 
     # 2. Authorized personal citations

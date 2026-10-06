@@ -301,6 +301,10 @@ def _open_session() -> Session:
     return session_factory(engine_from_url(load_settings().database_url))()
 
 
+# kb.search 的检索模式与回传标签共用同一常量——二者曾因默认值变更而漂移（标签假称 fts5+lexical）
+_KB_TOOL_SEARCH_MODE = "hybrid"
+
+
 def run_tool_search(arguments: dict[str, Any]) -> dict[str, Any]:
     """``kb.search`` builtin executor body (called by ``tool_registry.invoke``)."""
     query = str(arguments.get("query") or "").strip()
@@ -315,7 +319,11 @@ def run_tool_search(arguments: dict[str, Any]) -> dict[str, Any]:
     try:
         svc = KnowledgeSearchService(session)
         hits = svc.search(
-            Actor.owner(owner_id), owner_id=owner_id, query=query, top_k=top_k
+            Actor.owner(owner_id),
+            owner_id=owner_id,
+            query=query,
+            top_k=top_k,
+            mode=_KB_TOOL_SEARCH_MODE,
         )
     finally:
         session.close()
@@ -323,7 +331,7 @@ def run_tool_search(arguments: dict[str, Any]) -> dict[str, Any]:
         "query": query,
         "count": len(hits),
         "owner_scope": "local_primary",
-        "engine": "fts5+lexical",
+        "engine": _KB_TOOL_SEARCH_MODE,
         "results": [
             {
                 "doc_name": h["doc_name"],

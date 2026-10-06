@@ -10,6 +10,19 @@ from helpers import login_owner
 def test_chart_compute_and_interpret_flow(client: TestClient) -> None:
     headers = login_owner(client)
 
+    # 包6 A-命理画像-01：公共知识走真 kb RAG（有 owner 时空结果即空，不再回退常量）。
+    # 旧测试断言 web_citations 非空依赖降级常量；这里先入库一份八字心理笔记，
+    # 让真链路有召回，并断言 citations 来自 kb_rag 而非 curated_fallback。
+    doc = client.post(
+        "/api/kb/documents?name=八字心理原型笔记.md",
+        content=(
+            "Bazi (八字) psychological perspective: 命盘作为心理原型映射，"
+            "psychological analysis of bazi chart 融合荣格共时性原理。"
+        ).encode("utf-8"),
+        headers={**headers, "Content-Type": "application/octet-stream"},
+    )
+    assert doc.status_code == 200, doc.text
+
     # 1. Compute Bazi chart
     res_bazi = client.post(
         "/api/charts/compute",
@@ -48,7 +61,12 @@ def test_chart_compute_and_interpret_flow(client: TestClient) -> None:
     assert "public_reference" in interp_data["sections"]
     assert "hypothesis_reasoning" in interp_data["sections"]
     assert "免责声明" in interp_data["disclaimer"]
-    assert len(interp_data["web_citations"]) > 0
+    # 升级断言：citations 来自真 kb RAG（confidence=kb_rag、非降级），
+    # 不再接受 curated_fallback——验证命理公共知识真链路已激活。
+    web_citations = interp_data["web_citations"]
+    assert len(web_citations) > 0
+    assert all(c["confidence"] == "kb_rag" for c in web_citations)
+    assert all(not c.get("degraded", False) for c in web_citations)
 
 
 def test_chart_compute_western(client: TestClient) -> None:
