@@ -7,11 +7,11 @@
   租约（持有者崩溃后回收放回板上）。所有权由条件 UPDATE + RETURNING 原子裁决。
 
 编号申领（主控 2026-10-07 裁定）：本文件原为 ``0044_p5_task_claims``，因与
-P4 的 0044 撞车，主控裁决 **P4=0044 / P5=0045**；但 P9 亦需迁移，主控再裁
-**P9=0045、P5=0046**，故本迁移改为 0046 并挂到 ``0045_p9_review_notes`` 之后。
+P4 的 0044 撞车，主控裁决 **P4=0044 / P9=0045 / P5=0046**，故本迁移改为 0046
+并挂到 ``0045_review_notes`` 之后（P9 的 revision 标识符**不带** ``p9_`` 前缀）。
 
 Revision ID: 0046_p5_task_claims
-Revises: 0045_p9_review_notes
+Revises: 0045_review_notes
 """
 
 from collections.abc import Sequence
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0046_p5_task_claims"
-down_revision: str | None = "0045_p9_review_notes"
+down_revision: str | None = "0045_review_notes"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
