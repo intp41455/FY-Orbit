@@ -38,6 +38,9 @@ const NAV: NavItem[] = [
   { to: '/workbench', label: '任务工作台', sub: '指挥 · 终端 · 验收', kbd: 1, icon: 'workbench', space: 'workbench' },
   { to: '/canvas', label: '协作画布', sub: '内部团队 · 逐成员选模型', kbd: 2, icon: 'canvas', space: 'workbench' },
   { to: '/dsl-canvas', label: '工作流工坊', sub: '受限动词 · 数据流执行', kbd: 3, icon: 'flow', space: 'workbench' },
+  // A-任务看板-01～13。icon 复用既有 LineIcon 的 grid（禁改 LineIcon.tsx），
+  // kbd 留空：1-9 已被上面九条占满，抢号会与既有快捷键冲突。
+  { to: '/kanban', label: '任务看板', sub: '四列 · 加权进度 · 依赖', kbd: null, icon: 'grid', space: 'workbench' },
   { to: '/chat-debug', label: 'Chat 调试', sub: '模板 · 工具 · 流式联动', kbd: 4, icon: 'sliders', space: 'workbench' },
   { to: '/agent-dispatch', label: '子 Agent 派发', sub: 'Task 协议 · 独立验收', kbd: 5, icon: 'dispatch', space: 'workbench' },
   { to: '/skills', label: 'Agent 与技能', sub: 'MCP · 经验沉淀', kbd: 6, icon: 'skills', space: 'workbench' },

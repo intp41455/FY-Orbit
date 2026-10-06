@@ -18,6 +18,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { CanvasPage } from './pages/CanvasPage';
 import { ProfilesPage } from './pages/ProfilesPage';
 import { DslCanvasPage } from './pages/DslCanvasPage';
+import { KanbanPage } from './pages/KanbanPage';  // A-任务看板-01～13
 import { ChatDebugPage } from './pages/ChatDebugPage';
 import { AgentDispatchPage } from './pages/AgentDispatchPage';
 import { KnowledgePage } from './pages/KnowledgePage';  // W3 本地知识库
@@ -59,6 +60,8 @@ export default function App() {
               <Route path="/workbench" element={<WorkbenchPage />} />
               <Route path="/canvas" element={<CanvasPage />} />
               <Route path="/dsl-canvas" element={<DslCanvasPage />} />
+              {/* A-任务看板-01～13 */}
+              <Route path="/kanban" element={<KanbanPage />} />
               <Route path="/chat-debug" element={<ChatDebugPage />} />
               <Route path="/agent-dispatch" element={<AgentDispatchPage />} />
               <Route path="/knowledge" element={<KnowledgePage />} />  {/* W3 本地知识库 */}
