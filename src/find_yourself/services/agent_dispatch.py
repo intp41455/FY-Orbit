@@ -70,12 +70,16 @@ class AgentDispatchService:
         archive_dir: str | os.PathLike | None = None,
         registry: ToolRegistryService | None = None,
         scheduler: UnifiedScheduler | None = None,
+        claw_pipeline: Any | None = None,
     ):
         self._dir = Path(archive_dir) if archive_dir else None
         self._registry = registry or tool_registry
         # 统一调度中心（A-统一接入-08 接线）：子 Agent 执行统一经调度中心派发，
         # 不再由本服务私起线程。默认用进程级共享单例（与 delegation / A2A 同池）。
         self._scheduler = scheduler or _default_scheduler
+        # Claw 三层把关（A-Claw架构-01/02/03/04）：可选注入；未注入时派发流程
+        # 行为不变（诚实可选，治理闸门由装配方决定是否启用）。
+        self._claw_pipeline = claw_pipeline
         self._lock = threading.Lock()
         self._parents: dict[str, dict[str, Any]] = {}
 
@@ -229,6 +233,33 @@ class AgentDispatchService:
         child["status"] = "verified" if verdict["verdict"] == "verified" else "rejected"
         parent["status"] = child["status"]
         parent["verified_at"] = _now()
+        # Claw 三层把关（A-Claw架构-01/02/03/04）：验收复核之后、归档之前，
+        # 产出过治理闸门（自审→交叉验证→独立质检）。拦截 = 拒绝 + 原因回写。
+        if self._claw_pipeline is not None:
+            claw_out = self._claw_pipeline.run(
+                task_id=str(parent_id),
+                agent_role=str(child.get("role") or spec.get("capability") or "dispatch-child"),
+                primary_output={"text": child.get("result_text") or ""},
+                attempts=int(parent.get("attempts", 1) or 1),
+            )
+            parent["claw_gate"] = {
+                "verdict": claw_out.verdict.value,
+                "blocked": claw_out.blocked,
+                "layers": [o.layer.value for o in claw_out.outcomes],
+                "findings": [
+                    {"rule": f.rule, "message": f.message[:200]}
+                    for o in claw_out.outcomes for f in o.findings
+                ][:10],
+            }
+            if claw_out.blocked:
+                verdict["verdict"] = "rejected"
+                verdict["reasons"] = list(verdict.get("reasons") or []) + [
+                    f"Claw 把关拦截（{claw_out.verdict.value}）: "
+                    + "；".join(f.message for o in claw_out.outcomes for f in o.findings
+                                if f.severity == "block")[:300]
+                ]
+                child["status"] = "rejected"
+                parent["status"] = "rejected"
         if verdict["verdict"] == "rejected":
             # 经验回写（预留结构）：失败原因回写 L0 工作记忆
             child["experience"] = {
