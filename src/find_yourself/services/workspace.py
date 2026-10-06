@@ -48,6 +48,7 @@ from find_yourself.db.workbench_models import (
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from find_yourself.services.snapshot import pre_write_snapshot
 
 #: Files that may never be read or written through the workbench API.
 CREDENTIAL_FILE_PATTERNS = (
@@ -535,6 +536,16 @@ class WorkspaceService:
         before_raw = path.read_bytes() if exists else b""
         before_text, _, _ = decode_text(before_raw) if exists else ("", "utf-8", True)
 
+        # T6-F（补 G6）：高危写前置快照——被覆盖文件的现状先落快照（sha256
+        # manifest + WorkStash + 审计帧），agent 误写可经恢复中心回滚。
+        # fail-closed：快照失败即拒绝写入——没有退路的覆盖不许发生。
+        snap = pre_write_snapshot(
+            self.session, self.audit, actor,
+            files=[str(path)],
+            reason=f"workspace.write_file:{rel_path}",
+            task_id=source_task_id or "",
+        )
+
         path.write_bytes(data)
 
         new_revision = int(cur["revision"]) + 1
@@ -574,6 +585,7 @@ class WorkspaceService:
             "size_bytes": len(data),
             "encoding": encoding,
             "diff": diff,
+            "snapshot_id": snap["snapshot_id"],
         }
 
     def rename_file(

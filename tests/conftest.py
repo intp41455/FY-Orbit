@@ -19,6 +19,7 @@ import find_yourself.db.canvas_models  # noqa: F401
 import find_yourself.db.sync_models  # noqa: F401
 import find_yourself.db.workbench_models  # noqa: F401
 import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
 from find_yourself.services.audit import AuditService
 from find_yourself.services.actor import Actor
 

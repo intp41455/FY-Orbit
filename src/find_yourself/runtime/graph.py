@@ -12,7 +12,8 @@ Implements the phase-internal reasoning and execution graph:
   2. Source Research: Provenance-preserving research with source IDs and outbound privacy checks.
   3. Authorized Tool: Guarded tool execution with atomic budget reservation and settlement.
   4. Expert Delegation: Scoped delegation where the subagent receives targeted context, NOT raw transcripts.
-* Checkpointer: MemorySaver checkpointing ensuring idempotent stage replay without duplicated side effects.
+* Checkpointer: persistent (sqlite on disk, T6-B) checkpointing ensuring idempotent
+  stage replay without duplicated side effects; survives process death (S4).
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Literal, Mapping, TypedDict
 
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 
 from ..services.actor import Actor
@@ -562,7 +562,27 @@ def build_task_graph(checkpointer: Any | None = None) -> StateGraph:
     return graph
 
 
+def _default_checkpointer() -> Any:
+    """T6-B（补 G1）：默认检查点必须落盘——进程一崩进度全丢曾是 S4 的直接违反。
+
+    优先级：显式 checkpointer 参数 > ``FY_CHECKPOINT_DB`` > settings.
+    checkpoint_db_path > ``.runtime/checkpoints/langgraph.sqlite``。
+    初始化失败**原样抛出**（诚实红线：不许静默降级回内存态检查点假装安全）。
+    """
+    import os
+
+    from ..config import settings as app_settings
+    from .checkpoint_sqlite import SqliteCheckpointer
+
+    path = (
+        os.environ.get("FY_CHECKPOINT_DB")
+        or getattr(app_settings, "checkpoint_db_path", "")
+        or ".runtime/checkpoints/langgraph.sqlite"
+    )
+    return SqliteCheckpointer(path)
+
+
 def compile_task_graph(checkpointer: Any | None = None):
-    cp = checkpointer or MemorySaver()
+    cp = checkpointer if checkpointer is not None else _default_checkpointer()
     graph = build_task_graph()
     return graph.compile(checkpointer=cp)

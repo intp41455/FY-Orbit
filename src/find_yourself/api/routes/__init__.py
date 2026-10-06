@@ -58,6 +58,7 @@ from . import (  # noqa: F401
     prompts,
     proposals,
     rag_presets,
+    recovery,
     session_state,
     skills,
     stash,
@@ -133,6 +134,7 @@ _CORE_MODULES = [
     cabin_life,
     plugins,
     rag_presets,
+    recovery,
 ]
 
 for mod in _CORE_MODULES:

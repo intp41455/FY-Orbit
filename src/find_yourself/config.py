@@ -67,6 +67,17 @@ class Settings(BaseSettings):
     # 包3 的跨 agent 调度在执行前必须经能力网关（capability broker）裁决。
     a2a_upstream_url: str | None = None
 
+    # ---- T6 抗中断与断点续作（红线：暂存必须落库，不许内存态）----
+    # G1 修复：LangGraph 检查点的落盘位置（sqlite 单文件，重启后仍在）。
+    # 可用环境变量 FY_CHECKPOINT_DB 覆盖；空值回退到本默认路径。
+    checkpoint_db_path: str = ".runtime/checkpoints/langgraph.sqlite"
+    # G6 修复：高危写操作前置快照的落盘根目录。
+    snapshots_path: str = ".runtime/snapshots"
+    # G5 修复：进程启动时是否自动扫描 open 中断并续作 auto 策略事件
+    # （陛下要求「重接网络/重置 API 后自动找到并继续开工」）。
+    # confirm/manual 策略的事件永不自动续作；FY_RECOVERY_AUTORESUME=0 可整体关闭。
+    recovery_autoresume: bool = True
+
     @model_validator(mode="after")
     def validate_security(self):
         if self.environment not in {"local", "production", "test"}:

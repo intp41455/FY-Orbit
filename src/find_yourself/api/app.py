@@ -63,6 +63,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             import find_yourself.db.team_models  # noqa: F401
             import find_yourself.db.prompt_models  # noqa: F401  (P1-06 prompt template library)
             import find_yourself.db.staging_models  # noqa: F401  (P1-04 work stash)
+            import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
             import find_yourself.db.session_state_models  # noqa: F401  (P1-21 session-state snapshots)
             import find_yourself.db.kb_models  # noqa: F401  (W3 本地知识库 kb_documents/kb_chunks)
             import find_yourself.db.hitl_models  # noqa: F401  (需求12 HITL 执行中断)
@@ -105,6 +106,19 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             except Exception:
                 # Never block boot on a flaky Temporal; ready reports it down.
                 app.state.temporal = TemporalRuntime.disabled()
+        # T6-E/G5：启动扫描——对 auto 策略且供应商指纹一致的 open 中断自动续作
+        # （「重接网络/重置 API 后自动找到并继续开工」）。confirm/manual 永不自动续。
+        # 任何失败都不阻断启动，结果如实挂到 app.state.recovery_summary。
+        try:
+            from ..services.recovery import startup_autoresume
+
+            app.state.recovery_summary = await asyncio.to_thread(
+                startup_autoresume, session_maker, settings
+            )
+        except Exception as exc:  # noqa: BLE001 —— 启动韧性：扫描失败不拖垮 boot
+            app.state.recovery_summary = {
+                "enabled": True, "error": f"{type(exc).__name__}: {exc}"[:300],
+            }
         yield
         try:
             await app.state.temporal.close()
