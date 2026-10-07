@@ -50,6 +50,18 @@ Write-Host "[sidecar] Project : $ProjectRoot"
 Write-Host "[sidecar] Python  : $Python"
 Write-Host "[sidecar] Entry   : $Entry"
 
+# 0) 源码来源守卫（历史事故：venv 里的 editable 指向别的目录，PyInstaller 的
+#    --collect-all find_yourself 会收走旧副本，发行包静默缺失整块路由模块）。
+$resolved = (& $Python -c "import find_yourself, pathlib; print(pathlib.Path(find_yourself.__file__).parent)").Trim()
+$expectedPkg = (Join-Path $ProjectRoot "src\find_yourself")
+if (-not (Test-Path $expectedPkg)) {
+    throw "[sidecar] 找不到 $expectedPkg —— ProjectRoot 传错了吗？"
+}
+if (-not ($resolved -like "$expectedPkg*")) {
+    throw "[sidecar] find_yourself 解析到 $resolved，不在本仓库 src（$expectedPkg）。发行包会装错源码，请先修正 venv 的 editable 安装。"
+}
+Write-Host "[sidecar] source  : $resolved  (OK)"
+
 if ($Clean -and (Test-Path $Work)) {
     Write-Host "[sidecar] cleaning $Work"
     Remove-Item $Work -Recurse -Force
