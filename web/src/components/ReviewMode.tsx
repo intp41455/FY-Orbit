@@ -337,7 +337,9 @@ export function ReviewMode() {
 
   return (
     <>
-      {!active && (
+      {/* 发行包默认隐藏：这是开发/验收期的批注工具，不是最终用户功能。
+          生产构建（绿色包内的 web/dist）不渲染；开发态与单测仍可用。 */}
+      {!active && !import.meta.env.PROD && (
         <button
           type="button"
           {...{ [REVIEW_UI_ATTR]: '' }}

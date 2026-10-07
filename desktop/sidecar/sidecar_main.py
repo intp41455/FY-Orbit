@@ -183,8 +183,9 @@ def main() -> int:
                     profile = run_dir / "webview-profile"
                     profile.mkdir(parents=True, exist_ok=True)
                     subprocess.Popen([str(edge), f"--app={url}",
+                                      "--start-maximized",
                                       f"--user-data-dir={profile}",
-                                      "--window-size=1440,900",
+                                      "--window-size=1600,1000",
                                       "--no-first-run", "--no-default-browser-check"])
                     return
                 except Exception as exc:  # noqa: BLE001
