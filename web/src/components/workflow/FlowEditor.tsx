@@ -39,7 +39,24 @@ const NODE_W = 148;
 const NODE_H = 52;
 
 /** 受限动词集（与后端 services/dsl_canvas.py 一致；面板另有动态 schema 拉取）。 */
-export const FLOW_NODE_TYPES: DslNodeType[] = ['input', 'transform', 'output'];
+export const FLOW_NODE_TYPES: DslNodeType[] = [
+  'input',
+  'transform',
+  'output',
+  'llm',
+  'knowledge_retrieval',
+  'question_classifier',
+  'parameter_extractor',
+  'iteration',
+  'loop',
+  'variable_aggregator',
+  'template',
+  'http_request',
+  'code',
+  'tool',
+  'human_input',
+  'trigger',
+];
 export const FLOW_VERBS: DslTransformVerb[] = ['map', 'filter', 'template'];
 
 let seq = 0;
@@ -232,9 +249,61 @@ function reachesAll(doc: DslDocument, from: string): boolean {
 
 /** 新节点的默认参数（与 DslCanvas 保持一致，避免两种模式产出不同 DSL）。 */
 export function defaultParams(type: DslNodeType): Record<string, unknown> {
-  if (type === 'input') return { kind: 'literal', value: ['示例行'] };
-  if (type === 'transform') return { template: '处理：{value}' };
-  return { format: 'text' };
+  switch (type) {
+    case 'input':
+      return { kind: 'literal', value: ['示例行'] };
+    case 'transform':
+      return { template: '处理：{value}' };
+    case 'output':
+      return { format: 'text' };
+    case 'llm':
+      return { model: 'dummy', prompt: '测试提示' };
+    case 'knowledge_retrieval':
+      return { query: '测试查询', top_k: 10, mode: 'lexical' };
+    case 'question_classifier':
+      return { classes: ['是', '否'], model: 'dummy' };
+    case 'parameter_extractor':
+      return { fields: [{ name: 'test', type: 'string' }], model: 'dummy' };
+    case 'iteration':
+      return {
+        subflow: {
+          version: '1',
+          nodes: [
+            { id: 'input1', type: 'input', params: { kind: 'literal', value: ['test'] } },
+            { id: 'output1', type: 'output', params: { format: 'text' } }
+          ],
+          edges: [{ from: 'input1', to: 'output1' }]
+        }
+      };
+    case 'loop':
+      return {
+        subflow: {
+          version: '1',
+          nodes: [
+            { id: 'input1', type: 'input', params: { kind: 'literal', value: ['test'] } },
+            { id: 'output1', type: 'output', params: { format: 'text' } }
+          ],
+          edges: [{ from: 'input1', to: 'output1' }]
+        },
+        max_iterations: 10
+      };
+    case 'variable_aggregator':
+      return { strategy: 'first_non_null' };
+    case 'template':
+      return { template: '处理：{value}' };
+    case 'http_request':
+      return { url: 'https://example.com', method: 'GET' };
+    case 'code':
+      return { language: 'python', code: 'print("hello world")' };
+    case 'tool':
+      return { tool: 'example_tool' };
+    case 'human_input':
+      return { prompt: '请输入' };
+    case 'trigger':
+      return { kind: 'manual', config: {} };
+    default:
+      return {};
+  }
 }
 
 /**

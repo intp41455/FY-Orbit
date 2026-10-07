@@ -30,7 +30,23 @@ export const DSL_TRANSFORM_VERBS = [
 
 export type DslTransformVerb = (typeof DSL_TRANSFORM_VERBS)[number];
 
-export type DslNodeType = 'input' | 'transform' | 'output';
+export type DslNodeType =
+  | 'input'
+  | 'transform'
+  | 'output'
+  | 'llm'
+  | 'knowledge_retrieval'
+  | 'question_classifier'
+  | 'parameter_extractor'
+  | 'iteration'
+  | 'loop'
+  | 'variable_aggregator'
+  | 'template'
+  | 'http_request'
+  | 'code'
+  | 'tool'
+  | 'human_input'
+  | 'trigger';
 
 /** 动词集元数据（后端 verb_catalog 的一项）。 */
 export interface DslVerbCatalogEntry {

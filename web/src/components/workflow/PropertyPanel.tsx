@@ -22,6 +22,11 @@ const INPUT_KINDS = ['literal', 'text_lines'] as const;
 const OUTPUT_FORMATS = ['json', 'text'] as const;
 const AGGREGATE_OPS = ['count', 'sum', 'min', 'max', 'avg', 'first', 'last', 'join', 'unique'] as const;
 const MERGE_OPS = ['concat', 'first', 'last'] as const;
+const KNOWLEDGE_MODES = ['lexical', 'vector', 'hybrid'] as const;
+const VARIABLE_AGGREGATOR_STRATEGIES = ['first_non_null', 'last_non_null'] as const;
+const TRIGGER_KINDS = ['manual', 'conversation', 'schedule', 'webhook'] as const;
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
+const CODE_LANGUAGES = ['python'] as const;
 /**
  * 受限动词白名单（与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY`逐字对齐）。
  * 顺序即注册表顺序，前端不做增删——多一个后端就 422，少一个则画布表达力缺失。
@@ -30,6 +35,7 @@ const VERBS: DslTransformVerb[] = [
   'map', 'filter', 'template',
   'branch', 'aggregate', 'merge',
   'agent', 'confirm', 'artifact',
+  'approval',
 ];
 
 export interface PropertyPanelProps {
@@ -172,7 +178,6 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
             )}
           </>
         )}
-
         {node.type === 'transform' && (
           <>
             <ParamField label="动词" path="verb" nodeId={node.id} diagnostics={diagnostics}>
@@ -188,7 +193,6 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                 {VERBS.map((v) => <option key={v} value={v}>{v}</option>)}
               </select>
             </ParamField>
-
             {node.verb === 'template' && (
               <ParamField label="模板（{'{field}'} 插值）" path="params.template" nodeId={node.id} diagnostics={diagnostics}>
                 <input
@@ -197,8 +201,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   data-testid="prop-template"
                 />
               </ParamField>
-            )}
-
+            )}`
             {node.verb === 'map' && (
               <>
                 <ParamField label="操作" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
@@ -229,8 +232,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   </>
                 )}
               </>
-            )}
-
+            )}`
             {node.verb === 'filter' && (
               <>
                 <ParamField label="字段" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
@@ -259,8 +261,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   diagnostics={diagnostics}
                 />
               </>
-            )}
-
+            )}`
             {node.verb === 'branch' && (
               <>
                 <ParamField label="字段" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
@@ -303,8 +304,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   />
                 </ParamField>
               </>
-            )}
-
+            )}`
             {node.verb === 'aggregate' && (
               <>
                 <ParamField label="聚合算子" path="params.op" nodeId={node.id} diagnostics={diagnostics}>
@@ -331,8 +331,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   />
                 </ParamField>
               </>
-            )}
-
+            )}`
             {node.verb === 'merge' && (
               <ParamField label="汇聚策略" path="params.mode" nodeId={node.id} diagnostics={diagnostics}>
                 <select
@@ -343,8 +342,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   {MERGE_OPS.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </ParamField>
-            )}
-
+            )}`
             {node.verb === 'agent' && (
               <ParamField label="Agent 名" path="params.agent" nodeId={node.id} diagnostics={diagnostics}>
                 <input
@@ -353,8 +351,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   data-testid="prop-agent-name"
                 />
               </ParamField>
-            )}
-
+            )}`
             {node.verb === 'confirm' && (
               <>
                 <p className="muted">
@@ -375,8 +372,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   />
                 </ParamField>
               </>
-            )}
-
+            )}`
             {node.verb === 'artifact' && (
               <>
                 <ParamField label="产物名" path="params.name" nodeId={node.id} diagnostics={diagnostics}>
@@ -394,10 +390,9 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   />
                 </ParamField>
               </>
-            )}
+            )}'
           </>
         )}
-
         {node.type === 'output' && (
           <ParamField label="输出格式" path="params.format" nodeId={node.id} diagnostics={diagnostics}>
             <select
