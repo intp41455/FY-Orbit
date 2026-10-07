@@ -23,8 +23,10 @@ import {
   type DslDiagnostic,
   type DslDocument,
   type DslEdge,
+  type DslMode,
   type DslNode,
   type DslNodeType,
+  type DslRunResult,
   type DslTransformVerb,
 } from '../../api/dslCanvas';
 import {
@@ -324,6 +326,16 @@ export interface FlowEditorProps {
   initialDoc?: DslDocument | null;
   /** 生成来源 prompt，用于导出脚本头部注释。 */
   sourcePrompt?: string;
+  /**
+   * 创作模式（A-三重模式-01/04）。三种模式**共用同一张图 / 同一套 IR**，
+   * 差别只在复杂度开关：
+   *
+   * * `beginner`："小白层" —— 隐藏代码视图 / DSL 手改 / 导出（那是技术层的活），
+   *   保留全部 16 类节点可拖（藏的是"怎么读图"，不是"能搭什么"）；
+   * * `technical`（默认）：现有全量视图（代码、手改、导出都在）；
+   * * `enterprise`：同技术层 + 治理提示（approval 动词）。
+   */
+  mode?: DslMode;
 }
 
 /** 画布顶部错误条（含行列级信息）。 */
@@ -337,7 +349,7 @@ function ErrorBanner({ message, detail }: { message: string; detail?: string }) 
   );
 }
 
-export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
+export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: FlowEditorProps) {
   const [nodes, setNodes] = useState<EditorNode[]>([]);
   const [edges, setEdges] = useState<EditorEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -348,8 +360,14 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
   const [schemaTypes, setSchemaTypes] = useState<DslNodeType[]>(FLOW_NODE_TYPES);
   const [dslText, setDslText] = useState('');
   const [exported, setExported] = useState<WorkflowExportResponse | null>(null);
+  /** A-三重模式-01：运行结果（小白全流程的最后一环）。 */
+  const [run, setRun] = useState<DslRunResult | null>(null);
+  const [runError, setRunError] = useState('');
   /** P1 · 后端收集式 IR 校验的全部诊断（按 field_path 落到属性面板字段）。 */
   const [irDiagnostics, setIrDiagnostics] = useState<DslDiagnostic[]>([]);
+
+  /** 小白模式藏起"怎么读图"（代码 / 手改 / 导出），不是藏"能搭什么"。 */
+  const showAdvanced = mode !== 'beginner';
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -520,6 +538,36 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
     }
   }, [doc, sourcePrompt]);
 
+  // --- 运行（小白全流程的最后一环）--------------------------------------- //
+  //
+  // 本地快检只是体验；权威判定在后端。后端 422（DSL 不合法）与 500（执行失败）
+  // 都原样显示，**绝不拿旧结果冒充「跑通了」**。
+  const runFlow = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setNotice('');
+    setRun(null);
+    setRunError('');
+    const local = quickValidate(doc);
+    if (!local.ok) {
+      setError({ message: local.message, detail: '' });
+      setBusy(false);
+      return;
+    }
+    try {
+      const res = await dslCanvasApi.run(doc);
+      setRun(res);
+      if (res.status !== 'succeeded') {
+        setRunError(res.error ?? '执行失败');
+      }
+    } catch (e) {
+      const err = e as { body?: { message?: string } };
+      setRunError(err.body?.message ?? '运行失败');
+    } finally {
+      setBusy(false);
+    }
+  }, [doc]);
+
   /** 触发浏览器下载（jsdom 下无 URL.createObjectURL，静默跳过即可）。 */
   function downloadScript(filename: string, script: string): void {
     if (typeof document === 'undefined' || typeof URL.createObjectURL !== 'function') return;
@@ -543,6 +591,33 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
 
       <div className="fy-flow-center">
         {error && <ErrorBanner message={error.message} detail={error.detail} />}
+
+        {/* A-三重模式-01：运行是三种模式共有的一步（小白也要能跑到底）。 */}
+        <div className="fy-flow-runbar" data-testid="flow-runbar" data-mode={mode}>
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => void runFlow()}
+            disabled={busy || !nodes.length}
+            data-testid="flow-run"
+          >{busy ? '运行中…' : '运行'}</button>
+          {run && run.status === 'succeeded' && (
+            <span className="fy-flow-run-ok" data-testid="flow-run-ok">
+              运行 <code>{run.run_id}</code> 成功
+            </span>
+          )}
+          {runError && (
+            <span className="fy-flow-run-err" role="alert" data-testid="flow-run-error">
+              {runError}
+            </span>
+          )}
+          {run && run.status === 'succeeded' && (
+            <pre className="fy-flow-run-out" data-testid="flow-run-output">
+              {JSON.stringify(run.output, null, 2)}
+            </pre>
+          )}
+        </div>
+
         <div
           className="fy-flow-canvas"
           style={{ width: CANVAS_W, height: CANVAS_H }}
@@ -631,7 +706,8 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
             selected && updateNode(selected.id, { params: { ...selected.params, ...patch } })}
         />
 
-        <div className="card">
+        {showAdvanced && (
+        <div className="card" data-testid="flow-code-card">
           <div className="fy-flow-code-head">
             <strong>代码视图（只读，实时同步）</strong>
             <button
@@ -669,7 +745,7 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
           </div>
           {notice && <div className="fy-flow-notice" data-testid="flow-notice">{notice}</div>}
           {exported && (
-            <details className="fy-flow-exported">
+            <details className="fy-flow-exported" data-testid="flow-exported">
               <summary>已导出脚本（{exported.filename}）</summary>
               <div className="muted">
                 来源需求：{exported.source_prompt}｜生成时间：{exported.generated_at}
@@ -685,6 +761,7 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
             </details>
           )}
         </div>
+        )}
       </div>
     </div>
   );

@@ -293,12 +293,25 @@ DEFAULT_TEMPLATE_IDS: dict[AuthoringMode, str] = {
 }
 
 
-def mode_template_catalog(mode: AuthoringMode | None = None) -> list[dict[str, Any]]:
-    """起手模板清单（``mode=None`` 返回全部；稳定排序）。"""
+def mode_template_catalog(mode: AuthoringMode | None = None, *,
+                          include_dsl: bool = True) -> list[dict[str, Any]]:
+    """起手模板清单（``mode=None`` 返回全部；稳定排序）。
+
+    ``include_dsl=True``（默认）时逐项附上 ``dsl``——**模板真正的 IR 文档**。
+    前端「小白入口」据此做「模板起手」：直接把后端产出的图放进画布，前端不另
+    建一份同名假模板（那就又是第二套图定义了）。模板本身是确定性纯函数，
+    每次现算，不存在被改脏的缓存。
+    """
     items = [t for t in MODE_TEMPLATES.values()
              if mode is None or t.mode is mode]
     items.sort(key=lambda t: (t.mode.value, t.template_id))
-    return [t.to_dict() for t in items]
+    out: list[dict[str, Any]] = []
+    for t in items:
+        entry = t.to_dict()
+        if include_dsl:
+            entry["dsl"] = t.build().doc
+        out.append(entry)
+    return out
 
 
 def build_mode_template(template_id: str) -> "CodeWorkflow":

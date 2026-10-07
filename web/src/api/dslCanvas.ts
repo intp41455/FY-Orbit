@@ -61,6 +61,40 @@ export interface DslVerbCatalogEntry {
   executable: boolean;
 }
 
+/**
+ * 三重模式（A-三重模式-01/04）：小白 / 技术 / 企业三入口，**同一套 IR**。
+ *
+ * 数据来自 `GET /api/dsl/modes`（后端 `dsl_sdk.mode_overview()`）——入口名、
+ * 起手模板、模板真正的 DSL 文档都由后端给，前端不自建一份同名假模板。
+ */
+export const DSL_MODES = ['beginner', 'technical', 'enterprise'] as const;
+export type DslMode = (typeof DSL_MODES)[number];
+
+export interface DslModeEntry {
+  mode: DslMode;
+  entry_id: string;
+  label: string;
+  description: string;
+  builtin: boolean;
+}
+
+export interface DslModeTemplate {
+  template_id: string;
+  mode: DslMode;
+  label: string;
+  description: string;
+  /** 模板真正的 IR 文档（模板起手直接用这份图）。 */
+  dsl: DslDocument;
+}
+
+export interface DslModeOverview {
+  mode: DslMode;
+  label: string;
+  entries: DslModeEntry[];
+  templates: DslModeTemplate[];
+  default_template: string;
+}
+
 export interface DslSchemaResponse {
   schema: unknown;
   node_types: string[];
@@ -172,6 +206,8 @@ export interface DslIrValidation {
 
 export const dslCanvasApi = {
   schema: () => request<DslSchemaResponse>('/api/dsl-canvas/schema'),
+  /** 三重模式概览（小白 / 技术 / 企业；含各自的起手模板与模板 DSL）。 */
+  modes: () => request<{ modes: DslModeOverview[] }>('/api/dsl/modes'),
   validate: (dsl: DslDocument) => request<{ valid: boolean; topological_order: string[] }>(
     '/api/dsl-canvas/validate', { method: 'POST', body: { dsl } }),
   /**

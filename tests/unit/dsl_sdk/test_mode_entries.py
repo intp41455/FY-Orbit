@@ -63,6 +63,21 @@ class TestModeOverviewLanding:
         for m in modes:
             assert m["templates"] and m["default_template"]
 
+    def test_api_templates_carry_real_dsl(self, client, headers):
+        """起手模板必须带**真图**：前端拿到的就是后端那份 IR，不是前端自建的假模板。"""
+        r = client.get("/api/dsl/modes", headers=headers)
+        seen = 0
+        for m in r.json()["modes"]:
+            for t in m["templates"]:
+                dsl = t["dsl"]
+                assert dsl["nodes"] and dsl["edges"], t["template_id"]
+                # 前端「模板起手」载入后要能过校验，否则是死模板。
+                assert _diags(dsl) == [], f"{t['template_id']} 的 dsl 有诊断"
+                # 与注册表里真工厂现算的图逐字节一致（无第二套图定义）。
+                assert dsl == MODE_TEMPLATES[t["template_id"]].build().doc
+                seen += 1
+        assert seen >= 3
+
 
 class TestTemplateRegistry:
     def test_catalog_filtered_by_mode(self):
