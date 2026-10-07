@@ -56,6 +56,8 @@ from .dsl_ir import Diagnostic, assert_ir_valid, validate_ir
 __all__ = [
     "AuthoringMode", "ModeEntry", "register_mode_entry", "mode_entries",
     "mode_overview",
+    "ModeTemplate", "MODE_TEMPLATES", "DEFAULT_TEMPLATE_IDS",
+    "mode_template_catalog", "build_mode_template", "default_template_for",
     "StateField", "StateSchema",
     "Reducer", "register_reducer", "get_reducer", "REDUCER_REGISTRY",
     "GraphBuilder", "CodeWorkflow", "SdkRunResult",
@@ -151,27 +153,181 @@ def mode_entries(mode: AuthoringMode | None = None) -> list[ModeEntry]:
 
 
 def mode_overview() -> list[dict[str, Any]]:
-    """三模式概览（供 ``GET /api/dsl/modes`` 入口骨架）。"""
+    """三模式概览（供 ``GET /api/dsl/modes``）。
+
+    A-三重模式-01/04 真落地：除入口位之外，每个模式还给出**可运行的起手模板**
+    （``templates`` + ``default_template``）——前端「小白入口」据此做
+    「模板起手 → 装配 → 运行」，不必在前端另内置一份假模板。
+    """
     return [
         {
             "mode": mode.value, "label": MODE_LABELS[mode],
             "entries": [entry.to_dict()
                         for entry in mode_entries(mode)],
+            "templates": mode_template_catalog(mode),
+            "default_template": DEFAULT_TEMPLATE_IDS[mode],
         }
         for mode in AuthoringMode
     ]
 
 
-# 骨架内置入口：只描述入口位，不带实现（factory=None），由各模式自行接管。
+# ---------------------------------------------------------------------------
+# A-三重模式-01/04：三入口**真落地**——每个入口都能产出可运行的同源 IR
+# ---------------------------------------------------------------------------
+#
+# 骨架期三个 builtin 入口的 ``factory=None``：入口位在、点进去没东西，小白模式
+# 因此无法实际使用。真落地后每个入口挂一个**默认工厂**，产出同一套 IR——
+# ``{"version": "1", "nodes": [...], "edges": [...]}``，且全部过
+# :func:`assert_ir_valid` 强类型闸门（与画布共用同一条编译执行路径）。
+# 判据「同源」由此成立：三条入口产出的文档在同一
+# ``POST /api/dsl-canvas/validate-ir`` 下判定一致。
+#
+# 模板只使用**确定性、零外部依赖**的节点与受限动词，保证「模板起手 → 装配 →
+# 运行」在小白模式下一定跑得通（需要注入解析器的 llm / tool / http 等节点不
+# 进入起手模板——它们会诚实失败，不该做新手的第一屏）。
+
+
+@dataclass(frozen=True)
+class ModeTemplate:
+    """一个模式的起手模板（模板 = 一份可运行的 :class:`CodeWorkflow`）。"""
+
+    template_id: str
+    mode: AuthoringMode
+    label: str
+    description: str
+    build: Callable[[], "CodeWorkflow"]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "template_id": self.template_id, "mode": self.mode.value,
+            "label": self.label, "description": self.description,
+        }
+
+
+def _starter_pipeline(b: "GraphBuilder") -> None:
+    """三入口**共用**的那张图（不含末端汇入 ``out`` 的那条边）。
+
+    同一段装配被小白（模板起手）/ 技术（代码 SDK）/ 企业（治理画布，在 ``label``
+    与 ``out`` 之间插一个 ``approval`` 节点）三条入口复用——同源不是文档里的
+    一句口号，而是真的只有一份图定义。
+
+    末端汇入边由调用方补：企业模式要把它换成 `label → govern → out`，
+    否则 ``out`` 会同时吃到治理前与治理后两路输入。
+    """
+    b.input_node("src", kind="literal",
+                 value=[{"text": "甲"}, {"text": ""}, {"text": "丙"}])
+    b.transform_node("drop_empty", "filter", field="text", op="ne", value="")
+    b.transform_node("label", "map", op="set", field="line", value="行：{text}")
+    b.edge("src", "drop_empty")
+    b.edge("drop_empty", "label")
+
+
+def _beginner_starter_workflow() -> "CodeWorkflow":
+    """小白起手模板：就是那只三基础节点的小流水线，确定性、零依赖。"""
+    b = GraphBuilder()
+    _starter_pipeline(b)
+    b.output_node("out", format="json")
+    b.edge("label", "out")
+    return b.build()
+
+
+def _technical_starter_workflow() -> "CodeWorkflow":
+    """技术模式起手模板：**同一张图**的代码定义 + 状态 schema。
+
+    与小白起手模板产出逐字节相同的 IR（判据「同源」的直接证据）；差别只在
+    装配方式（GraphBuilder 代码 vs 画布拖拽）与额外声明的状态变量。
+    """
+    b = GraphBuilder()
+    _starter_pipeline(b)
+    b.output_node("out", format="json")
+    b.edge("label", "out")
+    return b.build(state_schema=StateSchema(fields=(
+        StateField(name="rows", type="array", required=True, default=[],
+                   description="本轮产出的行（reducer 可折叠进来）"),
+    )))
+
+
+def _enterprise_starter_workflow() -> "CodeWorkflow":
+    """企业模式起手模板：同一张图 + 一个 ``approval`` 治理节点。
+
+    ``approval`` 是**挂起**语义（:class:`DslSuspended`），不是失败：节点把
+    治理操作委托给 ``services/proposal.py``，等人工裁决后带
+    ``approval_signal`` 重开一轮续跑。治理 op 取值受 proposal 白名单约束，
+    这里用最轻的 ``memory.upsert``。
+    """
+    b = GraphBuilder()
+    _starter_pipeline(b)
+    b.transform_node("govern", "approval", op="memory.upsert",
+                     target_id="starter-governed-run",
+                     reason="起手模板：产出落库前先走一次治理裁决")
+    b.output_node("out", format="json")
+    b.edge("label", "govern")
+    b.edge("govern", "out")
+    return b.build()
+
+
+#: 起手模板注册表（``template_id`` → :class:`ModeTemplate`；封闭、启动即定）。
+MODE_TEMPLATES: dict[str, ModeTemplate] = {
+    "beginner-starter": ModeTemplate(
+        template_id="beginner-starter", mode=AuthoringMode.BEGINNER,
+        label="起手：筛选非空行",
+        description="input → filter → map → output，三基础节点，可直接运行",
+        build=_beginner_starter_workflow),
+    "technical-pipeline": ModeTemplate(
+        template_id="technical-pipeline", mode=AuthoringMode.TECHNICAL,
+        label="起手：代码装配 + 状态 schema",
+        description="GraphBuilder 装配同一张图，附 StateSchema（rows）",
+        build=_technical_starter_workflow),
+    "enterprise-governed": ModeTemplate(
+        template_id="enterprise-governed", mode=AuthoringMode.ENTERPRISE,
+        label="起手：治理裁决",
+        description="同一张图 + approval(memory.upsert) 节点，挂起等裁决",
+        build=_enterprise_starter_workflow),
+}
+
+#: 每个模式默认使用的模板 id（入口工厂包装的就是它）。
+DEFAULT_TEMPLATE_IDS: dict[AuthoringMode, str] = {
+    AuthoringMode.BEGINNER: "beginner-starter",
+    AuthoringMode.TECHNICAL: "technical-pipeline",
+    AuthoringMode.ENTERPRISE: "enterprise-governed",
+}
+
+
+def mode_template_catalog(mode: AuthoringMode | None = None) -> list[dict[str, Any]]:
+    """起手模板清单（``mode=None`` 返回全部；稳定排序）。"""
+    items = [t for t in MODE_TEMPLATES.values()
+             if mode is None or t.mode is mode]
+    items.sort(key=lambda t: (t.mode.value, t.template_id))
+    return [t.to_dict() for t in items]
+
+
+def build_mode_template(template_id: str) -> "CodeWorkflow":
+    """按 ``template_id`` 装配模板（未注册即明确报错，绝不静默回落）。"""
+    template = MODE_TEMPLATES.get(template_id)
+    if template is None:
+        raise DslSdkError(
+            f"模板 {template_id!r} 未注册；已注册：{sorted(MODE_TEMPLATES)}")
+    return template.build()
+
+
+def default_template_for(mode: AuthoringMode) -> str:
+    """模式的默认模板 id。"""
+    return DEFAULT_TEMPLATE_IDS[mode]
+
+
+# 三入口：入口位 + **真工厂**（factory 就是该模式的默认模板）。
 register_mode_entry(AuthoringMode.BEGINNER, "canvas",
                     label="画布搭建器", builtin=True,
-                    description="拖拽画布 + 受限动词面板（同源 DSL）")
+                    description="拖拽画布 + 受限动词面板（同源 DSL）",
+                    factory=_beginner_starter_workflow)
 register_mode_entry(AuthoringMode.TECHNICAL, "code-sdk",
                     label="代码优先 SDK", builtin=True,
-                    description="GraphBuilder 代码定义图 / StateSchema / Reducer")
+                    description="GraphBuilder 代码定义图 / StateSchema / Reducer",
+                    factory=_technical_starter_workflow)
 register_mode_entry(AuthoringMode.ENTERPRISE, "governed-canvas",
                     label="治理画布", builtin=True,
-                    description="approval 动词 + proposal.py 治理裁决接入")
+                    description="approval 动词 + proposal.py 治理裁决接入",
+                    factory=_enterprise_starter_workflow)
 
 
 # ---------------------------------------------------------------------------
