@@ -1,8 +1,6 @@
-"""像素风生活模拟 · **包 B（系统与内容）纯逻辑层**。
+"""像素风生活模拟 · 系统与内容层（纯逻辑）。
 
-对应分包说明书 `docs/handoff-tasks/15-像素风生活模拟-分包施工说明书-给Antigravity与freebuff.md`
-§5「包 B · 系统与内容」。按 §8-D 的排期，本次交付的是**数据层**（不碰
-`cabinScene.ts` / `cabinPixelArt.ts`，那两个文件归 A 包）。
+本模块只放数据层逻辑，不涉及渲染（`cabinScene.ts` / `cabinPixelArt.ts` 属表现层）。
 
 模块地图
 --------

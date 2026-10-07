@@ -1,19 +1,23 @@
 @echo off
 chcp 65001 >nul
 title FY Orbit · 星轨 Launcher
-echo ===================================================
-echo     FY Orbit · 星轨 - 本地一体化应用启动器
-echo ===================================================
-echo.
-
 set ROOT=%~dp0
 cd /d "%ROOT%"
+
+if exist "%ROOT%FY-Orbit.bat" (
+    call "%ROOT%FY-Orbit.bat" %*
+    exit /b %ERRORLEVEL%
+)
+
+if exist "%ROOT%find-yourself-backend\find-yourself-backend.exe" (
+    set FY_STATIC_DIR=%ROOT%web\dist
+    "%ROOT%find-yourself-backend\find-yourself-backend.exe" --host 127.0.0.1 --port 8000 %*
+    exit /b %ERRORLEVEL%
+)
 
 set PYTHON_CMD=
 if exist "%ROOT%\.venv\Scripts\python.exe" (
     set PYTHON_CMD="%ROOT%\.venv\Scripts\python.exe"
-) else if exist "C:\Users\intpj\.workbuddy\binaries\python\envs\fy-p10\Scripts\python.exe" (
-    set PYTHON_CMD="C:\Users\intpj\.workbuddy\binaries\python\envs\fy-p10\Scripts\python.exe"
 ) else (
     where python >nul 2>nul
     if %ERRORLEVEL% equ 0 (

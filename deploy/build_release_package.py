@@ -1,221 +1,183 @@
-import os
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""装配 FY Orbit · 星轨 Windows 绿色发行包（编译版）。
+
+与实际发行形态一致：
+  * 后端 = PyInstaller 编译产物（内置运行时，用户免装 Python / Node）
+  * 前端 = Vite 生产构建产物（web/dist）
+
+用法：
+    python deploy/build_release_package.py            # 用已有构建产物装配
+    python deploy/build_release_package.py --build    # 先构建（npm build + PyInstaller）再装配
+
+产物：<repo>/FY-Orbit-Windows-v1.0.0.zip（内含顶层 FY-Orbit/）
+"""
+from __future__ import annotations
+
+import argparse
 import shutil
+import subprocess
+import sys
 import zipfile
 from pathlib import Path
 
-ROOT = Path(r"c:\Users\intpj\Documents\Codex\2026-09-29\agent\outputs\fy-finish")
+ROOT = Path(__file__).resolve().parents[1]
+SIDECAR = ROOT / "desktop" / "sidecar" / "dist" / "find-yourself-backend"
+WEBDIST = ROOT / "web" / "dist"
+LANDING = ROOT / "landing-page-2026-10-06.html"
+STAGE = ROOT / ".build_stage"
+APP = STAGE / "FY-Orbit"
 OUT_ZIP = ROOT / "FY-Orbit-Windows-v1.0.0.zip"
-STAGE_DIR = ROOT / ".build_stage"
 
-if STAGE_DIR.exists():
-    shutil.rmtree(STAGE_DIR)
-STAGE_DIR.mkdir(parents=True, exist_ok=True)
-
-APP_DIR = STAGE_DIR / "FY-Orbit"
-APP_DIR.mkdir(parents=True, exist_ok=True)
-
-print("==> 1. Copying backend src...")
-shutil.copytree(ROOT / "src", APP_DIR / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyd"))
-
-print("==> 2. Copying frontend web dist...")
-shutil.copytree(ROOT / "web" / "dist", APP_DIR / "web", ignore=shutil.ignore_patterns("*.map"))
-
-print("==> 3. Copying landing page and docs...")
-shutil.copy2(ROOT / "landing-page-2026-10-06.html", APP_DIR / "landing.html")
-shutil.copy2(ROOT / "README.md", APP_DIR / "README.md")
-if (ROOT / "LICENSE").exists():
-    shutil.copy2(ROOT / "LICENSE", APP_DIR / "LICENSE")
-
-print("==> 4. Creating launcher scripts...")
-launcher_bat = """@echo off
-title FY Orbit · 星轨
+LAUNCHER_BAT = """@echo off
 chcp 65001 >nul
-cd /d "%~dp0"
-echo ==============================================================================
-echo   FY Orbit · 星轨 —— 企业级智能体调度中枢与自适应工作流工坊
-echo   100%% 本地优先 · 零公网依赖 · 开箱即用
-echo ==============================================================================
+title FY Orbit · 星轨 (Windows 绿色独立版)
+echo ============================================================
+echo       FY Orbit · 星轨 v1.0.0 (Windows 绿色免安装版)
+echo       本地优先的多智能体编排与统一调度平台
+echo ============================================================
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0start.ps1"
-if %ERRORLEVEL% NEQ 0 (
+echo [1/3] 正在准备本地运行环境...
+set ROOT=%~dp0
+cd /d "%ROOT%"
+
+set BACKEND_EXE="%ROOT%find-yourself-backend\\find-yourself-backend.exe"
+if not exist %BACKEND_EXE% (
+    echo [错误] 未找到核心程序 find-yourself-backend.exe！
+    echo 请确认已完整解压压缩包中的所有文件与子目录。
+    pause
+    exit /b 1
+)
+
+echo [2/3] 配置静态资源与工作目录...
+if exist "%ROOT%web\\dist" set FY_STATIC_DIR=%ROOT%web\\dist
+
+set FY_ENVIRONMENT=local
+set FY_OFFLINE_MODE=1
+set FY_LOCAL_ONLY=1
+
+echo [3/3] 正在启动应用引擎与核心服务 (默认端口 8000)...
+echo.
+echo ************************************************************
+echo  服务启动后，系统将自动在默认浏览器中打开工作台。
+echo  工作台地址: http://127.0.0.1:8000
+echo  产品展示页: http://127.0.0.1:8000/landing.html
+echo.
+echo  如需退出应用，请直接按 Ctrl+C 或关闭本控制台窗口。
+echo ************************************************************
+echo.
+
+%BACKEND_EXE% --host 127.0.0.1 --port 8000 %*
+
+if %ERRORLEVEL% neq 0 (
     echo.
-    echo [提示] 启动异常，按任意键退出...
-    pause >nul
+    echo [提示] 应用程序已退出 (Exit code: %ERRORLEVEL%)。
+    pause
 )
 """
-(APP_DIR / "FY-Orbit.bat").write_text(launcher_bat, encoding="gbk")
-(APP_DIR / "start.bat").write_text(launcher_bat, encoding="gbk")
 
-start_ps1 = """# FY Orbit Desktop Launcher (start.ps1)
-[CmdletBinding()]
-param (
-    [int]$Port = 8088,
-    [switch]$NoBrowser,
-    [string]$AppRoot = ""
-)
+README_TXT = """================================================================================
+  FY Orbit · 星轨 v1.0.0 Windows 绿色免安装版
+  本地优先的多智能体编排与统一调度平台
+================================================================================
 
-$ErrorActionPreference = "Stop"
-if (-not $AppRoot) { $AppRoot = $PSScriptRoot }
+【开箱即用说明】
+本软件包已内置独立编译的完整二进制运行时与前端全套静态应用，解压即用。
+在任何 64 位 Windows 系统上运行无需预装 Python、Node.js 或任何开发工具链。
 
-$DataDir = "$env:LOCALAPPDATA\\FYOrbit\\data"
-$RunDir = Join-Path $AppRoot "run"
-if (-not (Test-Path $RunDir)) { New-Item -ItemType Directory -Path $RunDir -Force | Out-Null }
-if (-not (Test-Path $DataDir)) { New-Item -ItemType Directory -Path $DataDir -Force | Out-Null }
+【启动方式】
+1. 双击运行当前目录下的「FY-Orbit.bat」（或「start.bat」）；
+2. 启动后终端将自动拉起核心引擎，并自动用系统默认浏览器打开工作台：
+   控制台地址: http://127.0.0.1:8000
+3. 若需查阅官方介绍与特性展示，可双击打开当前目录下的「landing.html」，或在服务启动后访问：
+   产品展示页: http://127.0.0.1:8000/landing.html
 
-$PidFile = Join-Path $RunDir "fyorbit.pid"
-if (Test-Path $PidFile) {
-    $existingPid = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($existingPid -and (Get-Process -Id $existingPid -ErrorAction SilentlyContinue)) {
-        Write-Host "[FY Orbit] 服务已在后台运行 (PID: $existingPid, 端口: $Port)" -ForegroundColor Yellow
-        if (-not $NoBrowser) { Start-Process "http://127.0.0.1:$Port" }
-        exit 0
-    } else {
-        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-    }
-}
+【目录结构说明】
+  FY-Orbit.bat                  # 一键启动脚本（推荐双击启动）
+  start.bat                     # 快捷启动入口
+  landing.html                  # 官方全景介绍与特性展示页
+  使用说明.txt                  # 本说明文档
+  find-yourself-backend/        # 独立编译的完整二进制核心引擎及运行时动态库
+  web/dist/                     # 完整前端静态编译产物
+  data/                         # 本地数据库与持久化数据目录（首次启动自动创建）
 
-$PythonCmd = $null
-$possiblePythons = @(
-    (Join-Path $AppRoot "runtime\\python.exe"),
-    (Join-Path $AppRoot ".venv\\Scripts\\python.exe"),
-    (Join-Path $AppRoot "..\\.venv\\Scripts\\python.exe"),
-    "python"
-)
+【进阶与参数说明】
+- 默认端口：8000；若被占用可通过命令行指定：FY-Orbit.bat --port 8080
+- 不需要自动弹出浏览器：FY-Orbit.bat --no-browser
 
-foreach ($py in $possiblePythons) {
-    if (Test-Path $py) {
-        $PythonCmd = (Resolve-Path $py).Path
-        break
-    } elseif ($py -eq "python" -and (Get-Command python -ErrorAction SilentlyContinue)) {
-        $PythonCmd = "python"
-        break
-    }
-}
-
-if (-not $PythonCmd) {
-    Write-Error "[FY Orbit 错误] 未检测到 Python 运行时。请确保系统已安装 Python 3.11+ 或将其置于 runtime 目录。"
-    exit 1
-}
-
-$srcDir = Join-Path $AppRoot "src"
-$env:PYTHONPATH = "$srcDir;$env:PYTHONPATH"
-
-$DbPath = Join-Path $DataDir "find-yourself.db"
-$StaticDir = Join-Path $AppRoot "web"
-
-$env:FY_ENVIRONMENT = "local"
-$env:FY_SESSION_SECRET = "desktop-session-secret-local-32chars-min-key!"
-$env:FY_LOCAL_TOKEN = "desktop-token-secret"
-$env:FY_DATABASE_URL = "sqlite:///$($DbPath -replace '\\\\', '/')"
-$env:FY_PUBLIC_URL = "http://127.0.0.1:$Port"
-$env:FY_STATIC_DIR = (Resolve-Path $StaticDir).Path
-
-$LogFile = Join-Path $RunDir "app.log"
-$ErrLogFile = Join-Path $RunDir "app.err.log"
-
-Write-Host "==========================================================" -ForegroundColor Cyan
-Write-Host " [FY Orbit · 星轨] 正在拉起核心服务..." -ForegroundColor Cyan
-Write-Host " 端口: $Port | 数据存储: $DbPath" -ForegroundColor Gray
-Write-Host "==========================================================" -ForegroundColor Cyan
-
-$proc = Start-Process -FilePath $PythonCmd `
-    -ArgumentList "-m uvicorn find_yourself.api.app:create_app --factory --host 127.0.0.1 --port $Port --log-level info" `
-    -WorkingDirectory $AppRoot `
-    -NoNewWindow `
-    -PassThru `
-    -RedirectStandardOutput $LogFile `
-    -RedirectStandardError $ErrLogFile
-
-$proc.Id | Out-File $PidFile -Encoding ascii
-
-$healthUrl = "http://127.0.0.1:$Port/health/live"
-$timeoutSec = 20
-$deadline = (Get-Date).AddSeconds($timeoutSec)
-$isHealthy = $false
-
-while ((Get-Date) -lt $deadline) {
-    if ($proc.HasExited) {
-        Write-Error "[FY Orbit 错误] 进程异常退出。请查看日志: $LogFile"
-        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-        exit 1
-    }
-    try {
-        $resp = Invoke-WebRequest -Uri $healthUrl -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
-        if ($resp.StatusCode -eq 200) {
-            $isHealthy = $true
-            break
-        }
-    } catch {
-        Start-Sleep -Milliseconds 400
-    }
-}
-
-if (-not $isHealthy) {
-    Write-Error "[FY Orbit 错误] 启动超时: $healthUrl 未在 ${timeoutSec}s 内就绪。"
-    exit 1
-}
-
-Write-Host " [FY Orbit · 星轨] 核心服务就绪! (PID: $($proc.Id))" -ForegroundColor Green
-Write-Host " 访问地址: http://127.0.0.1:$Port" -ForegroundColor Green
-
-if (-not $NoBrowser) {
-    $edgeExe = $null
-    $edgeCandidates = @(
-        "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-        "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-        "$env:LOCALAPPDATA\\Microsoft\\Edge\\Application\\msedge.exe"
-    )
-    foreach ($cand in $edgeCandidates) {
-        if (Test-Path $cand) {
-            $edgeExe = $cand
-            break
-        }
-    }
-
-    if ($edgeExe) {
-        Write-Host " [FY Orbit] 启动独立原生工作台窗口 (Edge App 模式)..." -ForegroundColor Cyan
-        $webviewDir = Join-Path $RunDir "webview-profile"
-        Start-Process -FilePath $edgeExe `
-            -ArgumentList "--app=http://127.0.0.1:$Port", "--window-size=1440,900", "--user-data-dir=`"$webviewDir`"", "--no-first-run", "--no-default-browser-check"
-    } else {
-        Start-Process "http://127.0.0.1:$Port"
-    }
-}
+【如何退出】
+在命令行窗口按 Ctrl+C，或直接关闭该窗口即可退出全部后台服务。
 """
-(APP_DIR / "start.ps1").write_text(start_ps1, encoding="utf-8")
 
-stop_ps1 = """# FY Orbit Stop Script (stop.ps1)
-$RunDir = Join-Path $PSScriptRoot "run"
-$PidFile = Join-Path $RunDir "fyorbit.pid"
 
-if (Test-Path $PidFile) {
-    $existingPid = Get-Content $PidFile -ErrorAction SilentlyContinue
-    if ($existingPid) {
-        Stop-Process -Id $existingPid -Force -ErrorAction SilentlyContinue
-        Write-Host "[FY Orbit] 服务已终止 (PID: $existingPid)" -ForegroundColor Yellow
-    }
-    Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
-} else {
-    Write-Host "[FY Orbit] 未发现正在运行的服务 PID 文件。" -ForegroundColor Gray
-}
-"""
-(APP_DIR / "stop.ps1").write_text(stop_ps1, encoding="utf-8")
+def run(cmd, cwd=None) -> None:
+    print("  $", " ".join(str(c) for c in cmd))
+    subprocess.run([str(c) for c in cmd], cwd=cwd, check=True)
 
-config_env = """# FY Orbit 本地桌面配置 (config.env)
-FY_ENVIRONMENT=local
-FY_SESSION_SECRET=desktop-session-secret-local-32chars-min-key!
-FY_LOCAL_TOKEN=desktop-token-secret
-FY_OFFLINE_MODE=1
-"""
-(APP_DIR / "config.env").write_text(config_env, encoding="utf-8")
 
-print(f"==> 5. Creating ZIP package: {OUT_ZIP}...")
-with zipfile.ZipFile(OUT_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
-    for root, dirs, files in os.walk(STAGE_DIR):
-        for file in files:
-            full_path = Path(root) / file
-            rel_path = full_path.relative_to(STAGE_DIR)
-            zf.write(full_path, str(rel_path))
+def build() -> None:
+    npm = "npm.cmd" if sys.platform == "win32" else "npm"
+    print("[build] 前端生产构建 ...")
+    run([npm, "run", "build"], cwd=ROOT / "web")
+    print("[build] 后端二进制（PyInstaller onedir）...")
+    run(["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+         "-File", ROOT / "desktop" / "sidecar" / "build.ps1",
+         "-ProjectRoot", ROOT, "-SkipWebBuild"])
 
-print(f"==> Package created successfully! Size: {OUT_ZIP.stat().st_size / (1024 * 1024):.2f} MB")
-shutil.rmtree(STAGE_DIR)
+
+def write_text(path: Path, text: str, encoding: str = "utf-8") -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding=encoding, newline="\r\n" if path.suffix == ".bat" else None)
+
+
+def assemble() -> None:
+    if not (SIDECAR / "find-yourself-backend.exe").is_file():
+        raise SystemExit("缺少编译产物 desktop/sidecar/dist/find-yourself-backend/，"
+                         "先跑 desktop/sidecar/build.ps1 或加 --build")
+    if not (WEBDIST / "index.html").is_file():
+        raise SystemExit("缺少前端产物 web/dist/，先跑 npm --prefix web run build 或加 --build")
+
+    if STAGE.exists():
+        shutil.rmtree(STAGE)
+    APP.mkdir(parents=True, exist_ok=True)
+
+    print("[1/5] 后端编译产物 ...")
+    shutil.copytree(SIDECAR, APP / "find-yourself-backend",
+                    ignore=shutil.ignore_patterns("*.pyc", "__pycache__"))
+
+    print("[2/5] 前端静态产物 ...")
+    shutil.copytree(WEBDIST, APP / "web" / "dist", ignore=shutil.ignore_patterns("*.map"))
+
+    print("[3/5] 落地页 ...")
+    landing = LANDING.read_text(encoding="utf-8")
+    (APP / "landing.html").write_text(landing, encoding="utf-8")
+    (APP / "web" / "dist" / "landing.html").write_text(landing, encoding="utf-8")
+
+    print("[4/5] 说明与启动器 ...")
+    shutil.copy2(ROOT / "README.md", APP / "README.md")
+    if (ROOT / ".env.example").is_file():
+        shutil.copy2(ROOT / ".env.example", APP / ".env.example")
+    write_text(APP / "FY-Orbit.bat", LAUNCHER_BAT, encoding="gbk")
+    write_text(APP / "使用说明.txt", README_TXT, encoding="utf-8")
+
+    print("[5/5] 打包 ...")
+    with zipfile.ZipFile(OUT_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+        for p in sorted(STAGE.rglob("*")):
+            if p.is_file():
+                zf.write(p, str(p.relative_to(STAGE)))
+    shutil.rmtree(STAGE)
+    print("完成：%s (%.2f MB)" % (OUT_ZIP, OUT_ZIP.stat().st_size / 1024 / 1024))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="装配 Windows 绿色发行包")
+    ap.add_argument("--build", action="store_true", help="先构建前端与后端二进制再装配")
+    args = ap.parse_args()
+    if args.build:
+        build()
+    assemble()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

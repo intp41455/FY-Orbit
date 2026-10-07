@@ -1,10 +1,10 @@
 {
   "sample_set_id": "pmi-sample-set-20261003-v1",
   "generated_at": "2026-10-03T00:00:00+00:00",
-  "generator": "opencode_pmi_trace_samples_build.py",
+  "generator": "pmi-trace-samples",
   "schema_ref": "opencode_pmi_trace_schema_v1.0.schema.json",
   "derived_from": {
-    "path": "C:\\Users\\intpj\\Documents\\Codex\\2026-09-29\\agent\\outputs\\find-yourself\\evidence\\process-traces\\06-canvas-hermes-roundtrip.json",
+    "path": "evidence/process-traces/06-canvas-hermes-roundtrip.json",
     "title": "CanvasService → Hermes CLI 本地往返",
     "recorded_at_utc": "2026-10-01T03:03:02.078563+00:00",
     "canvas_instance_id": "canv-b0ee8910e569",

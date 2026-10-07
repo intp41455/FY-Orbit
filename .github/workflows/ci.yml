@@ -20,6 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: src
+      FY_ENVIRONMENT: test
+      FY_OFFLINE_MODE: "true"
+      # 测试环境专用占位密钥（>=32 字符）。settings 校验要求非空且足够长，
+      # 缺失会让整个 Settings 构造失败、连带几百条用例全红。
+      FY_SESSION_SECRET: ci-only-session-secret-0123456789abcdef0123456789
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -39,9 +44,6 @@ jobs:
           uv pip install --system -e .
           uv pip install --system pytest pytest-asyncio ruff
 
-      # 清理项 C（2026-10-07）：HEAD 曾出现"迁移未提交+模块未提交"的断裂而所有
-      # gate 都在污染工作树上跑、全部看不见。actions/checkout 检出的就是 HEAD
-      # 纯净树——在此先跑迁移链门禁 + 路由 import 冒烟，断裂在 CI 即红。
       - name: HEAD Clean-Tree Gate (migration chain + route import smoke)
         run: |
           PYTHONPATH=src python -m pytest tests/unit/test_migration_chain_gate.py -q

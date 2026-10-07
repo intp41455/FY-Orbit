@@ -425,7 +425,7 @@ export function edgeFadeAlpha(cameraX: number, viewWidth: number, world: CabinWo
  * **有意不按 worldWidth*parallax 放大**：TilingSprite 的 addressMode='repeat'
  * 会无限平铺，tilePosition 可以任意大，几何宽度只要盖住视口就永不露缝。
  * 按世界宽放大只会成倍增加填充率，直接冲掉 SRE 的 渲染≤6ms 帧预算
- * （docs/handoff-tasks/13-G1-G5-游戏与美术任务书.md §8），没有任何视觉收益。
+ * 没有任何视觉收益。
  * margin 用于 resize 后的一帧内不留硬边。
  */
 export function layerVirtualWidth(viewWidth: number, margin: number): number {

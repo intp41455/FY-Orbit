@@ -26,7 +26,7 @@ FY 品牌基础资产渲染脚本（零成本 / 本机离线 / 无网络依赖�
   * 出图后逐块校验墨迹包围盒：越界 / 垂直重叠 / 缺字 一律打印告警
 
 运行：
-  C:/Users/intpj/.workbuddy/binaries/python/envs/default/Scripts/python.exe render_assets.py
+  python render_assets.py
 """
 
 from __future__ import annotations

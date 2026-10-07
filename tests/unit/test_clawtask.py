@@ -146,24 +146,24 @@ def test_system_template_must_carry_all_eight_essentials():
 
 def test_absolute_local_paths_are_not_portable():
     doc = make_doc()
-    doc["context"]["workspace"] = "/Users/intpj/code/my-project"
+    doc["context"]["workspace"] = "/Users/dev/code/my-project"
     problems = F.validate_clawtask(doc, check_integrity=False)
     assert any("local_path_leaked" in p for p in problems)
     # Windows 盘符同样拦
     doc2 = make_doc()
-    doc2["context"]["workspace"] = r"C:\Users\intpj\code"
+    doc2["context"]["workspace"] = r"C:\Users\dev\code"
     assert any("local_path_leaked" in p
                for p in F.validate_clawtask(doc2, check_integrity=False))
 
 
 def test_local_only_section_may_hold_machine_pointers():
     """``local_only`` 是**明确的例外**：它整体在可移植导出时被剥离。"""
-    doc = make_doc(local_only={"artifacts_dir": "/Users/intpj/fy/artifacts"})
+    doc = make_doc(local_only={"artifacts_dir": "/Users/dev/fy/artifacts"})
     assert F.validate_clawtask(doc, check_integrity=False) == []
 
 
 def test_portable_serialize_strips_local_only_but_keeps_it_locally():
-    doc = make_doc(local_only={"artifacts_dir": "/Users/intpj/fy/artifacts"})
+    doc = make_doc(local_only={"artifacts_dir": "/Users/dev/fy/artifacts"})
     portable = F.serialize(doc, portable=True)
     assert "local_only" not in json.loads(portable["text"])
     local = F.serialize(doc, portable=False)

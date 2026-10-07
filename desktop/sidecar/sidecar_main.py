@@ -81,40 +81,98 @@ def announce(port: int, run_dir: Path) -> None:
 
 
 def main() -> int:
-    root = data_root()
-    data_dir = root / "data"
-    run_dir = root / "run"
+    import argparse
+    import threading
+    import time
+    import webbrowser
+
+    parser = argparse.ArgumentParser(description="Find Yourself (FY Orbit) Backend")
+    parser.add_argument("--host", default="127.0.0.1", help="Host address to bind (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=None, help="Port to bind (default: 8000, or 0 for random)")
+    parser.add_argument("--sidecar", action="store_true", help="Run in Tauri sidecar mode (random port, handshake)")
+    parser.add_argument("--no-browser", action="store_true", help="Do not open browser automatically")
+    args, _ = parser.parse_known_args()
+
+    is_sidecar = args.sidecar or (args.port == 0)
+    
+    # Resolve roots & data dirs
+    exe_path = Path(sys.executable).resolve()
+    portable_root = exe_path.parent.parent if exe_path.parent.name == "find-yourself-backend" else exe_path.parent
+    
+    if is_sidecar:
+        root = data_root()
+        data_dir = root / "data"
+        run_dir = root / "run"
+        port = free_port()
+    else:
+        # Portable standalone mode: prefer portable data folder, fallback to appdata
+        try:
+            local_data = portable_root / "data"
+            local_data.mkdir(parents=True, exist_ok=True)
+            root = portable_root
+            data_dir = local_data
+            run_dir = portable_root / "run"
+        except Exception:
+            root = data_root()
+            data_dir = root / "data"
+            run_dir = root / "run"
+
+        port = args.port if args.port is not None else 8000
+
     data_dir.mkdir(parents=True, exist_ok=True)
     run_dir.mkdir(parents=True, exist_ok=True)
     ensure_env_file(root)
 
-    port = free_port()
+    # Locate static web assets
     static_dir = os.environ.get("FY_STATIC_DIR")
     if not static_dir:
-        # PyInstaller --onedir unpacks next to the exe.
+        candidates = [
+            portable_root / "web" / "dist",
+            exe_path.parent / "web" / "dist",
+            Path.cwd() / "web" / "dist",
+        ]
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
-            candidate = Path(meipass) / "web" / "dist"
-            if candidate.is_dir():
-                static_dir = str(candidate)
+            candidates.append(Path(meipass) / "web" / "dist")
+        
+        for cand in candidates:
+            if cand.is_dir() and (cand / "index.html").is_file():
+                static_dir = str(cand.resolve())
+                break
 
     os.environ["FY_ENVIRONMENT"] = "local"
     os.environ["FY_OFFLINE_MODE"] = "1"
     os.environ["FY_LOCAL_ONLY"] = "1"
     os.environ["FY_DATABASE_URL"] = f"sqlite:///{(data_dir / 'find-yourself.db').as_posix()}"
-    os.environ["FY_PUBLIC_URL"] = f"http://127.0.0.1:{port}"
+    os.environ["FY_PUBLIC_URL"] = f"http://{args.host}:{port}"
     if static_dir:
         os.environ["FY_STATIC_DIR"] = static_dir
 
-    import uvicorn
+    url = f"http://{args.host}:{port}"
+    print(f"[FY Orbit] Backend listening on {url}")
+    if static_dir:
+        print(f"[FY Orbit] Web assets mounted from: {static_dir}")
+    else:
+        print("[FY Orbit] Running in API-only mode (static assets not found)")
 
+    # In standalone mode, automatically launch user's default browser
+    if not is_sidecar and not args.no_browser:
+        def _open_browser():
+            time.sleep(1.2)
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+        threading.Thread(target=_open_browser, daemon=True).start()
+
+    import uvicorn
     from find_yourself.api.app import create_app
 
     config = uvicorn.Config(
         create_app,
-        host="127.0.0.1",
+        host=args.host,
         port=port,
-        log_level="warning",
+        log_level="warning" if is_sidecar else "info",
         factory=True,
     )
     server = uvicorn.Server(config)
@@ -122,8 +180,6 @@ def main() -> int:
     import asyncio
 
     async def _serve() -> None:
-        # Announce only once the socket is actually accepting connections, so
-        # the Rust side never races the bind.
         server_task = asyncio.create_task(server.serve())
         while not server.started and not server_task.done():
             await asyncio.sleep(0.05)

@@ -59,7 +59,6 @@ if ($Stop) {
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) {
     $fallbackPys = @(
-        "C:\Users\intpj\.workbuddy\binaries\python\envs\fy-p10\Scripts\python.exe",
         $env:PYTHON_EXECUTABLE
     )
     foreach ($cand in $fallbackPys) {

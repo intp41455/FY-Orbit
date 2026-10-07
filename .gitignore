@@ -20,9 +20,7 @@ playwright-report/
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
 
-# --- 2026-10-04 入库加固（主控补，闭合校验驱动）---
 # 理由：.env 规则只匹配名为 .env 的文件，不匹配 *.env。
-# evidence/p1-05-tool-registry/csrf.env 正是 *.env 形状，
 # 且 .gitignore:7 的裸 .env 规则对它是无效的。
 *.env
 .env.*
@@ -30,11 +28,7 @@ playwright-report/
 !.env.*.example
 !*.env.example
 !.env.template
-# 例外：这一份已脱敏（值替换为 REDACTED_0…0，2026-10-04 主控实测确认无 64 位十六进制残留），
-# 它是 P1-05 工具注册验收的证据，丢了就无法复现该批次结论。
-!evidence/p1-05-tool-registry/csrf.env
 
-# 私钥与证书一律不入库（2026-10-04 全仓扫描 0 命中，此为预防性规则）
 *.pem
 *.key
 *.p12
@@ -46,40 +40,26 @@ playwright-report/
 id_rsa
 id_ed25519
 
-# 本地临时输出（不入库，避免污染基线）
 regress3.txt
 full_unit.txt
 full_api.txt
 cj3.txt
 
-# --- 2026-10-04 二次加固（代码审查员复核后主控补）---
 # 漏洞 1：上面第 11 行的 `test-results/` 只匹配恰好叫这个名字的目录，
 # 但实际产物叫 e2e-results-* / results-* / screenshots-* / .playwright-artifacts-0。
-# 后果：41 个 Playwright 产物（含 4 个 test-failed-1.png）被入库。
-# test-failed-1.png 是失败现场，把它当基线入库会让后来人无法区分
 # 「我造成的失败」与「基线本来就红」。这些都可由 npx playwright test 确定性重建。
 #
-# ⚠️ 作用域限定为 web/**/（代码审查员指出）：写成裸模式会误伤 evidence/ 下的
-# 证据目录。实测 evidence/e2e-screenshots/ 之所以没被误伤，是因为目录名是
 # `e2e-screenshots`（无连字符）而规则要求 `screenshots-*`（连字符开头）——
 # **差一个连字符就躲过去了，这是运气不是设计**。
-# 同样 .playwright-artifacts-0 在 evidence/p1-19-chat/ 下是 1.72MB 的验收证据。
 web/**/e2e-results-*/
 web/**/results-*/
 web/**/screenshots-*/
 web/**/.playwright-artifacts-*/
 
 # 漏洞 2：凭据载体无规则。
-# 根目录 cj3.txt（Cookie）已忽略，但 evidence/p1-05-tool-registry/cookies.txt
-# 同样是真会话凭据却入库了 —— 同类型不同处理。curl 命令文件同理
-# （evidence/p1-08-sse/curl-command.txt 含明文 X-CSRF-Token）。
 *cookies*.txt
 *curl*.txt
 
-# Agent 运行时记忆：本地工作日志，不属于项目源码。
-# 2026-10-04 误入 SECURITY 提交（代码审查员复核发现）——它的内容是对本轮动作的
-# 记录，会随每轮变化，入库只会污染 diff 审查面。需要留档时写到 docs/ 下。
-.workbuddy/
 *.log
 .srv*
 
@@ -88,3 +68,10 @@ cloudflared.exe
 deploy/landing-dist/
 FY-Orbit-Windows-v1.0.0.zip
 *.pyc
+
+# 本地发行打包产物（由 deploy/build_release_package.py 生成，不入库）
+/dist-package/
+/.build_stage*/
+/FY-Orbit.bat
+/landing.html
+/使用说明.txt

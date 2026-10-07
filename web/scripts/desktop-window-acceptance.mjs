@@ -19,7 +19,7 @@ const BASE = process.env.FY_DESKTOP_URL ?? 'http://127.0.0.1:8088';
 const TOKEN = process.env.FY_LOCAL_TOKEN ?? 'desktop-token-secret';
 const WS_ROOT =
   process.env.FY_ACCEPTANCE_WS_ROOT ??
-  'C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/.runtime/acceptance-ws';
+  path.join(__dirname, '../../.runtime/acceptance-ws');
 const OUT = path.resolve(__dirname, '../../evidence/acceptance-2026-10-02/desktop');
 
 fs.mkdirSync(OUT, { recursive: true });

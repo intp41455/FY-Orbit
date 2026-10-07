@@ -164,7 +164,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
 
     if static_dir and Path(static_dir).is_dir():
         from starlette.staticfiles import StaticFiles
-        from starlette.responses import FileResponse
+        from starlette.responses import FileResponse, PlainTextResponse
 
         s_path = Path(static_dir).resolve()
 
@@ -179,6 +179,22 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
                         return FileResponse(index_file)
             return response
 
-        app.mount("/", StaticFiles(directory=str(s_path), html=True), name="static")
+        class _SpaStaticFiles(StaticFiles):
+            """未匹配路径的静态兜底。
+
+            直接挂载 ``StaticFiles`` 时，未匹配任何路由的 POST/PUT/DELETE 会
+            得到 405（Mount 命中了路径，但静态文件服务只接受 GET/HEAD），
+            这会把「端点不存在」误报成「方法不允许」。这里统一按 404 处理，
+            让真实的 404 语义透出。
+            """
+
+            async def __call__(self, scope, receive, send):
+                if scope.get("type") == "http" and scope.get("method") not in ("GET", "HEAD"):
+                    response = PlainTextResponse("Not Found", status_code=404)
+                    await response(scope, receive, send)
+                    return
+                await super().__call__(scope, receive, send)
+
+        app.mount("/", _SpaStaticFiles(directory=str(s_path), html=True), name="static")
 
     return app

@@ -65,7 +65,7 @@ const mockConnectors: ConnectorProbe[] = [
     role: 'orchestrator',
     stage: '合成任务往返',
     healthy: true,
-    binary_path: 'C:\\Users\\intpj\\AppData\\Local\\hermes\\bin\\hermes.cmd',
+    binary_path: 'C:\\Users\\dev\\AppData\\Local\\hermes\\bin\\hermes.cmd',
     blocking_reason: null,
     domains: ['personal'],
   },

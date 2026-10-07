@@ -2,7 +2,7 @@
 # 范围：Postgres+pgvector、Temporal、S3 兼容私有存储(MinIO)、API、Worker、Web。
 # 监控服务放在 monitoring profile，默认不启动。
 #
-# 安全约束（与 docs/FROZEN_CONTRACT.md 第 12 节一致）：
+# 安全约束：
 #   - 所有数据库 / Temporal / S3 管理端口只绑定 127.0.0.1，不暴露到局域网。
 #   - 每服务具备 healthcheck、独立网络、数据卷、内存限制与非 root 配置。
 #   - 本机空闲 RAM 约 4.43GB，默认分阶段启动：先起数据层，再起应用层。

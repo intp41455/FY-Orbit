@@ -1,7 +1,6 @@
 # Find Yourself — Web (React + TypeScript + Vite PWA)
 
-Web slice per `docs/FROZEN_CONTRACT.md` v1.0. Scope: `web/` only. Do not modify
-Python sources, migrations, infra, or CLI from here.
+Web 前端切片（`web/`）。不要从本目录修改 Python 源码、迁移、infra 或 CLI。
 
 ## Commands
 ```powershell
@@ -9,7 +8,7 @@ npm ci              # locked install from package-lock.json
 npm run typecheck   # tsc --noEmit
 npm run build       # tsc --noEmit && vite build (emits dist/ + sw.js)
 npm run test        # vitest unit/component tests (jsdom, mocks isolated)
-npm run test:e2e    # playwright (BLOCKED_EXTERNAL until backend is up)
+npm run test:e2e    # playwright（需先启动后端服务）
 ```
 
 ## Architecture
@@ -21,7 +20,7 @@ npm run test:e2e    # playwright (BLOCKED_EXTERNAL until backend is up)
 - All data comes from the real backend; no demo success is faked when the
   service/credentials are missing.
 
-## PWA privacy (FROZEN_CONTRACT §11)
+## PWA 隐私
 - The service worker (`vite-plugin-pwa` generateSW) precaches ONLY static shell
   assets. `runtimeCaching` is intentionally empty; `/api`, `/auth`, `/health`,
   `/metrics` are excluded from the SPA navigation fallback.
@@ -30,7 +29,7 @@ npm run test:e2e    # playwright (BLOCKED_EXTERNAL until backend is up)
 - Offline: composer disabled, explicit "offline, cannot submit" notice.
 - Logout clears localStorage/sessionStorage and all Cache Storage.
 
-## Assessment compliance (§11.3)
+## 测评合规
 - Scoring is server-side; missing answers never produce a default result.
 - Big Five uses IPIP entries (compliance notice rendered verbatim, no percentile
   without a norm); four-dimension is labelled exploratory/non-official MBTI;
@@ -38,5 +37,4 @@ npm run test:e2e    # playwright (BLOCKED_EXTERNAL until backend is up)
   validated.
 
 ## Status
-Local build/typecheck/unit tests pass. Real E2E against the backend is
-BLOCKED_EXTERNAL (Runtime slice not deployed). See `evidence/g5/`.
+本地 build / typecheck / 单元测试通过；真实 E2E 需先启动后端服务。

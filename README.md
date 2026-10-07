@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">
-    <img src="https://img.shields.io/badge/Release-Windows%20v1.0.0%20(3MB)-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
+    <img src="https://img.shields.io/badge/Release-Windows%20v1.0.0-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
   </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
@@ -147,13 +147,13 @@
 ### 方式一：绿色免安装独立发行包（强烈推荐 · 开箱即用）
 
 1. 直接点击从 GitHub Release 下载官方 Windows 绿色独立安装包：  
-   👉 **[下载 FY-Orbit-Windows-v1.0.0.zip (3.06 MB)](https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip)**
+   👉 **[下载 FY-Orbit-Windows-v1.0.0.zip ](https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip)**
 2. 解压到任意文件夹；
 3. 双击运行 `FY-Orbit.bat`（或 `start.bat`），系统将自动拉起服务并以独立原生应用窗口启动工作台，零配置开箱即跑！
 
 ### 方式二：在线云端网页版（免安装）
 点击进入全球 Anycast CDN 部署的在线公网版本体验：  
-👉 **[在线宣传落地页](https://connections-evident-camcorders-eleven.trycloudflare.com/landing.html)** ｜ **[Web 工作台在线版](https://connections-evident-camcorders-eleven.trycloudflare.com/)** ｜ **[Swagger API 文档](https://connections-evident-camcorders-eleven.trycloudflare.com/docs)**
+👉 **[在线宣传落地页](https://find-yourself-45j.pages.dev/landing.html)** ｜ **[Web 工作台在线版](https://find-yourself-45j.pages.dev/)** ｜ **[Swagger API 文档](https://find-yourself-45j.pages.dev/docs)**
 *(备用高可用镜像：[Cloudflare Pages 全球镜像](https://find-yourself-45j.pages.dev/))*
 
 ### 方式三：源码手动启动

@@ -17,8 +17,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-PY_VENV="C:/Users/intpj/.workbuddy/binaries/python/envs/default/Scripts/python.exe"
-PY_BASE="C:/Users/intpj/.workbuddy/binaries/python/versions/3.13.12/python.exe"
+PY_VENV="${VIRTUAL_ENV:-.venv}/bin/python"
+PY_BASE="$(command -v python3 || command -v python)"
 
 if [ -x "$PY_VENV" ]; then
   PY="$PY_VENV"

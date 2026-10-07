@@ -88,17 +88,17 @@ FY 缩到 46% 宽**，保证在 maskable 安全圆（直径 80%）内不被切�
 ## 2. 怎么重新生成
 
 ```bash
-cd deliverables/product-strategy/brand-assets
+cd assets/brand
 bash render_assets.sh
 ```
 
 或直接：
 
 ```bash
-"C:/Users/intpj/.workbuddy/binaries/python/envs/default/Scripts/python.exe" render_assets.py
+python render_assets.py
 ```
 
-**环境要求**：托管 Python 3.13.12 + Pillow（本机 venv 已装 Pillow 12.3.0）。**不联网、不安装任何东西。**
+**环境要求**：Python 3.11+ 与 Pillow。**不联网、不安装任何东西。**
 
 脚本每次运行都会打印一张**实测表**（文件名 / 实际像素尺寸 / 字节数 / 色彩模式），
 以及三项自动校验结果：

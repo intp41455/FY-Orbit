@@ -38,8 +38,8 @@ if (-not $ProjectRoot) {
     $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 }
 if (-not $Python) {
-    $candidate = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-    $Python = if (Test-Path $candidate) { $candidate } else { "python" }
+    $candidate1 = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
+    $Python = if (Test-Path $candidate1) { $candidate1 } else { "python" }
 }
 
 $Entry = Join-Path $ProjectRoot "desktop\sidecar\sidecar_main.py"
@@ -85,10 +85,22 @@ Write-Host "[sidecar] running PyInstaller --onedir ..."
     --hidden-import "uvicorn.loops" `
     --hidden-import "uvicorn.protocols" `
     --hidden-import "uvicorn.protocols.http" `
+    --hidden-import "uvicorn.protocols.http.auto" `
+    --hidden-import "uvicorn.protocols.http.h11_impl" `
     --hidden-import "uvicorn.protocols.websockets" `
+    --hidden-import "uvicorn.protocols.websockets.auto" `
+    --hidden-import "uvicorn.protocols.websockets.wsproto_impl" `
     --hidden-import "uvicorn.lifespan" `
+    --hidden-import "uvicorn.lifespan.on" `
+    --hidden-import "uvicorn.lifespan.off" `
     --hidden-import "sqlalchemy.dialects.sqlite" `
-    --collect-submodules "find_yourself" `
+    --hidden-import "yaml" `
+    --hidden-import "dotenv" `
+    --collect-all "find_yourself" `
+    --collect-all "uvicorn" `
+    --collect-all "starlette" `
+    --collect-all "fastapi" `
+    --collect-all "anyio" `
     $Entry
 
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller failed ($LASTEXITCODE)" }
