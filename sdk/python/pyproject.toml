@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "find-yourself-sdk"
+version = "0.1.0"
+description = "FindYourself Standard Python SDK (API, Marketplace, Templates, Code Context, Enterprise Iframe)"
+authors = [{ name = "FindYourself Team" }]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]

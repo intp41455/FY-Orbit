@@ -30,6 +30,7 @@ from .audit import AuditService
 from .errors import NotFound, ValidationFailed
 from .grant import GrantService
 from .skill import SkillService
+from .marketplace_rating import MarketplaceRatingStore, get_rating_store
 
 #: 分页默认值与上界（「默认有界、超界被拒」的门禁要求）。
 DEFAULT_PAGE_LIMIT = 20
@@ -37,15 +38,18 @@ MAX_PAGE_LIMIT = 100
 
 #: 检索可用的能力轴（由服务端从包结构派生，不是包自声明）。
 CAPABILITY_AXES = ("materialize:files", "instruction:inline")
+SORT_AXES = ("score", "rating", "reviews", "created", "name")
 
 
 class MarketplaceService:
     def __init__(self, session: Session, audit: AuditService,
-                 skills: SkillService, grants: GrantService):
+                 skills: SkillService, grants: GrantService,
+                 ratings: MarketplaceRatingStore | None = None):
         self.s = session
         self.audit = audit
         self.skills = skills
         self.grants = grants
+        self.ratings = ratings or get_rating_store()
 
     # ------------------------------------------------------------------
     # 上架（复用 promote 门禁，绝不绕过）
@@ -100,6 +104,7 @@ class MarketplaceService:
         level, reasons = self._risk_of(skill)
         report = skill.scan_report or {}
         scan_risk = str(report.get("risk_level") or "none")
+        rating_summary = self.ratings.get_summary("plugin", skill.id)
         card: dict[str, Any] = {
             "skill_id": skill.id,
             "name": skill.name,
@@ -119,9 +124,11 @@ class MarketplaceService:
                 "finding_count": int(report.get("finding_count") or 0),
                 "scanner_version": report.get("scanner_version"),
             },
+            "rating": rating_summary,
         }
         if detail:
             card["scan"]["findings"] = list(report.get("findings") or [])
+            card["ratings_distribution"] = rating_summary.get("distribution")
         return card
 
     def list_packages(
@@ -131,10 +138,11 @@ class MarketplaceService:
         query: str = "",
         domain: str | None = None,
         capability: str | None = None,
+        sort_by: str = "score",
         limit: int = DEFAULT_PAGE_LIMIT,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """市场列表。服务端过滤 + 有界分页；未过门禁的包不可见。"""
+        """市场列表。服务端过滤 + 评分加权排序 + 有界分页；未过门禁的包不可见。"""
         actor.require_authenticated()
         if not isinstance(limit, int) or isinstance(limit, bool) or limit < 1:
             raise ValidationFailed("page_limit_invalid", "limit 必须是 >= 1 的整数")
@@ -145,6 +153,11 @@ class MarketplaceService:
             )
         if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
             raise ValidationFailed("page_offset_invalid", "offset 必须是 >= 0 的整数")
+        if sort_by not in SORT_AXES:
+            raise ValidationFailed(
+                "unknown_sort_axis",
+                f"未知排序维度 {sort_by!r}；可选：{list(SORT_AXES)}",
+            )
 
         rows = self._active_query()
         if capability is not None and capability not in CAPABILITY_AXES:
@@ -163,12 +176,25 @@ class MarketplaceService:
             if capability is not None and capability not in self._capabilities_of(skill):
                 continue
             items.append(self._card(skill))
+
+        # 排序：好用的自然被顶上来 (默认 score: 贝叶斯综合分降序)
+        if sort_by == "score":
+            items.sort(key=lambda x: (x["rating"]["score"], x["rating"]["rating_count"]), reverse=True)
+        elif sort_by == "rating":
+            items.sort(key=lambda x: (x["rating"]["average_rating"], x["rating"]["rating_count"]), reverse=True)
+        elif sort_by == "reviews":
+            items.sort(key=lambda x: x["rating"]["rating_count"], reverse=True)
+        elif sort_by == "name":
+            items.sort(key=lambda x: x["name"].lower())
+        # sort_by == "created": 保持 _active_query 默认的 created_at 排序
+
         total = len(items)
         return {
             "items": items[offset:offset + limit],
             "total": total,
             "limit": limit,
             "offset": offset,
+            "sort_by": sort_by,
         }
 
     def get_package(self, actor: Actor, skill_id: str) -> dict[str, Any]:
@@ -177,7 +203,46 @@ class MarketplaceService:
         skill = self.s.get(Skill, skill_id)
         if skill is None or skill.state != "active" or skill.source == "builtin":
             raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
-        return self._card(skill, detail=True)
+        card = self._card(skill, detail=True)
+        actor_id = getattr(actor, "actor_id", None) or getattr(actor, "id", None) or "user"
+        card["my_rating"] = self.ratings.get_user_rating("plugin", skill.id, actor_id)
+        return card
+
+    def rate_package(
+        self,
+        actor: Actor,
+        skill_id: str,
+        rating: float | int,
+        comment: str | None = None,
+    ) -> dict[str, Any]:
+        """为市场中的包评分（1.0 ~ 5.0）。需登录，记录审计日志。"""
+        actor.require_authenticated()
+        skill = self.s.get(Skill, skill_id)
+        if skill is None or skill.state != "active" or skill.source == "builtin":
+            raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
+
+        actor_id = getattr(actor, "actor_id", None) or getattr(actor, "id", None) or "user"
+        res = self.ratings.rate("plugin", skill_id, actor_id, rating, comment=comment)
+        self.audit.append(actor, "marketplace.rated", skill_id, {
+            "rating": rating,
+            "comment": comment,
+            "new_score": res["summary"]["score"],
+        })
+        return res
+
+    def get_package_ratings(
+        self,
+        actor: Actor,
+        skill_id: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """获取包的分页评价列表与摘要。"""
+        actor.require_authenticated()
+        skill = self.s.get(Skill, skill_id)
+        if skill is None or skill.state != "active" or skill.source == "builtin":
+            raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
+        return self.ratings.get_ratings("plugin", skill_id, limit=limit, offset=offset)
 
 
     # ------------------------------------------------------------------

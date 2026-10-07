@@ -1,0 +1,14 @@
+{
+  "name": "@findyourself/sdk",
+  "version": "0.1.0",
+  "description": "FindYourself Standard JavaScript/TypeScript SDK",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": ["findyourself", "agent", "marketplace", "templates", "cursor-context"],
+  "author": "FindYourself Team",
+  "license": "Apache-2.0"
+}
