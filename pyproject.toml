@@ -29,6 +29,8 @@ dependencies = [
   # MCP WebSocket 传输（补齐包3 A-统一接入-02；uvicorn[standard] 已传递引入，此处显式声明）
   "websockets>=14,<17",
   "sqlite-vec>=0.1,<1",
+  # P5 定时/周期任务调度（A-竞品借鉴-03，附录 C 明列 D 类：用 APScheduler，非自研 cron）
+  "apscheduler>=3.10,<4",
 ]
 
 [project.optional-dependencies]
