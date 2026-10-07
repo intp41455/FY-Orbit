@@ -110,6 +110,35 @@ README_TXT = """================================================================
 """
 
 
+INSTALL_BAT = """@echo off
+chcp 65001 >nul
+title FY Orbit · 星轨 安装
+setlocal
+set SRC=%~dp0
+set DEST=%LOCALAPPDATA%\\FYOrbit
+
+echo 正在安装到 %DEST% ...
+if not exist "%DEST%" mkdir "%DEST%"
+robocopy "%SRC%." "%DEST%" /E /NFL /NDL /NJH /NJS /NC /NS >nul
+
+echo 正在创建快捷方式 ...
+powershell -NoProfile -Command "$s=(New-Object -ComObject WScript.Shell); $d=[Environment]::GetFolderPath('Desktop'); $p=Join-Path $d 'FY Orbit 星轨.lnk'; $l=$s.CreateShortcut($p); $l.TargetPath='%DEST%\\FY-Orbit.bat'; $l.WorkingDirectory='%DEST%'; $l.IconLocation='%DEST%\\web\\dist\\favicon.ico'; $l.Save(); $m=Join-Path ([Environment]::GetFolderPath('Programs')) 'FY Orbit 星轨.lnk'; $l2=$s.CreateShortcut($m); $l2.TargetPath='%DEST%\\FY-Orbit.bat'; $l2.WorkingDirectory='%DEST%'; $l2.IconLocation='%DEST%\\web\\dist\\favicon.ico'; $l2.Save()"
+
+> "%DEST%\\uninstall.bat" echo @echo off
+>>"%DEST%\\uninstall.bat" echo taskkill /f /im find-yourself-backend.exe ^>nul 2^>nul
+>>"%DEST%\\uninstall.bat" echo del /q "%%USERPROFILE%%\\Desktop\\FY Orbit 星轨.lnk" ^>nul 2^>nul
+>>"%DEST%\\uninstall.bat" echo del /q "%%APPDATA%%\\Microsoft\\Windows\\Start Menu\\Programs\\FY Orbit 星轨.lnk" ^>nul 2^>nul
+>>"%DEST%\\uninstall.bat" echo echo 已卸载（用户数据保留在 %DEST%\\data）
+>>"%DEST%\\uninstall.bat" echo pause
+
+echo.
+echo 安装完成：桌面与开始菜单已创建「FY Orbit 星轨」快捷方式。
+echo 卸载：运行 %DEST%\\uninstall.bat
+echo.
+pause
+"""
+
+
 def run(cmd, cwd=None) -> None:
     print("  $", " ".join(str(c) for c in cmd))
     subprocess.run([str(c) for c in cmd], cwd=cwd, check=True)
@@ -159,6 +188,7 @@ def assemble() -> None:
         shutil.copy2(ROOT / ".env.example", APP / ".env.example")
     write_text(APP / "FY-Orbit.bat", LAUNCHER_BAT, encoding="gbk")
     write_text(APP / "使用说明.txt", README_TXT, encoding="utf-8")
+    write_text(APP / "Install.bat", INSTALL_BAT, encoding="gbk")
 
     print("[5/5] 打包 ...")
     with zipfile.ZipFile(OUT_ZIP, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as zf:

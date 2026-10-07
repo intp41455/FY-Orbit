@@ -31,6 +31,7 @@ from __future__ import annotations
 import os
 import secrets
 import socket
+import subprocess
 import sys
 from pathlib import Path
 
@@ -79,6 +80,22 @@ def announce(port: int, run_dir: Path) -> None:
         pass
     print(f"{READY_PREFIX} {port}", flush=True)
 
+
+
+def _find_edge():
+    """定位 Microsoft Edge（用于 App Mode 独立窗口）。找不到返回 None。"""
+    candidates = [
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"))
+        / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files"))
+        / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "Microsoft" / "Edge" / "Application" / "msedge.exe",
+    ]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return None
 
 def main() -> int:
     import argparse
@@ -155,15 +172,28 @@ def main() -> int:
     else:
         print("[FY Orbit] Running in API-only mode (static assets not found)")
 
-    # In standalone mode, automatically launch user's default browser
+    # 打开独立应用窗口：优先 Edge App Mode（无地址栏/标签页，接近原生应用），
+    # 找不到 Edge 时回退到系统默认浏览器。
     if not is_sidecar and not args.no_browser:
-        def _open_browser():
-            time.sleep(1.2)
+        def _open_window():
+            time.sleep(1.5)
+            edge = _find_edge()
+            if edge is not None:
+                try:
+                    profile = run_dir / "webview-profile"
+                    profile.mkdir(parents=True, exist_ok=True)
+                    subprocess.Popen([str(edge), f"--app={url}",
+                                      f"--user-data-dir={profile}",
+                                      "--window-size=1440,900",
+                                      "--no-first-run", "--no-default-browser-check"])
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[FY Orbit] Edge 独立窗口启动失败，回退默认浏览器：{exc}")
             try:
                 webbrowser.open(url)
             except Exception:
                 pass
-        threading.Thread(target=_open_browser, daemon=True).start()
+        threading.Thread(target=_open_window, daemon=True).start()
 
     import uvicorn
     from find_yourself.api.app import create_app

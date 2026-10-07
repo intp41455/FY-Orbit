@@ -94,6 +94,17 @@ Write-Host "[sidecar] running PyInstaller --onedir ..."
     --hidden-import "uvicorn.lifespan.on" `
     --hidden-import "uvicorn.lifespan.off" `
     --hidden-import "sqlalchemy.dialects.sqlite" `
+    --hidden-import "mss" `
+    --hidden-import "pyautogui" `
+    --hidden-import "pygetwindow" `
+    --hidden-import "pyscreeze" `
+    --hidden-import "pyrect" `
+    --hidden-import "pyperclip" `
+    --hidden-import "pymsgbox" `
+    --hidden-import "pytweening" `
+    --hidden-import "mouseinfo" `
+    --hidden-import "PIL" `
+    --hidden-import "PIL.Image" `
     --hidden-import "yaml" `
     --hidden-import "dotenv" `
     --collect-all "find_yourself" `

@@ -1092,7 +1092,7 @@ class AgentTeamService:
         self.session.flush()
 
         try:
-            result = self._apply_control(actor, team, inst, operation, scope or {}, reason)
+            result = self._apply_control(actor, team, inst, operation, scope or {}, reason, role)
             req.state = "applied"
             req.result = result
             req.target_version = inst.version if inst else team.version
@@ -1119,6 +1119,7 @@ class AgentTeamService:
         operation: str,
         scope: dict[str, Any],
         reason: str,
+        role: str | None = None,
     ) -> dict[str, Any]:
         if operation in ("pause", "resume", "reassign", "rework", "cancel", "switch_model"):
             if inst is None:

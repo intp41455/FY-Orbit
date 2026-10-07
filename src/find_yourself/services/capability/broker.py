@@ -252,7 +252,7 @@ class CapabilityBroker:
                     f"deep-level grant TTL {ttl}s exceeds the {cap}s cap for '{type_spec.name}'",
                 )
             if spec.expires_at is not None and spec.ttl_seconds is None:
-                remaining = (spec.expires_at - _utcnow()).total_seconds()
+                remaining = (spec.expires_at - utcnow()).total_seconds()
                 if remaining > cap:
                     raise ValidationFailed(
                         "deep_grant_ttl_too_long",
