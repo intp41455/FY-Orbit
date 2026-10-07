@@ -36,6 +36,7 @@ import type {
 import { Spinner, errorMessage, useAsync } from '../components/ui';
 import { LineIcon } from '../components/ui/LineIcon';
 import '../styles/pages/dossier.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 type Tab = 'archive' | 'knowledge' | 'enterprise';
 
@@ -77,121 +78,123 @@ export function DossierPage() {
   }
 
   return (
-    <div className="fy-ds-page">
-      <header className="fy-ds-head">
-        <div>
-          <h1>任务档案库</h1>
-          <p className="muted">
-            档案是<strong>读模型</strong>：目标 / 里程碑 / 分工 / 决策 / 产出版本全部从既有
-            记录现算，不另存冗余；每个字段都能追到来源。
-          </p>
-        </div>
-        <nav className="fy-ds-tabs" aria-label="档案库视图">
-          {([['archive', '任务档案'], ['knowledge', '知识沉淀'], ['enterprise', '企业模式']] as const)
-            .map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                className={tab === id ? 'fy-ds-tab active' : 'fy-ds-tab'}
-                aria-pressed={tab === id}
-                onClick={() => setTab(id)}
-              >
-                {label}
-              </button>
-            ))}
-        </nav>
-      </header>
-
-      {error && <p className="fy-ds-error" role="alert">{error}</p>}
-
-      {tab === 'archive' && (
-        <section aria-label="任务档案">
-          <div className="fy-ds-search">
-            <label className="fy-ds-field">
-              <span className="muted">任务 id</span>
-              <input
-                value={taskId}
-                aria-label="任务 id"
-                placeholder="例如 task-abc123"
-                onChange={(e) => setTaskId(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && loadTask()}
-              />
-            </label>
-            <button type="button" className="primary" onClick={loadTask} disabled={busy || !taskId.trim()}>
-              <LineIcon name="search" size={14} /> 翻档案
-            </button>
-            {busy && <Spinner label="载入档案…" />}
+    <BaseBound surface="dossier">
+      <div className="fy-ds-page">
+        <header className="fy-ds-head">
+          <div>
+            <h1>任务档案库</h1>
+            <p className="muted">
+              档案是<strong>读模型</strong>：目标 / 里程碑 / 分工 / 决策 / 产出版本全部从既有
+              记录现算，不另存冗余；每个字段都能追到来源。
+            </p>
           </div>
-
-          {archive && loadedId && <ArchiveView archive={archive} />}
-
-          {briefing && (
-            <section className="fy-ds-card" aria-label="一秒上手简报">
-              <div className="fy-ds-card-head">
-                <strong>一秒上手简报</strong>
+          <nav className="fy-ds-tabs" aria-label="档案库视图">
+            {([['archive', '任务档案'], ['knowledge', '知识沉淀'], ['enterprise', '企业模式']] as const)
+              .map(([id, label]) => (
                 <button
+                  key={id}
                   type="button"
-                  className="small ghost"
-                  onClick={() => void navigator.clipboard?.writeText(briefing.briefing)}
+                  className={tab === id ? 'fy-ds-tab active' : 'fy-ds-tab'}
+                  aria-pressed={tab === id}
+                  onClick={() => setTab(id)}
                 >
-                  复制给新 Agent
+                  {label}
                 </button>
-              </div>
-              {briefing.truncated && (
-                <p className="fy-ds-warn" role="status">
-                  <LineIcon name="alert" size={14} /> 简报已截断（{briefing.chars}/{briefing.limit} 字符）：
-                  完整档案见 {briefing.archive_endpoint}
-                </p>
-              )}
-              <pre className="fy-ds-pre">{briefing.briefing}</pre>
-            </section>
-          )}
+              ))}
+          </nav>
+        </header>
 
-          {retro && (
-            <section className="fy-ds-card" aria-label="任务复盘">
-              <div className="fy-ds-card-head">
-                <strong>任务复盘</strong>
-                <button
-                  type="button"
-                  className="small"
-                  disabled={busy || !loadedId}
-                  onClick={() => loadedId && run(() => distill(loadedId), setDistilled)}
-                >
-                  沉淀为知识模板
-                </button>
-              </div>
-              <ul className="fy-ds-metrics">
-                <li>变更事件 <b>{retro.metrics.change_events}</b></li>
-                <li>决策 <b>{retro.metrics.decision_count}</b></li>
-                <li>成员 <b>{retro.metrics.member_count}</b></li>
-                <li>产出版本 <b>{retro.metrics.attempt_versions}</b></li>
-                <li>历时 <b>{retro.metrics.span_minutes ?? '未知'}</b> 分钟</li>
-              </ul>
-              <h4>经验条目</h4>
-              <ul>
-                {retro.lessons.map((l) => (
-                  <li key={l.text}><span className="badge">{l.kind}</span> {l.text}</li>
-                ))}
-              </ul>
-              <details>
-                <summary className="muted">展开完整复盘报告</summary>
-                <pre className="fy-ds-pre">{retro.report}</pre>
-              </details>
-            </section>
-          )}
+        {error && <p className="fy-ds-error" role="alert">{error}</p>}
 
-          {distilled && (
-            <section className="fy-ds-card ok" aria-label="已沉淀">
-              <strong>已沉淀为知识模板：{distilled.title}</strong>
-              <p className="muted">落盘位置：{distilled.path}　·　切到「知识沉淀」页可直接复用。</p>
-            </section>
-          )}
-        </section>
-      )}
+        {tab === 'archive' && (
+          <section aria-label="任务档案">
+            <div className="fy-ds-search">
+              <label className="fy-ds-field">
+                <span className="muted">任务 id</span>
+                <input
+                  value={taskId}
+                  aria-label="任务 id"
+                  placeholder="例如 task-abc123"
+                  onChange={(e) => setTaskId(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && loadTask()}
+                />
+              </label>
+              <button type="button" className="primary" onClick={loadTask} disabled={busy || !taskId.trim()}>
+                <LineIcon name="search" size={14} /> 翻档案
+              </button>
+              {busy && <Spinner label="载入档案…" />}
+            </div>
 
-      {tab === 'knowledge' && <KnowledgeView />}
-      {tab === 'enterprise' && <EnterpriseView />}
-    </div>
+            {archive && loadedId && <ArchiveView archive={archive} />}
+
+            {briefing && (
+              <section className="fy-ds-card" aria-label="一秒上手简报">
+                <div className="fy-ds-card-head">
+                  <strong>一秒上手简报</strong>
+                  <button
+                    type="button"
+                    className="small ghost"
+                    onClick={() => void navigator.clipboard?.writeText(briefing.briefing)}
+                  >
+                    复制给新 Agent
+                  </button>
+                </div>
+                {briefing.truncated && (
+                  <p className="fy-ds-warn" role="status">
+                    <LineIcon name="alert" size={14} /> 简报已截断（{briefing.chars}/{briefing.limit} 字符）：
+                    完整档案见 {briefing.archive_endpoint}
+                  </p>
+                )}
+                <pre className="fy-ds-pre">{briefing.briefing}</pre>
+              </section>
+            )}
+
+            {retro && (
+              <section className="fy-ds-card" aria-label="任务复盘">
+                <div className="fy-ds-card-head">
+                  <strong>任务复盘</strong>
+                  <button
+                    type="button"
+                    className="small"
+                    disabled={busy || !loadedId}
+                    onClick={() => loadedId && run(() => distill(loadedId), setDistilled)}
+                  >
+                    沉淀为知识模板
+                  </button>
+                </div>
+                <ul className="fy-ds-metrics">
+                  <li>变更事件 <b>{retro.metrics.change_events}</b></li>
+                  <li>决策 <b>{retro.metrics.decision_count}</b></li>
+                  <li>成员 <b>{retro.metrics.member_count}</b></li>
+                  <li>产出版本 <b>{retro.metrics.attempt_versions}</b></li>
+                  <li>历时 <b>{retro.metrics.span_minutes ?? '未知'}</b> 分钟</li>
+                </ul>
+                <h4>经验条目</h4>
+                <ul>
+                  {retro.lessons.map((l) => (
+                    <li key={l.text}><span className="badge">{l.kind}</span> {l.text}</li>
+                  ))}
+                </ul>
+                <details>
+                  <summary className="muted">展开完整复盘报告</summary>
+                  <pre className="fy-ds-pre">{retro.report}</pre>
+                </details>
+              </section>
+            )}
+
+            {distilled && (
+              <section className="fy-ds-card ok" aria-label="已沉淀">
+                <strong>已沉淀为知识模板：{distilled.title}</strong>
+                <p className="muted">落盘位置：{distilled.path}　·　切到「知识沉淀」页可直接复用。</p>
+              </section>
+            )}
+          </section>
+        )}
+
+        {tab === 'knowledge' && <KnowledgeView />}
+        {tab === 'enterprise' && <EnterpriseView />}
+      </div>
+    </BaseBound>
   );
 }
 

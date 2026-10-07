@@ -6,6 +6,7 @@ import {
   type ToolMeta, type ToolTraceEntry,
 } from '../api/chatDebug';
 import './../styles/pages/workbench.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /** 变量填值表单的字符串状态（bool 用 checkbox，list 用逗号分隔）。 */
 type VarDraft = Record<string, string | boolean>;
@@ -241,203 +242,205 @@ export function ChatDebugPage() {
   }, [tools, boundTools, schemaEntries]);
 
   return (
-    <div className="cdbg-shell" data-testid="chat-debug-root">
-      <div className="page-head cdbg-page-head">
-        <h2>Chat 调试预览</h2>
-        <div className="cdbg-badges" data-testid="chat-debug-badges">
-          {streamMeta && (
-            <>
-              <span className="ui-badge ui-badge--ok" data-testid="badge-template">
-                {streamMeta.name} v{streamMeta.version}
-              </span>
-              <span className="ui-badge" title="审计链一致（P1-01 §4）">
-                variables_hash: {streamMeta.variables_hash.slice(0, 12)}
-              </span>
-            </>
-          )}
-          {boundTools.length > 0 && (
-            <span className="ui-badge ui-badge--accent" data-testid="badge-tools">
-              工具 × {boundTools.length}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="cdbg-grid">
-        {/* ① 模板段（320px） */}
-        <div className="cdbg-col" data-testid="chat-debug-config">
-          <div className="cdbg-panel">
-            <div className="cdbg-panel-hd"><h3>配置</h3></div>
-
-            <div>
-              <label htmlFor="tpl-select">提示词模板</label>
-              <select
-                id="tpl-select"
-                data-testid="template-select"
-                value={selectedTemplate}
-                onChange={(e) => onSelectTemplate(e.target.value)}
-              >
-                <option value="">（不使用模板）</option>
-                {prompts.map((p) => (
-                  <option key={p.name} value={p.name} disabled={!p.is_active}>
-                    {p.name} v{p.latest_version}{p.is_active ? '' : '（未启用）'}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {schemaEntries.length > 0 && (
-              <fieldset data-testid="variable-form">
-                <legend>变量填值</legend>
-                {schemaEntries.map(([name, spec]) => (
-                  <div
-                    key={name}
-                    className={`cdbg-var-row${linkedVarNames.includes(name) ? ' cdbg-linked' : ''}`}
-                  >
-                    <label htmlFor={`var-${name}`}>
-                      {name}
-                      {spec?.required ? ' *' : ''}
-                      {spec?.type ? ` (${spec.type})` : ''}
-                    </label>
-                    {spec?.type === 'bool' ? (
-                      <input
-                        id={`var-${name}`} type="checkbox" data-testid={`var-input-${name}`}
-                        checked={varDraft[name] === true}
-                        onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.checked }))}
-                      />
-                    ) : (
-                      <input
-                        id={`var-${name}`} data-testid={`var-input-${name}`}
-                        type={spec?.type === 'int' || spec?.type === 'float' ? 'number' : 'text'}
-                        value={String(varDraft[name] ?? '')}
-                        onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.value }))}
-                      />
-                    )}
-                  </div>
-                ))}
-                {linkedVarNames.length === 0 && boundTools.length > 0 && (
-                  <div className="cdbg-nomatch">该模板变量与工具参数无同名项</div>
-                )}
-              </fieldset>
+    <BaseBound surface="chat-debug">
+      <div className="cdbg-shell" data-testid="chat-debug-root">
+        <div className="page-head cdbg-page-head">
+          <h2>Chat 调试预览</h2>
+          <div className="cdbg-badges" data-testid="chat-debug-badges">
+            {streamMeta && (
+              <>
+                <span className="ui-badge ui-badge--ok" data-testid="badge-template">
+                  {streamMeta.name} v{streamMeta.version}
+                </span>
+                <span className="ui-badge" title="审计链一致（P1-01 §4）">
+                  variables_hash: {streamMeta.variables_hash.slice(0, 12)}
+                </span>
+              </>
             )}
-
-            <fieldset>
-              <legend>绑定工具（{tools.length}）</legend>
-              {tools.length === 0 && loaded && (
-                <div className="cdbg-nomatch">暂无已注册工具（可在 /api/tools/register 登记）。</div>
-              )}
-              {tools.map((t) => {
-                const isLinked = linkedToolNames.includes(t.name);
-                const isHighlighted = toolHighlightRef.current === t.name;
-                return (
-                  <label
-                    key={t.name}
-                    className={`cdbg-tool-row${isLinked || isHighlighted ? ' cdbg-linked' : ''}`}
-                  >
-                    <input
-                      type="checkbox" data-testid={`tool-check-${t.name}`}
-                      checked={boundTools.includes(t.name)}
-                      onChange={(e) => setBoundTools((list) => e.target.checked
-                        ? [...list, t.name]
-                        : list.filter((n) => n !== t.name))}
-                    />
-                    <span title={t.description}>{t.name}</span>
-                  </label>
-                );
-              })}
-              {linkedToolNames.length === 0 && schemaEntries.length > 0 && boundTools.length > 0 && (
-                <div className="cdbg-nomatch">未发现与已绑工具同名的变量</div>
-              )}
-            </fieldset>
-
-            <div>
-              <label htmlFor="model-input">模型</label>
-              <input
-                id="model-input" data-testid="model-input" value={model}
-                onChange={(e) => setModel(e.target.value)}
-              />
-            </div>
+            {boundTools.length > 0 && (
+              <span className="ui-badge ui-badge--accent" data-testid="badge-tools">
+                工具 × {boundTools.length}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* ② 流式段（flex） */}
-        <div className="cdbg-col" data-testid="chat-debug-conversation">
-          <div className="cdbg-panel">
-            <div className="cdbg-panel-hd"><h3>对话</h3></div>
-            <div className="cdbg-messages" data-testid="chat-messages" aria-live="polite">
-              {messages.length === 0 && (
-                <div className="cdbg-nomatch">选择模板与工具后发送消息，观察流式回复与真实工具调用。</div>
-              )}
-              {messages.map((m, i) => (
-                <div key={i} className="cdbg-msg" data-role={m.role} data-testid={`chat-msg-${m.role}`}>
-                  <div className="cdbg-bubble">{m.content}</div>
-                </div>
-              ))}
-            </div>
+        <div className="cdbg-grid">
+          {/* ① 模板段（320px） */}
+          <div className="cdbg-col" data-testid="chat-debug-config">
+            <div className="cdbg-panel">
+              <div className="cdbg-panel-hd"><h3>配置</h3></div>
 
-            <div className="cdbg-composer">
-              <textarea
-                aria-label="调试消息" data-testid="chat-input"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="例如：调用 add 计算 3 和 4 的和"
-                disabled={streaming}
-              />
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--primary"
-                data-testid="chat-send"
-                onClick={() => void send()}
-                disabled={streaming || !input.trim()}
-              >
-                {streaming ? '流式回复中…' : '发送'}
-              </button>
-            </div>
+              <div>
+                <label htmlFor="tpl-select">提示词模板</label>
+                <select
+                  id="tpl-select"
+                  data-testid="template-select"
+                  value={selectedTemplate}
+                  onChange={(e) => onSelectTemplate(e.target.value)}
+                >
+                  <option value="">（不使用模板）</option>
+                  {prompts.map((p) => (
+                    <option key={p.name} value={p.name} disabled={!p.is_active}>
+                      {p.name} v{p.latest_version}{p.is_active ? '' : '（未启用）'}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {error && <div className="ui-error-text" role="alert">{error}</div>}
-          </div>
-        </div>
-
-        {/* ③ 工具段（300px） */}
-        <div className="cdbg-col">
-          <div className="cdbg-panel" data-testid="chat-trace-panel">
-            <div className="cdbg-panel-hd"><h3>工具调用 trace</h3></div>
-            {trace.length === 0 ? (
-              <div className="cdbg-nomatch">本轮未触发工具调用。</div>
-            ) : (
-              <div className="cdbg-trace">
-                {trace.map((t) => (
-                  <div
-                    key={t.index}
-                    className={`cdbg-trace-entry${toolHighlightRef.current === t.name ? ' cdbg-linked' : ''}`}
-                    data-testid="chat-trace-entry"
-                  >
-                    <div className="cdbg-trace-entry-hd">
-                      触发了工具 <strong>{t.name}</strong>
-                      {t.executed ? (
-                        <span className="ui-badge ui-badge--ok">已真实执行</span>
+              {schemaEntries.length > 0 && (
+                <fieldset data-testid="variable-form">
+                  <legend>变量填值</legend>
+                  {schemaEntries.map(([name, spec]) => (
+                    <div
+                      key={name}
+                      className={`cdbg-var-row${linkedVarNames.includes(name) ? ' cdbg-linked' : ''}`}
+                    >
+                      <label htmlFor={`var-${name}`}>
+                        {name}
+                        {spec?.required ? ' *' : ''}
+                        {spec?.type ? ` (${spec.type})` : ''}
+                      </label>
+                      {spec?.type === 'bool' ? (
+                        <input
+                          id={`var-${name}`} type="checkbox" data-testid={`var-input-${name}`}
+                          checked={varDraft[name] === true}
+                          onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.checked }))}
+                        />
                       ) : (
-                        <span className="ui-badge">未执行</span>
+                        <input
+                          id={`var-${name}`} data-testid={`var-input-${name}`}
+                          type={spec?.type === 'int' || spec?.type === 'float' ? 'number' : 'text'}
+                          value={String(varDraft[name] ?? '')}
+                          onChange={(e) => setVarDraft((d) => ({ ...d, [name]: e.target.value }))}
+                        />
                       )}
                     </div>
-                    <div className="cdbg-nomatch">
-                      参数：{JSON.stringify(t.arguments)}
-                    </div>
-                    {t.result !== undefined && (
-                      <div className="cdbg-nomatch">
-                        结果：{JSON.stringify(t.result)}
-                      </div>
-                    )}
-                    {t.call_id && (
-                      <code>call_id: {t.call_id}</code>
-                    )}
+                  ))}
+                  {linkedVarNames.length === 0 && boundTools.length > 0 && (
+                    <div className="cdbg-nomatch">该模板变量与工具参数无同名项</div>
+                  )}
+                </fieldset>
+              )}
+
+              <fieldset>
+                <legend>绑定工具（{tools.length}）</legend>
+                {tools.length === 0 && loaded && (
+                  <div className="cdbg-nomatch">暂无已注册工具（可在 /api/tools/register 登记）。</div>
+                )}
+                {tools.map((t) => {
+                  const isLinked = linkedToolNames.includes(t.name);
+                  const isHighlighted = toolHighlightRef.current === t.name;
+                  return (
+                    <label
+                      key={t.name}
+                      className={`cdbg-tool-row${isLinked || isHighlighted ? ' cdbg-linked' : ''}`}
+                    >
+                      <input
+                        type="checkbox" data-testid={`tool-check-${t.name}`}
+                        checked={boundTools.includes(t.name)}
+                        onChange={(e) => setBoundTools((list) => e.target.checked
+                          ? [...list, t.name]
+                          : list.filter((n) => n !== t.name))}
+                      />
+                      <span title={t.description}>{t.name}</span>
+                    </label>
+                  );
+                })}
+                {linkedToolNames.length === 0 && schemaEntries.length > 0 && boundTools.length > 0 && (
+                  <div className="cdbg-nomatch">未发现与已绑工具同名的变量</div>
+                )}
+              </fieldset>
+
+              <div>
+                <label htmlFor="model-input">模型</label>
+                <input
+                  id="model-input" data-testid="model-input" value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* ② 流式段（flex） */}
+          <div className="cdbg-col" data-testid="chat-debug-conversation">
+            <div className="cdbg-panel">
+              <div className="cdbg-panel-hd"><h3>对话</h3></div>
+              <div className="cdbg-messages" data-testid="chat-messages" aria-live="polite">
+                {messages.length === 0 && (
+                  <div className="cdbg-nomatch">选择模板与工具后发送消息，观察流式回复与真实工具调用。</div>
+                )}
+                {messages.map((m, i) => (
+                  <div key={i} className="cdbg-msg" data-role={m.role} data-testid={`chat-msg-${m.role}`}>
+                    <div className="cdbg-bubble">{m.content}</div>
                   </div>
                 ))}
               </div>
-            )}
+
+              <div className="cdbg-composer">
+                <textarea
+                  aria-label="调试消息" data-testid="chat-input"
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder="例如：调用 add 计算 3 和 4 的和"
+                  disabled={streaming}
+                />
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--primary"
+                  data-testid="chat-send"
+                  onClick={() => void send()}
+                  disabled={streaming || !input.trim()}
+                >
+                  {streaming ? '流式回复中…' : '发送'}
+                </button>
+              </div>
+
+              {error && <div className="ui-error-text" role="alert">{error}</div>}
+            </div>
+          </div>
+
+          {/* ③ 工具段（300px） */}
+          <div className="cdbg-col">
+            <div className="cdbg-panel" data-testid="chat-trace-panel">
+              <div className="cdbg-panel-hd"><h3>工具调用 trace</h3></div>
+              {trace.length === 0 ? (
+                <div className="cdbg-nomatch">本轮未触发工具调用。</div>
+              ) : (
+                <div className="cdbg-trace">
+                  {trace.map((t) => (
+                    <div
+                      key={t.index}
+                      className={`cdbg-trace-entry${toolHighlightRef.current === t.name ? ' cdbg-linked' : ''}`}
+                      data-testid="chat-trace-entry"
+                    >
+                      <div className="cdbg-trace-entry-hd">
+                        触发了工具 <strong>{t.name}</strong>
+                        {t.executed ? (
+                          <span className="ui-badge ui-badge--ok">已真实执行</span>
+                        ) : (
+                          <span className="ui-badge">未执行</span>
+                        )}
+                      </div>
+                      <div className="cdbg-nomatch">
+                        参数：{JSON.stringify(t.arguments)}
+                      </div>
+                      {t.result !== undefined && (
+                        <div className="cdbg-nomatch">
+                          结果：{JSON.stringify(t.result)}
+                        </div>
+                      )}
+                      {t.call_id && (
+                        <code>call_id: {t.call_id}</code>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </BaseBound>
   );
 }

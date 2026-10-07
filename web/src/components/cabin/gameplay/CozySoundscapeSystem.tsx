@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useBase } from '../../../hooks/useAutosave';
 
 export interface SoundTrackDef {
   id: string;
@@ -51,6 +52,7 @@ export interface CozySoundscapeSystemProps {
 }
 
 export function CozySoundscapeSystem({ onClose }: CozySoundscapeSystemProps) {
+  useBase({ surface: 'web/src/components/cabin/gameplay/CozySoundscapeSystem' });
   const [selectedTrackIndex, setSelectedTrackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(60);

@@ -18,6 +18,7 @@ import {
   type ModularAvatar,
 } from '../cabinModularAvatar';
 import { matrixToRgba } from '../cabinPixels';
+import { useBase } from '../../../hooks/useAutosave';
 
 export interface AiAvatarGeneratorModalProps {
   onClose: () => void;
@@ -141,6 +142,7 @@ export function AiAvatarGeneratorModal({
   onOpenWorkshop,
   currentHouseAvatar,
 }: AiAvatarGeneratorModalProps) {
+  useBase({ surface: 'web/src/components/cabin/gameplay/AiAvatarGeneratorModal' });
   const formId = useId();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 

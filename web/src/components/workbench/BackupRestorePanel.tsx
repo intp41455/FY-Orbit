@@ -12,6 +12,7 @@ import { workbenchApi } from '../../api/workbench';
 import { metaString, stashApi, type StashRecord } from '../../api/stash';
 import { errorMessage } from '../ui';
 import { sha256Hex } from './sha256';
+import { useBase } from '../../hooks/useAutosave';
 
 const PAGE_SIZE = 8;
 
@@ -36,6 +37,7 @@ function fileStamp(): string {
 }
 
 export function BackupRestorePanel({ workspaceId, path, onRolledBack }: Props) {
+  useBase({ surface: 'web/src/components/workbench/BackupRestorePanel' });
   const [records, setRecords] = useState<StashRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

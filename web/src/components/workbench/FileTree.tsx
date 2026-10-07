@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { workbenchApi, type TreeEntry } from '../../api/workbench';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 interface Props {
   workspaceId: string;
@@ -35,6 +36,7 @@ function writeShowHidden(v: boolean): void {
 }
 
 export function FileTree({ workspaceId, selectedPath, onSelectFile }: Props) {
+  useBase({ surface: 'web/src/components/workbench/FileTree' });
   const [root, setRoot] = useState<NodeState>({ expanded: true, children: null, loading: false, error: null });
   const [showHidden, setShowHidden] = useState<boolean>(readShowHidden);
 

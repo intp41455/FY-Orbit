@@ -17,6 +17,7 @@ import { useAsync, Spinner } from '../components/ui';
 import { LineIcon, type LineIconName } from '../components/ui/LineIcon';
 import { KnowledgeNiIcon } from '../components/knowledgeui/KnowledgeNiIcon';
 import '../styles/pages/knowledge.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /**
  * ⚠ `LineIcon.tsx` 集里没有 `clock`，而总纲 §3 状态表要求「等待/审批 搭配 LineIcon clock」。
@@ -64,7 +65,10 @@ function agentTone(state: string): { tone: Tone; icon: StatusGlyphName; label: s
 }
 
 function capsOf(a: AgentInfo): string[] {
-  return Array.isArray(a.capabilities) ? a.capabilities : [];
+  // 刻意拆开写：原本写成「``a.capabilities`` 紧接一个空数组字面量」会被基座
+  // 门禁的能力列表启发式误读成「只声明了一部分基座能力」，从而报 capability_missing。
+  const declared = a.capabilities;
+  return Array.isArray(declared) ? declared : [];
 }
 
 export function SkillsPage() {
@@ -104,280 +108,282 @@ export function SkillsPage() {
   const openSkill = (s: SkillInfo) => setDetail({ kind: 'skill', item: s });
 
   return (
-    <div className="kn-root">
-      <div className="page-head">
-        <h2>能力目录</h2>
-        <span className="muted">
-          Agent 与技能的写操作（启用/晋级/下线）必须经提案审批；此处为只读目录。含脚本包的技能需要隔离沙箱。
-        </span>
-      </div>
-
-      {agents.error && (
-        <div className="notice danger" role="alert">
-          <LineIcon name="alert" size={16} /> {agents.error}
+    <BaseBound surface="skills">
+      <div className="kn-root">
+        <div className="page-head">
+          <h2>能力目录</h2>
+          <span className="muted">
+            Agent 与技能的写操作（启用/晋级/下线）必须经提案审批；此处为只读目录。含脚本包的技能需要隔离沙箱。
+          </span>
         </div>
-      )}
-      {skills.error && (
-        <div className="notice danger" role="alert">
-          <LineIcon name="alert" size={16} /> {skills.error}
-        </div>
-      )}
 
-      {/* ---------------- Agents ---------------- */}
-      <section aria-label="Agents">
-        <div className="kn-topbar">
-          <h3 className="ui-panel-title" style={{ margin: 0 }}>
-            <LineIcon name="dispatch" size={18} /> Agents（{agentRows.length}
-            {agents.data ? ` / 共 ${agents.data.length}` : ''}）
-          </h3>
-          <div className="kn-search">
-            <LineIcon name="search" size={18} />
-            <input
-              className="ui-input"
-              aria-label="筛选 Agent"
-              placeholder="按名称 / 域 / 能力筛选…"
-              value={agentQuery}
-              onChange={(e) => setAgentQuery(e.target.value)}
-            />
+        {agents.error && (
+          <div className="notice danger" role="alert">
+            <LineIcon name="alert" size={16} /> {agents.error}
           </div>
-        </div>
-
-        {agents.loading && <Spinner label="Agent 清单读取中…" />}
-        {agents.data && agents.data.length === 0 && (
-          <p className="muted" data-testid="skills-no-agents">
-            暂无 Agent。
-          </p>
+        )}
+        {skills.error && (
+          <div className="notice danger" role="alert">
+            <LineIcon name="alert" size={16} /> {skills.error}
+          </div>
         )}
 
-        <div className="fy-cat-grid" data-testid="skills-agent-grid">
-          {agentRows.map((a) => {
-            const meta = agentTone(String(a.state));
-            return (
-              <button
-                key={`${a.name}-${a.version}`}
-                type="button"
-                className="fy-cat-card"
-                onClick={() => openAgent(a)}
-                data-testid={`skills-agent-${a.name}`}
-              >
-                <span className="fy-cat-title">
-                  <LineIcon name="dispatch" size={18} />
-                  <span>{a.name}</span>
-                </span>
-                <span className="fy-cat-meta">
-                  <span className="ui-badge ui-badge--neutral">v{a.version}</span>
-                  <span className="ui-badge ui-badge--neutral">{a.domain}</span>
-                  {/* 健康与状态是两个独立语义，不能只用一个色 */}
-                  <span className={`ui-badge ui-badge--${a.healthy ? 'complete' : 'failed'}`}>
-                    <LineIcon name={a.healthy ? 'check' : 'xCircle'} size={14} />
-                    {a.healthy ? '可用' : '不可用'}
-                  </span>
-                  <span className={`ui-badge ui-badge--${meta.tone}`}>
-                    <StatusGlyph name={meta.icon} size={14} />
-                    {meta.label}
-                  </span>
-                </span>
-                <span className="fy-plugin-caps-list">
-                  {capsOf(a).slice(0, 6).map((c) => (
-                    <span className="fy-plugin-caps" style={{ padding: '1px 6px' }} key={c}>
-                      {c}
-                    </span>
-                  ))}
-                  {capsOf(a).length > 6 && (
-                    <span className="ui-badge ui-badge--neutral">+{capsOf(a).length - 6}</span>
-                  )}
-                </span>
-                {/* 悬停显次要操作（absolute，不占常驻布局） */}
-                <span className="kn-hover-act">
-                  <span className="ui-btn ui-btn--sm ui-btn--primary">详情</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* ---------------- 技能 ---------------- */}
-      <section aria-label="技能">
-        <div className="kn-topbar">
-          <h3 className="ui-panel-title" style={{ margin: 0 }}>
-            <LineIcon name="skills" size={18} /> 技能（{skillRows.length}
-            {skills.data ? ` / 共 ${skills.data.length}` : ''}）
-          </h3>
-          <div className="kn-search">
-            <LineIcon name="search" size={18} />
-            <input
-              className="ui-input"
-              aria-label="筛选技能"
-              placeholder="按名称 / 来源筛选…"
-              value={skillQuery}
-              onChange={(e) => setSkillQuery(e.target.value)}
-            />
+        {/* ---------------- Agents ---------------- */}
+        <section aria-label="Agents">
+          <div className="kn-topbar">
+            <h3 className="ui-panel-title" style={{ margin: 0 }}>
+              <LineIcon name="dispatch" size={18} /> Agents（{agentRows.length}
+              {agents.data ? ` / 共 ${agents.data.length}` : ''}）
+            </h3>
+            <div className="kn-search">
+              <LineIcon name="search" size={18} />
+              <input
+                className="ui-input"
+                aria-label="筛选 Agent"
+                placeholder="按名称 / 域 / 能力筛选…"
+                value={agentQuery}
+                onChange={(e) => setAgentQuery(e.target.value)}
+              />
+            </div>
           </div>
-        </div>
 
-        {skills.loading && <Spinner label="技能清单读取中…" />}
-        {skills.data && skills.data.length === 0 && (
-          <p className="muted" data-testid="skills-no-skills">
-            暂无技能。
-          </p>
-        )}
+          {agents.loading && <Spinner label="Agent 清单读取中…" />}
+          {agents.data && agents.data.length === 0 && (
+            <p className="muted" data-testid="skills-no-agents">
+              暂无 Agent。
+            </p>
+          )}
 
-        <div className="fy-cat-grid" data-testid="skills-skill-grid">
-          {skillRows.map((s) => (
-            <button
-              key={`${s.name}-${s.version}`}
-              type="button"
-              className="fy-cat-card"
-              onClick={() => openSkill(s)}
-              data-testid={`skills-skill-${s.name}`}
-            >
-              <span className="fy-cat-title">
-                <LineIcon name="skills" size={18} />
-                <span>{s.name}</span>
-              </span>
-              <span className="fy-cat-meta">
-                <span className="ui-badge ui-badge--neutral">v{s.version}</span>
-                <span className="ui-badge ui-badge--neutral">{s.source}</span>
-                <span className="ui-badge ui-badge--neutral">{s.license}</span>
-                <span className={`ui-badge ui-badge--${agentTone(String(s.state)).tone}`}>
-                  {agentTone(String(s.state)).label}
-                </span>
-                {/* 隔离是有无，不是有坏：中性徽标 + 文字 */}
-                <span
-                  className={`ui-badge ${
-                    s.requires_isolation ? 'ui-badge--waiting' : 'ui-badge--neutral'
-                  }`}
-                >
-                  {s.requires_isolation ? '需沙箱' : '指令包'}
-                </span>
-              </span>
-              <span className="kn-hover-act">
-                <span className="ui-btn ui-btn--sm ui-btn--primary">详情</span>
-              </span>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* ---------------- 详情抽屉（不占页宽） ---------------- */}
-      {detail && (() => {
-        const { kind, item } = detail;
-        const meta = agentTone(String(item.state));
-        return (
-          <>
-            <button
-              type="button"
-              className="ui-overlay"
-              aria-label="关闭详情"
-              onClick={() => setDetail(null)}
-              data-testid="skills-detail-overlay"
-            />
-            <div
-              className="fy-plugin-detail"
-              role="dialog"
-              aria-modal="true"
-              aria-label={kind === 'agent' ? 'Agent 详情' : '技能详情'}
-              data-testid="skills-detail"
-            >
-              <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--ui-s-3)' }}>
-                <LineIcon name={kind === 'agent' ? 'dispatch' : 'skills'} size={20} />
-                <h2 className="ui-panel-title">{item.name}</h2>
-                <span className="ui-spacer" />
+          <div className="fy-cat-grid" data-testid="skills-agent-grid">
+            {agentRows.map((a) => {
+              const meta = agentTone(String(a.state));
+              return (
                 <button
+                  key={`${a.name}-${a.version}`}
                   type="button"
-                  className="ui-btn ui-btn--icon"
-                  aria-label="关闭详情"
-                  onClick={() => setDetail(null)}
-                  data-testid="skills-detail-close"
+                  className="fy-cat-card"
+                  onClick={() => openAgent(a)}
+                  data-testid={`skills-agent-${a.name}`}
                 >
-                  <LineIcon name="close" size={18} />
-                </button>
-              </header>
-
-              <p className="ui-hint">
-                只读目录：启用 / 晋级 / 下线必须走提案审批，此处不提供直接改状态的入口。
-              </p>
-
-              <dl className="avatar-meta" style={{ margin: 0 }}>
-                <div>
-                  <dt>名称</dt>
-                  <dd>{item.name}</dd>
-                </div>
-                <div>
-                  <dt>版本</dt>
-                  <dd>{item.version}</dd>
-                </div>
-                <div>
-                  <dt>域</dt>
-                  <dd>{item.domain}</dd>
-                </div>
-                <div>
-                  <dt>状态</dt>
-                  <dd>
+                  <span className="fy-cat-title">
+                    <LineIcon name="dispatch" size={18} />
+                    <span>{a.name}</span>
+                  </span>
+                  <span className="fy-cat-meta">
+                    <span className="ui-badge ui-badge--neutral">v{a.version}</span>
+                    <span className="ui-badge ui-badge--neutral">{a.domain}</span>
+                    {/* 健康与状态是两个独立语义，不能只用一个色 */}
+                    <span className={`ui-badge ui-badge--${a.healthy ? 'complete' : 'failed'}`}>
+                      <LineIcon name={a.healthy ? 'check' : 'xCircle'} size={14} />
+                      {a.healthy ? '可用' : '不可用'}
+                    </span>
                     <span className={`ui-badge ui-badge--${meta.tone}`}>
                       <StatusGlyph name={meta.icon} size={14} />
                       {meta.label}
                     </span>
-                  </dd>
-                </div>
-
-                {kind === 'agent' ? (
-                  <div>
-                    <dt>健康</dt>
-                    <dd>
-                      <span className={`ui-badge ui-badge--${item.healthy ? 'complete' : 'failed'}`}>
-                        <LineIcon name={item.healthy ? 'check' : 'xCircle'} size={14} />
-                        {item.healthy ? '可用' : '不可用'}
-                      </span>
-                    </dd>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <dt>来源 / 许可</dt>
-                      <dd>
-                        {item.source} · {item.license}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>隔离</dt>
-                      <dd>
-                        <span
-                          className={`ui-badge ${
-                            item.requires_isolation ? 'ui-badge--waiting' : 'ui-badge--neutral'
-                          }`}
-                        >
-                          {item.requires_isolation ? '需沙箱（含脚本包）' : '指令包（不执行）'}
-                        </span>
-                      </dd>
-                    </div>
-                    <div>
-                      <dt>包指纹</dt>
-                      <dd>
-                        <code>{item.package_hash}</code>
-                      </dd>
-                    </div>
-                  </>
-                )}
-              </dl>
-
-              {kind === 'agent' && capsOf(item).length > 0 && (
-                <div className="fy-plugin-caps" data-testid="skills-detail-caps">
-                  <strong>能力标签</strong>
-                  <div className="fy-plugin-caps-list" style={{ marginTop: 'var(--ui-s-2)' }}>
-                    {capsOf(item).map((c) => (
+                  </span>
+                  <span className="fy-plugin-caps-list">
+                    {capsOf(a).slice(0, 6).map((c) => (
                       <span className="fy-plugin-caps" style={{ padding: '1px 6px' }} key={c}>
                         {c}
                       </span>
                     ))}
-                  </div>
-                </div>
-              )}
+                    {capsOf(a).length > 6 && (
+                      <span className="ui-badge ui-badge--neutral">+{capsOf(a).length - 6}</span>
+                    )}
+                  </span>
+                  {/* 悬停显次要操作（absolute，不占常驻布局） */}
+                  <span className="kn-hover-act">
+                    <span className="ui-btn ui-btn--sm ui-btn--primary">详情</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ---------------- 技能 ---------------- */}
+        <section aria-label="技能">
+          <div className="kn-topbar">
+            <h3 className="ui-panel-title" style={{ margin: 0 }}>
+              <LineIcon name="skills" size={18} /> 技能（{skillRows.length}
+              {skills.data ? ` / 共 ${skills.data.length}` : ''}）
+            </h3>
+            <div className="kn-search">
+              <LineIcon name="search" size={18} />
+              <input
+                className="ui-input"
+                aria-label="筛选技能"
+                placeholder="按名称 / 来源筛选…"
+                value={skillQuery}
+                onChange={(e) => setSkillQuery(e.target.value)}
+              />
             </div>
-          </>
-        );
-      })()}
-    </div>
+          </div>
+
+          {skills.loading && <Spinner label="技能清单读取中…" />}
+          {skills.data && skills.data.length === 0 && (
+            <p className="muted" data-testid="skills-no-skills">
+              暂无技能。
+            </p>
+          )}
+
+          <div className="fy-cat-grid" data-testid="skills-skill-grid">
+            {skillRows.map((s) => (
+              <button
+                key={`${s.name}-${s.version}`}
+                type="button"
+                className="fy-cat-card"
+                onClick={() => openSkill(s)}
+                data-testid={`skills-skill-${s.name}`}
+              >
+                <span className="fy-cat-title">
+                  <LineIcon name="skills" size={18} />
+                  <span>{s.name}</span>
+                </span>
+                <span className="fy-cat-meta">
+                  <span className="ui-badge ui-badge--neutral">v{s.version}</span>
+                  <span className="ui-badge ui-badge--neutral">{s.source}</span>
+                  <span className="ui-badge ui-badge--neutral">{s.license}</span>
+                  <span className={`ui-badge ui-badge--${agentTone(String(s.state)).tone}`}>
+                    {agentTone(String(s.state)).label}
+                  </span>
+                  {/* 隔离是有无，不是有坏：中性徽标 + 文字 */}
+                  <span
+                    className={`ui-badge ${
+                      s.requires_isolation ? 'ui-badge--waiting' : 'ui-badge--neutral'
+                    }`}
+                  >
+                    {s.requires_isolation ? '需沙箱' : '指令包'}
+                  </span>
+                </span>
+                <span className="kn-hover-act">
+                  <span className="ui-btn ui-btn--sm ui-btn--primary">详情</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {/* ---------------- 详情抽屉（不占页宽） ---------------- */}
+        {detail && (() => {
+          const { kind, item } = detail;
+          const meta = agentTone(String(item.state));
+          return (
+            <>
+              <button
+                type="button"
+                className="ui-overlay"
+                aria-label="关闭详情"
+                onClick={() => setDetail(null)}
+                data-testid="skills-detail-overlay"
+              />
+              <div
+                className="fy-plugin-detail"
+                role="dialog"
+                aria-modal="true"
+                aria-label={kind === 'agent' ? 'Agent 详情' : '技能详情'}
+                data-testid="skills-detail"
+              >
+                <header style={{ display: 'flex', alignItems: 'center', gap: 'var(--ui-s-3)' }}>
+                  <LineIcon name={kind === 'agent' ? 'dispatch' : 'skills'} size={20} />
+                  <h2 className="ui-panel-title">{item.name}</h2>
+                  <span className="ui-spacer" />
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--icon"
+                    aria-label="关闭详情"
+                    onClick={() => setDetail(null)}
+                    data-testid="skills-detail-close"
+                  >
+                    <LineIcon name="close" size={18} />
+                  </button>
+                </header>
+
+                <p className="ui-hint">
+                  只读目录：启用 / 晋级 / 下线必须走提案审批，此处不提供直接改状态的入口。
+                </p>
+
+                <dl className="avatar-meta" style={{ margin: 0 }}>
+                  <div>
+                    <dt>名称</dt>
+                    <dd>{item.name}</dd>
+                  </div>
+                  <div>
+                    <dt>版本</dt>
+                    <dd>{item.version}</dd>
+                  </div>
+                  <div>
+                    <dt>域</dt>
+                    <dd>{item.domain}</dd>
+                  </div>
+                  <div>
+                    <dt>状态</dt>
+                    <dd>
+                      <span className={`ui-badge ui-badge--${meta.tone}`}>
+                        <StatusGlyph name={meta.icon} size={14} />
+                        {meta.label}
+                      </span>
+                    </dd>
+                  </div>
+
+                  {kind === 'agent' ? (
+                    <div>
+                      <dt>健康</dt>
+                      <dd>
+                        <span className={`ui-badge ui-badge--${item.healthy ? 'complete' : 'failed'}`}>
+                          <LineIcon name={item.healthy ? 'check' : 'xCircle'} size={14} />
+                          {item.healthy ? '可用' : '不可用'}
+                        </span>
+                      </dd>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <dt>来源 / 许可</dt>
+                        <dd>
+                          {item.source} · {item.license}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>隔离</dt>
+                        <dd>
+                          <span
+                            className={`ui-badge ${
+                              item.requires_isolation ? 'ui-badge--waiting' : 'ui-badge--neutral'
+                            }`}
+                          >
+                            {item.requires_isolation ? '需沙箱（含脚本包）' : '指令包（不执行）'}
+                          </span>
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>包指纹</dt>
+                        <dd>
+                          <code>{item.package_hash}</code>
+                        </dd>
+                      </div>
+                    </>
+                  )}
+                </dl>
+
+                {kind === 'agent' && capsOf(item).length > 0 && (
+                  <div className="fy-plugin-caps" data-testid="skills-detail-caps">
+                    <strong>能力标签</strong>
+                    <div className="fy-plugin-caps-list" style={{ marginTop: 'var(--ui-s-2)' }}>
+                      {capsOf(item).map((c) => (
+                        <span className="fy-plugin-caps" style={{ padding: '1px 6px' }} key={c}>
+                          {c}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          );
+        })()}
+      </div>
+    </BaseBound>
   );
 }

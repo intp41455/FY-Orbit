@@ -30,6 +30,7 @@ import {
   type ChatEntryState,
 } from '../components/chatui/chatStorage';
 import '../styles/pages/chat.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 function newClientMessageId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -658,404 +659,406 @@ export function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
 
   return (
-    <div className="chat-shell">
-      <div className="page-head chat-page-head">
-        <h2>对话</h2>
-        <div className="chat-page-head-tools">
-          {entry ? (
-            <a
-              className="ui-btn ui-btn--sm chatui-entry-link"
-              href={entry.returnTo}
-              onClick={(e) => {
-                e.preventDefault();
-                setEntry(null);
-                clearChatEntry();
-                spaNavigate(entry.returnTo);
-              }}
-            >
-              <LineIcon name="arrowRight" size={16} />
-              来自历史会话 · 返回历史
-            </a>
-          ) : null}
-          <label className="chatui-mode-label" htmlFor="chat-mode">模式</label>
-          <select
-            id="chat-mode"
-            className="ui-select chatui-mode-select"
-            value={mode}
-            onChange={(e) => setMode(e.target.value as 'listen' | 'explore')}
-          >
-            <option value="listen">倾听（默认，不自动派发任务）</option>
-            <option value="explore">探索（可委派专家）</option>
-          </select>
-          <button
-            ref={qnavToggleRef}
-            type="button"
-            className="ui-btn ui-btn--sm"
-            data-testid="qnav-toggle"
-            aria-expanded={qnavOpen}
-            aria-controls="chat-qnav"
-            onClick={() => setQnavOpen((o) => !o)}
-          >
-            <LineIcon name="target" size={16} />
-            {qnavOpen ? '收起定位' : '提问定位'}
-          </button>
-        </div>
-      </div>
-
-      {!online ? (
-        <div className="notice warn chatui-offline" role="status">
-          <ChatIcon name="send" size={16} />
-          当前离线：消息无法发送，已保存的会话仍可查看。
-        </div>
-      ) : null}
-
-      {error ? <div className="notice danger chatui-error" role="alert">{error}</div> : null}
-      {abortNote ? (
-        <div className="notice warn chatui-abort" role="status">
-          <span>{abortNote}</span>
-          <button
-            type="button"
-            className="ui-btn ui-btn--sm"
-            onClick={() => activeId && void refreshMessages(activeId)}
-          >
-            <LineIcon name="refresh" size={16} /> 刷新消息
-          </button>
-        </div>
-      ) : null}
-
-      <div className={`chat-layout${qnavOpen ? ' qnav-open' : ''}`}>
-        {/* ① 会话搜索 */}
-        <div className="chat-search">
-          <label className="chatui-sr-only" htmlFor="chat-conv-search">搜索会话</label>
-          <input
-            id="chat-conv-search"
-            ref={searchRef}
-            className="ui-input chatui-search-input"
-            type="search"
-            value={convQuery}
-            placeholder="搜索会话（/ 聚焦）"
-            onChange={(e) => setConvQuery(e.target.value)}
-          />
-        </div>
-
-        {/* ② 会话列表（窄屏折叠成标题「会话（N）」的可展开面板，不消失） */}
-        <section
-          className={`ui-panel chat-convpanel${convPanelOpen ? '' : ' is-collapsed'}`}
-          aria-label="会话列表"
-        >
-          <button
-            type="button"
-            className="chat-conv-toggle"
-            aria-expanded={convPanelOpen}
-            aria-controls="chat-conv-list"
-            onClick={() => setConvPanelOpen((o) => !o)}
-          >
-            <LineIcon name="chevronDown" size={16} />
-            会话（{filtered.length}）
-          </button>
-
-          <div className="chat-conv-body" id="chat-conv-list">
-            {archivedCount > 0 ? (
-              <div className="chat-archived-row">
-                <button
-                  type="button"
-                  className="ui-chip"
-                  aria-pressed={showArchived}
-                  onClick={() => setShowArchived((v) => !v)}
-                >
-                  <ChatIcon name="archive" size={16} />
-                  已归档（{archivedCount}）
-                </button>
-              </div>
+    <BaseBound surface="chat">
+      <div className="chat-shell">
+        <div className="page-head chat-page-head">
+          <h2>对话</h2>
+          <div className="chat-page-head-tools">
+            {entry ? (
+              <a
+                className="ui-btn ui-btn--sm chatui-entry-link"
+                href={entry.returnTo}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setEntry(null);
+                  clearChatEntry();
+                  spaNavigate(entry.returnTo);
+                }}
+              >
+                <LineIcon name="arrowRight" size={16} />
+                来自历史会话 · 返回历史
+              </a>
             ) : null}
-
-            {loadingList ? (
-              <Skeleton rows={3} variant="conv" label="正在加载会话列表" />
-            ) : conversations.length === 0 ? (
-              <EmptyState
-                icon="chat"
-                title="还没有会话"
-                hint="描述一件事就能开始。会自动带入上次使用的模式。"
-                action={
-                  <button type="button" className="ui-btn ui-btn--primary" onClick={newConversation}>
-                    <LineIcon name="plus" size={16} /> 开始第一个会话
-                  </button>
-                }
-              />
-            ) : filtered.length === 0 ? (
-              <EmptyState
-                icon="search"
-                title="没有匹配的会话"
-                hint={convQuery ? `没有匹配「${convQuery}」的会话。` : '当前筛选下没有会话。'}
-                action={
-                  <button type="button" className="ui-btn" onClick={() => setConvQuery('')}>
-                    清空搜索
-                  </button>
-                }
-              />
-            ) : (
-              <ul className="ui-scroll chat-convlist" role="list">
-                {filtered.map((c) => {
-                  const isArchived = archivedSet.has(c.id);
-                  return (
-                    <li key={c.id} className="chat-conv-li">
-                      <button
-                        type="button"
-                        className={`chat-conv-item${c.id === activeId ? ' is-active' : ''}`}
-                        aria-current={c.id === activeId ? 'true' : undefined}
-                        onClick={() => setActiveId(c.id)}
-                        onContextMenu={(e) => {
-                          e.preventDefault();
-                          setMenu({ convId: c.id, x: e.clientX, y: e.clientY });
-                        }}
-                      >
-                        <span className="chat-conv-title">{displayTitle(c)}</span>
-                        <span className="chat-conv-meta">
-                          {c.mode} · {new Date(c.updated_at).toLocaleString('zh-CN')}
-                        </span>
-                        {isArchived ? (
-                          <span className="chat-conv-flag">
-                            <StatusTag kind="paused" text="已归档（仅本机）" />
-                          </span>
-                        ) : null}
-                        {aliasMap[c.id] ? <span className="chat-conv-flag chatui-hint">本机备注名</span> : null}
-                      </button>
-                      <HoverActions
-                        actions={[
-                          {
-                            key: 'rename',
-                            label: '重命名（本机备注）',
-                            icon: <LineIcon name="edit" size={16} />,
-                            onClick: () => setRenameId(c.id),
-                          },
-                          {
-                            key: 'archive',
-                            label: isArchived ? '取消归档' : '归档（仅本机）',
-                            icon: isArchived ? <LineIcon name="play" size={16} /> : <ChatIcon name="archive" size={16} />,
-                            onClick: () => setArchived(c.id, !isArchived),
-                          },
-                          {
-                            key: 'more',
-                            label: '更多操作',
-                            icon: <LineIcon name="more" size={16} />,
-                            onClick: (e) => {
-                              const r = (e?.target as HTMLElement)?.getBoundingClientRect?.();
-                              setMenu({ convId: c.id, x: r?.right ?? 240, y: r?.bottom ?? 240 });
-                            },
-                          },
-                        ]}
-                      />
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <label className="chatui-mode-label" htmlFor="chat-mode">模式</label>
+            <select
+              id="chat-mode"
+              className="ui-select chatui-mode-select"
+              value={mode}
+              onChange={(e) => setMode(e.target.value as 'listen' | 'explore')}
+            >
+              <option value="listen">倾听（默认，不自动派发任务）</option>
+              <option value="explore">探索（可委派专家）</option>
+            </select>
+            <button
+              ref={qnavToggleRef}
+              type="button"
+              className="ui-btn ui-btn--sm"
+              data-testid="qnav-toggle"
+              aria-expanded={qnavOpen}
+              aria-controls="chat-qnav"
+              onClick={() => setQnavOpen((o) => !o)}
+            >
+              <LineIcon name="target" size={16} />
+              {qnavOpen ? '收起定位' : '提问定位'}
+            </button>
           </div>
-        </section>
-
-        {/* ③ 新建会话 */}
-        <div className="chat-newrow">
-          <button type="button" className="ui-btn ui-btn--block" onClick={newConversation}>
-            <LineIcon name="plus" size={16} /> 新建会话（Alt+N）
-          </button>
         </div>
 
-        {/* ④ 消息列表 */}
-        <section className="ui-panel chat-stream-panel" aria-label="消息列表">
-          <div className="chat-stream-hd">
-            <h3 className="ui-panel-title">
-              {activeConv ? displayTitle(activeConv) : '新会话'}
-            </h3>
-            {activeConv ? (
-              <span className="ui-panel-sub">
-                {messages.length} 条消息 · {activeConv.domain} · 模式 {activeConv.mode}
-              </span>
-            ) : (
-              <span className="ui-panel-sub">发送第一条消息后即创建会话</span>
-            )}
+        {!online ? (
+          <div className="notice warn chatui-offline" role="status">
+            <ChatIcon name="send" size={16} />
+            当前离线：消息无法发送，已保存的会话仍可查看。
+          </div>
+        ) : null}
+
+        {error ? <div className="notice danger chatui-error" role="alert">{error}</div> : null}
+        {abortNote ? (
+          <div className="notice warn chatui-abort" role="status">
+            <span>{abortNote}</span>
+            <button
+              type="button"
+              className="ui-btn ui-btn--sm"
+              onClick={() => activeId && void refreshMessages(activeId)}
+            >
+              <LineIcon name="refresh" size={16} /> 刷新消息
+            </button>
+          </div>
+        ) : null}
+
+        <div className={`chat-layout${qnavOpen ? ' qnav-open' : ''}`}>
+          {/* ① 会话搜索 */}
+          <div className="chat-search">
+            <label className="chatui-sr-only" htmlFor="chat-conv-search">搜索会话</label>
+            <input
+              id="chat-conv-search"
+              ref={searchRef}
+              className="ui-input chatui-search-input"
+              type="search"
+              value={convQuery}
+              placeholder="搜索会话（/ 聚焦）"
+              onChange={(e) => setConvQuery(e.target.value)}
+            />
           </div>
 
-          <div className="chat-scroll chat-stream" aria-live="polite" aria-relevant="additions text">
-            {loadingMsgs ? (
-              <Skeleton rows={4} variant="msg" label="正在加载消息" />
-            ) : messages.length === 0 ? (
-              activeId ? (
-                <EmptyState
-                  icon="chat"
-                  title="这个会话还没有消息"
-                  hint="在下方输入第一句话；Enter 发送，Shift/⌘+Enter 换行。"
-                />
-              ) : (
+          {/* ② 会话列表（窄屏折叠成标题「会话（N）」的可展开面板，不消失） */}
+          <section
+            className={`ui-panel chat-convpanel${convPanelOpen ? '' : ' is-collapsed'}`}
+            aria-label="会话列表"
+          >
+            <button
+              type="button"
+              className="chat-conv-toggle"
+              aria-expanded={convPanelOpen}
+              aria-controls="chat-conv-list"
+              onClick={() => setConvPanelOpen((o) => !o)}
+            >
+              <LineIcon name="chevronDown" size={16} />
+              会话（{filtered.length}）
+            </button>
+
+            <div className="chat-conv-body" id="chat-conv-list">
+              {archivedCount > 0 ? (
+                <div className="chat-archived-row">
+                  <button
+                    type="button"
+                    className="ui-chip"
+                    aria-pressed={showArchived}
+                    onClick={() => setShowArchived((v) => !v)}
+                  >
+                    <ChatIcon name="archive" size={16} />
+                    已归档（{archivedCount}）
+                  </button>
+                </div>
+              ) : null}
+
+              {loadingList ? (
+                <Skeleton rows={3} variant="conv" label="正在加载会话列表" />
+              ) : conversations.length === 0 ? (
                 <EmptyState
                   icon="chat"
                   title="还没有会话"
                   hint="描述一件事就能开始。会自动带入上次使用的模式。"
+                  action={
+                    <button type="button" className="ui-btn ui-btn--primary" onClick={newConversation}>
+                      <LineIcon name="plus" size={16} /> 开始第一个会话
+                    </button>
+                  }
                 />
-              )
-            ) : (
-              messages.map((m) => (
-                <MessageBubble
-                  key={m.id}
-                  message={m}
-                  flash={flashId === m.id}
-                  refs={refs}
-                  onCopy={copyMessage}
-                  onQuote={quoteMessage}
-                  onOpenRef={openRefDoc}
-                  generating={submitting && m.id === lastAssistantId}
-                  onStop={stopGenerating}
+              ) : filtered.length === 0 ? (
+                <EmptyState
+                  icon="search"
+                  title="没有匹配的会话"
+                  hint={convQuery ? `没有匹配「${convQuery}」的会话。` : '当前筛选下没有会话。'}
+                  action={
+                    <button type="button" className="ui-btn" onClick={() => setConvQuery('')}>
+                      清空搜索
+                    </button>
+                  }
                 />
-              ))
-            )}
-            {submitting && !lastAssistantId ? (
-              <div className="chatui-generating chatui-generating--standalone">
-                <span className="ui-dot ui-dot--running chatui-dot" aria-hidden="true" />
-                <span className="chatui-generating-text">生成中…</span>
-                <button type="button" className="ui-btn ui-btn--sm chatui-stop-btn" onClick={stopGenerating}>
-                  <LineIcon name="stop" size={16} /> 停止生成
-                </button>
-              </div>
+              ) : (
+                <ul className="ui-scroll chat-convlist" role="list">
+                  {filtered.map((c) => {
+                    const isArchived = archivedSet.has(c.id);
+                    return (
+                      <li key={c.id} className="chat-conv-li">
+                        <button
+                          type="button"
+                          className={`chat-conv-item${c.id === activeId ? ' is-active' : ''}`}
+                          aria-current={c.id === activeId ? 'true' : undefined}
+                          onClick={() => setActiveId(c.id)}
+                          onContextMenu={(e) => {
+                            e.preventDefault();
+                            setMenu({ convId: c.id, x: e.clientX, y: e.clientY });
+                          }}
+                        >
+                          <span className="chat-conv-title">{displayTitle(c)}</span>
+                          <span className="chat-conv-meta">
+                            {c.mode} · {new Date(c.updated_at).toLocaleString('zh-CN')}
+                          </span>
+                          {isArchived ? (
+                            <span className="chat-conv-flag">
+                              <StatusTag kind="paused" text="已归档（仅本机）" />
+                            </span>
+                          ) : null}
+                          {aliasMap[c.id] ? <span className="chat-conv-flag chatui-hint">本机备注名</span> : null}
+                        </button>
+                        <HoverActions
+                          actions={[
+                            {
+                              key: 'rename',
+                              label: '重命名（本机备注）',
+                              icon: <LineIcon name="edit" size={16} />,
+                              onClick: () => setRenameId(c.id),
+                            },
+                            {
+                              key: 'archive',
+                              label: isArchived ? '取消归档' : '归档（仅本机）',
+                              icon: isArchived ? <LineIcon name="play" size={16} /> : <ChatIcon name="archive" size={16} />,
+                              onClick: () => setArchived(c.id, !isArchived),
+                            },
+                            {
+                              key: 'more',
+                              label: '更多操作',
+                              icon: <LineIcon name="more" size={16} />,
+                              onClick: (e) => {
+                                const r = (e?.target as HTMLElement)?.getBoundingClientRect?.();
+                                setMenu({ convId: c.id, x: r?.right ?? 240, y: r?.bottom ?? 240 });
+                              },
+                            },
+                          ]}
+                        />
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          {/* ③ 新建会话 */}
+          <div className="chat-newrow">
+            <button type="button" className="ui-btn ui-btn--block" onClick={newConversation}>
+              <LineIcon name="plus" size={16} /> 新建会话（Alt+N）
+            </button>
+          </div>
+
+          {/* ④ 消息列表 */}
+          <section className="ui-panel chat-stream-panel" aria-label="消息列表">
+            <div className="chat-stream-hd">
+              <h3 className="ui-panel-title">
+                {activeConv ? displayTitle(activeConv) : '新会话'}
+              </h3>
+              {activeConv ? (
+                <span className="ui-panel-sub">
+                  {messages.length} 条消息 · {activeConv.domain} · 模式 {activeConv.mode}
+                </span>
+              ) : (
+                <span className="ui-panel-sub">发送第一条消息后即创建会话</span>
+              )}
+            </div>
+
+            <div className="chat-scroll chat-stream" aria-live="polite" aria-relevant="additions text">
+              {loadingMsgs ? (
+                <Skeleton rows={4} variant="msg" label="正在加载消息" />
+              ) : messages.length === 0 ? (
+                activeId ? (
+                  <EmptyState
+                    icon="chat"
+                    title="这个会话还没有消息"
+                    hint="在下方输入第一句话；Enter 发送，Shift/⌘+Enter 换行。"
+                  />
+                ) : (
+                  <EmptyState
+                    icon="chat"
+                    title="还没有会话"
+                    hint="描述一件事就能开始。会自动带入上次使用的模式。"
+                  />
+                )
+              ) : (
+                messages.map((m) => (
+                  <MessageBubble
+                    key={m.id}
+                    message={m}
+                    flash={flashId === m.id}
+                    refs={refs}
+                    onCopy={copyMessage}
+                    onQuote={quoteMessage}
+                    onOpenRef={openRefDoc}
+                    generating={submitting && m.id === lastAssistantId}
+                    onStop={stopGenerating}
+                  />
+                ))
+              )}
+              {submitting && !lastAssistantId ? (
+                <div className="chatui-generating chatui-generating--standalone">
+                  <span className="ui-dot ui-dot--running chatui-dot" aria-hidden="true" />
+                  <span className="chatui-generating-text">生成中…</span>
+                  <button type="button" className="ui-btn ui-btn--sm chatui-stop-btn" onClick={stopGenerating}>
+                    <LineIcon name="stop" size={16} /> 停止生成
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          {/* ⑤ 上下文条（三项全无则不渲染） */}
+          <div className="chat-ctx">
+            {hasCtx ? (
+              <ContextBar
+                model={model}
+                modelState={modelState}
+                modelError={modelError}
+                skills={skills}
+                skillsState={skillsState}
+                skillsError={skillsError}
+                refs={refs}
+                onRemoveRef={(docId) => setRefs((prev) => prev.filter((d) => d.id !== docId))}
+                onClearRefs={() => {
+                  setRefs([]);
+                  setCtxCollapsed(true);
+                  writeCtxCollapsed(true);
+                }}
+                collapsed={ctxCollapsed}
+                onSetCollapsed={(v) => {
+                  setCtxCollapsed(v);
+                  writeCtxCollapsed(v);
+                }}
+              />
             ) : null}
           </div>
-        </section>
 
-        {/* ⑤ 上下文条（三项全无则不渲染） */}
-        <div className="chat-ctx">
-          {hasCtx ? (
-            <ContextBar
-              model={model}
-              modelState={modelState}
-              modelError={modelError}
-              skills={skills}
-              skillsState={skillsState}
-              skillsError={skillsError}
-              refs={refs}
-              onRemoveRef={(docId) => setRefs((prev) => prev.filter((d) => d.id !== docId))}
-              onClearRefs={() => {
-                setRefs([]);
-                setCtxCollapsed(true);
-                writeCtxCollapsed(true);
-              }}
-              collapsed={ctxCollapsed}
-              onSetCollapsed={(v) => {
-                setCtxCollapsed(v);
-                writeCtxCollapsed(v);
-              }}
+          {/* ⑥ composer ⑦ 发送 */}
+          <div className="chatui-composer-area">
+            <Composer
+              ref={composerRef}
+              value={text}
+              onChange={setText}
+              onSubmit={() => void send()}
+              submitting={submitting}
+              online={online}
+              onCommand={runCommand}
+              onPickRef={(doc) => setRefs((prev) => (prev.some((d) => d.id === doc.id) ? prev : [...prev, doc]))}
+              onSuggestOpenChange={setSuggestOpen}
             />
-          ) : null}
-        </div>
-
-        {/* ⑥ composer ⑦ 发送 */}
-        <div className="chatui-composer-area">
-          <Composer
-            ref={composerRef}
-            value={text}
-            onChange={setText}
-            onSubmit={() => void send()}
-            submitting={submitting}
-            online={online}
-            onCommand={runCommand}
-            onPickRef={(doc) => setRefs((prev) => (prev.some((d) => d.id === doc.id) ? prev : [...prev, doc]))}
-            onSuggestOpenChange={setSuggestOpen}
-          />
-          <div className="chatui-sendrow">
-            <button
-              type="button"
-              className="ui-btn ui-btn--primary chatui-send"
-              onClick={() => void send()}
-              disabled={submitting || !text.trim()}
-            >
-              {submitting ? <Spinner label="发送中…" /> : (
-                <>
-                  <ChatIcon name="send" size={16} /> 发送
-                </>
-              )}
-            </button>
-            <span className="ui-hint chatui-sendhint">
-              Enter 发送 · Shift/⌘+Enter 换行 · / 命令 · @ 引用
-            </span>
-          </div>
-        </div>
-
-        {/* ⑧ 定位栏（收起态 hidden + aria-hidden，保持挂载） */}
-        <aside
-          id="chat-qnav"
-          ref={qnavRef}
-          className={`card qnav chat-qnav${narrow ? ' is-drawer' : ''}`}
-          data-testid="qnav"
-          aria-label="提问定位"
-          role={narrow ? 'dialog' : undefined}
-          aria-modal={narrow ? true : undefined}
-          hidden={!qnavOpen}
-          aria-hidden={!qnavOpen}
-        >
-          <div className="chat-qnav-hd">
-            <strong>提问定位</strong>
-            <span className="muted small">{userMessages.length} 条</span>
-            <button
-              ref={qnavCloseRef}
-              type="button"
-              className="ui-btn ui-btn--ghost ui-btn--sm chat-qnav-close"
-              onClick={() => {
-                setQnavOpen(false);
-                qnavToggleRef.current?.focus();
-              }}
-            >
-              <LineIcon name="close" size={16} /> 收起
-            </button>
-          </div>
-          {userMessages.length === 0 ? (
-            <div className="muted small chat-qnav-empty">当前会话还没有提问。</div>
-          ) : (
-            <div className="ui-scroll chat-qnav-body">
-              {userMessages.map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  className={`qnav-item${inViewIds.has(m.id) ? ' in-view' : ''}`}
-                  data-testid="qnav-item"
-                  onClick={() => jumpTo(m.id)}
-                  title={m.content}
-                >
-                  <span className="qnav-summary">{summarize(m.content)}</span>
-                  <span className="qnav-time">{new Date(m.created_at).toLocaleTimeString('zh-CN')}</span>
-                  {inViewIds.has(m.id) ? <span className="qnav-inview-tag">视口内</span> : null}
-                </button>
-              ))}
+            <div className="chatui-sendrow">
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary chatui-send"
+                onClick={() => void send()}
+                disabled={submitting || !text.trim()}
+              >
+                {submitting ? <Spinner label="发送中…" /> : (
+                  <>
+                    <ChatIcon name="send" size={16} /> 发送
+                  </>
+                )}
+              </button>
+              <span className="ui-hint chatui-sendhint">
+                Enter 发送 · Shift/⌘+Enter 换行 · / 命令 · @ 引用
+              </span>
             </div>
-          )}
-        </aside>
+          </div>
+
+          {/* ⑧ 定位栏（收起态 hidden + aria-hidden，保持挂载） */}
+          <aside
+            id="chat-qnav"
+            ref={qnavRef}
+            className={`card qnav chat-qnav${narrow ? ' is-drawer' : ''}`}
+            data-testid="qnav"
+            aria-label="提问定位"
+            role={narrow ? 'dialog' : undefined}
+            aria-modal={narrow ? true : undefined}
+            hidden={!qnavOpen}
+            aria-hidden={!qnavOpen}
+          >
+            <div className="chat-qnav-hd">
+              <strong>提问定位</strong>
+              <span className="muted small">{userMessages.length} 条</span>
+              <button
+                ref={qnavCloseRef}
+                type="button"
+                className="ui-btn ui-btn--ghost ui-btn--sm chat-qnav-close"
+                onClick={() => {
+                  setQnavOpen(false);
+                  qnavToggleRef.current?.focus();
+                }}
+              >
+                <LineIcon name="close" size={16} /> 收起
+              </button>
+            </div>
+            {userMessages.length === 0 ? (
+              <div className="muted small chat-qnav-empty">当前会话还没有提问。</div>
+            ) : (
+              <div className="ui-scroll chat-qnav-body">
+                {userMessages.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`qnav-item${inViewIds.has(m.id) ? ' in-view' : ''}`}
+                    data-testid="qnav-item"
+                    onClick={() => jumpTo(m.id)}
+                    title={m.content}
+                  >
+                    <span className="qnav-summary">{summarize(m.content)}</span>
+                    <span className="qnav-time">{new Date(m.created_at).toLocaleTimeString('zh-CN')}</span>
+                    {inViewIds.has(m.id) ? <span className="qnav-inview-tag">视口内</span> : null}
+                  </button>
+                ))}
+              </div>
+            )}
+          </aside>
+        </div>
+
+        {menu ? (
+          <ContextMenu
+            x={menu.x}
+            y={menu.y}
+            items={menuItems}
+            onClose={() => setMenu(null)}
+            label={`会话 ${menu.convId} 的操作`}
+          />
+        ) : null}
+
+        {renameId ? (
+          <Modal
+            title="重命名（仅本机备注）"
+            initialValue={aliasMap[renameId] ?? ''}
+            placeholder="输入本机备注名"
+            hint={
+              <>
+                后端没有会话改名接口，这里只改本机显示（localStorage），展示为「别名（原始：原标题）」。
+              </>
+            }
+            onCancel={() => setRenameId(null)}
+            onConfirm={(v) => {
+              saveAlias(renameId, v);
+              setRenameId(null);
+            }}
+          />
+        ) : null}
+
+        <ToastStack toasts={toasts} onDismiss={dismiss} />
       </div>
-
-      {menu ? (
-        <ContextMenu
-          x={menu.x}
-          y={menu.y}
-          items={menuItems}
-          onClose={() => setMenu(null)}
-          label={`会话 ${menu.convId} 的操作`}
-        />
-      ) : null}
-
-      {renameId ? (
-        <Modal
-          title="重命名（仅本机备注）"
-          initialValue={aliasMap[renameId] ?? ''}
-          placeholder="输入本机备注名"
-          hint={
-            <>
-              后端没有会话改名接口，这里只改本机显示（localStorage），展示为「别名（原始：原标题）」。
-            </>
-          }
-          onCancel={() => setRenameId(null)}
-          onConfirm={(v) => {
-            saveAlias(renameId, v);
-            setRenameId(null);
-          }}
-        />
-      ) : null}
-
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
-    </div>
+    </BaseBound>
   );
 }

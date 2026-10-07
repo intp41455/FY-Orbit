@@ -4,6 +4,7 @@ import { errorMessage } from '../ui';
 import { LineIcon } from '../ui/LineIcon';
 import { WbIcon } from './WbIcon';
 import { isComposingLike } from './wbKeys';
+import { useBase } from '../../hooks/useAutosave';
 
 interface Props {
   workspaceId: string;
@@ -85,6 +86,7 @@ interface ContextMenuState {
 }
 
 export function TerminalPane({ workspaceId, sessionScope, onSessionStopped, onSessionChange, restartSignal }: Props) {
+  useBase({ surface: 'web/src/components/workbench/TerminalPane' });
   const [session, setSession] = useState<TerminalSession | null>(null);
   const [output, setOutput] = useState('');
   const [input, setInput] = useState('');

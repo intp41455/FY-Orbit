@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { hubApi } from '../../api/hub';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 export function ManifestImport({
   busy,
@@ -15,6 +16,7 @@ export function ManifestImport({
   error: string;
   onImport: (text: string) => void;
 }) {
+  useBase({ surface: 'web/src/components/hub/ManifestImport' });
   const [text, setText] = useState('');
   const [open, setOpen] = useState(false);
   const [loadingExample, setLoadingExample] = useState(false);

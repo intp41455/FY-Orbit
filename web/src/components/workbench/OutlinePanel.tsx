@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { workbenchApi } from '../../api/workbench';
 import { errorMessage } from '../ui';
 import type { EditorJumpApi } from './CodeEditor';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * P1-13 侧边定位：Markdown 大纲 + 当前文件内搜索。
@@ -65,6 +66,7 @@ interface Props {
 }
 
 export function OutlinePanel({ workspaceId, path, editorApiRef }: Props) {
+  useBase({ surface: 'web/src/components/workbench/OutlinePanel' });
   const [content, setContent] = useState<string>('');
   const [notParseable, setNotParseable] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

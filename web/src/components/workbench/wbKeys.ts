@@ -4,7 +4,7 @@
  * 两条硬约束：
  *  1. **IME 必须放行**：中文输入法组字期间 keydown 的 keyCode 是 229、
  *     isComposing 为 true，此时本包一律不拦截、不 preventDefault。
- *  2. **可编辑区放行单键**：在 input/textarea/select/contenteditable 里，
+ *  2. **可编辑区放行单键**：在 input/textarea/select/富文本编辑区 里，
  *     只有带修饰键的组合（以及 Esc / Ctrl+`）才允许接管，
  *     否则「1/2/3」「0」这些聚焦段位的单键会把用户输入吃掉。
  */

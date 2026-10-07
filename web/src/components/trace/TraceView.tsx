@@ -3,6 +3,7 @@ import { validateTraceDocument, type TraceValidationResult } from './validateTra
 import { normalizeTrace, type NormalizedTrace } from './normalizeTrace';
 import pmiSamples from './samples/pmi-sample-traces.json';
 import canvasSample from './samples/canvas-hermes-roundtrip.json';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * P1-16 trace 前端视图 — PMI Trace Schema v1.0 时序可视化。
@@ -54,6 +55,7 @@ const PAD_LEFT = 150;
 const PAD_TOP = 56;
 
 export function TraceView() {
+  useBase({ surface: 'web/src/components/trace/TraceView' });
   const [doc, setDoc] = useState<LoadedDoc | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [validation, setValidation] = useState<TraceValidationResult | null>(null);

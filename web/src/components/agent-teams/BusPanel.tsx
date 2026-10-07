@@ -11,6 +11,7 @@ import {
   type BusMemberRef,
 } from '../../api/bus';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * W7 · 团队房间会话面板（挂在 TeamDesigner 侧栏）。
@@ -27,6 +28,7 @@ export interface BusPanelProps {
 }
 
 export function BusPanel({ room, members }: BusPanelProps) {
+  useBase({ surface: 'web/src/components/agent-teams/BusPanel' });
   const [messages, setMessages] = useState<BusMessage[]>([]);
   const [context, setContext] = useState<BusContextItem[]>([]);
   const [edges, setEdges] = useState<Record<string, number>>({});

@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { gitRepoApi, type GitRepoCommit } from '../../api/gitRepo';
 import { errorMessage } from '../ui';
 import { parseUnifiedDiff, type ParsedDiff } from './diffParse';
+import { useBase } from '../../hooks/useAutosave';
 
 const WORKTREE = 'worktree';
 
@@ -12,6 +13,7 @@ const WORKTREE = 'worktree';
  * 行内容与 git diff 原始输出逐行对应（见 diffParse 一致性测试）。
  */
 export function DiffView({ initialWorkspace = '' }: { initialWorkspace?: string }) {
+  useBase({ surface: 'web/src/components/workbench/DiffView' });
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [commits, setCommits] = useState<GitRepoCommit[]>([]);
   const [from, setFrom] = useState('');

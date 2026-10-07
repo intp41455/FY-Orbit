@@ -45,6 +45,7 @@ import {
 } from '../components/knowledgeui/AdvancedConfigDrawer';
 import { useKnowledgeGraph } from '../components/knowledgeui/useKnowledgeGraph';
 import { CLUSTER_LABEL, clusterLabel, type StarNode } from '../components/knowledgeui/starLogic';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 const DEFAULT_LIMITS: KBLimits = {
   max_bytes: MAX_FILE_BYTES,
@@ -361,6 +362,7 @@ export function KnowledgePage() {
   };
 
   return (
+    <BaseBound surface="knowledge">
     <div className="kn-root">
       <div className="page-head">
         <h2>本地知识库</h2>
@@ -930,5 +932,6 @@ export function KnowledgePage() {
           : `共 ${graph.totalNodes} 个切片`}
       </p>
     </div>
+    </BaseBound>
   );
 }

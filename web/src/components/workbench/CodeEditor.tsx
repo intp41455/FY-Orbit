@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { workbenchApi, type FileContent } from '../../api/workbench';
 import { errorMessage } from '../ui';
 import { publishPreviewDraft } from './previewBus'; // P1-10：向预览窗发布实时草稿
-import type { CodeDispatchContext } from './WorkbenchDispatchDialog'; // P1 交互双件：代码区派发上下文
+import type { CodeDispatchContext } from './WorkbenchDispatchDialog';
+import { useBase } from '../../hooks/useAutosave'; // P1 交互双件：代码区派发上下文
 
 /**
  * P1-13 侧边定位：暴露给兄弟面板（OutlinePanel 等）的命令式跳转句柄。
@@ -34,6 +35,7 @@ export function CodeEditor({
   onDispatch,
   onFileMeta,
 }: Props) {
+  useBase({ surface: 'web/src/components/workbench/CodeEditor' });
   const [content, setContent] = useState<string>('');
   const [meta, setMeta] = useState<FileContent | null>(null);
   const [loading, setLoading] = useState(false);

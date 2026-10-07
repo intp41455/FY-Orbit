@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import type { EssentialItem } from '../../api/templates';
 import { LineIcon } from '../ui/LineIcon';
+import { useBase } from '../../hooks/useAutosave';
 
 function toEditorText(value: unknown): string {
   if (typeof value === 'string') return value;
@@ -54,6 +55,7 @@ export function EssentialsPanel({
   onRestoreFactory: () => void;
   busy?: boolean;
 }) {
+  useBase({ surface: 'web/src/components/templates/EssentialsPanel' });
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
 

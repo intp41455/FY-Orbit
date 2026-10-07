@@ -2,6 +2,7 @@
 import { gitRepoApi, type GitCommit } from '../../api/gitRepo';
 import { errorMessage } from '../ui';
 import { parseUnifiedDiff, type ParsedDiff } from './diffParse';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * P1-12 git 提交树图 — renders the REAL commit history of a git-repo workspace
@@ -140,6 +141,7 @@ interface DiffState {
 const IDLE_DIFF: DiffState = { loading: false, error: null, parsed: null, truncated: false, empty: false };
 
 export function CommitGraph() {
+  useBase({ surface: 'web/src/components/workbench/CommitGraph' });
   const [nameInput, setNameInput] = useState<string>(() => {
     try {
       return window.localStorage.getItem(STORAGE_KEY) ?? '';

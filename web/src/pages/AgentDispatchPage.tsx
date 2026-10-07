@@ -6,6 +6,7 @@ import {
 } from '../api/agentDispatch';
 import { LineIcon } from '../components/ui/LineIcon';
 import './../styles/pages/workbench.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /**
  * P1-20 子 Agent 派发验证页面（包 A 重构版）。
@@ -50,59 +51,61 @@ export function AgentDispatchPage() {
   }
 
   return (
-    <div className="disp-shell">
-      <div className="page-head">
-        <h2>子 Agent 派发验证</h2>
-      </div>
-      <p className="muted disp-intro">
-        Task 四件套（capability / payload / acceptance / env_contract）派发子任务；
-        子 Agent 真实执行工具后自报结果，独立验收器按 acceptance 真实复核，
-        不信任自报。验收拒绝时失败原因经验回写。
-      </p>
-
-      <section className="disp-form" aria-label="派发表单">
-        <label className="disp-row">
-          <span className="disp-label">能力（capability）</span>
-          <input value={capability} onChange={(e) => setCapability(e.target.value)} className="disp-input" />
-        </label>
-        <label className="disp-row">
-          <span className="disp-label">任务载荷（payload.message）</span>
-          <input value={message} onChange={(e) => setMessage(e.target.value)} className="disp-input" />
-        </label>
-        <label className="disp-row">
-          <span className="disp-label">工具（tools）</span>
-          <select value={toolName} onChange={(e) => setToolName(e.target.value)} className="disp-input">
-            <option value="echo">echo（回显文本）</option>
-            <option value="add">add（数值求和）</option>
-          </select>
-        </label>
-        <label className="disp-row">
-          <span className="disp-label">验收类型（acceptance.type）</span>
-          <select
-            value={acceptanceType}
-            onChange={(e) => setAcceptanceType(e.target.value as AcceptanceType)}
-            className="disp-input"
-          >
-            <option value="output_contains">output_contains（产出包含）</option>
-            <option value="tool_invoked">tool_invoked（工具真实调用）</option>
-          </select>
-        </label>
-        {acceptanceType === 'output_contains' ? (
-          <label className="disp-row">
-            <span className="disp-label">验收片段（contains，逗号分隔）</span>
-            <input value={contains} onChange={(e) => setContains(e.target.value)} className="disp-input" />
-          </label>
-        ) : null}
-        <div className="disp-actions">
-          <button type="button" className="ui-btn ui-btn--sm ui-btn--primary" onClick={() => void dispatch()} disabled={busy}>
-            {busy ? '派发中…' : '发起派发'}
-          </button>
+    <BaseBound surface="agent-dispatch">
+      <div className="disp-shell">
+        <div className="page-head">
+          <h2>子 Agent 派发验证</h2>
         </div>
-        {error ? <div className="ui-error-text" role="alert">派发失败：{error}</div> : null}
-      </section>
+        <p className="muted disp-intro">
+          Task 四件套（capability / payload / acceptance / env_contract）派发子任务；
+          子 Agent 真实执行工具后自报结果，独立验收器按 acceptance 真实复核，
+          不信任自报。验收拒绝时失败原因经验回写。
+        </p>
 
-      {parent ? <TraceTree parent={parent} /> : null}
-    </div>
+        <section className="disp-form" aria-label="派发表单">
+          <label className="disp-row">
+            <span className="disp-label">能力（capability）</span>
+            <input value={capability} onChange={(e) => setCapability(e.target.value)} className="disp-input" />
+          </label>
+          <label className="disp-row">
+            <span className="disp-label">任务载荷（payload.message）</span>
+            <input value={message} onChange={(e) => setMessage(e.target.value)} className="disp-input" />
+          </label>
+          <label className="disp-row">
+            <span className="disp-label">工具（tools）</span>
+            <select value={toolName} onChange={(e) => setToolName(e.target.value)} className="disp-input">
+              <option value="echo">echo（回显文本）</option>
+              <option value="add">add（数值求和）</option>
+            </select>
+          </label>
+          <label className="disp-row">
+            <span className="disp-label">验收类型（acceptance.type）</span>
+            <select
+              value={acceptanceType}
+              onChange={(e) => setAcceptanceType(e.target.value as AcceptanceType)}
+              className="disp-input"
+            >
+              <option value="output_contains">output_contains（产出包含）</option>
+              <option value="tool_invoked">tool_invoked（工具真实调用）</option>
+            </select>
+          </label>
+          {acceptanceType === 'output_contains' ? (
+            <label className="disp-row">
+              <span className="disp-label">验收片段（contains，逗号分隔）</span>
+              <input value={contains} onChange={(e) => setContains(e.target.value)} className="disp-input" />
+            </label>
+          ) : null}
+          <div className="disp-actions">
+            <button type="button" className="ui-btn ui-btn--sm ui-btn--primary" onClick={() => void dispatch()} disabled={busy}>
+              {busy ? '派发中…' : '发起派发'}
+            </button>
+          </div>
+          {error ? <div className="ui-error-text" role="alert">派发失败：{error}</div> : null}
+        </section>
+
+        {parent ? <TraceTree parent={parent} /> : null}
+      </div>
+    </BaseBound>
   );
 }
 

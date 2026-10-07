@@ -138,11 +138,19 @@ export function SaveStatusIndicator({
   );
 }
 
-export interface BaseBoundProps extends SaveStatusIndicatorProps {
+export interface BaseBoundProps extends Omit<SaveStatusIndicatorProps, 'state'> {
   /** 界面标识（工作台 / 个人空间 / 标签页名）。 */
   surface: string;
   /** 声明的能力子集；省略 = 全部四项（与后端扫描口径一致）。 */
   capabilities?: readonly string[];
+  /**
+   * 保存状态；省略时与 `useAutosave` 的初始态一致取 `'saved'`
+   * （尚无草稿、也没有排队改动的界面就该是这个语义）。
+   *
+   * 接了真实草稿的界面必须**显式传入** `useAutosave` 的状态，
+   * 别让指示器永远停在「已保存」。
+   */
+  state?: SaveState;
   children: ReactNode;
 }
 
@@ -151,7 +159,7 @@ export interface BaseBoundProps extends SaveStatusIndicatorProps {
  * 即完成「接入声明 + 统一状态指示器」两件事（后端按这个标记判定已接入）。
  */
 export function BaseBound({
-  surface, capabilities, children, className, ...status
+  surface, capabilities, children, className, state = 'saved', ...status
 }: BaseBoundProps) {
   const base = useBase({ surface, capabilities });
   const classes = ['ui-base-bound', className].filter(Boolean).join(' ');
@@ -163,7 +171,7 @@ export function BaseBound({
       data-base-capabilities={base.capabilities.join(',')}
     >
       <div className="ui-base-bound__status">
-        <SaveStatusIndicator {...status} />
+        <SaveStatusIndicator state={state} {...status} />
       </div>
       <div className="ui-base-bound__body">{children}</div>
     </div>

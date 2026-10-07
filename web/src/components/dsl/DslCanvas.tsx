@@ -26,6 +26,7 @@ import {
 } from '../../api/dslCanvas';
 import { paramsForVerb } from '../workflow/FlowEditor';
 import { DslDiagnostics, diagnosticsForNode, nodeDiagnosticTitle } from './DslDiagnostics';
+import { useBase } from '../../hooks/useAutosave';
 
 /** 编辑后防抖再调后端 IR 校验的间隔（ms）；测试里可用真实定时器 + waitFor。 */
 export const IR_CHECK_DEBOUNCE_MS = 300;
@@ -148,6 +149,7 @@ function defaultParams(type: DslNodeType): Record<string, unknown> {
 }
 
 export function DslCanvas() {
+  useBase({ surface: 'web/src/components/dsl/DslCanvas' });
   // 模型状态（语义）与布局状态（视图）严格分离。
   const [nodes, setNodes] = useState<DslNode[]>([]);
   const [edges, setEdges] = useState<DslEdge[]>([]);

@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import type { ChannelOverview, MoodOption } from '../../api/assets';
 import { channelBadge } from './assetFormat';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface GeneratePanelProps {
   overview: ChannelOverview | null;
@@ -26,6 +27,7 @@ export function GeneratePanel({
   onGenerateMusic,
   onConfigureChannel,
 }: GeneratePanelProps) {
+  useBase({ surface: 'web/src/components/assets/GeneratePanel' });
   const image = overview?.channels.find((c) => c.channel === 'image') ?? null;
   const tts = overview?.channels.find((c) => c.channel === 'tts') ?? null;
   const moods: MoodOption[] = overview?.moods ?? [];

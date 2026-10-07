@@ -24,6 +24,7 @@ import {
   fmtDuration,
   statusMeta,
 } from './statusMap';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * 可访问名口径：e2e/ui-team.spec.ts 的 memberNode(page, role) 按 role 键
@@ -68,6 +69,7 @@ export function TeamCanvasGraph({
   onHoverRole,
   onRenameMember,
 }: Props) {
+  useBase({ surface: 'web/src/components/canvasui/TeamCanvasGraph' });
   const coordRole = snapshot.team.coordinator_role;
   const coordMember = memberViews.find((m) => m.role === coordRole);
   const members = useMemo(

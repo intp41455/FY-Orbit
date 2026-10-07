@@ -15,6 +15,7 @@
 import type { DslDiagnostic, DslNodeType, DslTransformVerb } from '../../api/dslCanvas';
 import type { EditorNode } from './FlowEditor';
 import { paramsForVerb } from './FlowEditor';
+import { useBase } from '../../hooks/useAutosave';
 
 const MAP_OPS = ['set', 'upper', 'lower'] as const;
 const FILTER_OPS = ['eq', 'ne', 'gt', 'lt', 'contains'] as const;
@@ -204,6 +205,7 @@ function JsonValueField({
 }
 
 export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: PropertyPanelProps) {
+  useBase({ surface: 'web/src/components/workflow/PropertyPanel' });
   if (!node) {
     return (
       <div className="card" data-testid="flow-properties">

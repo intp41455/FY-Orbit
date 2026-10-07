@@ -5,6 +5,7 @@ import { useAsync, Spinner, errorMessage } from '../components/ui';
 import { LineIcon } from '../components/ui/LineIcon';
 import { ConfirmDialog } from '../components/workbench/ConfirmDialog';
 import './../styles/pages/workbench.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 const STATUS_LABEL: Record<ProposalStatus, { text: string; tone: string; icon: Parameters<typeof LineIcon>[0]['name'] }> = {
   pending: { text: '待审批', tone: 'waiting', icon: 'clock' },
@@ -142,141 +143,143 @@ export function ApprovalsPage() {
   }
 
   return (
-    <div className="appr-shell">
-      <div className="page-head appr-page-head">
-        <h2>审批中心</h2>
-      </div>
-      <p className="muted">
-        只有所有者会话可决策。批准仅生成待执行许可；在外部操作真正完成前，状态不会显示"已合并/已发布"。
-      </p>
-
-      {/* 工具条（§1.4）：筛选 + 排序 + 搜索 */}
-      <div className="appr-toolbar">
-        <div className="appr-filter-chips" role="group" aria-label="状态筛选">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              className={`appr-chip${filter === f.key ? ' is-active' : ''}`}
-              aria-pressed={filter === f.key}
-              onClick={() => setFilter(f.key)}
-            >
-              {f.label}
-            </button>
-          ))}
+    <BaseBound surface="approvals">
+      <div className="appr-shell">
+        <div className="page-head appr-page-head">
+          <h2>审批中心</h2>
         </div>
-        <label className="appr-sort-row">
-          <span className="muted small">排序</span>
-          <select value={sortKey} onChange={(e) => setSortKey(e.target.value as 'created' | 'expires')}>
-            <option value="created">创建时间</option>
-            <option value="expires">过期时间</option>
-          </select>
-        </label>
-        <input
-          type="search"
-          className="appr-search"
-          placeholder="搜索 operation / target / digest…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          aria-label="搜索提案"
-        />
-      </div>
+        <p className="muted">
+          只有所有者会话可决策。批准仅生成待执行许可；在外部操作真正完成前，状态不会显示"已合并/已发布"。
+        </p>
 
-      {loading && <Spinner />}
-      {error && <div className="ui-error-text" role="alert">{error}</div>}
-      {localError && <div className="ui-error-text" role="alert">{localError}</div>}
-      {filtered.length === 0 && !loading && (
-        <div className="ui-empty">
-          <LineIcon name="approvals" size={24} />
-          <p className="ui-empty-title">没有匹配的提案</p>
-          <p className="ui-empty-hint">试试切换筛选或清空搜索词。</p>
-        </div>
-      )}
-
-      {filtered.map((p) => {
-        // pending 卡默认展开，终结态默认折叠（§1.4）
-        const expanded = p.status === 'pending';
-        return (
-          <div className={`appr-card${expanded ? ' is-expanded' : ''}`} key={p.id}>
-            <div className="appr-card-hd">
-              <div className="appr-card-summary">
-                <strong>{p.operation}</strong>
-                <span className="appr-target-badge">{p.target_id}</span>
-                <code className="appr-digest-inline">{p.digest.slice(0, 12)}…</code>
-              </div>
-              <StatusBadge p={p} />
-            </div>
-            <div className="muted small appr-card-reason">理由：{p.reason}</div>
-            <PrettyPayload p={p} />
-            {p.status === 'pending' && (
-              <div className="appr-card-actions">
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--primary"
-                  disabled={decidingId === p.id || armedApprove !== null}
-                  onClick={() => setArmedApprove(p)}
-                >
-                  {armedApprove?.id === p.id ? '准备批准…' : '批准（待执行）'}
-                </button>
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--danger"
-                  disabled={decidingId === p.id}
-                  onClick={() => setRejectProposal(p)}
-                >
-                  驳回…
-                </button>
-              </div>
-            )}
+        {/* 工具条（§1.4）：筛选 + 排序 + 搜索 */}
+        <div className="appr-toolbar">
+          <div className="appr-filter-chips" role="group" aria-label="状态筛选">
+            {FILTERS.map((f) => (
+              <button
+                key={f.key}
+                type="button"
+                className={`appr-chip${filter === f.key ? ' is-active' : ''}`}
+                aria-pressed={filter === f.key}
+                onClick={() => setFilter(f.key)}
+              >
+                {f.label}
+              </button>
+            ))}
           </div>
-        );
-      })}
+          <label className="appr-sort-row">
+            <span className="muted small">排序</span>
+            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as 'created' | 'expires')}>
+              <option value="created">创建时间</option>
+              <option value="expires">过期时间</option>
+            </select>
+          </label>
+          <input
+            type="search"
+            className="appr-search"
+            placeholder="搜索 operation / target / digest…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="搜索提案"
+          />
+        </div>
 
-      {/* 批准 armed 模态（5s 冷静期 → 真正提交） */}
-      {armedApprove && (
-        <ConfirmDialog
-          title="确认批准这个提案？"
-          destructive={false}
-          confirmLabel="批准（生成待执行许可）"
-          body={
-            <>
-              即将批准 <code>{armedApprove.operation}</code> 针对{' '}
-              <strong>{armedApprove.target_id}</strong> 的提案。
-              批准后仅生成待执行许可，外部操作完成前不会显示「已合并/已发布」。
-              <br />
-              <span className="muted small">Digest: {armedApprove.digest}</span>
-            </>
-          }
-          onConfirm={() => {
-            const p = armedApprove;
-            setArmedApprove(null);
-            void decide(p, 'approve');
-          }}
-          onCancel={() => setArmedApprove(null)}
-        />
-      )}
+        {loading && <Spinner />}
+        {error && <div className="ui-error-text" role="alert">{error}</div>}
+        {localError && <div className="ui-error-text" role="alert">{localError}</div>}
+        {filtered.length === 0 && !loading && (
+          <div className="ui-empty">
+            <LineIcon name="approvals" size={24} />
+            <p className="ui-empty-title">没有匹配的提案</p>
+            <p className="ui-empty-hint">试试切换筛选或清空搜索词。</p>
+          </div>
+        )}
 
-      {/* 驳回模态 */}
-      {rejectProposal && (
-        <ConfirmDialog
-          title="驳回这个提案？"
-          destructive
-          confirmLabel="确认驳回"
-          body={
-            <>
-              即将驳回 <code>{rejectProposal.operation}</code> 针对{' '}
-              <strong>{rejectProposal.target_id}</strong> 的提案。
-              驳回后提案不可再批准，需重新发起。
-            </>
-          }
-          onConfirm={() => {
-            const p = rejectProposal;
-            setRejectProposal(null);
-            void decide(p, 'reject');
-          }}
-          onCancel={() => setRejectProposal(null)}
-        />
-      )}
-    </div>
+        {filtered.map((p) => {
+          // pending 卡默认展开，终结态默认折叠（§1.4）
+          const expanded = p.status === 'pending';
+          return (
+            <div className={`appr-card${expanded ? ' is-expanded' : ''}`} key={p.id}>
+              <div className="appr-card-hd">
+                <div className="appr-card-summary">
+                  <strong>{p.operation}</strong>
+                  <span className="appr-target-badge">{p.target_id}</span>
+                  <code className="appr-digest-inline">{p.digest.slice(0, 12)}…</code>
+                </div>
+                <StatusBadge p={p} />
+              </div>
+              <div className="muted small appr-card-reason">理由：{p.reason}</div>
+              <PrettyPayload p={p} />
+              {p.status === 'pending' && (
+                <div className="appr-card-actions">
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--sm ui-btn--primary"
+                    disabled={decidingId === p.id || armedApprove !== null}
+                    onClick={() => setArmedApprove(p)}
+                  >
+                    {armedApprove?.id === p.id ? '准备批准…' : '批准（待执行）'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--sm ui-btn--danger"
+                    disabled={decidingId === p.id}
+                    onClick={() => setRejectProposal(p)}
+                  >
+                    驳回…
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* 批准 armed 模态（5s 冷静期 → 真正提交） */}
+        {armedApprove && (
+          <ConfirmDialog
+            title="确认批准这个提案？"
+            destructive={false}
+            confirmLabel="批准（生成待执行许可）"
+            body={
+              <>
+                即将批准 <code>{armedApprove.operation}</code> 针对{' '}
+                <strong>{armedApprove.target_id}</strong> 的提案。
+                批准后仅生成待执行许可，外部操作完成前不会显示「已合并/已发布」。
+                <br />
+                <span className="muted small">Digest: {armedApprove.digest}</span>
+              </>
+            }
+            onConfirm={() => {
+              const p = armedApprove;
+              setArmedApprove(null);
+              void decide(p, 'approve');
+            }}
+            onCancel={() => setArmedApprove(null)}
+          />
+        )}
+
+        {/* 驳回模态 */}
+        {rejectProposal && (
+          <ConfirmDialog
+            title="驳回这个提案？"
+            destructive
+            confirmLabel="确认驳回"
+            body={
+              <>
+                即将驳回 <code>{rejectProposal.operation}</code> 针对{' '}
+                <strong>{rejectProposal.target_id}</strong> 的提案。
+                驳回后提案不可再批准，需重新发起。
+              </>
+            }
+            onConfirm={() => {
+              const p = rejectProposal;
+              setRejectProposal(null);
+              void decide(p, 'reject');
+            }}
+            onCancel={() => setRejectProposal(null)}
+          />
+        )}
+      </div>
+    </BaseBound>
   );
 }

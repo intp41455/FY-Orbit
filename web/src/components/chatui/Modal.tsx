@@ -5,6 +5,7 @@
  * 焦点打开时落在输入框，关闭后交还给触发者（由调用方 onClose 负责回焦）。
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface ModalProps {
   title: string;
@@ -27,6 +28,7 @@ export function Modal({
   onCancel,
   onConfirm,
 }: ModalProps) {
+  useBase({ surface: 'web/src/components/chatui/Modal' });
   const [value, setValue] = useState(initialValue);
   const inputRef = useRef<HTMLInputElement>(null);
 

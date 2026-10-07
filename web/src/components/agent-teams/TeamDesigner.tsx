@@ -14,6 +14,7 @@ import { TeamCanvas } from './TeamCanvas';
 import { BusPanel } from './BusPanel'; // W7：团队房间会话（只读渲染 + 发言，挂在本侧栏）
 import { SCOPE_LABEL } from './teamVisual';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * 19 号团队画布设计器（21 号布局）。
@@ -29,6 +30,7 @@ function fmtUsd(v: number): string {
 
 /** 连线几何：三次贝塞尔 + 中点标签。 */
 export function TeamDesigner() {
+  useBase({ surface: 'web/src/components/agent-teams/TeamDesigner' });
   const [catalog, setCatalog] = useState<TeamCatalog | null>(null);
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [snapshot, setSnapshot] = useState<TeamSnapshot | null>(null);

@@ -19,6 +19,7 @@ import {
   type Stroke,
   type StrokePoint,
 } from './geometry';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface AnnotationCanvasProps {
   /** 提交批注（笔迹 + 语音引用 + 转写）。 */
@@ -32,6 +33,7 @@ export interface AnnotationCanvasProps {
 
 /** 画笔 + 语音批注覆盖层。 */
 export function AnnotationCanvas({ onSubmit, onCancel }: AnnotationCanvasProps) {
+  useBase({ surface: 'web/src/components/review/AnnotationCanvas' });
   const [strokes, setStrokes] = useState<StrokePoint[][]>([]);
   const [live, setLive] = useState<StrokePoint[]>([]);
   const [drawing, setDrawing] = useState(false);

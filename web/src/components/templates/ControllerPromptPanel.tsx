@@ -7,6 +7,7 @@
  */
 import { LineIcon } from '../ui/LineIcon';
 import type { ControllerSpec } from '../../api/templates';
+import { useBase } from '../../hooks/useAutosave';
 
 export function ControllerPromptPanel({
   controller,
@@ -28,6 +29,7 @@ export function ControllerPromptPanel({
   onCheck: () => void;
   onRestore: () => void;
 }) {
+  useBase({ surface: 'web/src/components/templates/ControllerPromptPanel' });
   const broken = warnings.length > 0;
   return (
     <section className="fy-tpl-controller" aria-label="总控 Agent 出厂预设">

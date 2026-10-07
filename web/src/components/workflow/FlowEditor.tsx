@@ -36,6 +36,7 @@ import {
 } from '../../api/workflowGen';
 import { NodePalette } from './NodePalette';
 import { PropertyPanel } from './PropertyPanel';
+import { useBase } from '../../hooks/useAutosave';
 
 export const CANVAS_W = 760;
 export const CANVAS_H = 420;
@@ -351,6 +352,8 @@ function ErrorBanner({ message, detail }: { message: string; detail?: string }) 
 }
 
 export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: FlowEditorProps) {
+  // A-基座质保-01：声明式接入基座（声明 + 保存指示器由 useBase 统一产出）。
+  useBase({ surface: 'web/src/components/workflow/FlowEditor' });
   const [nodes, setNodes] = useState<EditorNode[]>([]);
   const [edges, setEdges] = useState<EditorEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

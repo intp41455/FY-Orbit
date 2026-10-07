@@ -11,6 +11,7 @@ import type {
 import { useAsync, Spinner, errorMessage } from '../components/ui';
 import { AutomationPermissionCard } from '../components/settings/AutomationPermissionCard';
 import { ImaKnowledgeCard } from '../components/settings/ImaKnowledgeCard';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 import { LineIcon } from '../components/ui/LineIcon';
 import '../styles/pages/system.css';
 
@@ -152,6 +153,7 @@ export function SettingsPage() {
   }
 
   return (
+    <BaseBound surface="settings">
     <>
       <div className="page-head"><h2>设置与数据</h2></div>
       <div className="st-sections">
@@ -260,6 +262,7 @@ export function SettingsPage() {
         />
       )}
     </>
+    </BaseBound>
   );
 }
 

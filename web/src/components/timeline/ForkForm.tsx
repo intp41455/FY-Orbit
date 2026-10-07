@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * P4 · 分叉创建表单（A-存档回溯-04「改参重跑生成新分支」）。
@@ -20,6 +21,7 @@ interface Props {
 }
 
 export function ForkForm({ defaultThreadId = '', onSubmit, disabled = false }: Props) {
+  useBase({ surface: 'web/src/components/timeline/ForkForm' });
   const [threadId, setThreadId] = useState(defaultThreadId);
   const [checkpointId, setCheckpointId] = useState('');
   const [overridesText, setOverridesText] = useState('{}');

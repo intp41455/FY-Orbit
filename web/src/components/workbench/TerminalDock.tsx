@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineIcon } from '../ui/LineIcon';
 import { TerminalPane } from './TerminalPane';
 import { WbIcon } from './WbIcon';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * 底部坞第 1 段：多标签终端。
@@ -114,6 +115,7 @@ function TerminalTabView({
 }
 
 export function TerminalDock({ workspaceId, hotRequest = 0, onSessionStopped, onSessionChange, restartSignal }: Props) {
+  useBase({ surface: 'web/src/components/workbench/TerminalDock' });
   const [tabs, setTabs] = useState<TerminalTab[]>([]);
   const [detached, setDetached] = useState<TerminalTab[]>([]);
   const [activeId, setActiveId] = useState<string>('term-1');

@@ -46,6 +46,7 @@ import {
   TuningRow,
   type AssetWallItem,
 } from '../components/cabinni/AvatarWorkshopUi';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /* ------------------------------------------------------------------ */
 /* 画像字段定义：逐项同意的单位                                          */
@@ -427,371 +428,373 @@ export function AvatarWorkshopPage() {
     (tuning[key] as string) ?? (avatar ? String(avatar.params[key] ?? '') : '');
 
   return (
-    <div className="avatar-workshop">
-      <div className="page-head">
-        <div>
-          <h2>角色工坊</h2>
-          <p className="muted">
-            用你的画像生成独属于自己的像素小人。生成过程<strong>完全本地</strong>，
-            不调用任何大模型 —— 同样的画像永远得到同样的角色。
-          </p>
+    <BaseBound surface="avatar-workshop">
+      <div className="avatar-workshop">
+        <div className="page-head">
+          <div>
+            <h2>角色工坊</h2>
+            <p className="muted">
+              用你的画像生成独属于自己的像素小人。生成过程<strong>完全本地</strong>，
+              不调用任何大模型 —— 同样的画像永远得到同样的角色。
+            </p>
+          </div>
+          <div className="row" style={{ gap: 'var(--ui-s-2)' }}>
+            <button type="button" className="ui-btn" onClick={() => navigate('/cabin')}>
+              <LineIcon name="cabin" size={16} />
+              去小屋
+            </button>
+          </div>
         </div>
-        <div className="row" style={{ gap: 'var(--ui-s-2)' }}>
-          <button type="button" className="ui-btn" onClick={() => navigate('/cabin')}>
-            <LineIcon name="cabin" size={16} />
-            去小屋
-          </button>
-        </div>
-      </div>
 
-      <div className="cabin-ni-avatar-grid">
-        {/* ================= 左：画像与操作 ================= */}
-        <section className="cabin-ni-avatar-panel ui-panel">
-          <h3>1 · 画像（逐项同意）</h3>
-          <p className="cabin-ni-field-hint">
-            只勾选你同意使用的项。没勾的不会提交，缺失维度由本地引擎走中性默认，
-            并在预览里标注「待补画像」—— 不会假装那是你的真实数据。
-          </p>
+        <div className="cabin-ni-avatar-grid">
+          {/* ================= 左：画像与操作 ================= */}
+          <section className="cabin-ni-avatar-panel ui-panel">
+            <h3>1 · 画像（逐项同意）</h3>
+            <p className="cabin-ni-field-hint">
+              只勾选你同意使用的项。没勾的不会提交，缺失维度由本地引擎走中性默认，
+              并在预览里标注「待补画像」—— 不会假装那是你的真实数据。
+            </p>
 
-          {PORTRAIT_FIELDS.map((f) => (
-            <div className="cabin-ni-field" key={f.key}>
-              <label className="cabin-ni-field-label" style={{ cursor: 'pointer' }}>
+            {PORTRAIT_FIELDS.map((f) => (
+              <div className="cabin-ni-field" key={f.key}>
+                <label className="cabin-ni-field-label" style={{ cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(consent[f.key])}
+                    style={{ width: 16, height: 16, accentColor: 'var(--ui-sky-600)' }}
+                    onChange={(e) =>
+                      setConsent((c) => ({ ...c, [f.key]: e.target.checked }))
+                    }
+                  />
+                  <span>{f.label}</span>
+                </label>
                 <input
-                  type="checkbox"
-                  checked={Boolean(consent[f.key])}
-                  style={{ width: 16, height: 16, accentColor: 'var(--ui-sky-600)' }}
-                  onChange={(e) =>
-                    setConsent((c) => ({ ...c, [f.key]: e.target.checked }))
-                  }
+                  type="text"
+                  className="ui-input"
+                  placeholder={f.placeholder}
+                  disabled={!consent[f.key]}
+                  aria-label={f.label}
+                  value={draft[f.key] ?? ''}
+                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                 />
-                <span>{f.label}</span>
-              </label>
-              <input
-                type="text"
-                className="ui-input"
-                placeholder={f.placeholder}
-                disabled={!consent[f.key]}
-                aria-label={f.label}
-                value={draft[f.key] ?? ''}
-                onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-              />
-              <span className="cabin-ni-field-hint">{f.hint}</span>
-            </div>
-          ))}
-
-          <div className="cabin-ni-avatar-two">
-            <label className="cabin-ni-field">
-              <span className="cabin-ni-field-label">性别（可选）</span>
-              <select
-                className="ui-select"
-                aria-label="性别（可选）"
-                value={gender}
-                onChange={(e) => setGender(e.target.value)}
-              >
-                {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
-              </select>
-            </label>
-            <label className="cabin-ni-field">
-              <span className="cabin-ni-field-label">年龄档（可选）</span>
-              <select
-                className="ui-select"
-                aria-label="年龄档（可选）"
-                value={ageBand}
-                onChange={(e) => setAgeBand(e.target.value)}
-              >
-                {AGE_BANDS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
-              </select>
-            </label>
-          </div>
-          <p className="cabin-ni-field-hint">
-            性别与年龄档会被记录，但<strong>刻意不改变剪影</strong> —— 角色统一为
-            1:1.2 Q 版头身比，不按性别或年龄分化。
-          </p>
-
-          <div className="row avatar-actions">
-            <button
-              type="button"
-              className="ui-btn ui-btn--primary"
-              onClick={() => void runGenerate()}
-              disabled={phase === 'loading'}
-            >
-              <LineIcon name="sparkles" size={16} />
-              {phase === 'loading' ? '生成中…' : avatar ? '重新生成' : '生成我的小人'}
-            </button>
-            {avatar && (
-              <button type="button" className="ui-btn" onClick={() => void restoreBase()}>
-                <LineIcon name="refresh" size={16} />
-                还原 AI 底稿
-              </button>
-            )}
-          </div>
-
-          {phase === 'error' && (
-            <div className="notice error" role="alert">
-              <LineIcon name="alert" size={16} />
-              {errorText}
-              {errorCode && <span className="avatar-error-code">（错误码 {errorCode}）</span>}
-            </div>
-          )}
-        </section>
-
-        {/* ================= 中：预览 + 微调 ================= */}
-        <section className="cabin-ni-avatar-panel ui-panel">
-          <h3>2 · 预览</h3>
-
-          {!avatar && (
-            <div className="notice info">
-              还没有生成角色。填好左侧画像后点「生成我的小人」——
-              全过程在本地完成，不上传任何画像数据。
-            </div>
-          )}
-
-          {avatar && idle && walk && (
-            <>
-              <AvatarStage
-                frames={animation === 'walk' ? walk : idle}
-                palette={avatar.char_palette}
-                animation={animation}
-                onAnimation={setAnimation}
-                dirty={tuningDirty}
-              />
-
-              {advisory && (
-                <div className={advisory.complete ? 'notice info' : 'notice warn'}>
-                  <p style={{ margin: 0 }}>
-                    <LineIcon name={advisory.complete ? 'check' : 'alert'} size={16} /> {advisory.note}
-                  </p>
-                  <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
-                    {advisory.notes}
-                  </p>
-                  {advisory.age_band_label && (
-                    <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
-                      已记录年龄档：{advisory.age_band_label}（仅记录，不改剪影）
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <MetaList
-                rows={[
-                  { label: '参数空间', value: `${avatar.param_space_size.toLocaleString()} 种组合` },
-                  { label: '呈现短码', value: (profile?.params_fingerprint ?? '—').slice(0, 8) },
-                  { label: '底稿短码', value: (profile?.fingerprint ?? '—').slice(0, 8) },
-                  { label: '色板', value: `${Object.keys(avatar.palette).length} 色` },
-                  { label: '状态', value: profile?.state === 'confirmed' ? '已确认' : '草稿' },
-                  { label: '微调', value: avatar.tuned ? '已微调（可一键还原）' : '未微调' },
-                ]}
-              />
-
-              <details className="avatar-labels">
-                <summary>查看生成依据（可回溯）</summary>
-                <ul>
-                  {Object.entries(profile?.params.sources ?? {}).map(([k, v]) => (
-                    <li key={k}><code>{k}</code> ← {v}</li>
-                  ))}
-                </ul>
-              </details>
-            </>
-          )}
-
-          {avatar && (
-            <>
-              <h3>3 · 微调</h3>
-              <p className="cabin-ni-field-hint">
-                微调只改变「现在长什么样」，底稿指纹不变，随时可一键还原。
-                改动会立即在左侧预览台看到，无需点「生成」。
-              </p>
-
-              {(
-                Object.keys(TUNING_OPTIONS) as (keyof typeof TUNING_OPTIONS)[]
-              ).map((key) => (
-                <TuningRow
-                  key={key}
-                  label={TUNING_LABELS[key]}
-                  gloss={`当前：${TUNING_GLOSS[key](tuningValue(key))}`}
-                >
-                  {/*
-                    选项文字刻意保持**后端枚举原值**（不是中文翻译）：
-                    这些是 FROZEN_CONTRACT 里的契约标识，显示原值可以直接对照
-                    `tests/unit/test_tuning_options_contract.py` 校验的白名单；
-                    中文含义放在下面的提示行里，用户既看得懂也能查得准。
-                  */}
-                  <select
-                    className="ui-select"
-                    value={tuningValue(key)}
-                    aria-label={TUNING_LABELS[key]}
-                    data-testid={`avatar-ni-select-${key}`}
-                    onChange={(e) => setTuning((t) => ({ ...t, [key]: e.target.value }))}
-                  >
-                    {TUNING_OPTIONS[key].map((opt) => (
-                      <option key={opt} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                </TuningRow>
-              ))}
-
-              {/* 发色色点图例：信息性展示（不可点），中文名 + 原值成对给出。
-                  「当前」用文字 + 描边双重标注，不靠颜色单独区分。 */}
-              <div className="cabin-ni-field">
-                <span className="cabin-ni-field-label">发色对照</span>
-                <span className="cabin-ni-swatches" data-testid="avatar-ni-hair-tone-legend">
-                  {TUNING_OPTIONS.hair_tone.map((v) => {
-                    const meta = HAIR_TONE_LABELS[v];
-                    const current = tuningValue('hair_tone') === v;
-                    return (
-                      <span
-                        key={v}
-                        className="cabin-ni-swatch"
-                        aria-current={current ? 'true' : undefined}
-                        style={
-                          current
-                            ? {
-                                /* 同 ProfileDimensions：薄荷高亮环改由令牌派生。
-                                   #2dd4bf == --ui-teal-400，渲染与原字面量等价。 */
-                                borderColor: 'color-mix(in srgb, var(--ui-teal-400) 65%, transparent)',
-                                boxShadow: '0 0 0 1px color-mix(in srgb, var(--ui-teal-400) 22%, transparent)',
-                              }
-                            : undefined
-                        }
-                      >
-                        <span
-                          className="cabin-ni-swatch-dot"
-                          style={{ background: meta?.dot }}
-                          aria-hidden="true"
-                        />
-                        {meta?.label ?? v}
-                        <span className="ui-hint">{v}</span>
-                        {current && <span className="ui-badge ui-badge--verifying">当前</span>}
-                      </span>
-                    );
-                  })}
-                </span>
+                <span className="cabin-ni-field-hint">{f.hint}</span>
               </div>
+            ))}
 
-              <SliderRow
-                label="色相偏移"
-                value={hueShift}
-                min={-2}
-                max={2}
-                display={String(hueShift)}
-                onChange={setHueShift}
-                testId="avatar-ni-hue"
-              />
+            <div className="cabin-ni-avatar-two">
+              <label className="cabin-ni-field">
+                <span className="cabin-ni-field-label">性别（可选）</span>
+                <select
+                  className="ui-select"
+                  aria-label="性别（可选）"
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value)}
+                >
+                  {GENDERS.map((g) => <option key={g.value} value={g.value}>{g.label}</option>)}
+                </select>
+              </label>
+              <label className="cabin-ni-field">
+                <span className="cabin-ni-field-label">年龄档（可选）</span>
+                <select
+                  className="ui-select"
+                  aria-label="年龄档（可选）"
+                  value={ageBand}
+                  onChange={(e) => setAgeBand(e.target.value)}
+                >
+                  {AGE_BANDS.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
+                </select>
+              </label>
+            </div>
+            <p className="cabin-ni-field-hint">
+              性别与年龄档会被记录，但<strong>刻意不改变剪影</strong> —— 角色统一为
+              1:1.2 Q 版头身比，不按性别或年龄分化。
+            </p>
 
-              <button type="button" className="ui-btn" onClick={() => void runGenerate()}>
-                <LineIcon name="check" size={16} />
-                应用微调（保存到底稿）
+            <div className="row avatar-actions">
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary"
+                onClick={() => void runGenerate()}
+                disabled={phase === 'loading'}
+              >
+                <LineIcon name="sparkles" size={16} />
+                {phase === 'loading' ? '生成中…' : avatar ? '重新生成' : '生成我的小人'}
               </button>
-            </>
-          )}
-        </section>
+              {avatar && (
+                <button type="button" className="ui-btn" onClick={() => void restoreBase()}>
+                  <LineIcon name="refresh" size={16} />
+                  还原 AI 底稿
+                </button>
+              )}
+            </div>
 
-        {/* ================= 右：确认、素材墙与分享卡 ================= */}
-        <section className="cabin-ni-avatar-panel ui-panel">
-          <h3>4 · 像不像自己？</h3>
-          <SliderRow
-            label="相似度自评"
-            value={score}
-            min={1}
-            max={10}
-            display={`${score} / 10`}
-            onChange={setScore}
-            testId="avatar-ni-likeness"
-          />
+            {phase === 'error' && (
+              <div className="notice error" role="alert">
+                <LineIcon name="alert" size={16} />
+                {errorText}
+                {errorCode && <span className="avatar-error-code">（错误码 {errorCode}）</span>}
+              </div>
+            )}
+          </section>
 
-          <label className="cabin-ni-field">
-            <span className="cabin-ni-field-label">一句感想（可留空）</span>
-            <textarea
-              className="ui-textarea"
-              rows={2}
-              maxLength={200}
-              aria-label="一句感想（可留空）"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="哪里像你，哪里不像？"
+          {/* ================= 中：预览 + 微调 ================= */}
+          <section className="cabin-ni-avatar-panel ui-panel">
+            <h3>2 · 预览</h3>
+
+            {!avatar && (
+              <div className="notice info">
+                还没有生成角色。填好左侧画像后点「生成我的小人」——
+                全过程在本地完成，不上传任何画像数据。
+              </div>
+            )}
+
+            {avatar && idle && walk && (
+              <>
+                <AvatarStage
+                  frames={animation === 'walk' ? walk : idle}
+                  palette={avatar.char_palette}
+                  animation={animation}
+                  onAnimation={setAnimation}
+                  dirty={tuningDirty}
+                />
+
+                {advisory && (
+                  <div className={advisory.complete ? 'notice info' : 'notice warn'}>
+                    <p style={{ margin: 0 }}>
+                      <LineIcon name={advisory.complete ? 'check' : 'alert'} size={16} /> {advisory.note}
+                    </p>
+                    <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
+                      {advisory.notes}
+                    </p>
+                    {advisory.age_band_label && (
+                      <p className="cabin-ni-field-hint" style={{ margin: 'var(--ui-s-1) 0 0' }}>
+                        已记录年龄档：{advisory.age_band_label}（仅记录，不改剪影）
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <MetaList
+                  rows={[
+                    { label: '参数空间', value: `${avatar.param_space_size.toLocaleString()} 种组合` },
+                    { label: '呈现短码', value: (profile?.params_fingerprint ?? '—').slice(0, 8) },
+                    { label: '底稿短码', value: (profile?.fingerprint ?? '—').slice(0, 8) },
+                    { label: '色板', value: `${Object.keys(avatar.palette).length} 色` },
+                    { label: '状态', value: profile?.state === 'confirmed' ? '已确认' : '草稿' },
+                    { label: '微调', value: avatar.tuned ? '已微调（可一键还原）' : '未微调' },
+                  ]}
+                />
+
+                <details className="avatar-labels">
+                  <summary>查看生成依据（可回溯）</summary>
+                  <ul>
+                    {Object.entries(profile?.params.sources ?? {}).map(([k, v]) => (
+                      <li key={k}><code>{k}</code> ← {v}</li>
+                    ))}
+                  </ul>
+                </details>
+              </>
+            )}
+
+            {avatar && (
+              <>
+                <h3>3 · 微调</h3>
+                <p className="cabin-ni-field-hint">
+                  微调只改变「现在长什么样」，底稿指纹不变，随时可一键还原。
+                  改动会立即在左侧预览台看到，无需点「生成」。
+                </p>
+
+                {(
+                  Object.keys(TUNING_OPTIONS) as (keyof typeof TUNING_OPTIONS)[]
+                ).map((key) => (
+                  <TuningRow
+                    key={key}
+                    label={TUNING_LABELS[key]}
+                    gloss={`当前：${TUNING_GLOSS[key](tuningValue(key))}`}
+                  >
+                    {/*
+                      选项文字刻意保持**后端枚举原值**（不是中文翻译）：
+                      这些是 FROZEN_CONTRACT 里的契约标识，显示原值可以直接对照
+                      `tests/unit/test_tuning_options_contract.py` 校验的白名单；
+                      中文含义放在下面的提示行里，用户既看得懂也能查得准。
+                    */}
+                    <select
+                      className="ui-select"
+                      value={tuningValue(key)}
+                      aria-label={TUNING_LABELS[key]}
+                      data-testid={`avatar-ni-select-${key}`}
+                      onChange={(e) => setTuning((t) => ({ ...t, [key]: e.target.value }))}
+                    >
+                      {TUNING_OPTIONS[key].map((opt) => (
+                        <option key={opt} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  </TuningRow>
+                ))}
+
+                {/* 发色色点图例：信息性展示（不可点），中文名 + 原值成对给出。
+                    「当前」用文字 + 描边双重标注，不靠颜色单独区分。 */}
+                <div className="cabin-ni-field">
+                  <span className="cabin-ni-field-label">发色对照</span>
+                  <span className="cabin-ni-swatches" data-testid="avatar-ni-hair-tone-legend">
+                    {TUNING_OPTIONS.hair_tone.map((v) => {
+                      const meta = HAIR_TONE_LABELS[v];
+                      const current = tuningValue('hair_tone') === v;
+                      return (
+                        <span
+                          key={v}
+                          className="cabin-ni-swatch"
+                          aria-current={current ? 'true' : undefined}
+                          style={
+                            current
+                              ? {
+                                  /* 同 ProfileDimensions：薄荷高亮环改由令牌派生。
+                                     #2dd4bf == --ui-teal-400，渲染与原字面量等价。 */
+                                  borderColor: 'color-mix(in srgb, var(--ui-teal-400) 65%, transparent)',
+                                  boxShadow: '0 0 0 1px color-mix(in srgb, var(--ui-teal-400) 22%, transparent)',
+                                }
+                              : undefined
+                          }
+                        >
+                          <span
+                            className="cabin-ni-swatch-dot"
+                            style={{ background: meta?.dot }}
+                            aria-hidden="true"
+                          />
+                          {meta?.label ?? v}
+                          <span className="ui-hint">{v}</span>
+                          {current && <span className="ui-badge ui-badge--verifying">当前</span>}
+                        </span>
+                      );
+                    })}
+                  </span>
+                </div>
+
+                <SliderRow
+                  label="色相偏移"
+                  value={hueShift}
+                  min={-2}
+                  max={2}
+                  display={String(hueShift)}
+                  onChange={setHueShift}
+                  testId="avatar-ni-hue"
+                />
+
+                <button type="button" className="ui-btn" onClick={() => void runGenerate()}>
+                  <LineIcon name="check" size={16} />
+                  应用微调（保存到底稿）
+                </button>
+              </>
+            )}
+          </section>
+
+          {/* ================= 右：确认、素材墙与分享卡 ================= */}
+          <section className="cabin-ni-avatar-panel ui-panel">
+            <h3>4 · 像不像自己？</h3>
+            <SliderRow
+              label="相似度自评"
+              value={score}
+              min={1}
+              max={10}
+              display={`${score} / 10`}
+              onChange={setScore}
+              testId="avatar-ni-likeness"
             />
-          </label>
 
-          <label className="cabin-ni-badge" style={{ minHeight: 'var(--ui-hit-lg)' }}>
-            <input
-              type="checkbox"
-              checked={isHouseAvatar}
-              onChange={(e) => setIsHouseAvatar(e.target.checked)}
-            />
-            <span>设为小屋专属小人（替换默认小人）</span>
-          </label>
+            <label className="cabin-ni-field">
+              <span className="cabin-ni-field-label">一句感想（可留空）</span>
+              <textarea
+                className="ui-textarea"
+                rows={2}
+                maxLength={200}
+                aria-label="一句感想（可留空）"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="哪里像你，哪里不像？"
+              />
+            </label>
 
-          <button
-            type="button"
-            className="ui-btn ui-btn--primary ui-btn--block"
-            disabled={!profile || profile.state === 'confirmed' || phase === 'loading'}
-            onClick={() => void runConfirm()}
-          >
-            <LineIcon name="check" size={16} />
-            {profile?.state === 'confirmed' ? '已确认' : '确认这个角色'}
-          </button>
+            <label className="cabin-ni-badge" style={{ minHeight: 'var(--ui-hit-lg)' }}>
+              <input
+                type="checkbox"
+                checked={isHouseAvatar}
+                onChange={(e) => setIsHouseAvatar(e.target.checked)}
+              />
+              <span>设为小屋专属小人（替换默认小人）</span>
+            </label>
 
-          <h3>5 · 分享卡</h3>
-          <p className="cabin-ni-field-hint">
-            <strong>默认一个都不勾</strong> = 零隐私泄露。只有你主动勾选的字段会出现在
-            720×960 导出图上；未勾选的具体字段名也不会印在卡上。
-          </p>
-          <BadgePicker
-            fields={SHARE_BADGE_FIELDS}
-            checked={badges}
-            onToggle={(f) =>
-              setBadges((b) => (b.includes(f as ShareBadgeField) ? b.filter((x) => x !== f) : [...b, f as ShareBadgeField]))
-            }
-          />
-
-          {/* 素材墙：上传创意挂件入口（内容全部来自真实后端返回，不造条目） */}
-          <h3>6 · 素材墙</h3>
-          <AssetWall
-            items={assetItems}
-            onPick={(item) => {
-              // 素材墙目前只承载分享卡产物；点击即下载对应 PNG。
-              if (item.id === 'share-card') downloadCard();
-            }}
-            emptyHint="生成并确认角色后，出卡素材会出现在这里；现在还没有可挂的素材。"
-          />
-
-          <div className="row avatar-actions">
             <button
               type="button"
-              className="ui-btn ui-btn--primary"
-              disabled={!profile || profile.state !== 'confirmed' || phase === 'loading'}
-              onClick={() => void runShareCard()}
+              className="ui-btn ui-btn--primary ui-btn--block"
+              disabled={!profile || profile.state === 'confirmed' || phase === 'loading'}
+              onClick={() => void runConfirm()}
             >
-              <LineIcon name="download" size={16} />
-              {profile?.state === 'confirmed' ? '生成分享卡' : '请先确认角色'}
+              <LineIcon name="check" size={16} />
+              {profile?.state === 'confirmed' ? '已确认' : '确认这个角色'}
             </button>
-            {card && (
-              <button type="button" className="ui-btn" onClick={downloadCard}>
-                <LineIcon name="download" size={16} />
-                下载 PNG
-              </button>
-            )}
-          </div>
 
-          {card && (
-            <ShareCardFrame
-              canvasRef={cardCanvasRef}
-              caption={card.caption}
-              shortCode={card.fingerprint_short}
-              baseShortCode={card.base_fingerprint_short}
-              tuned={card.tuned}
-              excludedCount={card.excluded_fields.length}
+            <h3>5 · 分享卡</h3>
+            <p className="cabin-ni-field-hint">
+              <strong>默认一个都不勾</strong> = 零隐私泄露。只有你主动勾选的字段会出现在
+              720×960 导出图上；未勾选的具体字段名也不会印在卡上。
+            </p>
+            <BadgePicker
+              fields={SHARE_BADGE_FIELDS}
+              checked={badges}
+              onToggle={(f) =>
+                setBadges((b) => (b.includes(f as ShareBadgeField) ? b.filter((x) => x !== f) : [...b, f as ShareBadgeField]))
+              }
             />
-          )}
-        </section>
-      </div>
 
-      <p className="muted avatar-foot">
-        想看它在屋里走动？
-        <Link to="/cabin">去我的小屋 →</Link>
-      </p>
-    </div>
+            {/* 素材墙：上传创意挂件入口（内容全部来自真实后端返回，不造条目） */}
+            <h3>6 · 素材墙</h3>
+            <AssetWall
+              items={assetItems}
+              onPick={(item) => {
+                // 素材墙目前只承载分享卡产物；点击即下载对应 PNG。
+                if (item.id === 'share-card') downloadCard();
+              }}
+              emptyHint="生成并确认角色后，出卡素材会出现在这里；现在还没有可挂的素材。"
+            />
+
+            <div className="row avatar-actions">
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary"
+                disabled={!profile || profile.state !== 'confirmed' || phase === 'loading'}
+                onClick={() => void runShareCard()}
+              >
+                <LineIcon name="download" size={16} />
+                {profile?.state === 'confirmed' ? '生成分享卡' : '请先确认角色'}
+              </button>
+              {card && (
+                <button type="button" className="ui-btn" onClick={downloadCard}>
+                  <LineIcon name="download" size={16} />
+                  下载 PNG
+                </button>
+              )}
+            </div>
+
+            {card && (
+              <ShareCardFrame
+                canvasRef={cardCanvasRef}
+                caption={card.caption}
+                shortCode={card.fingerprint_short}
+                baseShortCode={card.base_fingerprint_short}
+                tuned={card.tuned}
+                excludedCount={card.excluded_fields.length}
+              />
+            )}
+          </section>
+        </div>
+
+        <p className="muted avatar-foot">
+          想看它在屋里走动？
+          <Link to="/cabin">去我的小屋 →</Link>
+        </p>
+      </div>
+    </BaseBound>
   );
 }
