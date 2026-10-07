@@ -49,7 +49,7 @@ def test_marketplace_list_empty_then_lists_published(client: TestClient):
     headers = login_owner(client)
     r = client.get("/api/plugins/marketplace", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"items": [], "total": 0, "limit": 20, "offset": 0}
+    assert r.json() == {"items": [], "total": 0, "limit": 20, "offset": 0, "sort_by": "score"}
 
     sk_id = _stage_and_publish(client, headers, "http-listed")
     r = client.get("/api/plugins/marketplace", headers=headers)
