@@ -27,6 +27,7 @@ import {
   type DslNode,
   type DslNodeType,
   type DslRunResult,
+  type DslSuspendedResult,
   type DslTransformVerb,
 } from '../../api/dslCanvas';
 import {
@@ -363,6 +364,8 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
   /** A-三重模式-01：运行结果（小白全流程的最后一环）。 */
   const [run, setRun] = useState<DslRunResult | null>(null);
   const [runError, setRunError] = useState('');
+  /** 挂起**不是失败**：走到人工裁决点的运行要如实显示为「等裁决」。 */
+  const [suspended, setSuspended] = useState<DslSuspendedResult['suspended'] | null>(null);
   /** P1 · 后端收集式 IR 校验的全部诊断（按 field_path 落到属性面板字段）。 */
   const [irDiagnostics, setIrDiagnostics] = useState<DslDiagnostic[]>([]);
 
@@ -548,6 +551,7 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
     setNotice('');
     setRun(null);
     setRunError('');
+    setSuspended(null);
     const local = quickValidate(doc);
     if (!local.ok) {
       setError({ message: local.message, detail: '' });
@@ -555,7 +559,15 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
       return;
     }
     try {
-      const res = await dslCanvasApi.run(doc);
+      // `/api/dsl-canvas/runs` 有两条**都是成功**的分支：200 直达结果 / 202
+      // 挂起（走到 confirm|approval 且尚无人工裁决）。202 也算 res.ok，所以
+      // 这里必须自己分流；否则企业模式的 approval 与 confirm 会被红字误报成
+      // 「执行失败」——把等裁决说成失败，就是拿假状态糊弄用户。
+      const res = (await dslCanvasApi.run(doc)) as DslRunResult | DslSuspendedResult;
+      if (res.status === 'suspended') {
+        setSuspended(res.suspended);
+        return;
+      }
       setRun(res);
       if (res.status !== 'succeeded') {
         setRunError(res.error ?? '执行失败');
@@ -604,6 +616,12 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
           {run && run.status === 'succeeded' && (
             <span className="fy-flow-run-ok" data-testid="flow-run-ok">
               运行 <code>{run.run_id}</code> 成功
+            </span>
+          )}
+          {suspended && (
+            <span className="fy-flow-run-suspended" data-testid="flow-run-suspended">
+              已挂起，等待人工裁决（节点 <code>{suspended.node_id}</code>）：
+              {suspended.context.prompt || '需要你的裁决'}
             </span>
           )}
           {runError && (

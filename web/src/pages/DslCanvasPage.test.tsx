@@ -247,4 +247,30 @@ describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
     expect(await screen.findByTestId('flow-run-error')).toHaveTextContent('节点 miss 无上游输入');
     expect(screen.queryByTestId('flow-run-ok')).toBeNull();
   });
+
+  it('运行挂起如实显示为「等裁决」，不报成失败（202 也是成功分支）', async () => {
+    const user = userEvent.setup();
+    // `/api/dsl-canvas/runs` 走到 confirm|approval 且无人工裁决时返回 202 +
+    // 挂起载荷。它是 res.ok，`request()` 会把 body 原样交回——前端若当成失败，
+    // 企业模式的 approval 节点就会被红字误报成「执行失败」。
+    vi.mocked(dslCanvasApi.run).mockResolvedValue({
+      status: 'suspended',
+      suspended: {
+        checkpoint: 'cp-1', dsl_digest: 'sha256:abc',
+        context: { prompt: '是否写入长期记忆？', role: 'owner', node_id: 'govern' },
+        options: [{ value: 'approve', label: '同意' }], node_id: 'govern',
+      },
+    } as never);
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    await screen.findByTestId('flow-node-src');
+    await user.click(screen.getByTestId('flow-run'));
+
+    expect(await screen.findByTestId('flow-run-suspended')).toHaveTextContent('等待人工裁决');
+    expect(screen.getByTestId('flow-run-suspended')).toHaveTextContent('是否写入长期记忆？');
+    expect(screen.queryByTestId('flow-run-error')).toBeNull();
+    expect(screen.queryByTestId('flow-run-ok')).toBeNull();
+  });
 });
