@@ -1,6 +1,6 @@
 name = "fy-orbit"
 compatibility_date = "2024-09-23"
-pages_build_output_dir = "dist"
+pages_build_output_dir = "../../web/dist"
 
 [vars]
 # 生产部署时由构建环境或 Cloudflare Dashboard 注入真实的后端公网 URL
