@@ -21,6 +21,7 @@ import find_yourself.db.workbench_models  # noqa: F401
 import find_yourself.db.team_models  # noqa: F401
 import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
 import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
+import find_yourself.db.fork_models  # noqa: F401  (P4 存档分叉 archive_forks)
 from find_yourself.services.audit import AuditService
 from find_yourself.services.actor import Actor
 
