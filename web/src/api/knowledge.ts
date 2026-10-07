@@ -236,7 +236,7 @@ export const knowledgeApi = {
     ),
 
   configureSource: (sourceId: string, values: Record<string, string>) =>
-    postJson<{ source_id: string; configured: boolean; storage: string }>(
+    postJson<{ source_id: string; configured: boolean; storage: string; persist_restart?: boolean }>(
       `${BASE}/sources/${encodeURIComponent(sourceId)}/configure`,
       values,
     ),

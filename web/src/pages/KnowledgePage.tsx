@@ -1,4 +1,4 @@
-// W3 知识库：拖拽导入 → 文档列表（真实状态）→ 关键词检索（来源可溯）→ 适配器管理。
+﻿// W3 知识库：拖拽导入 → 文档列表（真实状态）→ 关键词检索（来源可溯）→ 适配器管理。
 //
 // 包 E 视觉层：/knowledge 改为**星图主视图**（用户已裁决，不新增路由），
 // 原「文档源 / 适配器管理」降级为左侧子 Tab，检索结果条常驻底部。
@@ -806,8 +806,7 @@ export function KnowledgePage() {
           >
             <>
               <p className="muted">
-                未配置凭证的适配器显示「未接入」；凭证只保存在本进程内存中，重启后需重新填写
-                （不入库、不落盘、不回显）。
+                未配置凭证的适配器显示「未接入」；凭证经加密存储（不回显明文）；ima 的 Key 也可在「设置」页填写。
               </p>
               <div className="kb-sources">
                 {sources.map((source) => (
@@ -818,7 +817,10 @@ export function KnowledgePage() {
                     onConfigure={(id, values) =>
                       withSources(
                         () => knowledgeApi.configureSource(id, values),
-                        () => `${id}：凭证已保存（仅内存，重启后失效）`,
+                        (result) =>
+                          (result as { persist_restart?: boolean }).persist_restart
+                            ? `${id}：凭证已保存（加密存储，重启后仍有效）`
+                            : `${id}：凭证已保存（仅内存，重启后失效）`,
                       )
                     }
                     onForget={(id) =>
@@ -857,6 +859,16 @@ export function KnowledgePage() {
                 </p>
               )}
             </>
+          </div>
+
+          {/* ============ ima 命理库（B1） ============ */}
+          <div
+            role="tabpanel"
+            id="kn-panel-ima"
+            aria-labelledby="kn-tabbtn-ima"
+            hidden={tab !== 'ima'}
+          >
+            <ImaPanel />
           </div>
 
           {/* ============ 检索日志 ============ */}
