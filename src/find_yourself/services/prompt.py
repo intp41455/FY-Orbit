@@ -460,3 +460,54 @@ class PromptService:
         self.s.flush()
         self.audit.append(actor, "prompt.disabled", tpl.id, {"proposal_id": p.id})
         return {"template": name, "is_active": False}
+
+
+# ---------------------------------------------------------------------------
+# P11 · A-内置模块-05b 长文档级压缩与摘要锚点
+# ---------------------------------------------------------------------------
+
+_ANCHOR_PATTERNS = (
+    ("heading", __import__("re").compile(r"^#{1,4}\s+.+", __import__("re").MULTILINE)),
+    ("code_signature", __import__("re").compile(
+        r"^(?:def |class |async def |function |export (?:default )?function |public |private ).{0,120}",
+        __import__("re").MULTILINE)),
+    ("conclusion", __import__("re").compile(
+        r"^.{0,10}(?:结论|总结|Therefore|In summary|综上).{0,160}", __import__("re").MULTILINE | __import__("re").IGNORECASE)),
+    ("data_line", __import__("re").compile(
+        r"^.*\b\d+(?:\.\d+)?\s*(?:%|ms|s|kb|MB|GB|条|个|人|次|USD|usd).{0,60}$", __import__("re").MULTILINE)),
+)
+
+
+def extract_anchors(text: str, *, max_anchors: int = 40) -> list[dict]:
+    """从长文档抽取**内容锚点**（标题/代码签名/结论句/数据行）——
+    分级摘要的 L1 层：锚点即可定位，需要原文再下钻（原文永不搬运）。"""
+    anchors: list[dict] = []
+    seen: set[str] = set()
+    for kind, pattern in _ANCHOR_PATTERNS:
+        for m in pattern.finditer(text or ""):
+            key = m.group(0).strip()[:120]
+            if key in seen:
+                continue
+            seen.add(key)
+            anchors.append({"kind": kind, "anchor": key,
+                            "line": text.count("\n", 0, m.start())})
+            if len(anchors) >= max_anchors:
+                return anchors
+    return anchors
+
+
+def compress_long_document(text: str, *, max_anchors: int = 40) -> dict:
+    """长文档分级压缩：L0 原文（调用方持有）→ L1 锚点清单 → L2 概览统计。
+    返回结构可直接入库/入提示词；**绝不返回原文副本**（原文不搬运铁律）。"""
+    anchors = extract_anchors(text, max_anchors=max_anchors)
+    by_kind: dict[str, int] = {}
+    for a in anchors:
+        by_kind[a["kind"]] = by_kind.get(a["kind"], 0) + 1
+    return {
+        "original_length": len(text or ""),
+        "anchor_count": len(anchors),
+        "anchors": anchors,
+        "anchors_by_kind": by_kind,
+        "compression_hint": f"L1 锚点 {len(anchors)} 条可替代全文进入上下文；"
+                            "需要原文时按 line 字段下钻",
+    }
