@@ -30,23 +30,26 @@ export const DSL_TRANSFORM_VERBS = [
 
 export type DslTransformVerb = (typeof DSL_TRANSFORM_VERBS)[number];
 
-export type DslNodeType =
-  | 'input'
-  | 'transform'
-  | 'output'
-  | 'llm'
-  | 'knowledge_retrieval'
-  | 'question_classifier'
-  | 'parameter_extractor'
-  | 'iteration'
-  | 'loop'
-  | 'variable_aggregator'
-  | 'template'
-  | 'http_request'
-  | 'code'
-  | 'tool'
-  | 'human_input'
-  | 'trigger';
+/**
+ * 节点类型单一真源（前端）：顺序与后端 `services/dsl_canvas.py` 的 `NODE_TYPES`
+ * 逐字对齐（3 基础 + 13 新增）。`DslNodeType` 由本常量派生，面板/属性表单/校验
+ * 一律 import 它——前端不再有第二份节点清单可以漂移。
+ *
+ * 验收真源仍是 `GET /api/dsl-canvas/schema` 的 `node_types`（后端权威）；
+ * 这里只在 schema 拉取失败时充当如实回落的本地清单。
+ */
+export const DSL_NODE_TYPES = [
+  'input', 'transform', 'output',
+  'llm', 'knowledge_retrieval', 'question_classifier', 'parameter_extractor',
+  'iteration', 'loop', 'variable_aggregator', 'template', 'http_request',
+  'code', 'tool', 'human_input', 'trigger',
+] as const;
+
+export type DslNodeType = (typeof DSL_NODE_TYPES)[number];
+
+/** 13 类新增节点（对标 Dify 节点库，A-画布搭建器-01）。 */
+export const EXTENDED_NODE_TYPES: readonly DslNodeType[] =
+  DSL_NODE_TYPES.slice(3);
 
 /** 动词集元数据（后端 verb_catalog 的一项）。 */
 export interface DslVerbCatalogEntry {

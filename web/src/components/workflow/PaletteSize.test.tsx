@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import type { DslNodeType } from '../../api/dslCanvas';
 import { NodePalette } from './NodePalette';
 
 describe('NodePalette renders correct number of types', () => {
-  const ALL_16_TYPES = [
+  const ALL_16_TYPES: DslNodeType[] = [
     'input',
     'transform',
     'output',

@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DSL_NODE_TYPES,
   dslCanvasApi,
   type DslDiagnostic,
   type DslDocument,
@@ -38,25 +39,11 @@ export const CANVAS_H = 420;
 const NODE_W = 148;
 const NODE_H = 52;
 
-/** 受限动词集（与后端 services/dsl_canvas.py 一致；面板另有动态 schema 拉取）。 */
-export const FLOW_NODE_TYPES: DslNodeType[] = [
-  'input',
-  'transform',
-  'output',
-  'llm',
-  'knowledge_retrieval',
-  'question_classifier',
-  'parameter_extractor',
-  'iteration',
-  'loop',
-  'variable_aggregator',
-  'template',
-  'http_request',
-  'code',
-  'tool',
-  'human_input',
-  'trigger',
-];
+/**
+ * 受限节点集（与后端 services/dsl_canvas.py 的 `NODE_TYPES` 一致）。
+ * 从 `DSL_NODE_TYPES` 派生，前端只有一份清单。
+ */
+export const FLOW_NODE_TYPES: DslNodeType[] = [...DSL_NODE_TYPES];
 export const FLOW_VERBS: DslTransformVerb[] = ['map', 'filter', 'template'];
 
 let seq = 0;
@@ -403,6 +390,9 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
     void dslCanvasApi.schema()
       .then((s) => {
         if (!alive) return;
+        // 后端返回即接受：受限集就是 `NODE_TYPES` 那 16 类，前端不再 filter
+        // 掉任何一类（旧版只认 3 类，会把其余 13 类静默丢弃——那正是本包的病根）。
+        // 认不得的类型由本地 quickValidate / 后端 IR 校验如实报错，不静默丢。
         const types = (s.node_types ?? []).filter((t): t is DslNodeType =>
           FLOW_NODE_TYPES.includes(t as DslNodeType));
         if (types.length) setSchemaTypes(types);

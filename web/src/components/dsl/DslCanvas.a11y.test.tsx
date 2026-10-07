@@ -7,7 +7,10 @@ import userEvent from '@testing-library/user-event';
 import { DslCanvas } from './DslCanvas';
 import { dslCanvasApi } from '../../api/dslCanvas';
 
-vi.mock('../../api/dslCanvas', () => ({
+vi.mock('../../api/dslCanvas', async (importOriginal) => ({
+  // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
+  // 只替换网络面 dslCanvasApi。
+  ...(await importOriginal<typeof import('../../api/dslCanvas')>()),
   dslCanvasApi: {
     run: vi.fn(), validate: vi.fn(), schema: vi.fn(), getRun: vi.fn(),
     validateIr: vi.fn(),

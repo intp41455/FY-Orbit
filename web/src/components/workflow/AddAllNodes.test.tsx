@@ -2,7 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-vi.mock('../../api/dslCanvas', () => ({
+vi.mock('../../api/dslCanvas', async (importOriginal) => ({
+  // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
+  // 只替换网络面 dslCanvasApi。
+  ...(await importOriginal<typeof import('../../api/dslCanvas')>()),
   dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn() },
 }));
 import { dslCanvasApi } from '../../api/dslCanvas';
