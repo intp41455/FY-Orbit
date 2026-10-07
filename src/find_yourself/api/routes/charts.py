@@ -12,9 +12,15 @@ from ...charts.interpreter import ChartInterpreter
 from ...charts.models import (
     ChartRequest,
     ChartResult,
+    DailyFortuneRequest,
+    DailyFortuneResult,
     ExternalChartImportRequest,
     InterpretRequest,
     InterpretationResult,
+    SynastryRequest,
+    SynastryResult,
+    TarotDrawRequest,
+    TarotDrawResult,
 )
 from ...charts.retrieval import DualPathRetrievalService
 from ...services.actor import Actor
@@ -104,3 +110,34 @@ def interpret_chart(
         personal_citations=personal_citations,
         user_notes=body.user_notes,
     )
+
+
+@router.post("/fortune/daily", response_model=DailyFortuneResult, status_code=status.HTTP_200_OK)
+def get_daily_fortune(
+    body: DailyFortuneRequest,
+    actor: Actor = Depends(csrf_protected),
+) -> DailyFortuneResult:
+    """Deterministic daily fortune and sexagenary balance calculation (B-运势-01~05)."""
+    actor.require_owner()
+    return DeterministicChartEngine.compute_daily_fortune(body)
+
+
+@router.post("/tarot/draw", response_model=TarotDrawResult, status_code=status.HTTP_200_OK)
+def draw_tarot(
+    body: TarotDrawRequest,
+    actor: Actor = Depends(csrf_protected),
+) -> TarotDrawResult:
+    """Authoritative deterministic Tarot Oracle draw linked to cabin/deskpet events (B-运势-01~02)."""
+    actor.require_owner()
+    return DeterministicChartEngine.draw_tarot(body)
+
+
+@router.post("/synastry", response_model=SynastryResult, status_code=status.HTTP_200_OK)
+def compute_synastry(
+    body: SynastryRequest,
+    actor: Actor = Depends(csrf_protected),
+) -> SynastryResult:
+    """Deterministic two-chart synastry & element synergy calculation."""
+    actor.require_owner()
+    return DeterministicChartEngine.compute_synastry(body)
+

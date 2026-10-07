@@ -27,6 +27,11 @@ import { AvatarWorkshopPage } from './pages/AvatarWorkshopPage';  // W11 角色�
 import { GameStandalonePage } from './pages/GameStandalonePage';  // I3 独立全屏形态（游戏核心与 /cabin 同一份，只换外壳）
 import PetPage from './pet/PetPage';  // W10 桌面宠物浮窗
 import { PluginMarketPage } from './pages/plugins/PluginMarketPage';  // P6 插件市场（追加）
+import { TemplatesPage } from './pages/TemplatesPage';  // P13 开箱模板
+import { DossierPage } from './pages/DossierPage';      // P15 任务档案库与企业模式
+import { TimelinePage } from './pages/TimelinePage';    // P4 任务存档回溯与时间线
+import { ObservabilityPage } from './pages/ObservabilityPage'; // P2/P3 统一可观测与成本仪表盘
+import { FortunePage } from './pages/FortunePage';             // B-Line 命理、每日签与塔罗启引
 
 export default function App() {
   return (
@@ -74,6 +79,11 @@ export default function App() {
               <Route path="/hub" element={<HubPage />} />  {/* W6 超级中台适配器中心 */}
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/plugins" element={<PluginMarketPage />} />  {/* P6 插件市场（追加一行） */}
+              <Route path="/templates" element={<TemplatesPage />} />  {/* P13 开箱模板 */}
+              <Route path="/dossier" element={<DossierPage />} />      {/* P15 任务档案库与企业模式 */}
+              <Route path="/timeline" element={<TimelinePage />} />    {/* P4 任务存档回溯与时间线 */}
+              <Route path="/observability" element={<ObservabilityPage />} /> {/* P2/P3 统一可观测与成本仪表盘 */}
+              <Route path="/fortune" element={<FortunePage />} />             {/* B-Line 命理、每日签与塔罗启引 */}
             </Route>
             <Route path="*" element={<Navigate to="/chat" replace />} />
           </Routes>

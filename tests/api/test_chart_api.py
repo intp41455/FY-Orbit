@@ -123,3 +123,44 @@ def test_chart_import_and_interpret_flow(client: TestClient) -> None:
     interp = res_interp.json()
     assert "computed_chart" in interp["sections"]
     assert "public_reference" in interp["sections"]
+
+
+def test_chart_daily_fortune_and_tarot_api(client: TestClient) -> None:
+    headers = login_owner(client)
+
+    # 1. Daily fortune endpoint
+    res_f = client.post(
+        "/api/charts/fortune/daily",
+        json={"birth_date": "1994-07-21", "target_date": "2026-10-07"},
+        headers=headers,
+    )
+    assert res_f.status_code == 200
+    f_data = res_f.json()
+    assert f_data["date"] == "2026-10-07"
+    assert "day_pillar" in f_data
+    assert "luck_score" in f_data
+
+    # 2. Tarot draw endpoint
+    res_t = client.post(
+        "/api/charts/tarot/draw",
+        json={"spread": "single", "question": "今日重点指引"},
+        headers=headers,
+    )
+    assert res_t.status_code == 200
+    t_data = res_t.json()
+    assert len(t_data["cards"]) == 1
+    assert "cabin_interaction" in t_data
+
+    # 3. Synastry endpoint
+    res_s = client.post(
+        "/api/charts/synastry",
+        json={
+            "chart_a": {"birth_date": "1994-07-21"},
+            "chart_b": {"birth_date": "1996-03-15"},
+        },
+        headers=headers,
+    )
+    assert res_s.status_code == 200
+    s_data = res_s.json()
+    assert 50 <= s_data["compatibility_score"] <= 100
+

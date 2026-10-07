@@ -80,3 +80,6 @@ web/**/.playwright-artifacts-*/
 # 2026-10-04 误入 SECURITY 提交（代码审查员复核发现）——它的内容是对本轮动作的
 # 记录，会随每轮变化，入库只会污染 diff 审查面。需要留档时写到 docs/ 下。
 .workbuddy/
+*.log
+.srv*
+

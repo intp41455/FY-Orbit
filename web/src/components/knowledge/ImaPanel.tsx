@@ -15,6 +15,7 @@ import { knowledgeApi } from '../../api/knowledge';
 import type { ImaChannelStatus, ImaSearchHit, ImaSearchResponse } from '../../api/knowledge';
 import { errorMessage } from '../ui';
 import { LineIcon } from '../ui/LineIcon';
+import { useBase } from '../../hooks/useAutosave';
 
 const PAGE_SIZES = [5, 10, 20];
 
@@ -27,6 +28,8 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export function ImaPanel() {
+  // A-基座质保-01：可编辑组件须逐文件声明基座（b1-ima 合入晚于热保存包，此处补接线）。
+  useBase({ surface: 'web/src/components/knowledge/ImaPanel' });
   const [status, setStatus] = useState<ImaChannelStatus | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
 

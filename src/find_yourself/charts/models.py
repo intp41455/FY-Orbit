@@ -73,3 +73,85 @@ class InterpretationResult(BaseModel):
     disclaimer: str = Field(
         default="【文化与娱乐免责声明】命理与星盘解读仅作为传统文化研究、生活自省隐喻与心理投射工具，不可作为医疗诊断、法律建议、财务投资或重大人生决策的确定性因果依据。"
     )
+
+
+class DailyFortuneRequest(BaseModel):
+    """Request for deterministic daily fortune computation."""
+
+    birth_date: str = Field(..., description="Date of birth in YYYY-MM-DD format", pattern=r"^\d{4}-\d{2}-\d{2}$")
+    target_date: str | None = Field(default=None, description="Target date in YYYY-MM-DD format (defaults to today)")
+    birth_time: str | None = Field(default=None, description="Time of birth in HH:MM format")
+    timezone_str: str = Field(default="Asia/Shanghai", description="IANA timezone name")
+
+
+class DailyFortuneResult(BaseModel):
+    """Deterministic daily fortune result with zero external inference cost."""
+
+    date: str
+    solar_date: str
+    lunar_date: str
+    day_pillar: str
+    day_element: str
+    user_element: str
+    relation: str
+    luck_score: int
+    favorable: list[str]
+    unfavorable: list[str]
+    oracle_message: str
+    lucky_color: str
+    lucky_direction: str
+    cabin_event: dict[str, Any] = Field(default_factory=dict)
+    disclaimer: str = "【娱乐与文化参考】每日运势基于干支与五行象征推导，仅供自我调节与日常启发。"
+
+
+class TarotCard(BaseModel):
+    """Tarot card drawn with orientation and meaning."""
+
+    card_id: int
+    name: str
+    arcana: str = "major"
+    is_reversed: bool = False
+    position_label: str = "当前指引"
+    keywords: list[str] = Field(default_factory=list)
+    meaning: str
+    guidance: str
+
+
+class TarotDrawRequest(BaseModel):
+    """Request to draw tarot oracle cards."""
+
+    spread: str = Field(default="single", description="'single' (每日单张签) or 'three_cards' (时间流三牌阵)")
+    question: str | None = Field(default=None, description="Optional focus question or theme")
+    seed: int | None = Field(default=None, description="Deterministic seed for reproducibility")
+
+
+class TarotDrawResult(BaseModel):
+    """Tarot oracle reading linked with deskpet/cabin interactions."""
+
+    draw_id: str
+    drawn_at: str
+    spread: str
+    question: str | None
+    cards: list[TarotCard]
+    overall_reading: str
+    cabin_interaction: dict[str, Any] = Field(default_factory=dict)
+    disclaimer: str = "【娱乐与自省隐喻】塔罗牌抽卡结果为象征意象与投射练习，请保持理性思考。"
+
+
+class SynastryRequest(BaseModel):
+    """Request for synastry energy analysis between two birth charts."""
+
+    chart_a: ChartRequest
+    chart_b: ChartRequest
+    relationship_type: str = Field(default="collaboration", description="'collaboration', 'friendship', 'partner'")
+
+
+class SynastryResult(BaseModel):
+    """Deterministic synastry balance analysis."""
+
+    compatibility_score: int
+    element_balance: dict[str, Any]
+    synergy_points: list[str]
+    friction_points: list[str]
+    actionable_advice: str
+    disclaimer: str = "【文化与娱乐参考】合盘能量基于古典五行比对，人际关系关键在于坦诚沟通与相互包容。"

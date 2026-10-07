@@ -51,6 +51,7 @@ export default defineConfig({
       workbox: {
         // Precache only hashed static shell assets produced by the build.
         globPatterns: ['**/*.{js,css,html,svg,webmanifest,ico}'],
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         // SPA fallback for app routes, but never for API/auth/health.
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//, /^\/health\//, /^\/metrics\//],

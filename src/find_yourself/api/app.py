@@ -155,8 +155,13 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
     register_exception_handlers(app)
     app.include_router(api_router)
 
-    # Optional static directory mount for desktop standalone mode (FY_STATIC_DIR)
+    # Optional static directory mount for desktop standalone / unified mode
     static_dir = os.environ.get("FY_STATIC_DIR")
+    if not static_dir:
+        repo_dist = Path(__file__).resolve().parents[3] / "web" / "dist"
+        if repo_dist.is_dir() and (repo_dist / "index.html").is_file():
+            static_dir = str(repo_dist)
+
     if static_dir and Path(static_dir).is_dir():
         from starlette.staticfiles import StaticFiles
         from starlette.responses import FileResponse

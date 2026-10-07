@@ -150,3 +150,37 @@ def test_chart_interpreter_layered_output_and_disclaimer() -> None:
     assert "追求结构化逻辑" in sections["personal_records"]
     # Check that reasoning emphasizes hypothetical perspective
     assert "荣格" in sections["hypothesis_reasoning"] or "心理" in sections["hypothesis_reasoning"]
+
+
+def test_daily_fortune_deterministic_b_line() -> None:
+    from find_yourself.charts.models import DailyFortuneRequest
+    req = DailyFortuneRequest(birth_date="1992-05-18", target_date="2026-10-07")
+    res = DeterministicChartEngine.compute_daily_fortune(req)
+    assert res.date == "2026-10-07"
+    assert res.day_pillar is not None
+    assert 60 <= res.luck_score <= 100
+    assert len(res.favorable) > 0
+    assert len(res.unfavorable) > 0
+    assert res.cabin_event.get("event_name") is not None
+
+
+def test_tarot_oracle_draw_b_line() -> None:
+    from find_yourself.charts.models import TarotDrawRequest
+    req = TarotDrawRequest(spread="three_cards", seed=42)
+    res = DeterministicChartEngine.draw_tarot(req)
+    assert len(res.cards) == 3
+    assert res.cards[0].name is not None
+    assert res.cards[0].position_label == "【过去 · 溯源】"
+    assert res.cabin_interaction.get("deskpet_action") is not None
+
+
+def test_synastry_energy_balance_b_line() -> None:
+    from find_yourself.charts.models import SynastryRequest
+    req = SynastryRequest(
+        chart_a=ChartRequest(birth_date="1992-05-18"),
+        chart_b=ChartRequest(birth_date="1995-10-24"),
+    )
+    res = DeterministicChartEngine.compute_synastry(req)
+    assert 50 <= res.compatibility_score <= 100
+    assert len(res.synergy_points) > 0
+

@@ -49,6 +49,8 @@ COPY --chown=appuser:appgroup alembic.ini ./
 COPY --chown=appuser:appgroup migrations/ ./migrations/
 COPY --chown=appuser:appgroup src/ ./src/
 COPY --chown=appuser:appgroup pyproject.toml ./
+COPY --chown=appuser:appgroup web/dist/ /app/web/dist/
+ENV FY_STATIC_DIR=/app/web/dist
 
 # Create runtime directories for local assets/artifacts with non-root ownership
 RUN mkdir -p /app/.runtime/artifacts /app/.runtime/assets && \

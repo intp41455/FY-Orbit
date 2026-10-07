@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  fy-orbit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: find-yourself-orbit:latest
+    container_name: fy-orbit-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - FY_ENVIRONMENT=production
+      - FY_DATABASE_URL=sqlite:////app/.runtime/find-yourself.db
+      - FY_SESSION_SECRET=fy_prod_session_secret_key_change_in_production_123456
+      - FY_LOCAL_TOKEN=fy-deploy-token
+      - FY_PUBLIC_URL=http://localhost:8000
+      - FY_STATIC_DIR=/app/web/dist
+    volumes:
+      - fy_data:/app/.runtime
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  fy_data:
+    name: fy_orbit_data

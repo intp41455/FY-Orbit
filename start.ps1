@@ -58,7 +58,23 @@ if ($Stop) {
 # ---------------------------------------------------- locate the interpreter
 $py = Join-Path $Root ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) {
-    Write-Err2 "No virtualenv at .venv\Scripts\python.exe"
+    $fallbackPys = @(
+        "C:\Users\intpj\.workbuddy\binaries\python\envs\fy-p10\Scripts\python.exe",
+        $env:PYTHON_EXECUTABLE
+    )
+    foreach ($cand in $fallbackPys) {
+        if ($cand -and (Test-Path $cand)) {
+            $py = $cand
+            break
+        }
+    }
+}
+if (-not (Test-Path $py)) {
+    $sysPy = Get-Command python -ErrorAction SilentlyContinue
+    if ($sysPy) { $py = $sysPy.Source }
+}
+if (-not (Test-Path $py)) {
+    Write-Err2 "No python environment found at .venv or system PATH"
     Write-Host "    Create it first:" -ForegroundColor Yellow
     Write-Host "      py -3.12 -m venv .venv" -ForegroundColor Yellow
     Write-Host "      .venv\Scripts\python.exe -m pip install -e ." -ForegroundColor Yellow

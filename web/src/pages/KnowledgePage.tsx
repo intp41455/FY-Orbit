@@ -1,4 +1,4 @@
-﻿// W3 知识库：拖拽导入 → 文档列表（真实状态）→ 关键词检索（来源可溯）→ 适配器管理。
+// W3 知识库：拖拽导入 → 文档列表（真实状态）→ 关键词检索（来源可溯）→ 适配器管理。
 //
 // 包 E 视觉层：/knowledge 改为**星图主视图**（用户已裁决，不新增路由），
 // 原「文档源 / 适配器管理」降级为左侧子 Tab，检索结果条常驻底部。
@@ -37,6 +37,7 @@ import { errorMessage } from '../components/ui';
 import { LineIcon } from '../components/ui/LineIcon';
 import '../styles/pages/knowledge.css';
 import { StarGraph } from '../components/knowledgeui/StarGraph';
+import { KnowledgeGraph3D } from '../components/knowledgeui/KnowledgeGraph3D';
 import { KnowledgeNiIcon } from '../components/knowledgeui/KnowledgeNiIcon';
 import {
   AdvancedConfigDrawer,
@@ -129,6 +130,7 @@ export function KnowledgePage() {
   const [selectedNode, setSelectedNode] = useState<StarNode | null>(null);
   const [focusToken, setFocusToken] = useState(0);
   const [treeOpen, setTreeOpen] = useState<Record<string, boolean>>({});
+  const [is3DMode, setIs3DMode] = useState(false);
 
   const graph = useKnowledgeGraph({ enabled: tab === 'star' || tab === 'timeline' || tab === 'hierarchy' || tab === 'list' });
 
@@ -534,49 +536,65 @@ export function KnowledgePage() {
                   命中 {matchedCount} / 共 {graph.totalNodes}
                   {graph.truncated ? `（已显示 ${graph.nodes.length}，超出 ${graph.totalNodes - graph.nodes.length} 个受上限保护）` : ''}
                 </span>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm"
+                  style={{ marginLeft: 'auto', background: is3DMode ? 'var(--ui-accent-bg, #3b82f6)' : undefined, color: is3DMode ? '#fff' : undefined }}
+                  onClick={() => setIs3DMode(!is3DMode)}
+                >
+                  {is3DMode ? '🌌 切换为 2D 关系星图' : '✨ 切换为 3D 认知银河'}
+                </button>
               </div>
 
-              <StarGraph
-                nodes={graph.nodes}
-                edges={edges}
-                selectedId={selectedNode?.id ?? null}
-                filter={query}
-                focusFirstMatchToken={focusToken}
-                reducedMotion={reducedMotion}
-                onSelect={setSelectedNode}
-                cardActions={
-                  selectedNode ? (
-                    <>
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn--sm"
-                        data-testid="kn-node-open"
-                        onClick={() => {
-                          const d = nodeDoc(selectedNode);
-                          if (d) setTab('sources');
-                        }}
-                        title={
-                          nodeDoc(selectedNode)
-                            ? '查看该切片所属文档的源文件状态'
-                            : '后端未提供按切片名取回原文件正文的端点'
-                        }
-                      >
-                        <LineIcon name="file" size={16} />
-                        打开原文件
-                      </button>
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn--sm ui-btn--primary"
-                        data-testid="kn-node-chat"
-                        onClick={() => chatAbout(selectedNode)}
-                      >
-                        <LineIcon name="chat" size={16} />
-                        基于此内容对话
-                      </button>
-                    </>
-                  ) : null
-                }
-              />
+              {is3DMode ? (
+                <KnowledgeGraph3D
+                  nodes={graph.nodes}
+                  selectedId={selectedNode?.id ?? null}
+                  onSelect={setSelectedNode}
+                />
+              ) : (
+                <StarGraph
+                  nodes={graph.nodes}
+                  edges={edges}
+                  selectedId={selectedNode?.id ?? null}
+                  filter={query}
+                  focusFirstMatchToken={focusToken}
+                  reducedMotion={reducedMotion}
+                  onSelect={setSelectedNode}
+                  cardActions={
+                    selectedNode ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--sm"
+                          data-testid="kn-node-open"
+                          onClick={() => {
+                            const d = nodeDoc(selectedNode);
+                            if (d) setTab('sources');
+                          }}
+                          title={
+                            nodeDoc(selectedNode)
+                              ? '查看该切片所属文档的源文件状态'
+                              : '后端未提供按切片名取回原文件正文的端点'
+                          }
+                        >
+                          <LineIcon name="file" size={16} />
+                          打开原文件
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--sm ui-btn--primary"
+                          data-testid="kn-node-chat"
+                          onClick={() => chatAbout(selectedNode)}
+                        >
+                          <LineIcon name="chat" size={16} />
+                          基于此内容对话
+                        </button>
+                      </>
+                    ) : null
+                  }
+                />
+              )}
 
               {/* 诚实标注：图的边到底是什么 */}
               <p className="ui-hint" data-testid="kn-graph-provenance">

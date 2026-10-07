@@ -47,6 +47,10 @@ const NAV: NavItem[] = [
   { to: '/hub', label: '超级中台', sub: '统一适配层 · 能力路由', kbd: 7, icon: 'hub', space: 'workbench' },
   { to: '/approvals', label: '审批中心', sub: '提案与授权', kbd: 8, icon: 'approvals', space: 'workbench' },
   { to: '/plugins', label: '插件市场', sub: '签名 · 扫描 · 授权安装', kbd: 9, icon: 'plugins', space: 'workbench' },
+  { to: '/templates', label: '开箱模板', sub: '成套团队 · 总控预设', kbd: null, icon: 'cube', space: 'workbench' },
+  { to: '/dossier', label: '任务档案库', sub: '档案全景 · 企业适配', kbd: null, icon: 'archive', space: 'workbench' },
+  { to: '/timeline', label: '存档回溯', sub: '分叉重跑 · 差异对比', kbd: null, icon: 'timeline', space: 'workbench' },
+  { to: '/observability', label: '统一可观测', sub: '实时流 · 性能与成本', kbd: null, icon: 'chart', space: 'workbench' },
   { to: '/settings', label: '设置与数据', sub: '同步 · 权限', kbd: null, icon: 'settings', space: 'workbench' },
 
   // ---- 个人空间（§2 表顺序 11–18） ----
@@ -68,6 +72,7 @@ const NAV: NavItem[] = [
   { to: '/growth', label: '成长记录', sub: '阶段与复盘', kbd: null, icon: 'growth', space: 'personal' },
   { to: '/assessments', label: '测评', sub: '结构化评估', kbd: null, icon: 'assessments', space: 'personal' },
   { to: '/profiles', label: '多维画像', sub: '个人与对象', kbd: null, icon: 'profiles', space: 'personal' },
+  { to: '/fortune', label: '星轨命理', sub: '每日签 · 塔罗 · 合盘', kbd: null, icon: 'sparkles', space: 'personal' },
   { to: '/avatar', label: '角色工坊', sub: '专属像素小人', kbd: null, icon: 'avatar', space: 'personal' },
   { to: '/knowledge', label: '知识库', sub: '本地文档 RAG · 适配器', kbd: null, icon: 'knowledge', space: 'personal' },
 ];
