@@ -541,11 +541,21 @@ export function ChatPage() {
   }
 
   function newConversation() {
+    // 已经处于「新会话空态」时，下面几个 setState 都是同值 → React 不重渲染，
+    // 界面零变化、也没有任何提示，用户会以为按钮坏了。所以显式给一句反馈。
+    const alreadyBlank = activeId === null && messages.length === 0 && text === '' && refs.length === 0;
     setActiveId(null);
     setMessages([]);
     setText('');
     setRefs([]);
     setError(null);
+    composerRef.current?.focus();
+    push({
+      text: alreadyBlank
+        ? '已在新会话，直接输入即可发送第一条消息。'
+        : '已新建会话，可以开始输入了。',
+      kind: 'info',
+    });
   }
 
   /* ------------------------------------------------ 引用跳转（真实 @ 引用） */

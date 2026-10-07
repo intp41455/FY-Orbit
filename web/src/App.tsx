@@ -35,7 +35,7 @@ import { FortunePage } from './pages/FortunePage';             // B-Line 命理�
 
 export default function App() {
   return (
-    <ErrorBoundary>
+    <ErrorBoundary standalone>
       <BrowserRouter>
         <ReviewMode />
         <AuthProvider>

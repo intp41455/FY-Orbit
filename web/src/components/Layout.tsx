@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { ErrorBoundary } from './ErrorBoundary';
 import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
 import { NotificationBell } from './NotificationBell';
@@ -184,7 +185,11 @@ export function Layout() {
 
       <main className="main">
         <OfflineBadge />
-        <Outlet />
+        {/* 页面级错误边界：只替换内容区，侧边导航保留；key 随路由变化自动复位，
+            避免一次崩溃后切到别的页面也一直是错误页。 */}
+        <ErrorBoundary key={location.pathname}>
+          <Outlet />
+        </ErrorBoundary>
       </main>
       <DeskPetCompanion />
     </div>
