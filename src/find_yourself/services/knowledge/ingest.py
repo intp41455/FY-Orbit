@@ -436,3 +436,46 @@ class KnowledgeIngestService:
             {"chunks_deleted": len(chunks), "source": doc.source, "name": doc.name},
         )
         return {"id": doc_id, "deleted_chunks": len(chunks), "status": "deleted"}
+
+# ---------------------------------------------------------------------------
+# P8 · A-知识库RAG-02 傻瓜模式：角色 × 知识库一键预置组合
+# ---------------------------------------------------------------------------
+
+def foolproof_preset(
+    role_name: str,
+    *,
+    kb_top_k: int = 6,
+    kb_mode: str = "hybrid",
+    roles_directory: "Path | None" = None,
+) -> dict:
+    """傻瓜模式一键预置：给一个角色名，返回该角色的完整可用组合——
+    系统提示词 + 能力绑定 + 知识库检索默认参数（mode/top_k 已按角色调优）。
+
+    用户不配任何参数也能跑（预设全部有默认值）；角色不存在显式 KeyError，
+    绝不静默退回通用助手假装成功。
+    """
+    import sys
+    from pathlib import Path as _Path
+
+    roles_dir = roles_directory or (_Path(__file__).resolve().parent.parent.parent
+                                    / "prompts_packages" / "roles")
+    if str(roles_dir.parent.parent) not in sys.path:
+        sys.path.insert(0, str(roles_dir.parent.parent))
+    from find_yourself.prompts_packages.roles._loader import get_role  # noqa: PLC0415
+
+    role = get_role(role_name, roles_dir)
+    # 按角色的检索参数调优（分析/评审类查得更宽，编码类精确优先）
+    tuned_top_k = kb_top_k + (2 if role.name in ("analyst", "reviewer", "researcher") else 0)
+    return {
+        "role": {"name": role.name, "role": role.role,
+                 "description": role.description, "tools": list(role.tools)},
+        "system_prompt": role.body,
+        "knowledge": {
+            "mode": kb_mode,
+            "top_k": tuned_top_k,
+            "note": "混合检索（hybrid=词法+向量 RRF 融合）为默认；"
+                    "分析/评审/调研角色自动放宽 top_k",
+        },
+        "usage": "把 system_prompt 作为系统提示词、knowledge 作为检索参数传入"
+                 "会话装配即可；知识库先经 /api/kb/documents 入库资料。",
+    }
