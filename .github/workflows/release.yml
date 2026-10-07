@@ -13,6 +13,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # Dockerfile 第 52 行会 `COPY web/dist/`，而 web/dist 是构建产物、不入库。
+      # 不先构建前端，Docker 构建必然以 "/web/dist": not found 失败。
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Build Web Assets (Dockerfile requires web/dist)
+        run: |
+          npm --prefix web ci || npm --prefix web install
+          npm --prefix web run build
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
