@@ -1,0 +1,8 @@
+FY Orbit · 星轨 (Find Yourself)
+Copyright 2026 intp41455
+
+本产品包含第三方开源组件，其许可证与版本清单见：
+  - 后端：pyproject.toml / uv.lock
+  - 前端：web/package.json / web/package-lock.json
+
+分发二进制发行包时，请一并保留上述清单与被引用组件的许可证文本。
