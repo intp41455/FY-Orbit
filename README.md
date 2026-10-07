@@ -10,6 +10,9 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">
+    <img src="https://img.shields.io/badge/Release-Windows%20v1.0.0%20(3MB)-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
+  </a>
   <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/React-18.3-61dafb?logo=react&logoColor=white" alt="React" />
@@ -17,8 +20,6 @@
   <img src="https://img.shields.io/badge/Three.js-WebGL%203D-black?logo=three.js&logoColor=white" alt="Three.js" />
   <img src="https://img.shields.io/badge/Architecture-Local--First%20%7C%20Zero--Runaway-green" alt="Zero Runaway" />
   <img src="https://img.shields.io/badge/Safety-SHA--256%20Audit%20%7C%20HITL-red" alt="Audit Chain" />
-  <img src="https://img.shields.io/badge/Storage-SQLite%20%7C%20Postgres-003B57?logo=sqlite&logoColor=white" alt="Storage" />
-  <img src="https://img.shields.io/badge/Tests-1268%20Passed-success" alt="Tests" />
   <img src="https://img.shields.io/badge/License-Apache%202.0-orange" alt="License" />
 </p>
 
@@ -33,7 +34,7 @@
 * **业界最大的痛点与恐惧 ——「AI 智能体失控焦虑」**：大多数工具一旦点击运行，AI 自动改写代码、调用工具、修改系统，极易产生幻觉偏离轨道，引发误删数据、配置错乱或资费超支等无法挽回的破坏性局面。
 
 <p align="center">
-  <img src="assets/screenshots/13_W1v3_指挥台_玻璃薄荷.png" alt="FY Orbit 统御指挥台" width="90%" />
+  <img src="assets/screenshots/01-workbench-ide-monaco.png" alt="FY Orbit 极客工程工作台实机运行全景" width="90%" />
 </p>
 
 ---
@@ -84,7 +85,7 @@
 * **状态与把关**：`variable_assign` 运行时变量管理、`data_transform` 结构转换、`human_review` 人在回路（HITL）审批。
 
 <p align="center">
-  <img src="assets/screenshots/包B-dsl-canvas-工作流工坊.png" alt="FY Orbit 工业级工作流工坊" width="90%" />
+  <img src="assets/screenshots/02-workflow-dsl-canvas.png" alt="FY Orbit 工业级自适应工作流工坊实机截图" width="90%" />
 </p>
 
 ### 2. 三重模式同源切换 (Triple Mode)
@@ -94,7 +95,7 @@
 * **🛠️ 极客技术模式 (Technical IDE)**：Monaco 顶级代码编辑器，支持 DSL、AST 语法树实时双向热同步与终端沙箱调试。
 
 <p align="center">
-  <img src="assets/screenshots/08_W4_任务详情_工程工作台.png" alt="FY Orbit 极客工程工作台" width="90%" />
+  <img src="assets/screenshots/04-multi-agent-team-canvas.png" alt="FY Orbit 多智能体团队协同画布实机截图" width="90%" />
 </p>
 
 ### 3. T6 工业级抗打断与断点原位续作引擎 (Resilience & Outbox)
@@ -102,20 +103,14 @@
 * **断网/重启秒级续作**：系统重启或网络恢复后，自动扫描未决断点并无缝原位接力开工。
 * **事务外发箱 (`Outbox`)**：先占位、再执行、后确认，杜绝外部 API 误发与重复扣费。
 
-### 4. 革命性交互审查：「点哪评哪」与多模态涂鸦批注 (In-Place Review)
-打破“截图再打字”的低效沟通阻碍：
-* **DOM 原地锁定**：悬停点选界面元素，原地气泡即刻呼出评审窗口，自动挂载组件源码 ID。
-* **区域矩形框选与画笔涂鸦**：自由圈选页面排版、绘制箭头指向细节。
-* **即时闭环对比**：修改后触发局部热重载，自动生成红线条（红增灰删）版本对比，所见即所得。
-
-<p align="center">
-  <img src="assets/screenshots/06_W2_任务详情_协作画布.png" alt="FY Orbit 协同审查画布" width="90%" />
-</p>
-
-### 5. 高级敏捷规划看板与纯原生 SVG 甘特图
+### 4. 高级敏捷规划看板与纯原生 SVG 甘特图
 * **四状态任务流转**：待办、进行中、阻塞与完成状态机，支持前置依赖与抢占认领。
 * **原生 SVG 甘特规划图 (`GanttChart`)**：直观呈现任务排期重叠、时序依赖与里程碑节点。
 * **动态燃尽与燃起图 (`BurndownChart`)**：真实执行轨迹与理想工期斜率对比，量化项目健康度。
+
+<p align="center">
+  <img src="assets/screenshots/03-agile-kanban-gantt.png" alt="FY Orbit 高级敏捷任务看板与 SVG 甘特图实机截图" width="90%" />
+</p>
 
 ---
 
@@ -128,13 +123,17 @@
 * **双路精准融合召回**：SQLite FTS5 (BM25 词法全文检索) + 向量语义搜索，通过 RRF 算法智能重排。
 * **Three.js 3D 银河立体星图**：一键将本地知识库升维渲染为震撼的三维空间星系旋臂与引力连线，支持全景空间漫游与光晕聚焦抽屉。
 
+<p align="center">
+  <img src="assets/screenshots/06-knowledge-3d-galaxy.png" alt="FY Orbit 端侧知识库与 3D 银河知识星图实机截图" width="90%" />
+</p>
+
 ### 🏡 2. 创作者专属数码空间与闲暇小屋 (Cabin & Companion)
 * **温馨的创作者自留地**：不同于市面上冰冷单调的纯工程软件，星轨内嵌创作者专属数码小屋，支持像素手绘场景自由布置与晨昏昼夜光影变幻。
 * **桌面伴读互动桌宠**：具备动态状态反馈与伴读交互，时刻陪伴创作者左右。
 * **闲暇轻娱乐小项目**：内嵌数款极简减压轻互动，在长流程自动化调试间歇轻松舒缓心绪、重焕灵感。
 
 <p align="center">
-  <img src="assets/screenshots/10-cabin.png" alt="创作者专属数码空间与闲暇小屋" width="90%" />
+  <img src="assets/screenshots/07-personal-cabin-digital-space.png" alt="创作者专属数码空间与闲暇小屋实机截图" width="90%" />
 </p>
 
 ### 🔮 3. 确定性天文历法与全维度画像引擎
@@ -143,106 +142,43 @@
 
 ---
 
-## 🏗️ 架构全景
+## 🚀 极速安装与开箱使用
 
-```mermaid
-graph TD
-  Client[用户交互端: 浏览器 Web UI / 桌面端 Webview] --> Gateway[API 网关 · 421 个 RESTful 端点]
-  
-  subgraph 前端渲染与交互层 (React 18 + Vite + PixiJS + Three.js)
-    TripleMode[ModeSwitcher 三重同源模式: 小白向导 / 视觉画布 / 极客 IDE]
-    FlowEditor[FlowEditor 16 类工业级节点画布]
-    ReviewOverlay[点哪评哪: DOM 原地点选 / 框选 / 涂鸦批注]
-    KanbanGantt[敏捷看板 / 原生 SVG 甘特图 / 燃尽图]
-    Star3D[Three.js 3D 银河立体知识星图]
-    Delighters[锦上添花: 创作者数码小屋 / 桌面伴宠 / 闲暇轻互动]
-    BaseBound[BaseBound 全局自动保存 2s 防抖]
-  end
+### 方式一：绿色免安装独立发行包（强烈推荐 · 开箱即用）
 
-  subgraph 后端核心服务层 (FastAPI + LangGraph)
-    CapBroker[CapabilityBroker 统一能力网关: 权限四元组]
-    ClawGates[三层严格把关质检: 自审 / 交叉 / 独立第三方把关]
-    HITL[人在回路审批中枢: 高危操作拦截与授权]
-    ModelRouter[多 Provider 模型网关: Ollama 本地 / 云端 API / 指数退避智能降级]
-    HybridRAG[端侧双轨检索: BM25 + sqlite-vec 混合召回]
-    Resilience[T6 抗打断引擎: 状态台账流式落盘 + 时间机器快照分叉 + 断点原位续作]
-  end
+1. 直接点击从 GitHub Release 下载官方 Windows 绿色独立安装包：  
+   👉 **[下载 FY-Orbit-Windows-v1.0.0.zip (3.06 MB)](https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip)**
+2. 解压到任意文件夹；
+3. 双击运行 `FY-Orbit.bat`（或 `start.bat`），系统将自动拉起服务并以独立原生应用窗口启动工作台，零配置开箱即跑！
 
-  subgraph 存储与安全底座 (100% 本地优先 · 绝对掌控与审计)
-    SQLiteDB[(SQLite 嵌入式单文件: find-yourself.db)]
-    VecDB[(sqlite-vec 本地向量扩展)]
-    FileSystem[(本地资产库 .runtime/assets + S3 兼容对象存储)]
-    AuditChain[(不可逆 SHA-256 审计哈希链)]
-  end
+### 方式二：在线云端网页版（免安装）
+点击进入全球 Anycast CDN 部署的在线公网版本体验：  
+👉 **[在线宣传落地页](https://math-blast-dated-alberta.trycloudflare.com/landing.html)** ｜ **[Web 工作台在线版](https://math-blast-dated-alberta.trycloudflare.com/)**
 
-  Gateway --> CapBroker
-  Gateway --> HITL
-  Gateway --> ModelRouter
-  Gateway --> HybridRAG
-  Gateway --> Resilience
-
-  CapBroker --> SQLiteDB
-  CapBroker --> AuditChain
-  HybridRAG --> VecDB
-  Resilience --> SQLiteDB
-```
-
----
-
-## 🚀 极速启动与使用
-
-### 方式一：Windows 桌面一键免安装极速运行（推荐）
-
-1. 克隆或下载本仓库代码；
-2. 双击根目录下的快速启动脚本：
-   ```cmd
-   start.bat
-   ```
-3. 系统将自动检测 Python 运行时、初始化本地 SQLite 数据库并拉起服务，在浏览器自动开启：  
-   👉 **`http://127.0.0.1:8000`**
-
-### 方式二：命令行手动启动
+### 方式三：源码手动启动
 
 ```bash
-# 1. 创建并激活 Python 3.11+ 虚拟环境
+# 1. 准备 Python 3.11+ 虚拟环境
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# 2. 安装依赖并启动
+# 2. 安装并启动
 pip install -e .
 python run.py --port 8000
 ```
 
-### 方式三：使用预编译桌面绿色包
-直接下载随附的 Windows 安装压缩包 [`FindYourself-Windows-Setup-Preview.zip`](assets/FindYourself-Windows-Setup-Preview.zip)，解压后双击 `Install.bat` 即可开箱即用。
-
 ---
 
-## 📖 开发者与核心服务端点
+## 📖 核心服务端点与接口文档
 
-服务启动后，可在浏览器直接访问以下核心端点进行调试与使用：
+服务启动后，可在浏览器直接访问以下核心端点：
 
 | 访问地址 | 对应功能与说明 |
 | :--- | :--- |
-| `http://127.0.0.1:8000/` | Web 主工作台、画布工作流与用户首页 |
+| `http://127.0.0.1:8000/` | Web 主工作台、画布工作流与系统首页 |
+| `http://127.0.0.1:8000/landing.html` | 官方深色质感宣传落地页 |
 | `http://127.0.0.1:8000/docs` | OpenAPI / Swagger 交互式接口文档 (421 个标准化 API) |
 | `http://127.0.0.1:8000/redoc` | ReDoc 工业级规格说明文档 |
-| `http://127.0.0.1:8000/api/workbench/tree` | 极客工作台工作区文件目录树接口 |
-
----
-
-## 🧪 自动化测试验证
-
-本项目拥有覆盖率严密、断言清晰的工业级测试矩阵，保障各模块极其稳定：
-
-```bash
-# 运行后端全量测试套件 (109 个测试文件，1268 个用例全部通过)
-python -m pytest tests/ -q
-
-# 运行前端组件与单元测试
-cd web
-npm run test
-```
 
 ---
 

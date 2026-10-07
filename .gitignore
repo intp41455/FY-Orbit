@@ -86,3 +86,5 @@ web/**/.playwright-artifacts-*/
 
 cloudflared.exe
 deploy/landing-dist/
+FY-Orbit-Windows-v1.0.0.zip
+*.pyc
