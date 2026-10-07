@@ -1,0 +1,143 @@
+/* ==========================================================================
+   统一保存状态指示器（P1 · A-基座质保-12 / W2）—— 归属 P1，本文件自成一域。
+   规则：
+   - 只用 tokens.css 的令牌，不写裸色值（四态直接复用已锁定的 --ui-st-* 语义色，
+     所以「状态语义不可自创」这条红线同时被满足）。
+   - 不阻断、不抢焦点：无遮罩、无 autoFocus；只有用户点「详情」才展开面板。
+   - 位置统一：默认作为 BaseBound 的标题栏右侧（见 .ui-base-bound__status）。
+   ========================================================================== */
+
+.ui-save-status {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+  padding: var(--ui-s-1) var(--ui-s-2);
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-line-1);
+}
+
+/* 四态配色：saving=执行中 / saved=完成 / dirty=等待 / error=失败（全部为锁定语义色） */
+.ui-save-status--saving .ui-save-status__dot { background: var(--ui-st-running); }
+.ui-save-status--saved  .ui-save-status__dot { background: var(--ui-st-complete); }
+.ui-save-status--dirty  .ui-save-status__dot { background: var(--ui-st-waiting); }
+.ui-save-status--error  .ui-save-status__dot { background: var(--ui-st-failed); }
+
+.ui-save-status--saved  { border-color: color-mix(in srgb, var(--ui-st-complete) 28%, transparent); }
+.ui-save-status--dirty  { border-color: color-mix(in srgb, var(--ui-st-waiting) 32%, transparent); }
+.ui-save-status--error  { border-color: color-mix(in srgb, var(--ui-st-failed) 36%, transparent); }
+
+.ui-save-status__dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: var(--ui-r-pill);
+  background: var(--ui-ink-4);
+}
+
+.ui-save-status--saving .ui-save-status__dot { animation: ui-save-breathe 1.4s var(--ui-ease-out) infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-save-status--saving .ui-save-status__dot { animation: none; }
+}
+
+@keyframes ui-save-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.ui-save-status__label {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ui-save-status__badge {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-st-waiting);
+  background: var(--ui-st-waiting-bg);
+  border: 1px solid color-mix(in srgb, var(--ui-st-waiting) 30%, transparent);
+  border-radius: var(--ui-r-pill);
+  padding: 0 var(--ui-s-2);
+  white-space: nowrap;
+}
+
+.ui-save-status__pending {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  white-space: nowrap;
+}
+
+.ui-save-status__toggle {
+  font-size: var(--ui-fs-xs);
+  padding: 0 var(--ui-s-2);
+  min-height: var(--ui-hit);
+  border-radius: var(--ui-r-1);
+  border: 1px solid var(--ui-line-1);
+  background: var(--ui-glass-3);
+  color: var(--ui-ink-3);
+}
+
+.ui-save-status__panel {
+  flex: 1 1 100%;
+  min-width: 0;
+  border-top: 1px solid var(--ui-line-1);
+  padding-top: var(--ui-s-2);
+  margin-top: var(--ui-s-1);
+}
+
+.ui-save-status__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--ui-s-2);
+  margin: 0;
+}
+
+.ui-save-status__facts > div { min-width: 0; }
+.ui-save-status__facts dt { font-size: var(--ui-fs-xs); color: var(--ui-ink-3); }
+.ui-save-status__facts dd {
+  margin: 0;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-1);
+  word-break: break-all;
+}
+
+.ui-save-status__timeline {
+  margin: var(--ui-s-2) 0 0;
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  word-break: break-word;
+}
+
+.ui-save-status__error {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex-wrap: wrap;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-st-failed);
+  background: var(--ui-st-failed-bg);
+  border: 1px solid color-mix(in srgb, var(--ui-st-failed) 32%, transparent);
+  border-radius: var(--ui-r-2);
+  padding: var(--ui-s-2) var(--ui-s-3);
+}
+
+.ui-save-status__hint { color: var(--ui-ink-2); }
+
+.ui-save-status__retry {
+  font-size: var(--ui-fs-xs);
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  border: 1px solid color-mix(in srgb, var(--ui-st-failed) 40%, transparent);
+  background: var(--ui-glass-3);
+  color: var(--ui-st-failed);
+}
+
+/* 接入壳：状态条统一在内容区上方（位置由基座定，页面不得自拟） */
+.ui-base-bound { display: flex; flex-direction: column; gap: var(--ui-s-3); min-width: 0; }
+.ui-base-bound__status { display: flex; justify-content: flex-end; }
+.ui-base-bound__body { min-width: 0; }

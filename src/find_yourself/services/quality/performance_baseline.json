@@ -1,0 +1,48 @@
+{
+  "version": "1.0.0",
+  "unit": "ms",
+  "source": "quality-standard-industrial-2026-10-07 §3 R7 / §6.2 W3（五项时延上限）",
+  "note": "唯一真源：CI 性能回归与本地自测脚本都读这一份，不允许在别处再写一份阈值。",
+  "default_tier": "standard",
+  "tiers": {
+    "low": {
+      "label": "低配（老旧笔记本 / 机械盘）",
+      "multiplier": 2.0
+    },
+    "standard": {
+      "label": "标准（近三年主流机型）",
+      "multiplier": 1.0
+    },
+    "high": {
+      "label": "高配（工作站 / NVMe）",
+      "multiplier": 0.6
+    }
+  },
+  "metrics": {
+    "realtime_save_p95_ms": {
+      "limit": 50,
+      "label": "实时保存 p95（输入不卡顿）",
+      "why": "开启实时保存后输入必须无感知；超限用户会关掉它，基座失效。"
+    },
+    "recover_gap_ms": {
+      "limit": 300,
+      "label": "恢复无空窗（崩溃/断电重开后到可编辑）",
+      "why": "恢复过程不能让界面空着，否则用户以为数据丢了。"
+    },
+    "conflict_compare_ms": {
+      "limit": 200,
+      "label": "冲突比对实时（本地 vs 远端差异出结果）",
+      "why": "冲突比对慢于 200ms 会打断合并流程。"
+    },
+    "log_filter_p95_ms": {
+      "limit": 150,
+      "label": "日志分级筛选 p95（五维筛选出结果）",
+      "why": "排查时筛一次等半秒以上，人就不筛了。"
+    },
+    "import_export_block_ms": {
+      "limit": 100,
+      "label": "导入导出主线程阻塞",
+      "why": "导出排查包不得阻塞主线程；重活必须让出事件循环。"
+    }
+  }
+}
