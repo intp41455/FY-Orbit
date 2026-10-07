@@ -18,6 +18,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  DSL_NODE_TYPES,
   dslCanvasApi,
   type DslDiagnostic,
   type DslDocument,
@@ -38,8 +39,11 @@ export const CANVAS_H = 420;
 const NODE_W = 148;
 const NODE_H = 52;
 
-/** 受限动词集（与后端 services/dsl_canvas.py 一致；面板另有动态 schema 拉取）。 */
-export const FLOW_NODE_TYPES: DslNodeType[] = ['input', 'transform', 'output'];
+/**
+ * 受限节点集（与后端 services/dsl_canvas.py 的 `NODE_TYPES` 一致）。
+ * 从 `DSL_NODE_TYPES` 派生，前端只有一份清单。
+ */
+export const FLOW_NODE_TYPES: DslNodeType[] = [...DSL_NODE_TYPES];
 export const FLOW_VERBS: DslTransformVerb[] = ['map', 'filter', 'template'];
 
 let seq = 0;
@@ -232,9 +236,61 @@ function reachesAll(doc: DslDocument, from: string): boolean {
 
 /** 新节点的默认参数（与 DslCanvas 保持一致，避免两种模式产出不同 DSL）。 */
 export function defaultParams(type: DslNodeType): Record<string, unknown> {
-  if (type === 'input') return { kind: 'literal', value: ['示例行'] };
-  if (type === 'transform') return { template: '处理：{value}' };
-  return { format: 'text' };
+  switch (type) {
+    case 'input':
+      return { kind: 'literal', value: ['示例行'] };
+    case 'transform':
+      return { template: '处理：{value}' };
+    case 'output':
+      return { format: 'text' };
+    case 'llm':
+      return { model: 'dummy', prompt: '测试提示' };
+    case 'knowledge_retrieval':
+      return { query: '测试查询', top_k: 10, mode: 'lexical' };
+    case 'question_classifier':
+      return { classes: ['是', '否'], model: 'dummy' };
+    case 'parameter_extractor':
+      return { fields: [{ name: 'test', type: 'string' }], model: 'dummy' };
+    case 'iteration':
+      return {
+        subflow: {
+          version: '1',
+          nodes: [
+            { id: 'input1', type: 'input', params: { kind: 'literal', value: ['test'] } },
+            { id: 'output1', type: 'output', params: { format: 'text' } }
+          ],
+          edges: [{ from: 'input1', to: 'output1' }]
+        }
+      };
+    case 'loop':
+      return {
+        subflow: {
+          version: '1',
+          nodes: [
+            { id: 'input1', type: 'input', params: { kind: 'literal', value: ['test'] } },
+            { id: 'output1', type: 'output', params: { format: 'text' } }
+          ],
+          edges: [{ from: 'input1', to: 'output1' }]
+        },
+        max_iterations: 10
+      };
+    case 'variable_aggregator':
+      return { strategy: 'first_non_null' };
+    case 'template':
+      return { template: '处理：{value}' };
+    case 'http_request':
+      return { url: 'https://example.com', method: 'GET' };
+    case 'code':
+      return { language: 'python', code: 'print("hello world")' };
+    case 'tool':
+      return { tool: 'example_tool' };
+    case 'human_input':
+      return { prompt: '请输入' };
+    case 'trigger':
+      return { kind: 'manual', config: {} };
+    default:
+      return {};
+  }
 }
 
 /**
@@ -334,6 +390,9 @@ export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
     void dslCanvasApi.schema()
       .then((s) => {
         if (!alive) return;
+        // 后端返回即接受：受限集就是 `NODE_TYPES` 那 16 类，前端不再 filter
+        // 掉任何一类（旧版只认 3 类，会把其余 13 类静默丢弃——那正是本包的病根）。
+        // 认不得的类型由本地 quickValidate / 后端 IR 校验如实报错，不静默丢。
         const types = (s.node_types ?? []).filter((t): t is DslNodeType =>
           FLOW_NODE_TYPES.includes(t as DslNodeType));
         if (types.length) setSchemaTypes(types);
