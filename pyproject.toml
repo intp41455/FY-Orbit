@@ -32,6 +32,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# 可选向量后端（P10 · A-向量库-03~06）
+# 默认不装：四个后端各自独立，缺依赖 → is_available() False + 检索层降级，
+# 不构成硬依赖。按需 `pip install -e ".[vectors]"` 或单独装某一个。
+vectors = [
+  "lancedb>=0.5,<1",
+  "chromadb>=0.5,<2",
+  "faiss-cpu>=1.8,<2",
+  "qdrant-client>=1.9,<2",
+]
+vectors-lancedb = ["lancedb>=0.5,<1"]
+vectors-chroma = ["chromadb>=0.5,<2"]
+vectors-faiss = ["faiss-cpu>=1.8,<2"]
+vectors-qdrant = ["qdrant-client>=1.9,<2"]
 gui = [
   "mss>=10.2.0",
   "pyautogui>=0.9.54",
