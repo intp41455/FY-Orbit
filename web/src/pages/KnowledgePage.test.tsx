@@ -17,6 +17,8 @@ vi.mock('../api/knowledge', async () => {
       forgetSource: vi.fn(),
       probeSource: vi.fn(),
       syncSource: vi.fn(),
+      imaSearch: vi.fn(),
+      imaStatus: vi.fn(),
     },
   };
 });
@@ -229,9 +231,14 @@ describe('KnowledgePage · 适配器', () => {
     expect(sync).toBeDisabled();
   });
 
-  it('保存凭证后刷新状态并提示仅存内存', async () => {
+  it('保存凭证后刷新状态并按存储位置提示（内存）', async () => {
     const api = mocked();
-    api.configureSource.mockResolvedValue({ source_id: 'ima', configured: true, storage: 'memory' });
+    api.configureSource.mockResolvedValue({
+      source_id: 'ima',
+      configured: true,
+      storage: 'memory',
+      persist_restart: false,
+    });
     api.listSources.mockResolvedValue({
       sources: [{ ...IMA, configured: true, available: true }, BAIDU],
       count: 2,

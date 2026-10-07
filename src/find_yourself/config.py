@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     # confirm/manual 策略的事件永不自动续作；FY_RECOVERY_AUTORESUME=0 可整体关闭。
     recovery_autoresume: bool = True
 
+    # ---- B1 · ima 公共知识库通道（B-IMA-01 MCP 优先 / B-IMA-02 REST 兜底）----
+    # 2026-10-07 主控实测库：八字紫微奇门印度占星塔罗排盘算命｜天地玄黄
+    # （type 1004，陛下自有库，B-IMA-03 自建库全量访问）。
+    ima_kb_id: str = "7509748362520236"
+    # 检索结果的本地缓存目录（B3 验收 3：断网时走本地缓存，不报错）。
+    ima_cache_path: str = ".runtime/ima_cache"
+
     @model_validator(mode="after")
     def validate_security(self):
         if self.environment not in {"local", "production", "test"}:

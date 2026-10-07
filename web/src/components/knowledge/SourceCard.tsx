@@ -64,7 +64,7 @@ export function SourceCard({
               <label key={field} className="row" style={{ gap: '0.5rem', marginTop: '0.35rem' }}>
                 <span style={{ minWidth: '5.5rem' }}>{field}</span>
                 <input
-                  type={field === 'api_key' || field === 'app_secret' ? 'password' : 'text'}
+                  type={field === 'api_key' || field === 'app_secret' || field === 'secret_key' ? 'password' : 'text'}
                   aria-label={`${source.source_id}-${field}`}
                   value={values[field] ?? ''}
                   placeholder={source.credentials_present[field] ? '已填写（留空则不改动）' : ''}

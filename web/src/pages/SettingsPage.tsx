@@ -10,6 +10,7 @@ import type {
 } from '../api/models';
 import { useAsync, Spinner, errorMessage } from '../components/ui';
 import { AutomationPermissionCard } from '../components/settings/AutomationPermissionCard';
+import { ImaKnowledgeCard } from '../components/settings/ImaKnowledgeCard';
 import { LineIcon } from '../components/ui/LineIcon';
 import '../styles/pages/system.css';
 
@@ -177,6 +178,7 @@ export function SettingsPage() {
         </div>
       )}
       <ModelAccessCard />
+      <ImaKnowledgeCard />
       <AutomationPermissionCard />
         <div className="card st-section">
           <div className="st-section-head">

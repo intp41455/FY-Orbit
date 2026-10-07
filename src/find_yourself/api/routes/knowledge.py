@@ -56,6 +56,10 @@ class ConfigureSourceRequest(BaseModel):
     app_key: str = Field(default="", max_length=400)
     app_secret: str = Field(default="", max_length=400)
     redirect_uri: str = Field(default="", max_length=400)
+    # B1 · G2：ima 凭证三件套（App ID / API Key / Secret Key）走设置页 →
+    # hub Fernet 加密存储（scope ima），MCP 通道发起连接时并入 env / 头。
+    app_id: str = Field(default="", max_length=400)
+    secret_key: str = Field(default="", max_length=400)
 
 
 # --------------------------------------------------------------------------- #
@@ -180,7 +184,7 @@ async def configure_source(
 ) -> dict:
     values = body.model_dump(exclude_none=True)
     result = kb.configure_source(source_id, values)
-    kb.s.session.commit()
+    kb.s.commit()
     return result
 
 
@@ -191,7 +195,7 @@ async def forget_source(
     kb: KnowledgeService = Depends(kb_services),
 ) -> dict:
     result = kb.forget_source(source_id)
-    kb.s.session.commit()
+    kb.s.commit()
     return result
 
 
@@ -222,7 +226,7 @@ async def sync_source(
     kb: KnowledgeService = Depends(kb_services),
 ) -> dict:
     summary = kb.sync_source(actor, owner_id=actor.owner_id, source_id=source_id)
-    kb.s.session.commit()
+    kb.s.commit()
     return summary
 
 
