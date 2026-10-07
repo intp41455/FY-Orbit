@@ -107,6 +107,63 @@ export interface KBSyncSummary {
   errors: { name: string; error: string }[];
 }
 
+/* ------------------------------------------------------------------ */
+/* B1 · ima 公共知识库检索（/api/knowledge/ima/*）                      */
+/* ------------------------------------------------------------------ */
+
+export interface ImaSearchHit {
+  media_id: string;
+  title: string;
+  /** 摘要（实测通道带回的 introduction/正文片段）。 */
+  introduction: string;
+  /** 全文（实测自建库无 300 字限制）；过长时后端截断并置 content_truncated。 */
+  content: string;
+  content_truncated: boolean;
+  tags: string[];
+  folder: string;
+  /** 实测 media_type（7=md 等）。 */
+  type: string;
+  can_fetch_content: boolean;
+  can_preview: boolean;
+  /** true = 该条目只有预览（订阅类库的边界），页面必须如实标注。 */
+  preview_only: boolean;
+  /** 远端自带的原始链接（可能为空串；不构造不存在的 URL）。 */
+  origin_url: string;
+  /** B2 · G4 出处回溯：`ima://<kb_id>/<media_id>`，页面展示为 src: 可点开原文。 */
+  src: string;
+}
+
+export interface ImaSearchResponse {
+  query: string;
+  kb_id: string;
+  /** 过滤后的真实命中数（不因翻页编造更大的总数）。 */
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+  results: ImaSearchHit[];
+  /** mcp | rest | mcp+cache | rest+cache —— 结果来自哪条通道，如实标注。 */
+  channel: string;
+  /** true = 本次为离线缓存结果（B3 验收 3），页面必须提示而非冒充实时。 */
+  cached: boolean;
+  cache_time: string | null;
+  errors: string[];
+}
+
+export interface ImaChannelStatus {
+  source_id: string;
+  kb_id: string;
+  configured: boolean;
+  channels: {
+    mcp: { configured: boolean; available?: boolean; latency_ms?: number; bases?: number; error?: string };
+    rest: { configured: boolean };
+  };
+  credentials_present: Record<string, boolean>;
+  cache_path: string;
+  kb_matched?: boolean;
+  detail?: string;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   const text = await res.text();
   let parsed: unknown = null;
@@ -145,7 +202,6 @@ export const knowledgeApi = {
     fetch(buildApiUrl(`${BASE}/documents`), { credentials: 'same-origin' }).then((r) =>
       jsonOrThrow<KBDocumentListResponse>(r),
     ),
-
   /** Raw-bytes upload: 后端按 query 里的 name 判定扩展名。 */
   upload: (file: File) => {
     const url = buildApiUrl(`${BASE}/documents`, { name: file.name });
@@ -197,6 +253,21 @@ export const knowledgeApi = {
 
   syncSource: (sourceId: string) =>
     postJson<KBSyncSummary>(`${BASE}/sources/${encodeURIComponent(sourceId)}/sync`, {}),
+
+  /* ---------------- B1 · ima 知识库检索 ---------------- */
+
+  imaSearch: (body: {
+    query: string;
+    page?: number;
+    page_size?: number;
+    type?: string;
+    tag?: string;
+  }) => postJson<ImaSearchResponse>('/api/knowledge/ima/search', body),
+
+  imaStatus: () =>
+    fetch(buildApiUrl('/api/knowledge/ima/status'), { credentials: 'same-origin' }).then((r) =>
+      jsonOrThrow<ImaChannelStatus>(r),
+    ),
 };
 
 function csrfHeaders(): Record<string, string> {

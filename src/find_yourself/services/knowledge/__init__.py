@@ -168,7 +168,15 @@ class KnowledgeService:
             Actor.owner("system"), "kb.source.configured", source_id,
             {"fields": sorted(k for k, v in values.items() if v)},
         )
-        return {"source_id": source_id, "configured": True, "storage": "memory"}
+        # W6 增补 E 后凭证落 hub Fernet 加密存储——返回值必须匹配真实存放位置，
+        # 不得再写死 "memory"（前端据此提示「重启是否失效」）。
+        storage, persist_restart = secret_store.storage_mode()
+        return {
+            "source_id": source_id,
+            "configured": True,
+            "storage": storage,
+            "persist_restart": persist_restart,
+        }
 
     def forget_source(self, source_id: str) -> dict[str, Any]:
         if hub_bridge.is_hub_source(source_id):

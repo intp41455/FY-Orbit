@@ -110,8 +110,11 @@ secret_store = HubSecretStore()
 SOURCE_STATUS: dict[str, dict[str, str]] = {
     "ima": {
         "display_name": "ima 知识库",
-        "credential_fields": "api_key,base_url",
-        "hint": "在 ima 开放平台创建个人应用，取 API Key 与 API Base URL 填入",
+        # B1 · G2：设置页可填 ima App ID / API Key / Secret Key（+ 可选 Base URL
+        # 走 REST 兜底）；凭证一律经 SECRETS 门禁（hub Fernet）加密存储。
+        "credential_fields": "app_id,api_key,secret_key,base_url",
+        "hint": "在设置页「ima 知识库」卡片填入 App ID / API Key / Secret Key；"
+        "MCP 通道在 FY_MCP_SERVERS['ima'] 配置服务器，REST 兜底需另填 Base URL",
     },
     "baidu_pan": {
         "display_name": "百度网盘",

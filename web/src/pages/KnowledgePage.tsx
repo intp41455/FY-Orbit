@@ -20,6 +20,7 @@ import type {
 } from '../api/knowledge';
 import { KnowledgeDropzone } from '../components/knowledge/KnowledgeDropzone';
 import { SourceCard } from '../components/knowledge/SourceCard';
+import { ImaPanel } from '../components/knowledge/ImaPanel';
 import {
   MAX_FILE_BYTES,
   SUPPORTED_EXTENSIONS,
@@ -62,7 +63,7 @@ interface KnTreeNode {
 /* 页面                                                                */
 /* ------------------------------------------------------------------ */
 
-type TabId = 'star' | 'timeline' | 'hierarchy' | 'list' | 'sources' | 'adapters' | 'logs';
+type TabId = 'star' | 'timeline' | 'hierarchy' | 'list' | 'ima' | 'sources' | 'adapters' | 'logs';
 type ViewId = 'star' | 'timeline' | 'hierarchy' | 'list';
 
 const VIEW_TABS: { id: ViewId; label: string }[] = [
@@ -72,11 +73,12 @@ const VIEW_TABS: { id: ViewId; label: string }[] = [
   { id: 'list', label: '列表' },
 ];
 
-const ALL_TABS: { id: TabId; label: string; icon: 'network' | 'timeline' | 'layers' | 'list' | 'folder' | 'database' | 'history' }[] = [
+const ALL_TABS: { id: TabId; label: string; icon: 'network' | 'timeline' | 'layers' | 'list' | 'knowledge' | 'folder' | 'database' | 'history' }[] = [
   { id: 'star', label: '星图（默认）', icon: 'network' },
   { id: 'timeline', label: '时间线', icon: 'timeline' },
   { id: 'hierarchy', label: '层级', icon: 'layers' },
   { id: 'list', label: '列表', icon: 'list' },
+  { id: 'ima', label: 'ima 命理库', icon: 'knowledge' },
   { id: 'sources', label: '文档源', icon: 'folder' },
   { id: 'adapters', label: '适配器', icon: 'database' },
   { id: 'logs', label: '检索日志', icon: 'history' },

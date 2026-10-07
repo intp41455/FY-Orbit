@@ -170,7 +170,11 @@ def test_source_status_lists_both_adapters_with_baidu_not_connected():
     # 同步翻转——storage / persist_restart 必须永远匹配真实存储位置。
     assert statuses["ima"]["storage"] == "hub_fernet"
     assert statuses["ima"]["persist_restart"] is True
-    assert statuses["ima"]["credentials_present"] == {"api_key": False, "base_url": False}
+    # B1 · G2（2026-10-07）：ima 凭证字段扩为 App ID / API Key / Secret Key /
+    # Base URL 四件套（设置页入口），断言随字段集同步。
+    assert statuses["ima"]["credentials_present"] == {
+        "app_id": False, "api_key": False, "secret_key": False, "base_url": False,
+    }
 
 
 def test_configure_source_rejects_empty_and_baidu(session):
