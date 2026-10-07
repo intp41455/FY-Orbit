@@ -45,6 +45,7 @@ from ..db.types import utcnow
 from ..services.actor import Actor
 from ..services.budget import BudgetService
 from ..services.errors import Conflict, PermissionDenied, ValidationFailed
+from ..services.offline import OfflineUnavailable, remote_block_reason
 from .providers import (
     LOCAL_INFERENCE_PROVIDERS,
     OPENAI_COMPAT,
@@ -72,6 +73,7 @@ __all__ = [
     "ModelProvider",
     "ModelProviderUnavailable",
     "MockModelProvider",
+    "OfflineUnavailable",
     "OpenAICompatibleProvider",
     "PriceUnknown",
     "ProviderRoute",
@@ -291,6 +293,13 @@ class ModelGateway:
             self.provider = None
             if self.settings is not None:
                 self._wire_from_settings(fallbacks)
+
+        #: 由 settings 配出来的路由快照（**对象身份**，不是 provider_id）。
+        #: 离线门只拦这些——它们才代表「应用自己会去连外网」的路径；
+        #: 宿主注入的适配器与测试替换的替身不在此列（见 offline_block_reason）。
+        self._settings_wired: list[ProviderRoute] = (
+            [] if provider is not None else list(self.routes)
+        )
 
     # -- wiring ------------------------------------------------------------
     def _load_price_overrides(self) -> dict[str, ModelPricing]:
@@ -558,6 +567,27 @@ class ModelGateway:
             reason = f"{name}: {detail}" if detail else name
         return f"{route.provider_id}:{model} → {reason}"
 
+    # -- offline gate ------------------------------------------------------ #
+    def offline_block_reason(self, route: ProviderRoute) -> str:
+        """该路由是否被离线门拦住；允许时返回空串。
+
+        门只拦**由 settings 配出来的远程路由**（:attr:`_settings_wired`）——
+        那才是应用自己会去连外网的路径。两类路由刻意不在门内，因为拦它们
+        是拦错东西：
+
+        * 宿主 ``provider=`` 显式注入的适配器（自带推理 / 本地桩 / 测试替身）
+          —— 显式接线不是「悄悄出网」，出不出网由宿主自己负责；
+        * 本地推理 provider（如 ollama，连的是本机 socket）—— 「默认离线」
+          拦的是**外网**，不是把本机模型也一起关掉；本机连不上时它自己会失败。
+        """
+        if not any(route is wired for wired in self._settings_wired):
+            return ""
+        if route.provider_id in LOCAL_INFERENCE_PROVIDERS:
+            return ""
+        # 用本网关自己的 settings，不是全局单例：宿主可以拿一份「联网」的配置
+        # 单独建网关（否则 FY_OFFLINE_MODE=0 会被全局单例的默认离线吃掉）。
+        return remote_block_reason(f"远程 provider「{route.provider_id}」", self.settings)
+
     # -- public API --------------------------------------------------------
     def complete(
         self,
@@ -572,12 +602,22 @@ class ModelGateway:
         max_tokens: int = 1024,
         timeout_seconds: float = 30.0,
     ) -> CallResult:
-        """Guarded model call: privacy → price → reserve → call → settle.
+        """Guarded model call: offline → privacy → price → reserve → call → settle.
 
-        Walks the provider chain; every fallback hop is recorded on the returned
+        Default-offline (A-离线优先-01/03): settings-wired remote routes never leave
+        the machine while ``FY_OFFLINE_MODE`` is on (default); local-inference routes
+        and host-injected adapters are unaffected. Walking the *provider chain* still
+        happens — every fallback hop is recorded on the returned
         result (``degraded_from`` / ``degraded_reason``) so the UI always shows
         which provider actually answered.
         """
+        # 0. 离线门先于「未配置模型」：默认离线时远程路由本就出不了网，
+        #    此时报 model_not_configured 是把用户支去配一个仍然用不上的 key——
+        #    真正的原因是离线，就先报离线。
+        if self.routes and all(self.offline_block_reason(r) for r in self.routes):
+            raise OfflineUnavailable(
+                f"远程模型调用（{self.primary_provider_id or 'model'}）")
+
         self.require_configured()
         if not self.routes:
             if self.config_error:
@@ -598,6 +638,14 @@ class ModelGateway:
 
         for index, route in enumerate(self.routes):
             target_model = route.model_for(model)
+
+            # 0. 离线门（A-离线优先-01/03）：默认离线时远程路由**不出网**。
+            #    拦下要带原因，让降级链照常往下走（本地路由顶上也如实标
+            #    degraded_from/degraded_reason），而不是静默失败。
+            offline_reason = self.offline_block_reason(route)
+            if offline_reason:
+                reasons.append(f"{route.provider_id}:{target_model} → {offline_reason}")
+                continue
 
             # 2. Price calculation — per *actually executed* provider (task §3).
             try:

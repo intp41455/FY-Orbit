@@ -85,6 +85,13 @@ class Settings(BaseSettings):
     # 检索结果的本地缓存目录（B3 验收 3：断网时走本地缓存，不报错）。
     ima_cache_path: str = ".runtime/ima_cache"
 
+    # ---- 默认离线运行架构（A-离线优先-01/03）----
+    # 缺省 **True**：零配置首启就不打外网（断网可用；仅 LLM API 为唯一外部依赖，
+    # 且它默认关着）。不是「默认在线 + 可切离线」——那是另一件事。
+    # 语义与门的管辖范围见 `services/offline.py` 与 `docs/离线优先-默认离线运行架构-2026-10-07.md`；
+    # 显式 FY_OFFLINE_MODE=0 才允许远程调用（此时不再猜网络，成败由 provider 如实报）。
+    offline_mode: bool = True
+
     @model_validator(mode="after")
     def validate_security(self):
         if self.environment not in {"local", "production", "test"}:
