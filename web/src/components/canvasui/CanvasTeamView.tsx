@@ -28,8 +28,10 @@ import { MemberDrawer } from './MemberDrawer';
 import { statusMeta } from './statusMap';
 import { buildMemberViews } from './memberViews';
 import './../../styles/pages/canvas.css';
+import { useBase } from '../../hooks/useAutosave';
 
 export function CanvasTeamView() {
+  useBase({ surface: 'web/src/components/canvasui/CanvasTeamView' });
   const [catalog, setCatalog] = useState<TeamCatalog | null>(null);
   const [teams, setTeams] = useState<TeamSummary[]>([]);
   const [snapshot, setSnapshot] = useState<TeamSnapshot | null>(null);

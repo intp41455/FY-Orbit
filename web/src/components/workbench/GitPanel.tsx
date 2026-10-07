@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { workbenchApi, type GitStatus, type GitDiff, type GitFileState } from '../../api/workbench';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 interface Props {
   workspaceId: string;
 }
 
 export function GitPanel({ workspaceId }: Props) {
+  useBase({ surface: 'web/src/components/workbench/GitPanel' });
   const [status, setStatus] = useState<GitStatus | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [diff, setDiff] = useState<GitDiff | null>(null);

@@ -22,6 +22,7 @@ import { tasksApi } from '../../api/tasks';
 import type { ConversationMode } from '../../api/types';
 import { ApiError } from '../../api/client';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface CodeDispatchContext {
   /** 目标文件相对路径 */
@@ -83,6 +84,7 @@ export function WorkbenchDispatchDialog(props: {
   context: CodeDispatchContext;
   onClose: () => void;
 }) {
+  useBase({ surface: 'web/src/components/workbench/WorkbenchDispatchDialog' });
   const { context, onClose } = props;
 
   const [executorKind, setExecutorKind] = useState<ExecutorKind>('member');

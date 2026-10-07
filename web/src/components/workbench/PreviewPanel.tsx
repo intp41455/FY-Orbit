@@ -17,6 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { workbenchApi, type PreviewSource } from '../../api/workbench';
 import { Spinner, errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 type LoadState =
   | { status: 'idle' }
@@ -40,6 +41,7 @@ export function PreviewPanel(props: {
   /** 左侧当前选中文件（用于「登记为预览源」一键入口）。 */
   path: string | null;
 }) {
+  useBase({ surface: 'web/src/components/workbench/PreviewPanel' });
   const { workspaceId, path } = props;
   const [sources, setSources] = useState<PreviewSource[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

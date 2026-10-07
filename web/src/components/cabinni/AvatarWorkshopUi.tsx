@@ -15,6 +15,7 @@
 import { LineIcon } from '../../components/ui/LineIcon';
 import { AvatarPreview, type AvatarAnimation } from '../avatar/AvatarPreview';
 import { CabinNiIcon } from './CabinNiIcon';
+import { useBase } from '../../hooks/useAutosave';
 
 /* ------------------------------------------------------------------ */
 /* 预览台                                                              */
@@ -29,6 +30,7 @@ export interface AvatarStageProps {
 }
 
 export function AvatarStage({ frames, palette, animation, onAnimation, dirty }: AvatarStageProps) {
+  useBase({ surface: 'web/src/components/cabinni/AvatarWorkshopUi' });
   return (
     <div className="cabin-ni-stage" data-testid="avatar-ni-stage">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--ui-s-3)', alignItems: 'center' }}>

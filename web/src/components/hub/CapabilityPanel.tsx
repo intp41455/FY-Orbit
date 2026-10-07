@@ -2,6 +2,7 @@
 // 路由是 v1 的确定性打分（标签命中 + 健康优先 + 偏好权重），不是 LLM 决策，
 // 因此这里把「得分」和「理由」都摊开给用户看，不假装智能。
 import type { HubCapabilityRow, HubRouteCandidate } from '../../api/hub';
+import { useBase } from '../../hooks/useAutosave';
 
 export function CapabilityTable({
   rows,
@@ -12,6 +13,7 @@ export function CapabilityTable({
   busy: boolean;
   onDrop: (row: HubCapabilityRow) => void;
 }) {
+  useBase({ surface: 'web/src/components/hub/CapabilityPanel' });
   if (rows.length === 0) {
     return (
       <p className="muted" data-testid="hub-caps-empty">

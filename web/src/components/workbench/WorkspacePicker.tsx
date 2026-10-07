@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { workbenchApi, type WorkspaceSummary } from '../../api/workbench';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 interface Props {
   workspaces: WorkspaceSummary[];
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function WorkspacePicker({ workspaces, selectedId, onSelect, onChanged }: Props) {
+  useBase({ surface: 'web/src/components/workbench/WorkspacePicker' });
   const [showForm, setShowForm] = useState(false);
   const [projectName, setProjectName] = useState('');
   const [root, setRoot] = useState('');

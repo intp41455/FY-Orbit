@@ -44,6 +44,7 @@ import {
 } from '../components/knowledgeui/AdvancedConfigDrawer';
 import { useKnowledgeGraph } from '../components/knowledgeui/useKnowledgeGraph';
 import { CLUSTER_LABEL, clusterLabel, type StarNode } from '../components/knowledgeui/starLogic';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 const DEFAULT_LIMITS: KBLimits = {
   max_bytes: MAX_FILE_BYTES,
@@ -359,562 +360,564 @@ export function KnowledgePage() {
   };
 
   return (
-    <div className="kn-root">
-      <div className="page-head">
-        <h2>本地知识库</h2>
-        <span className="muted">文档 RAG · 数据全部留在本机 · 检索严格按账号隔离</span>
-      </div>
+    <BaseBound surface="knowledge">
+      <div className="kn-root">
+        <div className="page-head">
+          <h2>本地知识库</h2>
+          <span className="muted">文档 RAG · 数据全部留在本机 · 检索严格按账号隔离</span>
+        </div>
 
-      {/* ============ 顶栏：数据源 / 搜索 / 视图切换 / 高级配置 ============ */}
-      <div className="kn-topbar">
-        {/* 数据源：芯片来自后端真实 source 清单 + 本地文件入口 */}
-        <div className="ui-row" style={{ gap: 'var(--ui-s-2)', flexWrap: 'wrap' }} data-testid="kn-source-chips">
-          <span className="cabin-ni-panel-hd" style={{ color: 'var(--ui-ink-3)' }}>
-            <KnowledgeNiIcon name="cube" size={16} />
-            数据源
-          </span>
-          <button
-            type="button"
-            className="ui-chip"
-            aria-pressed={tab === 'sources'}
-            data-testid="kn-source-local"
-            onClick={() => setTab('sources')}
-          >
-            <LineIcon name="folder" size={16} />
-            本地目录
-          </button>
-          {sources.map((s) => (
+        {/* ============ 顶栏：数据源 / 搜索 / 视图切换 / 高级配置 ============ */}
+        <div className="kn-topbar">
+          {/* 数据源：芯片来自后端真实 source 清单 + 本地文件入口 */}
+          <div className="ui-row" style={{ gap: 'var(--ui-s-2)', flexWrap: 'wrap' }} data-testid="kn-source-chips">
+            <span className="cabin-ni-panel-hd" style={{ color: 'var(--ui-ink-3)' }}>
+              <KnowledgeNiIcon name="cube" size={16} />
+              数据源
+            </span>
             <button
-              key={s.source_id}
               type="button"
               className="ui-chip"
-              aria-pressed={tab === 'adapters'}
-              data-testid={`kn-source-${s.source_id}`}
-              onClick={() => setTab('adapters')}
-              title={s.detail}
+              aria-pressed={tab === 'sources'}
+              data-testid="kn-source-local"
+              onClick={() => setTab('sources')}
             >
-              <LineIcon name="database" size={16} />
-              {s.display_name}
+              <LineIcon name="folder" size={16} />
+              本地目录
             </button>
-          ))}
+            {sources.map((s) => (
+              <button
+                key={s.source_id}
+                type="button"
+                className="ui-chip"
+                aria-pressed={tab === 'adapters'}
+                data-testid={`kn-source-${s.source_id}`}
+                onClick={() => setTab('adapters')}
+                title={s.detail}
+              >
+                <LineIcon name="database" size={16} />
+                {s.display_name}
+              </button>
+            ))}
+            <button
+              type="button"
+              className="ui-btn"
+              data-testid="kn-import-open"
+              onClick={() => setTab('sources')}
+            >
+              <LineIcon name="upload" size={16} />
+              导入
+            </button>
+          </div>
+
+          {/* 搜索：输入即过滤 + 回车/按钮检索（最少点击守则第 2 条） */}
+          <div className="kn-search">
+            <LineIcon name="search" size={18} />
+            <input
+              className="ui-input"
+              aria-label="知识库检索词"
+              placeholder="输入关键词，例如：碰撞规则…"
+              value={query}
+              onChange={(e) => onQueryChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void onSearch();
+              }}
+            />
+          </div>
+          <button type="button" className="ui-btn ui-btn--primary" onClick={() => void onSearch()} disabled={searching}>
+            <LineIcon name="search" size={16} />
+            {searching ? '检索中…' : '检索'}
+          </button>
+
+          <span className="kn-topbar-spacer" />
+
+          {/* 视图切换常驻（最少点击守则第 4 条） */}
+          <div className="ui-tabs" role="group" aria-label="视图切换">
+            {VIEW_TABS.map((v) => (
+              <button
+                key={v.id}
+                type="button"
+                className="ui-tab"
+                aria-pressed={tab === v.id}
+                data-testid={`kn-view-${v.id}`}
+                onClick={() => setTab(v.id)}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+
+          {/* ⚙ 高级配置常驻右上角（最少点击守则第 5 条） */}
           <button
             type="button"
-            className="ui-btn"
-            data-testid="kn-import-open"
-            onClick={() => setTab('sources')}
+            className="ui-btn ui-btn--icon"
+            aria-label="高级配置"
+            title="高级配置（切片 / 向量 / 关联 / 渲染）"
+            aria-expanded={cfgOpen}
+            data-testid="kn-cfg-open"
+            onClick={() => setCfgOpen(true)}
           >
-            <LineIcon name="upload" size={16} />
-            导入
+            <LineIcon name="settings" size={20} />
           </button>
         </div>
 
-        {/* 搜索：输入即过滤 + 回车/按钮检索（最少点击守则第 2 条） */}
-        <div className="kn-search">
-          <LineIcon name="search" size={18} />
-          <input
-            className="ui-input"
-            aria-label="知识库检索词"
-            placeholder="输入关键词，例如：碰撞规则…"
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void onSearch();
-            }}
-          />
-        </div>
-        <button type="button" className="ui-btn ui-btn--primary" onClick={() => void onSearch()} disabled={searching}>
-          <LineIcon name="search" size={16} />
-          {searching ? '检索中…' : '检索'}
-        </button>
+        {searchError && (
+          <div className="notice danger" role="alert">
+            <LineIcon name="alert" size={16} /> {searchError}
+          </div>
+        )}
 
-        <span className="kn-topbar-spacer" />
+        {/* 适配器/清单的提示放全局：子 Tab 切走后用户也必须看得见错误 */}
+        {sourceNotice && (
+          <div className="notice warn" role="status" data-testid="kn-source-notice">
+            <LineIcon name="info" size={16} /> {sourceNotice}
+          </div>
+        )}
 
-        {/* 视图切换常驻（最少点击守则第 4 条） */}
-        <div className="ui-tabs" role="group" aria-label="视图切换">
-          {VIEW_TABS.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              className="ui-tab"
-              aria-pressed={tab === v.id}
-              data-testid={`kn-view-${v.id}`}
-              onClick={() => setTab(v.id)}
+        <div className="kn-body">
+          {/* ============ 左侧竖排子 Tab（不许消失，窄屏收成横条） ============ */}
+          <nav className="kn-subtabs" role="tablist" aria-label="知识库分区">
+            {ALL_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                id={`kn-tabbtn-${t.id}`}
+                aria-selected={tab === t.id}
+                aria-controls={`kn-panel-${t.id}`}
+                className="kn-subtab"
+                data-testid={`kn-tab-${t.id}`}
+                onClick={() => setTab(t.id)}
+              >
+                <LineIcon name={t.icon} size={18} />
+                {t.label}
+              </button>
+            ))}
+          </nav>
+
+          <div className="kn-main">
+            {/* ============ 星图（主视图） ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-star"
+              aria-labelledby="kn-tabbtn-star"
+              hidden={tab !== 'star'}
             >
-              {v.label}
-            </button>
-          ))}
-        </div>
-
-        {/* ⚙ 高级配置常驻右上角（最少点击守则第 5 条） */}
-        <button
-          type="button"
-          className="ui-btn ui-btn--icon"
-          aria-label="高级配置"
-          title="高级配置（切片 / 向量 / 关联 / 渲染）"
-          aria-expanded={cfgOpen}
-          data-testid="kn-cfg-open"
-          onClick={() => setCfgOpen(true)}
-        >
-          <LineIcon name="settings" size={20} />
-        </button>
-      </div>
-
-      {searchError && (
-        <div className="notice danger" role="alert">
-          <LineIcon name="alert" size={16} /> {searchError}
-        </div>
-      )}
-
-      {/* 适配器/清单的提示放全局：子 Tab 切走后用户也必须看得见错误 */}
-      {sourceNotice && (
-        <div className="notice warn" role="status" data-testid="kn-source-notice">
-          <LineIcon name="info" size={16} /> {sourceNotice}
-        </div>
-      )}
-
-      <div className="kn-body">
-        {/* ============ 左侧竖排子 Tab（不许消失，窄屏收成横条） ============ */}
-        <nav className="kn-subtabs" role="tablist" aria-label="知识库分区">
-          {ALL_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              id={`kn-tabbtn-${t.id}`}
-              aria-selected={tab === t.id}
-              aria-controls={`kn-panel-${t.id}`}
-              className="kn-subtab"
-              data-testid={`kn-tab-${t.id}`}
-              onClick={() => setTab(t.id)}
-            >
-              <LineIcon name={t.icon} size={18} />
-              {t.label}
-            </button>
-          ))}
-        </nav>
-
-        <div className="kn-main">
-          {/* ============ 星图（主视图） ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-star"
-            aria-labelledby="kn-tabbtn-star"
-            hidden={tab !== 'star'}
-          >
-            {/* 图例：簇色 + 线型语义（颜色不是唯一通道） */}
-              <div className="kn-legend" data-testid="kn-legend">
-                {CLUSTER_LABEL.map((label, i) => (
-                  <span key={label}>
-                    <i
-                      style={{
-                        background: ['var(--ui-sky-500)', 'var(--ui-teal-300)', 'var(--ui-violet-400)'][i],
-                      }}
-                      aria-hidden="true"
-                    />
-                    {label}
-                  </span>
-                ))}
-                <span>
-                  <i className="kn-legend-line" style={{ borderTopColor: 'var(--ui-line-strong)' }} aria-hidden="true" />
-                  顺序（同文档相邻段）
-                </span>
-                <span>
-                  <i className="kn-legend-line" style={{ borderTopColor: 'var(--ui-sky-600)' }} aria-hidden="true" />
-                  共同命中（同次检索）
-                </span>
-                <span>
-                  <LineIcon name="info" size={14} />
-                  节点大小/亮度 = 权重（被同次检索共同命中的次数）
-                </span>
-                <span className="kn-count">
-                  命中 {matchedCount} / 共 {graph.totalNodes}
-                  {graph.truncated ? `（已显示 ${graph.nodes.length}，超出 ${graph.totalNodes - graph.nodes.length} 个受上限保护）` : ''}
-                </span>
-              </div>
-
-              <StarGraph
-                nodes={graph.nodes}
-                edges={edges}
-                selectedId={selectedNode?.id ?? null}
-                filter={query}
-                focusFirstMatchToken={focusToken}
-                reducedMotion={reducedMotion}
-                onSelect={setSelectedNode}
-                cardActions={
-                  selectedNode ? (
-                    <>
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn--sm"
-                        data-testid="kn-node-open"
-                        onClick={() => {
-                          const d = nodeDoc(selectedNode);
-                          if (d) setTab('sources');
+              {/* 图例：簇色 + 线型语义（颜色不是唯一通道） */}
+                <div className="kn-legend" data-testid="kn-legend">
+                  {CLUSTER_LABEL.map((label, i) => (
+                    <span key={label}>
+                      <i
+                        style={{
+                          background: ['var(--ui-sky-500)', 'var(--ui-teal-300)', 'var(--ui-violet-400)'][i],
                         }}
-                        title={
-                          nodeDoc(selectedNode)
-                            ? '查看该切片所属文档的源文件状态'
-                            : '后端未提供按切片名取回原文件正文的端点'
-                        }
-                      >
-                        <LineIcon name="file" size={16} />
-                        打开原文件
-                      </button>
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn--sm ui-btn--primary"
-                        data-testid="kn-node-chat"
-                        onClick={() => chatAbout(selectedNode)}
-                      >
-                        <LineIcon name="chat" size={16} />
-                        基于此内容对话
-                      </button>
-                    </>
-                  ) : null
-                }
-              />
-
-              {/* 诚实标注：图的边到底是什么 */}
-              <p className="ui-hint" data-testid="kn-graph-provenance">
-                <LineIcon name="info" size={14} />
-                节点 = 真实切片（<code>GET /api/kb/documents/*/chunks</code>）；权重 = 被同次检索共同命中的次数
-                （后端未提供中心度接口）。连线只含两类：同文档顺序（虚线）与同次检索共同命中（实线）。
-                语义相似度 / 双向链接后端无端点，已在高级配置标「待接线」并禁用 —— 不画不存在的关联。
-              </p>
-
-              {graph.chunkErrors.length > 0 && (
-                <div className="notice warn" role="status" data-testid="kn-chunk-errors">
-                  <LineIcon name="alert" size={16} />
-                  以下文档的切片读取失败，星图未包含它们：
-                  {graph.chunkErrors.map((e) => `${e.docName}（${e.message}）`).join('；')}
-                </div>
-              )}
-
-              {graph.loading && (
-                <p className="muted" data-testid="kn-graph-loading">
-                  正在从本机读取切片…
-                </p>
-              )}
-
-              {graph.nodes.length === 0 && !graph.loading && (
-                <div className="kn-stage" style={{ height: 180 }}>
-                  <div className="kn-stage-note">
-                    <strong>还没有可成图的切片</strong>
-                    <p>
-                      导入 .md / .txt / .pdf / .docx 后，切片会立即出现在星图里。
-                      也可以先去「文档源」标签页拖入文件。
-                    </p>
-                  </div>
-                </div>
-              )}
-          </div>
-
-          {/* ============ 时间线 ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-timeline"
-            aria-labelledby="kn-tabbtn-timeline"
-            hidden={tab !== 'timeline'}
-          >
-            <div className="kn-timeline" data-testid="kn-timeline">
-              {timeline.length === 0 && (
-                <p className="muted">还没有文档时间线。</p>
-              )}
-              {timeline.map(([date, docs]) => (
-                <div className="kn-tl-col" key={date}>
-                  <div className="kn-tl-date">
-                    <LineIcon name="history" size={14} /> {date}
-                  </div>
-                  {docs.map((d) => (
-                    <button
-                      key={d.id}
-                      type="button"
-                      className="kn-tl-item"
-                      data-testid={`kn-tl-${d.id}`}
-                      onClick={() => setTab('sources')}
-                    >
-                      <span className="kn-tl-item-name">{d.name}</span>
-                      <span className="kn-tl-item-meta">
-                        {d.chunk_count} 切片 · {documentStatus(d.status).label}
-                      </span>
-                    </button>
+                        aria-hidden="true"
+                      />
+                      {label}
+                    </span>
                   ))}
+                  <span>
+                    <i className="kn-legend-line" style={{ borderTopColor: 'var(--ui-line-strong)' }} aria-hidden="true" />
+                    顺序（同文档相邻段）
+                  </span>
+                  <span>
+                    <i className="kn-legend-line" style={{ borderTopColor: 'var(--ui-sky-600)' }} aria-hidden="true" />
+                    共同命中（同次检索）
+                  </span>
+                  <span>
+                    <LineIcon name="info" size={14} />
+                    节点大小/亮度 = 权重（被同次检索共同命中的次数）
+                  </span>
+                  <span className="kn-count">
+                    命中 {matchedCount} / 共 {graph.totalNodes}
+                    {graph.truncated ? `（已显示 ${graph.nodes.length}，超出 ${graph.totalNodes - graph.nodes.length} 个受上限保护）` : ''}
+                  </span>
                 </div>
-              ))}
-            </div>
-          </div>
 
-          {/* ============ 层级 ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-hierarchy"
-            aria-labelledby="kn-tabbtn-hierarchy"
-            hidden={tab !== 'hierarchy'}
-          >
-            <div className="kn-tree" data-testid="kn-hierarchy">
-              {documents.length === 0 ? (
-                <p className="muted">还没有文档层级。</p>
-              ) : (
-                renderTree(tree, 0)
-              )}
-              <p className="ui-hint">
-                层级由文档名的目录部分推导；此视图的连线恒为虚线（同文档从属）。
-              </p>
-            </div>
-          </div>
+                <StarGraph
+                  nodes={graph.nodes}
+                  edges={edges}
+                  selectedId={selectedNode?.id ?? null}
+                  filter={query}
+                  focusFirstMatchToken={focusToken}
+                  reducedMotion={reducedMotion}
+                  onSelect={setSelectedNode}
+                  cardActions={
+                    selectedNode ? (
+                      <>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--sm"
+                          data-testid="kn-node-open"
+                          onClick={() => {
+                            const d = nodeDoc(selectedNode);
+                            if (d) setTab('sources');
+                          }}
+                          title={
+                            nodeDoc(selectedNode)
+                              ? '查看该切片所属文档的源文件状态'
+                              : '后端未提供按切片名取回原文件正文的端点'
+                          }
+                        >
+                          <LineIcon name="file" size={16} />
+                          打开原文件
+                        </button>
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--sm ui-btn--primary"
+                          data-testid="kn-node-chat"
+                          onClick={() => chatAbout(selectedNode)}
+                        >
+                          <LineIcon name="chat" size={16} />
+                          基于此内容对话
+                        </button>
+                      </>
+                    ) : null
+                  }
+                />
 
-          {/* ============ 列表（图形视图的等价兜底） ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-list"
-            aria-labelledby="kn-tabbtn-list"
-            hidden={tab !== 'list'}
-          >
-            <div className="kn-list" data-testid="kn-node-list">
-              {graph.nodes.length === 0 && <p className="muted">还没有切片。</p>}
-              {graph.nodes.map((n) => (
-                <button
-                  key={n.id}
-                  type="button"
-                  className="kn-list-card"
-                  onClick={() => {
-                    setSelectedNode(n);
-                    setTab('star');
-                  }}
-                  data-testid={`kn-list-${n.id}`}
-                  title={n.excerpt}
-                >
-                  <span className="kn-list-card-title">
-                    <LineIcon name="file" size={16} />
-                    <span>{n.docName}</span>
-                  </span>
-                  <span className="kn-list-card-meta">
-                    第 {n.seq + 1} 段 · {n.chars} 字 · {clusterLabel(n.cluster)} · 权重 {n.weight}
-                    {n.score !== null && ` · 得分 ${n.score.toFixed(2)}`}
-                  </span>
-                  <span className="kn-list-card-body">{n.excerpt || '（该切片正文为空）'}</span>
-                  <span className="kn-hover-act">
-                    <span className="ui-btn ui-btn--sm ui-btn--primary">在星图查看</span>
-                  </span>
-                </button>
-              ))}
-              {graph.truncated && (
-                <p className="ui-hint" style={{ gridColumn: '1 / -1' }}>
-                  节点上限保护：共 {graph.totalNodes} 个切片，本页显示前 {graph.nodes.length} 个。
-                  其余切片仍可在「列表」检索结果与「文档源」里找到。
+                {/* 诚实标注：图的边到底是什么 */}
+                <p className="ui-hint" data-testid="kn-graph-provenance">
+                  <LineIcon name="info" size={14} />
+                  节点 = 真实切片（<code>GET /api/kb/documents/*/chunks</code>）；权重 = 被同次检索共同命中的次数
+                  （后端未提供中心度接口）。连线只含两类：同文档顺序（虚线）与同次检索共同命中（实线）。
+                  语义相似度 / 双向链接后端无端点，已在高级配置标「待接线」并禁用 —— 不画不存在的关联。
                 </p>
-              )}
-            </div>
-          </div>
 
-          {/* ============ 文档源（导入 + 文档清单） ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-sources"
-            aria-labelledby="kn-tabbtn-sources"
-            hidden={tab !== 'sources'}
-          >
-            <>
-              <KnowledgeDropzone
-                onFiles={(files) => void onFiles(files)}
-                busy={importing}
-                hint={`支持 ${limits.extensions.join(' / ')}，单文件 ≤ ${formatBytes(limits.max_bytes)}；文件只留在本机。`}
-              />
-              {uploadLog.length > 0 && (
-                <ul className="kb-log" data-testid="kb-upload-log">
-                  {uploadLog.map((line, i) => (
-                    <li key={`${line}-${i}`}>{line}</li>
-                  ))}
-                </ul>
-              )}
-
-              <h3>文档（{documents.length}）</h3>
-              {loading && <div className="muted">读取中…</div>}
-              {listError && <div className="notice danger">{listError}</div>}
-              {!loading && !listError && documents.length === 0 && (
-                <div className="muted" data-testid="kb-empty">
-                  还没有文档。拖入 .md / .txt / .pdf / .docx 后即可检索。
-                </div>
-              )}
-              {documents.length > 0 && (
-                <div className="card ui-panel ui-panel--pad">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>名称</th>
-                        <th>状态</th>
-                        <th>来源</th>
-                        <th>切片</th>
-                        <th>操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {documents.map((doc) => {
-                        const st = documentStatus(doc.status);
-                        return (
-                          <tr key={doc.id} data-testid={`kb-doc-${doc.id}`}>
-                            <td data-label="名称">
-                              <div>{doc.name}</div>
-                              <div className="muted">{describeDocument(doc)}</div>
-                            </td>
-                            <td data-label="状态">
-                              {/* 状态文字 + 徽标：颜色不是唯一通道 */}
-                              <span
-                                className={`ui-badge ${
-                                  st.tone === 'ok'
-                                    ? 'ui-badge--complete'
-                                    : st.tone === 'warn'
-                                      ? 'ui-badge--waiting'
-                                      : 'ui-badge--failed'
-                                }`}
-                              >
-                                {st.label}
-                              </span>
-                            </td>
-                            <td data-label="来源">{doc.source}</td>
-                            <td data-label="切片">{doc.chunk_count}</td>
-                            <td data-label="操作">
-                              <button
-                                type="button"
-                                className="ui-btn ui-btn--sm"
-                                aria-label={`删除 ${doc.name}`}
-                                data-testid={`kb-delete-${doc.id}`}
-                                onClick={() => void onDelete(doc)}
-                              >
-                                <LineIcon name="trash" size={16} />
-                                删除
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          </div>
-
-          {/* ============ 适配器 ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-adapters"
-            aria-labelledby="kn-tabbtn-adapters"
-            hidden={tab !== 'adapters'}
-          >
-            <>
-              <p className="muted">
-                未配置凭证的适配器显示「未接入」；凭证只保存在本进程内存中，重启后需重新填写
-                （不入库、不落盘、不回显）。
-              </p>
-              <div className="kb-sources">
-                {sources.map((source) => (
-                  <SourceCard
-                    key={source.source_id}
-                    source={source}
-                    busy={sourceBusy}
-                    onConfigure={(id, values) =>
-                      withSources(
-                        () => knowledgeApi.configureSource(id, values),
-                        () => `${id}：凭证已保存（仅内存，重启后失效）`,
-                      )
-                    }
-                    onForget={(id) =>
-                      withSources(() => knowledgeApi.forgetSource(id), () => `${id}：凭证已清除`)
-                    }
-                    onProbe={(id) =>
-                      withSources(
-                        () => knowledgeApi.probeSource(id),
-                        (result) => `${id}：${(result as KBSourceStatus).detail}`,
-                      )
-                    }
-                    onSync={(id) =>
-                      withSources(
-                        () => knowledgeApi.syncSource(id),
-                        (result) => {
-                          const s = result as KBSyncSummary;
-                          return (
-                            `${id}：拉取 ${s.collections} 个集合，导入 ${s.imported}，` +
-                            `替换 ${s.replaced}，失败 ${s.failed}` +
-                            (s.preview_only ? `，其中 ${s.preview_only} 条只有预览` : '')
-                          );
-                        },
-                      )
-                    }
-                  />
-                ))}
-                {sources.length === 0 && <div className="muted">适配器清单读取中…</div>}
-              </div>
-              <p className="muted">
-                小提示：在 Chat 调试页绑定 <code>kb.search</code> 工具后，问「用知识库查 …」即可让
-                Agent 走同一套检索。
-              </p>
-              {sources.length > 0 && (
-                <p className="muted">
-                  {sources.map((s) => `${s.display_name}：${credentialHint(s)}`).join(' · ')}
-                </p>
-              )}
-            </>
-          </div>
-
-          {/* ============ 检索日志 ============ */}
-          <div
-            role="tabpanel"
-            id="kn-panel-logs"
-            aria-labelledby="kn-tabbtn-logs"
-            hidden={tab !== 'logs'}
-          >
-            <>
-              <h3>检索</h3>
-              <p className="muted">
-                检索结果条在所有视图下方常驻，这里是历史视图，便于回看同一次命中的来源与得分。
-              </p>
-              {!searched && <p className="muted" data-testid="kn-log-empty">还没有发起过检索。</p>}
-              {searched && searchError && <p className="muted">上一次检索失败：{searchError}</p>}
-            </>
-          </div>
-
-          {/* ============ 检索结果条：所有视图常驻（保证「命中 N」永远看得到） ============ */}
-          {searched && !searchError && (
-            <p className="muted" data-testid="kb-search-summary">
-              {summarizeHits(hits)}
-            </p>
-          )}
-          {hits.length > 0 && (
-            <div className="kb-results" data-testid="kb-results">
-              {hits.map((hit) => (
-                <div className="card kb-hit ui-panel ui-panel--pad" key={hit.chunk_id} data-testid={`kb-hit-${hit.chunk_id}`}>
-                  <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--ui-s-2)', flexWrap: 'wrap' }}>
-                    <strong>{hit.doc_name}</strong>
-                    <span className="muted">{topScoreLabel(hit)}</span>
+                {graph.chunkErrors.length > 0 && (
+                  <div className="notice warn" role="status" data-testid="kn-chunk-errors">
+                    <LineIcon name="alert" size={16} />
+                    以下文档的切片读取失败，星图未包含它们：
+                    {graph.chunkErrors.map((e) => `${e.docName}（${e.message}）`).join('；')}
                   </div>
-                  <p>
-                    {highlightParts(hit.content, hit.matched_terms).map((part, i) =>
-                      part.hit ? (
-                        <mark key={`h-${i}`}>{part.text}</mark>
-                      ) : (
-                        <span key={`t-${i}`}>{part.text}</span>
-                      ),
-                    )}
+                )}
+
+                {graph.loading && (
+                  <p className="muted" data-testid="kn-graph-loading">
+                    正在从本机读取切片…
                   </p>
-                  <div className="muted">
-                    来源：{hit.source} · 文档 {hit.doc_id} · 命中词 {hit.matched_terms.join('、')}
+                )}
+
+                {graph.nodes.length === 0 && !graph.loading && (
+                  <div className="kn-stage" style={{ height: 180 }}>
+                    <div className="kn-stage-note">
+                      <strong>还没有可成图的切片</strong>
+                      <p>
+                        导入 .md / .txt / .pdf / .docx 后，切片会立即出现在星图里。
+                        也可以先去「文档源」标签页拖入文件。
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                )}
             </div>
-          )}
+
+            {/* ============ 时间线 ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-timeline"
+              aria-labelledby="kn-tabbtn-timeline"
+              hidden={tab !== 'timeline'}
+            >
+              <div className="kn-timeline" data-testid="kn-timeline">
+                {timeline.length === 0 && (
+                  <p className="muted">还没有文档时间线。</p>
+                )}
+                {timeline.map(([date, docs]) => (
+                  <div className="kn-tl-col" key={date}>
+                    <div className="kn-tl-date">
+                      <LineIcon name="history" size={14} /> {date}
+                    </div>
+                    {docs.map((d) => (
+                      <button
+                        key={d.id}
+                        type="button"
+                        className="kn-tl-item"
+                        data-testid={`kn-tl-${d.id}`}
+                        onClick={() => setTab('sources')}
+                      >
+                        <span className="kn-tl-item-name">{d.name}</span>
+                        <span className="kn-tl-item-meta">
+                          {d.chunk_count} 切片 · {documentStatus(d.status).label}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ============ 层级 ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-hierarchy"
+              aria-labelledby="kn-tabbtn-hierarchy"
+              hidden={tab !== 'hierarchy'}
+            >
+              <div className="kn-tree" data-testid="kn-hierarchy">
+                {documents.length === 0 ? (
+                  <p className="muted">还没有文档层级。</p>
+                ) : (
+                  renderTree(tree, 0)
+                )}
+                <p className="ui-hint">
+                  层级由文档名的目录部分推导；此视图的连线恒为虚线（同文档从属）。
+                </p>
+              </div>
+            </div>
+
+            {/* ============ 列表（图形视图的等价兜底） ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-list"
+              aria-labelledby="kn-tabbtn-list"
+              hidden={tab !== 'list'}
+            >
+              <div className="kn-list" data-testid="kn-node-list">
+                {graph.nodes.length === 0 && <p className="muted">还没有切片。</p>}
+                {graph.nodes.map((n) => (
+                  <button
+                    key={n.id}
+                    type="button"
+                    className="kn-list-card"
+                    onClick={() => {
+                      setSelectedNode(n);
+                      setTab('star');
+                    }}
+                    data-testid={`kn-list-${n.id}`}
+                    title={n.excerpt}
+                  >
+                    <span className="kn-list-card-title">
+                      <LineIcon name="file" size={16} />
+                      <span>{n.docName}</span>
+                    </span>
+                    <span className="kn-list-card-meta">
+                      第 {n.seq + 1} 段 · {n.chars} 字 · {clusterLabel(n.cluster)} · 权重 {n.weight}
+                      {n.score !== null && ` · 得分 ${n.score.toFixed(2)}`}
+                    </span>
+                    <span className="kn-list-card-body">{n.excerpt || '（该切片正文为空）'}</span>
+                    <span className="kn-hover-act">
+                      <span className="ui-btn ui-btn--sm ui-btn--primary">在星图查看</span>
+                    </span>
+                  </button>
+                ))}
+                {graph.truncated && (
+                  <p className="ui-hint" style={{ gridColumn: '1 / -1' }}>
+                    节点上限保护：共 {graph.totalNodes} 个切片，本页显示前 {graph.nodes.length} 个。
+                    其余切片仍可在「列表」检索结果与「文档源」里找到。
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* ============ 文档源（导入 + 文档清单） ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-sources"
+              aria-labelledby="kn-tabbtn-sources"
+              hidden={tab !== 'sources'}
+            >
+              <>
+                <KnowledgeDropzone
+                  onFiles={(files) => void onFiles(files)}
+                  busy={importing}
+                  hint={`支持 ${limits.extensions.join(' / ')}，单文件 ≤ ${formatBytes(limits.max_bytes)}；文件只留在本机。`}
+                />
+                {uploadLog.length > 0 && (
+                  <ul className="kb-log" data-testid="kb-upload-log">
+                    {uploadLog.map((line, i) => (
+                      <li key={`${line}-${i}`}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+
+                <h3>文档（{documents.length}）</h3>
+                {loading && <div className="muted">读取中…</div>}
+                {listError && <div className="notice danger">{listError}</div>}
+                {!loading && !listError && documents.length === 0 && (
+                  <div className="muted" data-testid="kb-empty">
+                    还没有文档。拖入 .md / .txt / .pdf / .docx 后即可检索。
+                  </div>
+                )}
+                {documents.length > 0 && (
+                  <div className="card ui-panel ui-panel--pad">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>名称</th>
+                          <th>状态</th>
+                          <th>来源</th>
+                          <th>切片</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {documents.map((doc) => {
+                          const st = documentStatus(doc.status);
+                          return (
+                            <tr key={doc.id} data-testid={`kb-doc-${doc.id}`}>
+                              <td data-label="名称">
+                                <div>{doc.name}</div>
+                                <div className="muted">{describeDocument(doc)}</div>
+                              </td>
+                              <td data-label="状态">
+                                {/* 状态文字 + 徽标：颜色不是唯一通道 */}
+                                <span
+                                  className={`ui-badge ${
+                                    st.tone === 'ok'
+                                      ? 'ui-badge--complete'
+                                      : st.tone === 'warn'
+                                        ? 'ui-badge--waiting'
+                                        : 'ui-badge--failed'
+                                  }`}
+                                >
+                                  {st.label}
+                                </span>
+                              </td>
+                              <td data-label="来源">{doc.source}</td>
+                              <td data-label="切片">{doc.chunk_count}</td>
+                              <td data-label="操作">
+                                <button
+                                  type="button"
+                                  className="ui-btn ui-btn--sm"
+                                  aria-label={`删除 ${doc.name}`}
+                                  data-testid={`kb-delete-${doc.id}`}
+                                  onClick={() => void onDelete(doc)}
+                                >
+                                  <LineIcon name="trash" size={16} />
+                                  删除
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            </div>
+
+            {/* ============ 适配器 ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-adapters"
+              aria-labelledby="kn-tabbtn-adapters"
+              hidden={tab !== 'adapters'}
+            >
+              <>
+                <p className="muted">
+                  未配置凭证的适配器显示「未接入」；凭证只保存在本进程内存中，重启后需重新填写
+                  （不入库、不落盘、不回显）。
+                </p>
+                <div className="kb-sources">
+                  {sources.map((source) => (
+                    <SourceCard
+                      key={source.source_id}
+                      source={source}
+                      busy={sourceBusy}
+                      onConfigure={(id, values) =>
+                        withSources(
+                          () => knowledgeApi.configureSource(id, values),
+                          () => `${id}：凭证已保存（仅内存，重启后失效）`,
+                        )
+                      }
+                      onForget={(id) =>
+                        withSources(() => knowledgeApi.forgetSource(id), () => `${id}：凭证已清除`)
+                      }
+                      onProbe={(id) =>
+                        withSources(
+                          () => knowledgeApi.probeSource(id),
+                          (result) => `${id}：${(result as KBSourceStatus).detail}`,
+                        )
+                      }
+                      onSync={(id) =>
+                        withSources(
+                          () => knowledgeApi.syncSource(id),
+                          (result) => {
+                            const s = result as KBSyncSummary;
+                            return (
+                              `${id}：拉取 ${s.collections} 个集合，导入 ${s.imported}，` +
+                              `替换 ${s.replaced}，失败 ${s.failed}` +
+                              (s.preview_only ? `，其中 ${s.preview_only} 条只有预览` : '')
+                            );
+                          },
+                        )
+                      }
+                    />
+                  ))}
+                  {sources.length === 0 && <div className="muted">适配器清单读取中…</div>}
+                </div>
+                <p className="muted">
+                  小提示：在 Chat 调试页绑定 <code>kb.search</code> 工具后，问「用知识库查 …」即可让
+                  Agent 走同一套检索。
+                </p>
+                {sources.length > 0 && (
+                  <p className="muted">
+                    {sources.map((s) => `${s.display_name}：${credentialHint(s)}`).join(' · ')}
+                  </p>
+                )}
+              </>
+            </div>
+
+            {/* ============ 检索日志 ============ */}
+            <div
+              role="tabpanel"
+              id="kn-panel-logs"
+              aria-labelledby="kn-tabbtn-logs"
+              hidden={tab !== 'logs'}
+            >
+              <>
+                <h3>检索</h3>
+                <p className="muted">
+                  检索结果条在所有视图下方常驻，这里是历史视图，便于回看同一次命中的来源与得分。
+                </p>
+                {!searched && <p className="muted" data-testid="kn-log-empty">还没有发起过检索。</p>}
+                {searched && searchError && <p className="muted">上一次检索失败：{searchError}</p>}
+              </>
+            </div>
+
+            {/* ============ 检索结果条：所有视图常驻（保证「命中 N」永远看得到） ============ */}
+            {searched && !searchError && (
+              <p className="muted" data-testid="kb-search-summary">
+                {summarizeHits(hits)}
+              </p>
+            )}
+            {hits.length > 0 && (
+              <div className="kb-results" data-testid="kb-results">
+                {hits.map((hit) => (
+                  <div className="card kb-hit ui-panel ui-panel--pad" key={hit.chunk_id} data-testid={`kb-hit-${hit.chunk_id}`}>
+                    <div className="row" style={{ justifyContent: 'space-between', gap: 'var(--ui-s-2)', flexWrap: 'wrap' }}>
+                      <strong>{hit.doc_name}</strong>
+                      <span className="muted">{topScoreLabel(hit)}</span>
+                    </div>
+                    <p>
+                      {highlightParts(hit.content, hit.matched_terms).map((part, i) =>
+                        part.hit ? (
+                          <mark key={`h-${i}`}>{part.text}</mark>
+                        ) : (
+                          <span key={`t-${i}`}>{part.text}</span>
+                        ),
+                      )}
+                    </p>
+                    <div className="muted">
+                      来源：{hit.source} · 文档 {hit.doc_id} · 命中词 {hit.matched_terms.join('、')}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
+
+        <AdvancedConfigDrawer open={cfgOpen} onClose={() => setCfgOpen(false)} config={cfg} onChange={setCfg} />
+
+        {/* 命中计数给读屏用户一份等价通道 */}
+        <p className="cabin-ni-sr-only" role="status" data-testid="kn-live-count">
+          {searched
+            ? `命中 ${hitCount} / 共 ${graph.totalNodes} 个切片`
+            : `共 ${graph.totalNodes} 个切片`}
+        </p>
       </div>
-
-      <AdvancedConfigDrawer open={cfgOpen} onClose={() => setCfgOpen(false)} config={cfg} onChange={setCfg} />
-
-      {/* 命中计数给读屏用户一份等价通道 */}
-      <p className="cabin-ni-sr-only" role="status" data-testid="kn-live-count">
-        {searched
-          ? `命中 ${hitCount} / 共 ${graph.totalNodes} 个切片`
-          : `共 ${graph.totalNodes} 个切片`}
-      </p>
-    </div>
+    </BaseBound>
   );
 }

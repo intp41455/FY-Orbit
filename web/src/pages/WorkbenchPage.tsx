@@ -29,6 +29,7 @@ import { WbToastStack, useWbToasts } from '../components/workbench/WbToast';
 import { CommandPalette } from '../components/workbench/CommandPalette';
 import { matchBacktick, matchAccessKey, matchCommandPalette, mayTake } from '../components/workbench/wbKeys';
 import './../styles/pages/workbench.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 function newIdempotencyKey(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID();
@@ -319,351 +320,353 @@ export function WorkbenchPage() {
   ) : undefined;
 
   return (
-    <div className="wb-shell">
-      {/* ---------------------------------------------------------- 页首 */}
-      <div className="page-head wb-page-head">
-        <div>
-          <nav className="wb-crumbs" aria-label="面包屑">
-            工作台空间 <span aria-hidden="true">›</span> <b>任务工作台</b>
-          </nav>
-          <h2>任务工作台</h2>
-        </div>
-        <span className="ui-spacer" />
-        <button type="button" className="ui-btn ui-btn--sm" onClick={() => setPaletteOpen(true)}>
-          <LineIcon name="search" size={16} />
-          搜索文件与命令
-          <span className="ui-kbd">⌘K</span>
-        </button>
-      </div>
-
-      {/* 工作区条（WorkspacePicker 迁入 wb-workspace-strip） */}
-      <div className="wb-workspace-strip">
-        <WorkspacePicker
-          workspaces={workspaces}
-          selectedId={workspaceId}
-          onSelect={selectWorkspace}
-          onChanged={() => void loadWorkspaces()}
-        />
-      </div>
-      {wsError && (
-        <div className="ui-error-text" role="alert">
-          {wsError}
-        </div>
-      )}
-
-      {/* ------------------------------------------------- 三区 + 坞（布局骨架） */}
-      <WorkbenchLayout
-        state={layoutState}
-        onStateChange={setLayoutState}
-        left={
-          <>
-            {/* L1 任务树 */}
-            <section className="wb-tasktree" aria-label="任务树">
-              <div className="wb-tasktree-form">
-                <label className="ui-label" htmlFor="goal">
-                  任务目标
-                </label>
-                <textarea
-                  id="goal"
-                  value={goal}
-                  onChange={(e) => setGoal(e.target.value)}
-                  onKeyDown={(e) => {
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                      e.preventDefault();
-                      void createTask();
-                    }
-                  }}
-                  placeholder="描述要完成的工程/调研任务（Ctrl+Enter 创建）"
-                />
-                <button
-                  type="button"
-                  className="ui-btn ui-btn--sm ui-btn--primary"
-                  onClick={() => void createTask()}
-                  disabled={loading || !goal.trim()}
-                >
-                  {loading ? '创建中…' : '创建任务（幂等）'}
-                </button>
-              </div>
-
-              {error && (
-                <div className="ui-error-text" role="alert">
-                  {error}
-                </div>
-              )}
-
-              {task ? (
-                <article className="wb-task-card is-active" aria-label="当前任务">
-                  <div className="ui-row">
-                    <strong className="wb-task-goal">{task.goal}</strong>
-                  </div>
-                  <div className="ui-row">
-                    <span className="ui-badge" data-tone={tone?.tone}>
-                      <LineIcon name={tone!.icon} size={14} />
-                      {tone!.text}
-                    </span>
-                  </div>
-                  <div className="wb-task-kv">
-                    <span>阶段 {task.stage}</span>
-                    <span>
-                      步数 {task.steps}/{task.max_steps}
-                    </span>
-                    <span>深度 {task.depth}</span>
-                    <span title={task.idempotency_key}>幂等键 {task.idempotency_key.slice(0, 8)}…</span>
-                  </div>
-                  {task.failure && (
-                    <div className="disp-err" role="alert">
-                      {task.failure}
-                    </div>
-                  )}
-                  {!['succeeded', 'failed', 'cancelled'].includes(task.state) && (
-                    <div className="ui-row">
-                      <button
-                        type="button"
-                        className="ui-btn ui-btn--sm ui-btn--danger"
-                        onClick={() => setCancelArmed(true)}
-                        disabled={cancelArmed}
-                      >
-                        取消任务…
-                      </button>
-                    </div>
-                  )}
-                  <div>
-                    <p className="ui-label">事件流（SSE）</p>
-                    {events.length === 0 ? (
-                      <Spinner label="正在等待第一条事件" />
-                    ) : (
-                      <ul className="wb-task-events" role="log" aria-live="polite">
-                        {events.map((e, i) => (
-                          <li key={i}>
-                            <code>{e.type}</code>
-                            <span>{new Date(e.at).toLocaleTimeString('zh-CN')}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </article>
-              ) : (
-                <div className="ui-empty">
-                  <LineIcon name="dispatch" size={24} />
-                  <p className="ui-empty-title">还没有任务</p>
-                  <p className="ui-empty-hint">
-                    写下目标，点「创建任务」即可跑一次；重复点击不会重复执行（幂等键保护）。
-                  </p>
-                </div>
-              )}
-            </section>
-
-            {/* L2 文件树 */}
-            {workspaceId ? (
-              <FileTree workspaceId={workspaceId} selectedPath={selectedFile} onSelectFile={setSelectedFile} />
-            ) : (
-              <div className="ui-empty">
-                <LineIcon name="folder" size={24} />
-                <p className="ui-empty-title">还没有工作区</p>
-                <p className="ui-empty-hint">注册一个受信任目录，工作台才能读文件、起终端、连 git。</p>
-              </div>
-            )}
-
-            {/* L3 大纲与文件内搜索 */}
-            {workspaceId && (
-              <OutlinePanel workspaceId={workspaceId} path={selectedFile} editorApiRef={editorApiRef} />
-            )}
-          </>
-        }
-        middle={
-          <>
-            {/* 中区 ① 编辑器 · 预览 */}
-            <WbSection
-              index={1}
-              title="编辑器 · 预览"
-              icon="code"
-              hotkey="1"
-              collapsed={false}
-              onToggle={() => {}}
-              statusSlot={editorSectionStatus}
-            >
-              {workspaceId ? (
-                <>
-                  <CodeEditor
-                    key={editorReloadKey}
-                    workspaceId={workspaceId}
-                    path={selectedFile}
-                    editorApiRef={editorApiRef}
-                    onDispatch={setCodeDispatchCtx}
-                  />
-                  <PreviewPanel workspaceId={workspaceId} path={selectedFile} />
-                  <PreviewPane onElementDispatch={setDispatchCtx} dispatchResult={dispatchResult} />
-                </>
-              ) : (
-                <div className="ui-empty">
-                  <LineIcon name="code" size={24} />
-                  <p className="ui-empty-title">还没打开文件</p>
-                  <p className="ui-empty-hint">从左侧文件树选一个文件，编辑器会在这里打开。</p>
-                </div>
-              )}
-            </WbSection>
-
-            {/* 中区 ② 差异审查 */}
-            <WbSection
-              index={2}
-              title="差异审查"
-              icon="flow"
-              hotkey="2"
-              collapsed={false}
-              onToggle={() => {}}
-            >
-              <DiffView />
-            </WbSection>
-
-            {/* 中区 ③ 差异审查 / Git */}
-            <WbSection index={3} title="Git 工作区" icon="branch" hotkey="3" collapsed={false} onToggle={() => {}}>
-              {workspaceId ? (
-                <GitPanel workspaceId={workspaceId} />
-              ) : (
-                <div className="ui-empty">
-                  <LineIcon name="branch" size={24} />
-                  <p className="ui-empty-title">还没有工作区</p>
-                  <p className="ui-empty-hint">注册并选择工作区后，可查看分支、暂存与提交。</p>
-                </div>
-              )}
-            </WbSection>
-          </>
-        }
-        right={
-          <>
-            {/* ④ 验证状态卡（视觉重心，压轴） */}
-            <VerifyStatusCard
-              src={{ file: fileSnap, fileReadAt, terminal: sessionSnap, task }}
-            />
-
-            {/* ③ 放行闸门入口 */}
-            <section className="ui-panel ui-panel--pad" aria-label="放行闸门">
-              <div className="ui-panel-hd" style={{ padding: 0, border: 0, marginBottom: 'var(--ui-s-3)' }}>
-                <span className="ui-panel-title">
-                  <LineIcon name="approvals" size={16} /> 放行闸门
-                </span>
-              </div>
-              <p className="wb-verify-foot">
-                审批与放行的七步闸门在「审批中心」逐条展开；这里只给出入口与当前任务状态，
-                不在外部确认前显示任何「已合并/已发布」。
-              </p>
-              <button
-                type="button"
-                className="ui-btn ui-btn--sm ui-btn--block"
-                onClick={() => navigate('/approvals?from=/workbench')}
-              >
-                前往审批中心
-              </button>
-            </section>
-
-            {/* ② 用量 */}
-            <section className="ui-panel ui-panel--pad" aria-label="用量">
-              <div className="ui-panel-hd" style={{ padding: 0, border: 0, marginBottom: 'var(--ui-s-3)' }}>
-                <span className="ui-panel-title">
-                  <LineIcon name="budget" size={16} /> 用量
-                </span>
-              </div>
-              <div className="wb-task-kv">
-                <span>任务步数 {task ? `${task.steps}/${task.max_steps}` : '暂无数据 · 来源不可得'}</span>
-                <span>
-                  终端退出码{' '}
-                  {sessionSnap?.exitCode === null || sessionSnap?.exitCode === undefined
-                    ? '暂无数据 · 来源不可得'
-                    : sessionSnap.exitCode}
-                </span>
-              </div>
-            </section>
-          </>
-        }
-        bottom={
-          workspaceId ? (
-            <TerminalDock
-              workspaceId={workspaceId}
-              restartSignal={terminalRestart}
-              onSessionChange={setSessionSnap}
-              onSessionStopped={(info) =>
-                toasts.push({
-                  tone: 'info',
-                  icon: 'terminal',
-                  text: `会话已停止（${info.reason}）。输出会保留在视图里。`,
-                  action: { label: '重新启动会话', run: () => setTerminalRestart((n) => n + 1) },
-                })
-              }
-            />
-          ) : (
-            <div className="wb-term-empty">
-              注册并选择一个工作区后，可在此启动真实 PTY 会话（多标签共存，关闭标签不杀会话）。
-            </div>
-          )
-        }
-      />
-
-      {/* ------------------ 底部四区段：在 wb-layout-a 之外（§14-2 D4 裁决） ------------------ */}
-      <div className="wb-sections">
-        {sectionDefs.map((def, i) => (
-          <div key={def.title} ref={(el) => { sectionRefs.current[i] = el; }}>
-            <WbSection
-              index={i + 1}
-              title={def.title}
-              icon={def.icon}
-              hotkey={def.hotkey}
-              collapsed={!sections[i]}
-              onToggle={() => toggleSection(i)}
-            >
-              {sectionBodies[i]}
-            </WbSection>
+    <BaseBound surface="workbench">
+      <div className="wb-shell">
+        {/* ---------------------------------------------------------- 页首 */}
+        <div className="page-head wb-page-head">
+          <div>
+            <nav className="wb-crumbs" aria-label="面包屑">
+              工作台空间 <span aria-hidden="true">›</span> <b>任务工作台</b>
+            </nav>
+            <h2>任务工作台</h2>
           </div>
-        ))}
-      </div>
+          <span className="ui-spacer" />
+          <button type="button" className="ui-btn ui-btn--sm" onClick={() => setPaletteOpen(true)}>
+            <LineIcon name="search" size={16} />
+            搜索文件与命令
+            <span className="ui-kbd">⌘K</span>
+          </button>
+        </div>
 
-      {/* ---------------------------------------------------------- 浮层 */}
-      {dispatchCtx && (
-        <DispatchDialog context={dispatchCtx} onClose={() => setDispatchCtx(null)} onApplyResult={setDispatchResult} />
-      )}
-      {codeDispatchCtx && (
-        <WorkbenchDispatchDialog context={codeDispatchCtx} onClose={() => setCodeDispatchCtx(null)} />
-      )}
+        {/* 工作区条（WorkspacePicker 迁入 wb-workspace-strip） */}
+        <div className="wb-workspace-strip">
+          <WorkspacePicker
+            workspaces={workspaces}
+            selectedId={workspaceId}
+            onSelect={selectWorkspace}
+            onChanged={() => void loadWorkspaces()}
+          />
+        </div>
+        {wsError && (
+          <div className="ui-error-text" role="alert">
+            {wsError}
+          </div>
+        )}
 
-      {cancelArmed && task && (
-        <ConfirmDialog
-          title="取消这个任务？"
-          destructive
-          confirmLabel="取消任务"
-          body={
+        {/* ------------------------------------------------- 三区 + 坞（布局骨架） */}
+        <WorkbenchLayout
+          state={layoutState}
+          onStateChange={setLayoutState}
+          left={
             <>
-              任务 <code>{task.id.slice(0, 8)}</code> 当前处于「{taskTone(task.state).text}」。取消后不可恢复；
-              已产生的事件会保留在事件流里供查看，不会被删除。
+              {/* L1 任务树 */}
+              <section className="wb-tasktree" aria-label="任务树">
+                <div className="wb-tasktree-form">
+                  <label className="ui-label" htmlFor="goal">
+                    任务目标
+                  </label>
+                  <textarea
+                    id="goal"
+                    value={goal}
+                    onChange={(e) => setGoal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                        e.preventDefault();
+                        void createTask();
+                      }
+                    }}
+                    placeholder="描述要完成的工程/调研任务（Ctrl+Enter 创建）"
+                  />
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--sm ui-btn--primary"
+                    onClick={() => void createTask()}
+                    disabled={loading || !goal.trim()}
+                  >
+                    {loading ? '创建中…' : '创建任务（幂等）'}
+                  </button>
+                </div>
+
+                {error && (
+                  <div className="ui-error-text" role="alert">
+                    {error}
+                  </div>
+                )}
+
+                {task ? (
+                  <article className="wb-task-card is-active" aria-label="当前任务">
+                    <div className="ui-row">
+                      <strong className="wb-task-goal">{task.goal}</strong>
+                    </div>
+                    <div className="ui-row">
+                      <span className="ui-badge" data-tone={tone?.tone}>
+                        <LineIcon name={tone!.icon} size={14} />
+                        {tone!.text}
+                      </span>
+                    </div>
+                    <div className="wb-task-kv">
+                      <span>阶段 {task.stage}</span>
+                      <span>
+                        步数 {task.steps}/{task.max_steps}
+                      </span>
+                      <span>深度 {task.depth}</span>
+                      <span title={task.idempotency_key}>幂等键 {task.idempotency_key.slice(0, 8)}…</span>
+                    </div>
+                    {task.failure && (
+                      <div className="disp-err" role="alert">
+                        {task.failure}
+                      </div>
+                    )}
+                    {!['succeeded', 'failed', 'cancelled'].includes(task.state) && (
+                      <div className="ui-row">
+                        <button
+                          type="button"
+                          className="ui-btn ui-btn--sm ui-btn--danger"
+                          onClick={() => setCancelArmed(true)}
+                          disabled={cancelArmed}
+                        >
+                          取消任务…
+                        </button>
+                      </div>
+                    )}
+                    <div>
+                      <p className="ui-label">事件流（SSE）</p>
+                      {events.length === 0 ? (
+                        <Spinner label="正在等待第一条事件" />
+                      ) : (
+                        <ul className="wb-task-events" role="log" aria-live="polite">
+                          {events.map((e, i) => (
+                            <li key={i}>
+                              <code>{e.type}</code>
+                              <span>{new Date(e.at).toLocaleTimeString('zh-CN')}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </article>
+                ) : (
+                  <div className="ui-empty">
+                    <LineIcon name="dispatch" size={24} />
+                    <p className="ui-empty-title">还没有任务</p>
+                    <p className="ui-empty-hint">
+                      写下目标，点「创建任务」即可跑一次；重复点击不会重复执行（幂等键保护）。
+                    </p>
+                  </div>
+                )}
+              </section>
+
+              {/* L2 文件树 */}
+              {workspaceId ? (
+                <FileTree workspaceId={workspaceId} selectedPath={selectedFile} onSelectFile={setSelectedFile} />
+              ) : (
+                <div className="ui-empty">
+                  <LineIcon name="folder" size={24} />
+                  <p className="ui-empty-title">还没有工作区</p>
+                  <p className="ui-empty-hint">注册一个受信任目录，工作台才能读文件、起终端、连 git。</p>
+                </div>
+              )}
+
+              {/* L3 大纲与文件内搜索 */}
+              {workspaceId && (
+                <OutlinePanel workspaceId={workspaceId} path={selectedFile} editorApiRef={editorApiRef} />
+              )}
             </>
           }
-          onConfirm={() => void doCancel()}
-          onCancel={() => setCancelArmed(false)}
+          middle={
+            <>
+              {/* 中区 ① 编辑器 · 预览 */}
+              <WbSection
+                index={1}
+                title="编辑器 · 预览"
+                icon="code"
+                hotkey="1"
+                collapsed={false}
+                onToggle={() => {}}
+                statusSlot={editorSectionStatus}
+              >
+                {workspaceId ? (
+                  <>
+                    <CodeEditor
+                      key={editorReloadKey}
+                      workspaceId={workspaceId}
+                      path={selectedFile}
+                      editorApiRef={editorApiRef}
+                      onDispatch={setCodeDispatchCtx}
+                    />
+                    <PreviewPanel workspaceId={workspaceId} path={selectedFile} />
+                    <PreviewPane onElementDispatch={setDispatchCtx} dispatchResult={dispatchResult} />
+                  </>
+                ) : (
+                  <div className="ui-empty">
+                    <LineIcon name="code" size={24} />
+                    <p className="ui-empty-title">还没打开文件</p>
+                    <p className="ui-empty-hint">从左侧文件树选一个文件，编辑器会在这里打开。</p>
+                  </div>
+                )}
+              </WbSection>
+
+              {/* 中区 ② 差异审查 */}
+              <WbSection
+                index={2}
+                title="差异审查"
+                icon="flow"
+                hotkey="2"
+                collapsed={false}
+                onToggle={() => {}}
+              >
+                <DiffView />
+              </WbSection>
+
+              {/* 中区 ③ 差异审查 / Git */}
+              <WbSection index={3} title="Git 工作区" icon="branch" hotkey="3" collapsed={false} onToggle={() => {}}>
+                {workspaceId ? (
+                  <GitPanel workspaceId={workspaceId} />
+                ) : (
+                  <div className="ui-empty">
+                    <LineIcon name="branch" size={24} />
+                    <p className="ui-empty-title">还没有工作区</p>
+                    <p className="ui-empty-hint">注册并选择工作区后，可查看分支、暂存与提交。</p>
+                  </div>
+                )}
+              </WbSection>
+            </>
+          }
+          right={
+            <>
+              {/* ④ 验证状态卡（视觉重心，压轴） */}
+              <VerifyStatusCard
+                src={{ file: fileSnap, fileReadAt, terminal: sessionSnap, task }}
+              />
+
+              {/* ③ 放行闸门入口 */}
+              <section className="ui-panel ui-panel--pad" aria-label="放行闸门">
+                <div className="ui-panel-hd" style={{ padding: 0, border: 0, marginBottom: 'var(--ui-s-3)' }}>
+                  <span className="ui-panel-title">
+                    <LineIcon name="approvals" size={16} /> 放行闸门
+                  </span>
+                </div>
+                <p className="wb-verify-foot">
+                  审批与放行的七步闸门在「审批中心」逐条展开；这里只给出入口与当前任务状态，
+                  不在外部确认前显示任何「已合并/已发布」。
+                </p>
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--sm ui-btn--block"
+                  onClick={() => navigate('/approvals?from=/workbench')}
+                >
+                  前往审批中心
+                </button>
+              </section>
+
+              {/* ② 用量 */}
+              <section className="ui-panel ui-panel--pad" aria-label="用量">
+                <div className="ui-panel-hd" style={{ padding: 0, border: 0, marginBottom: 'var(--ui-s-3)' }}>
+                  <span className="ui-panel-title">
+                    <LineIcon name="budget" size={16} /> 用量
+                  </span>
+                </div>
+                <div className="wb-task-kv">
+                  <span>任务步数 {task ? `${task.steps}/${task.max_steps}` : '暂无数据 · 来源不可得'}</span>
+                  <span>
+                    终端退出码{' '}
+                    {sessionSnap?.exitCode === null || sessionSnap?.exitCode === undefined
+                      ? '暂无数据 · 来源不可得'
+                      : sessionSnap.exitCode}
+                  </span>
+                </div>
+              </section>
+            </>
+          }
+          bottom={
+            workspaceId ? (
+              <TerminalDock
+                workspaceId={workspaceId}
+                restartSignal={terminalRestart}
+                onSessionChange={setSessionSnap}
+                onSessionStopped={(info) =>
+                  toasts.push({
+                    tone: 'info',
+                    icon: 'terminal',
+                    text: `会话已停止（${info.reason}）。输出会保留在视图里。`,
+                    action: { label: '重新启动会话', run: () => setTerminalRestart((n) => n + 1) },
+                  })
+                }
+              />
+            ) : (
+              <div className="wb-term-empty">
+                注册并选择一个工作区后，可在此启动真实 PTY 会话（多标签共存，关闭标签不杀会话）。
+              </div>
+            )
+          }
         />
-      )}
 
-      <CommandPalette
-        open={paletteOpen}
-        workspaceId={workspaceId}
-        onClose={() => setPaletteOpen(false)}
-        onSelectFile={(p) => {
-          setSelectedFile(p);
-          setPaletteOpen(false);
-        }}
-        onRun={(id) => {
-          setPaletteOpen(false);
-          if (id === 'toggle-dock') setLayoutState((s) => ({ ...s, terminalCollapsed: !s.terminalCollapsed }));
-          else if (id === 'save-file') document.dispatchEvent(new CustomEvent('wb:save-file'));
-          else if (id === 'reload-tree') document.dispatchEvent(new CustomEvent('wb:reload-tree'));
-          else if (id === 'refresh-git') document.dispatchEvent(new CustomEvent('wb:refresh-git'));
-          else if (id.startsWith('section-')) focusSection(Number(id.slice(8)) - 1);
-          else if (id === 'goto-approvals') navigate('/approvals?from=/workbench');
-          else if (id === 'goto-dispatch') navigate('/agent-dispatch?from=/workbench');
-          else if (id === 'goto-chat-debug') navigate('/chat-debug?from=/workbench');
-          else if (id === 'goto-canvas') navigate('/canvas?from=/workbench');
-        }}
-      />
+        {/* ------------------ 底部四区段：在 wb-layout-a 之外（§14-2 D4 裁决） ------------------ */}
+        <div className="wb-sections">
+          {sectionDefs.map((def, i) => (
+            <div key={def.title} ref={(el) => { sectionRefs.current[i] = el; }}>
+              <WbSection
+                index={i + 1}
+                title={def.title}
+                icon={def.icon}
+                hotkey={def.hotkey}
+                collapsed={!sections[i]}
+                onToggle={() => toggleSection(i)}
+              >
+                {sectionBodies[i]}
+              </WbSection>
+            </div>
+          ))}
+        </div>
 
-      <WbToastStack items={toasts.toasts} onDismiss={toasts.dismiss} />
-    </div>
+        {/* ---------------------------------------------------------- 浮层 */}
+        {dispatchCtx && (
+          <DispatchDialog context={dispatchCtx} onClose={() => setDispatchCtx(null)} onApplyResult={setDispatchResult} />
+        )}
+        {codeDispatchCtx && (
+          <WorkbenchDispatchDialog context={codeDispatchCtx} onClose={() => setCodeDispatchCtx(null)} />
+        )}
+
+        {cancelArmed && task && (
+          <ConfirmDialog
+            title="取消这个任务？"
+            destructive
+            confirmLabel="取消任务"
+            body={
+              <>
+                任务 <code>{task.id.slice(0, 8)}</code> 当前处于「{taskTone(task.state).text}」。取消后不可恢复；
+                已产生的事件会保留在事件流里供查看，不会被删除。
+              </>
+            }
+            onConfirm={() => void doCancel()}
+            onCancel={() => setCancelArmed(false)}
+          />
+        )}
+
+        <CommandPalette
+          open={paletteOpen}
+          workspaceId={workspaceId}
+          onClose={() => setPaletteOpen(false)}
+          onSelectFile={(p) => {
+            setSelectedFile(p);
+            setPaletteOpen(false);
+          }}
+          onRun={(id) => {
+            setPaletteOpen(false);
+            if (id === 'toggle-dock') setLayoutState((s) => ({ ...s, terminalCollapsed: !s.terminalCollapsed }));
+            else if (id === 'save-file') document.dispatchEvent(new CustomEvent('wb:save-file'));
+            else if (id === 'reload-tree') document.dispatchEvent(new CustomEvent('wb:reload-tree'));
+            else if (id === 'refresh-git') document.dispatchEvent(new CustomEvent('wb:refresh-git'));
+            else if (id.startsWith('section-')) focusSection(Number(id.slice(8)) - 1);
+            else if (id === 'goto-approvals') navigate('/approvals?from=/workbench');
+            else if (id === 'goto-dispatch') navigate('/agent-dispatch?from=/workbench');
+            else if (id === 'goto-chat-debug') navigate('/chat-debug?from=/workbench');
+            else if (id === 'goto-canvas') navigate('/canvas?from=/workbench');
+          }}
+        />
+
+        <WbToastStack items={toasts.toasts} onDismiss={toasts.dismiss} />
+      </div>
+    </BaseBound>
   );
 }

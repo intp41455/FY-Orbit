@@ -20,6 +20,7 @@ import {
   type NormalizedRegion,
   type Stroke,
 } from './review';
+import { useBase } from '../hooks/useAutosave';
 
 /**
  * UI 评审模式（Design Review Mode）· P9 进阶版
@@ -67,6 +68,7 @@ function loadLocalDrafts(): ReviewNote[] {
 }
 
 export function ReviewMode() {
+  useBase({ surface: 'web/src/components/ReviewMode' });
   const [active, setActive] = useState(false);
   const [mode, setMode] = useState<'select' | 'region' | 'annotate'>('select');
   /** 服务端（权威）意见 */

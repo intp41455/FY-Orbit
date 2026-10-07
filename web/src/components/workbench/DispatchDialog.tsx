@@ -14,6 +14,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { teamsApi, type ModelOption, type TeamSummary } from '../../api/teams';
 import { errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface DispatchContext {
   /** 触发派改的来源位置描述，如 "预览窗 · 标题段落" */
@@ -39,6 +40,7 @@ export function DispatchDialog(props: {
   /** 结果回填预览（P1-15 验收口径：结果回填预览） */
   onApplyResult?: (text: string) => void;
 }) {
+  useBase({ surface: 'web/src/components/workbench/DispatchDialog' });
   const { context, onClose, onApplyResult } = props;
 
   const [models, setModels] = useState<ModelOption[] | null>(null);

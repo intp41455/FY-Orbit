@@ -2,6 +2,7 @@
 // 只负责收集 File 列表并回调 onFiles；本地预检（扩展名/大小）交给 kbFormat。
 import { useRef, useState } from 'react';
 import type { DragEvent, KeyboardEvent } from 'react';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface KnowledgeDropzoneProps {
   onFiles: (files: File[]) => void;
@@ -10,6 +11,7 @@ export interface KnowledgeDropzoneProps {
 }
 
 export function KnowledgeDropzone({ onFiles, busy = false, hint }: KnowledgeDropzoneProps) {
+  useBase({ surface: 'web/src/components/knowledge/KnowledgeDropzone' });
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 

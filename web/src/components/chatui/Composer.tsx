@@ -18,6 +18,7 @@ import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
 import { knowledgeApi, type KBDocument } from '../../api/knowledge';
 import { LineIcon } from '../ui/LineIcon';
 import { ChatIcon } from './ChatIcons';
+import { useBase } from '../../hooks/useAutosave';
 
 const MAX_REFS = 50;
 
@@ -108,6 +109,7 @@ export function Composer({
   onPickRef,
   onSuggestOpenChange,
 }: ComposerProps) {
+  useBase({ surface: 'web/src/components/chatui/Composer' });
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [suggest, setSuggest] = useState<Suggest>(null);
   const [activeIndex, setActiveIndex] = useState(0);

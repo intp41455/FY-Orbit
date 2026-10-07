@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import type { HubConnection, HubCredentialField, HubKind } from '../../api/hub';
 import { HUB_KIND_LABEL } from '../../api/hub';
+import { useBase } from '../../hooks/useAutosave';
 
 const KINDS: HubKind[] = [
   'openai_chat',
@@ -56,6 +57,7 @@ export function ConnectionForm({
   onSubmit: (payload: ConnectionFormSubmit) => void;
   onCancel: () => void;
 }) {
+  useBase({ surface: 'web/src/components/hub/ConnectionForm' });
   const [name, setName] = useState(seed?.name ?? '');
   const [kind, setKind] = useState<HubKind>(seed?.kind ?? 'openai_chat');
   const [icon, setIcon] = useState(seed?.icon ?? '🔌');

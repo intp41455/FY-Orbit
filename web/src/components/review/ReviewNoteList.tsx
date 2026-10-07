@@ -7,6 +7,7 @@
  * - 承载状态流转（open / resolved / dismissed）。
  */
 import type { ReviewNoteView } from '../../api/review';
+import { useBase } from '../../hooks/useAutosave';
 
 const MODE_LABEL: Record<ReviewNoteView['mode'], string> = {
   dom: '点选',
@@ -128,6 +129,7 @@ export interface ReviewNoteListProps {
 
 /** 意见列表（空态给引导语）。 */
 export function ReviewNoteList({ notes, onNoteChange, onStateChange, onDelete }: ReviewNoteListProps) {
+  useBase({ surface: 'web/src/components/review/ReviewNoteList' });
   if (notes.length === 0) {
     return (
       <p data-testid="review-empty" style={{ color: 'var(--text-faint)', fontSize: 13, textAlign: 'center', marginTop: 30 }}>

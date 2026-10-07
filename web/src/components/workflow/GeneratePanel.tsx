@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../../api/client';
 import { workflowGenApi, type DslDocument } from '../../api/workflowGen';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface GeneratePanelProps {
   /** 生成成功后把真实 DSL 交给父组件载入画布。 */
@@ -25,6 +26,7 @@ const EXAMPLES = [
 ];
 
 export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
+  useBase({ surface: 'web/src/components/workflow/GeneratePanel' });
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; hint: string } | null>(null);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LineIcon, type LineIconName } from '../ui/LineIcon';
 import { workbenchApi, type TreeEntry } from '../../api/workbench';
+import { useBase } from '../../hooks/useAutosave';
 
 /**
  * Ctrl/⌘+K 命令面板（08-包A-体验规范 §13）。
@@ -132,6 +133,7 @@ const GROUP_ORDER: Row['group'][] = ['recent', 'command', 'file', 'jump'];
 /* ---------- 组件 ---------- */
 
 export function CommandPalette({ open, workspaceId, onClose, onSelectFile, onRun }: CommandPaletteProps) {
+  useBase({ surface: 'web/src/components/workbench/CommandPalette' });
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
   const [recent, setRecent] = useState<RecentEntry[]>([]);

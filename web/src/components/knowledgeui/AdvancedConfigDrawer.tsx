@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { LineIcon, type LineIconName } from '../../components/ui/LineIcon';
 import { KnowledgeNiIcon, type KnowledgeNiIconName } from './KnowledgeNiIcon';
+import { useBase } from '../../hooks/useAutosave';
 
 export type KnConfig = {
   // 渲染（真接线：直接改变 canvas 绘制）
@@ -145,6 +146,7 @@ function Row({
 }
 
 export function AdvancedConfigDrawer({ open, onClose, config, onChange }: AdvancedConfigDrawerProps) {
+  useBase({ surface: 'web/src/components/knowledgeui/AdvancedConfigDrawer' });
   const [section, setSection] = useState<GroupId>('render');
   const panelRef = useRef<HTMLDivElement | null>(null);
   const firstRef = useRef<HTMLButtonElement | null>(null);

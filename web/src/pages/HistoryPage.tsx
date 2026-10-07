@@ -19,6 +19,7 @@ import {
   saveHistoryView,
 } from '../components/chatui/chatStorage';
 import '../styles/pages/chat.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 interface Filter {
   q: string;
@@ -279,123 +280,125 @@ export function HistoryPage() {
   }
 
   return (
-    <div className="hist-shell">
-      <div className="page-head">
-        <h2>历史会话</h2>
-        <span className="ui-hint">完整原文由后端保存；这里只列授权范围内的会话元数据。</span>
-      </div>
+    <BaseBound surface="history">
+      <div className="hist-shell">
+        <div className="page-head">
+          <h2>历史会话</h2>
+          <span className="ui-hint">完整原文由后端保存；这里只列授权范围内的会话元数据。</span>
+        </div>
 
-      {error ? <div className="notice danger" role="alert">{error}</div> : null}
+        {error ? <div className="notice danger" role="alert">{error}</div> : null}
 
-      <div className="hist-filters" role="group" aria-label="历史会话筛选">
-        <label className="chatui-sr-only" htmlFor="hist-q">搜索历史会话</label>
-        <input
-          id="hist-q"
-          className="ui-input hist-search"
-          type="search"
-          value={filter.q}
-          placeholder="搜索标题或本机备注名"
-          onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
-        />
-        <label className="chatui-sr-only" htmlFor="hist-domain">域</label>
-        <select
-          id="hist-domain"
-          className="ui-select hist-select"
-          value={filter.domain}
-          onChange={(e) => setFilter((f) => ({ ...f, domain: e.target.value }))}
-        >
-          <option value="all">全部域</option>
-          {domains.map((d) => (
-            <option key={d} value={d}>{d}</option>
-          ))}
-        </select>
-        <label className="chatui-sr-only" htmlFor="hist-mode">模式</label>
-        <select
-          id="hist-mode"
-          className="ui-select hist-select"
-          value={filter.mode}
-          onChange={(e) => setFilter((f) => ({ ...f, mode: e.target.value }))}
-        >
-          <option value="all">全部模式</option>
-          <option value="listen">倾听</option>
-          <option value="explore">探索</option>
-        </select>
-        {archivedCount > 0 ? (
-          <button
-            type="button"
-            className="ui-chip hist-chip-more"
-            aria-pressed={filter.archived}
-            onClick={() => setFilter((f) => ({ ...f, archived: !f.archived }))}
+        <div className="hist-filters" role="group" aria-label="历史会话筛选">
+          <label className="chatui-sr-only" htmlFor="hist-q">搜索历史会话</label>
+          <input
+            id="hist-q"
+            className="ui-input hist-search"
+            type="search"
+            value={filter.q}
+            placeholder="搜索标题或本机备注名"
+            onChange={(e) => setFilter((f) => ({ ...f, q: e.target.value }))}
+          />
+          <label className="chatui-sr-only" htmlFor="hist-domain">域</label>
+          <select
+            id="hist-domain"
+            className="ui-select hist-select"
+            value={filter.domain}
+            onChange={(e) => setFilter((f) => ({ ...f, domain: e.target.value }))}
           >
-            <ChatIcon name="archive" size={16} />
-            已归档（{archivedCount}）
-          </button>
-        ) : null}
-      </div>
-
-      {loading ? (
-        <Skeleton rows={6} variant="card" label="正在加载历史会话" />
-      ) : conversations.length === 0 ? (
-        <EmptyState
-          icon="history"
-          title="还没有历史会话"
-          hint="开始一段对话后，这里会按时间分组列出会话元数据。"
-          action={
-            <a className="ui-btn ui-btn--primary" href="/chat">
-              <LineIcon name="chat" size={16} /> 去对话
-            </a>
-          }
-        />
-      ) : visible.length === 0 ? (
-        <EmptyState
-          icon="search"
-          title="没有匹配的会话"
-          hint={filter.q ? `没有匹配「${filter.q}」的历史会话。` : '当前筛选下没有会话。'}
-          action={
-            <button type="button" className="ui-btn" onClick={() => setFilter(DEFAULT_FILTER)}>
-              清空筛选
+            <option value="all">全部域</option>
+            {domains.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <label className="chatui-sr-only" htmlFor="hist-mode">模式</label>
+          <select
+            id="hist-mode"
+            className="ui-select hist-select"
+            value={filter.mode}
+            onChange={(e) => setFilter((f) => ({ ...f, mode: e.target.value }))}
+          >
+            <option value="all">全部模式</option>
+            <option value="listen">倾听</option>
+            <option value="explore">探索</option>
+          </select>
+          {archivedCount > 0 ? (
+            <button
+              type="button"
+              className="ui-chip hist-chip-more"
+              aria-pressed={filter.archived}
+              onClick={() => setFilter((f) => ({ ...f, archived: !f.archived }))}
+            >
+              <ChatIcon name="archive" size={16} />
+              已归档（{archivedCount}）
             </button>
-          }
-        />
-      ) : (
-        GROUP_META.map((g) =>
-          groups[g.key].length === 0 ? null : (
-            <section className="hist-group" key={g.key} aria-label={g.title}>
-              <div className="hist-group-hd">
-                <h3 className="hist-group-title">{g.title}</h3>
-                <span className="hist-group-count">{groups[g.key].length} 个会话</span>
-              </div>
-              <div className="hist-cards">
-                {groups[g.key].map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    data-conv-id={c.id}
-                    className="card hist-card"
-                    onClick={() => openConversation(c)}
-                  >
-                    <span className="hist-card-title">{displayTitle(c)}</span>
-                    <span className="hist-card-meta">
-                      <span>{c.domain}</span>
-                      <span>模式 {c.mode}</span>
-                      <span>{new Date(c.updated_at).toLocaleString('zh-CN')}</span>
-                    </span>
-                    {/* duration / 涉及对象：后端无字段 → 隐藏且不占位 */}
-                    <span className="hist-field-missing" aria-hidden="true">无字段</span>
-                    <span className="hist-card-tags">
-                      {countCell(c)}
-                      {archivedSet.has(c.id) ? <StatusTag kind="paused" text="已归档（仅本机）" /> : null}
-                      {aliasMap[c.id] ? <span className="ui-hint">本机备注名</span> : null}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
-          ),
-        )
-      )}
+          ) : null}
+        </div>
 
-      <ToastStack toasts={toasts} onDismiss={dismiss} />
-    </div>
+        {loading ? (
+          <Skeleton rows={6} variant="card" label="正在加载历史会话" />
+        ) : conversations.length === 0 ? (
+          <EmptyState
+            icon="history"
+            title="还没有历史会话"
+            hint="开始一段对话后，这里会按时间分组列出会话元数据。"
+            action={
+              <a className="ui-btn ui-btn--primary" href="/chat">
+                <LineIcon name="chat" size={16} /> 去对话
+              </a>
+            }
+          />
+        ) : visible.length === 0 ? (
+          <EmptyState
+            icon="search"
+            title="没有匹配的会话"
+            hint={filter.q ? `没有匹配「${filter.q}」的历史会话。` : '当前筛选下没有会话。'}
+            action={
+              <button type="button" className="ui-btn" onClick={() => setFilter(DEFAULT_FILTER)}>
+                清空筛选
+              </button>
+            }
+          />
+        ) : (
+          GROUP_META.map((g) =>
+            groups[g.key].length === 0 ? null : (
+              <section className="hist-group" key={g.key} aria-label={g.title}>
+                <div className="hist-group-hd">
+                  <h3 className="hist-group-title">{g.title}</h3>
+                  <span className="hist-group-count">{groups[g.key].length} 个会话</span>
+                </div>
+                <div className="hist-cards">
+                  {groups[g.key].map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      data-conv-id={c.id}
+                      className="card hist-card"
+                      onClick={() => openConversation(c)}
+                    >
+                      <span className="hist-card-title">{displayTitle(c)}</span>
+                      <span className="hist-card-meta">
+                        <span>{c.domain}</span>
+                        <span>模式 {c.mode}</span>
+                        <span>{new Date(c.updated_at).toLocaleString('zh-CN')}</span>
+                      </span>
+                      {/* duration / 涉及对象：后端无字段 → 隐藏且不占位 */}
+                      <span className="hist-field-missing" aria-hidden="true">无字段</span>
+                      <span className="hist-card-tags">
+                        {countCell(c)}
+                        {archivedSet.has(c.id) ? <StatusTag kind="paused" text="已归档（仅本机）" /> : null}
+                        {aliasMap[c.id] ? <span className="ui-hint">本机备注名</span> : null}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ),
+          )
+        )}
+
+        <ToastStack toasts={toasts} onDismiss={dismiss} />
+      </div>
+    </BaseBound>
   );
 }

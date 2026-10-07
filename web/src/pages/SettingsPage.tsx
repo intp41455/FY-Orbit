@@ -12,6 +12,7 @@ import { useAsync, Spinner, errorMessage } from '../components/ui';
 import { AutomationPermissionCard } from '../components/settings/AutomationPermissionCard';
 import { LineIcon } from '../components/ui/LineIcon';
 import '../styles/pages/system.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /**
  * 不可逆操作二次确认（收口包补，07 §5「.ui-modal 二次确认 + 默认焦点落取消」）。
@@ -151,113 +152,115 @@ export function SettingsPage() {
   }
 
   return (
-    <>
-      <div className="page-head"><h2>设置与数据</h2></div>
-      <div className="st-sections">
-        {loading && <Spinner />}
-        {error && <div className="notice danger" role="alert">{error}</div>}
-        <AccountCard />
-        {data && (
-        <div className="card st-section">
-          <div className="st-section-head">
-            <LineIcon name="settings" className="st-section-icon" />
-            <div>
-              <h3>系统配置状态</h3>
-              <p>只读。配置项由环境变量与后端配置决定，前端不写入口。</p>
+    <BaseBound surface="settings">
+      <>
+        <div className="page-head"><h2>设置与数据</h2></div>
+        <div className="st-sections">
+          {loading && <Spinner />}
+          {error && <div className="notice danger" role="alert">{error}</div>}
+          <AccountCard />
+          {data && (
+          <div className="card st-section">
+            <div className="st-section-head">
+              <LineIcon name="settings" className="st-section-icon" />
+              <div>
+                <h3>系统配置状态</h3>
+                <p>只读。配置项由环境变量与后端配置决定，前端不写入口。</p>
+              </div>
             </div>
+            <table className="st-meta-table">
+              <tbody>
+                <tr><td>模型供应商</td><td>{data.model_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置（付费调用关闭）</span>}</td></tr>
+                <tr><td>OIDC 登录</td><td>{data.oidc_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置</span>}</td></tr>
+                <tr><td>本地 dev-token</td><td>{data.local_dev_token_allowed ? <span className="badge warn">允许（仅 127.0.0.1）</span> : <span className="badge ok">已禁用</span>}</td></tr>
+                <tr><td>数据域</td><td>{data.data_domains.join(', ') || '（无）'}</td></tr>
+              </tbody>
+            </table>
           </div>
-          <table className="st-meta-table">
-            <tbody>
-              <tr><td>模型供应商</td><td>{data.model_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置（付费调用关闭）</span>}</td></tr>
-              <tr><td>OIDC 登录</td><td>{data.oidc_configured ? <span className="badge ok">已配置</span> : <span className="badge warn">未配置</span>}</td></tr>
-              <tr><td>本地 dev-token</td><td>{data.local_dev_token_allowed ? <span className="badge warn">允许（仅 127.0.0.1）</span> : <span className="badge ok">已禁用</span>}</td></tr>
-              <tr><td>数据域</td><td>{data.data_domains.join(', ') || '（无）'}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-      <ModelAccessCard />
-      <AutomationPermissionCard />
-        <div className="card st-section">
-          <div className="st-section-head">
-            <LineIcon name="download" className="st-section-icon" />
-            <div>
-              <h3>导出与删除</h3>
-              <p>导出为短期鉴权下载链接，不含系统密钥；私人原文不进入 Service Worker 缓存。</p>
+        )}
+        <ModelAccessCard />
+        <AutomationPermissionCard />
+          <div className="card st-section">
+            <div className="st-section-head">
+              <LineIcon name="download" className="st-section-icon" />
+              <div>
+                <h3>导出与删除</h3>
+                <p>导出为短期鉴权下载链接，不含系统密钥；私人原文不进入 Service Worker 缓存。</p>
+              </div>
             </div>
-          </div>
-          <button className="primary" onClick={() => void requestExport()} disabled={exporting}>
-            {exporting ? '请求中…' : '请求导出我的数据'}
-          </button>
-          {exportMsg && <div className="notice info" style={{ marginTop: '0.6rem' }}>{exportMsg}</div>}
-
-          {/* 危险区。标题原本写着「导出与删除」却只有导出按钮 —— 后端
-              DELETE /api/account 早已实现并实测通过，前端却零入口，
-              GDPR 删除权无法行使（《上市资格审查报告》P0-6，法务阻断）。
-              收口期补齐入口，而不是把标题里的「删除」删掉把问题埋深。 */}
-          <div className="st-danger-zone">
-            <div>
-              <strong>删除我的账号与数据</strong>
-              <p className="muted">
-                不可逆。将级联删除你的全部记忆、吊销所有会话并匿名化账号；
-                按 GDPR 合规要求会保留同意记录作为举证。
-                <strong>建议先导出留存</strong>。
-              </p>
-            </div>
-            <button
-              ref={deleteTriggerRef}
-              type="button"
-              className="ui-btn ui-btn--danger"
-              onClick={() => { setDeleteMsg(null); setDeleteErr(null); setConfirmOpen(true); }}
-              disabled={deleting}
-              data-testid="st-delete-account-open"
-            >
-              <LineIcon name="trash" size={16} /> 删除我的账号
+            <button className="primary" onClick={() => void requestExport()} disabled={exporting}>
+              {exporting ? '请求中…' : '请求导出我的数据'}
             </button>
-          </div>
-          {deleteMsg && <div className="notice info" role="status" data-testid="st-delete-done">{deleteMsg}</div>}
-          {deleteErr && <div className="notice danger" role="alert" data-testid="st-delete-error">{deleteErr}</div>}
-        </div>
-        <div className="card st-section">
-          <div className="st-section-head">
-            <LineIcon name="lock" className="st-section-icon" />
-            <div>
-              <h3>隐私说明</h3>
-              <p>本地优先与缓存边界</p>
-            </div>
-          </div>
-          <p className="muted">
-            Service Worker 仅预缓存静态外壳；API、私人聊天、导出/下载链接与令牌均不被缓存。离线时不可提交。登出会清理敏感客户端状态。
-          </p>
-        </div>
-      </div>
+            {exportMsg && <div className="notice info" style={{ marginTop: '0.6rem' }}>{exportMsg}</div>}
 
-      {confirmOpen && (
-        <ConfirmDialog
-          title="确认删除账号与全部数据？"
-          busy={deleting}
-          confirmLabel="永久删除，无法撤销"
-          onCancel={closeConfirm}
-          onConfirm={() => void deleteAccount()}
-          body={
-            <>
-              <p style={{ marginTop: 0 }}>
-                此操作<strong>不可逆</strong>，也没有恢复入口。将发生：
-              </p>
-              <ul style={{ margin: '8px 0', paddingLeft: 20, fontSize: 13 }}>
-                <li>你名下的全部记忆被级联删除</li>
-                <li>所有会话被吊销（含当前浏览器）</li>
-                <li>账号被匿名化，无法再登录</li>
-                <li>按 GDPR 要求保留同意记录作为合规举证</li>
-              </ul>
-              <p className="ui-hint">
-                还没导出过的话请先关闭本对话框，改用「请求导出我的数据」留存一份。
-              </p>
-            </>
-          }
-        />
-      )}
-    </>
+            {/* 危险区。标题原本写着「导出与删除」却只有导出按钮 —— 后端
+                DELETE /api/account 早已实现并实测通过，前端却零入口，
+                GDPR 删除权无法行使（《上市资格审查报告》P0-6，法务阻断）。
+                收口期补齐入口，而不是把标题里的「删除」删掉把问题埋深。 */}
+            <div className="st-danger-zone">
+              <div>
+                <strong>删除我的账号与数据</strong>
+                <p className="muted">
+                  不可逆。将级联删除你的全部记忆、吊销所有会话并匿名化账号；
+                  按 GDPR 合规要求会保留同意记录作为举证。
+                  <strong>建议先导出留存</strong>。
+                </p>
+              </div>
+              <button
+                ref={deleteTriggerRef}
+                type="button"
+                className="ui-btn ui-btn--danger"
+                onClick={() => { setDeleteMsg(null); setDeleteErr(null); setConfirmOpen(true); }}
+                disabled={deleting}
+                data-testid="st-delete-account-open"
+              >
+                <LineIcon name="trash" size={16} /> 删除我的账号
+              </button>
+            </div>
+            {deleteMsg && <div className="notice info" role="status" data-testid="st-delete-done">{deleteMsg}</div>}
+            {deleteErr && <div className="notice danger" role="alert" data-testid="st-delete-error">{deleteErr}</div>}
+          </div>
+          <div className="card st-section">
+            <div className="st-section-head">
+              <LineIcon name="lock" className="st-section-icon" />
+              <div>
+                <h3>隐私说明</h3>
+                <p>本地优先与缓存边界</p>
+              </div>
+            </div>
+            <p className="muted">
+              Service Worker 仅预缓存静态外壳；API、私人聊天、导出/下载链接与令牌均不被缓存。离线时不可提交。登出会清理敏感客户端状态。
+            </p>
+          </div>
+        </div>
+
+        {confirmOpen && (
+          <ConfirmDialog
+            title="确认删除账号与全部数据？"
+            busy={deleting}
+            confirmLabel="永久删除，无法撤销"
+            onCancel={closeConfirm}
+            onConfirm={() => void deleteAccount()}
+            body={
+              <>
+                <p style={{ marginTop: 0 }}>
+                  此操作<strong>不可逆</strong>，也没有恢复入口。将发生：
+                </p>
+                <ul style={{ margin: '8px 0', paddingLeft: 20, fontSize: 13 }}>
+                  <li>你名下的全部记忆被级联删除</li>
+                  <li>所有会话被吊销（含当前浏览器）</li>
+                  <li>账号被匿名化，无法再登录</li>
+                  <li>按 GDPR 要求保留同意记录作为合规举证</li>
+                </ul>
+                <p className="ui-hint">
+                  还没导出过的话请先关闭本对话框，改用「请求导出我的数据」留存一份。
+                </p>
+              </>
+            }
+          />
+        )}
+      </>
+    </BaseBound>
   );
 }
 

@@ -16,6 +16,7 @@ import { subscribePreviewDraft, type PreviewDraft } from './previewBus';
 import { renderMarkdown } from './previewMarkdown';
 import { parseRenderSpec, PreviewChart } from './PreviewChart';
 import type { DispatchContext } from './DispatchDialog';
+import { useBase } from '../../hooks/useAutosave';
 
 type PreviewKind = 'markdown' | 'html' | 'text' | 'data';
 
@@ -58,6 +59,7 @@ export function PreviewPane(props: {
   /** 派改结果回填预览展示 */
   dispatchResult?: string | null;
 }) {
+  useBase({ surface: 'web/src/components/workbench/PreviewPane' });
   const { onElementDispatch, dispatchResult } = props;
   const [draft, setDraft] = useState<PreviewDraft | null>(null);
   // 节流窗口结束后真正上屏的快照。

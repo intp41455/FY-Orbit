@@ -7,6 +7,7 @@ import {
 } from './furnitureCatalog';
 import { getColorwayCount } from './furnitureArt';
 import { MAX_CABIN_LEVEL, deriveCabinLevel, type InteriorItem, type InteriorLayout } from './interiorLayout';
+import { useBase } from '../../../hooks/useAutosave';
 
 interface InteriorDecoratePanelProps {
   layout: InteriorLayout;
@@ -39,6 +40,7 @@ interface InteriorDecoratePanelProps {
  *  - 未解锁家具灰显 + 标注解锁条件（不假装可用）。
  */
 export function InteriorDecoratePanel(props: InteriorDecoratePanelProps) {
+  useBase({ surface: 'web/src/components/cabin/interior/InteriorDecoratePanel' });
   const {
     layout, selectedId, cabinLevel, dirty, snapEnabled,
     onSelect, onAdd, onFlip, onCycleColorway, onLayer, onRemove,

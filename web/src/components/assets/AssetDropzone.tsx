@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import type { AssetKind } from '../../api/assets';
 import { assetRawUrl } from '../../api/assets';
 import { exceedsLimit, KIND_LABEL, kindFromFileName } from './assetFormat';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface AssetDropzoneProps {
   maxBytesByKind: Record<string, number>;
@@ -14,6 +15,7 @@ export interface AssetDropzoneProps {
 }
 
 export function AssetDropzone({ maxBytesByKind, busy = false, onUpload, onError }: AssetDropzoneProps) {
+  useBase({ surface: 'web/src/components/assets/AssetDropzone' });
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [over, setOver] = useState(false);
 

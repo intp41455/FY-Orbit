@@ -33,6 +33,7 @@ import {
 } from '../api/kanban';
 import { BurndownChart, GanttChart, ProgressDonut, buildGanttRows, donutToneFor } from '../components/kanban/KanbanCharts';
 import '../styles/pages/kanban.css';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 type ViewId = 'board' | 'list' | 'timeline';
 
@@ -217,253 +218,255 @@ export function KanbanPage() {
   const { summary } = data;
 
   return (
-    <div className="kb-page" data-testid="kb-page">
-      <header className="kb-top">
-        <h1 className="kb-title">任务看板</h1>
-        <div
-          className="kb-summary"
-          data-testid="kb-summary"
-          data-total={summary.total_cards}
-          data-red={summary.red_band_count}
-        >
-          <span className="kb-chip">
-            任务 <b>{summary.total_cards}</b>
-          </span>
-          <span className="kb-chip">
-            加权进度 <b>{summary.weighted_progress}%</b>
-          </span>
-          {summary.red_band_count > 0 && (
-            <span className="kb-chip kb-chip--red" data-testid="kb-redband-chip">
-              红带 <b>{summary.red_band_count}</b>
-            </span>
-          )}
-          {summary.cancelled_count > 0 && (
-            <span
-              className="kb-chip kb-chip--muted"
-              data-testid="kb-cancelled-chip"
-              title="已终止，不上板但必须被看见"
-            >
-              已终止 <b>{summary.cancelled_count}</b>
-            </span>
-          )}
-        </div>
-      </header>
-
-      {/* 红带（需求 11）：常驻顶部，只由后端真实信号点亮 */}
-      {cards.filter((c) => c.red_band).length > 0 && (
-        <section className="kb-redband" role="region" aria-label="阻塞红带告警" data-testid="kb-redband">
-          {cards
-            .filter((c) => c.red_band)
-            .map((c) => (
-              <div key={c.id} className="kb-redband__row" data-testid={`kb-redband-${c.id}`}>
-                <span className="kb-redband__title">{c.goal}</span>
-                <span className="kb-redband__reasons">
-                  {(c.red_band_detail?.reasons ?? []).map((r, i) => (
-                    <span key={i} className="kb-redband__reason">
-                      {r.detail}
-                    </span>
-                  ))}
-                </span>
-                <span className="kb-redband__meta">
-                  {c.blocked_reason ? `原因：${c.blocked_reason}` : '未记录原因'}
-                  {c.red_band_detail?.duration_minutes != null &&
-                    ` · 已 ${Math.round(c.red_band_detail.duration_minutes / 60)} 小时`}
-                  {c.depends_on.length > 0 && ` · 依赖 ${c.depends_on.length} 个前置`}
-                  {c.red_band_detail?.escalated && ' · 已升级'}
-                </span>
-              </div>
-            ))}
-        </section>
-      )}
-
-      {/* 视图切换：语义用 tablist/tab（e2e 曾因 role=tab vs button 翻车） */}
-      <div className="kb-views" role="tablist" aria-label="看板视图切换">
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            role="tab"
-            id={`kb-tab-${v.id}`}
-            aria-selected={view === v.id}
-            aria-controls={`kb-panel-${v.id}`}
-            className="kb-tab"
-            data-testid={`kb-tab-${v.id}`}
-            onClick={() => setView(v.id)}
+    <BaseBound surface="kanban">
+      <div className="kb-page" data-testid="kb-page">
+        <header className="kb-top">
+          <h1 className="kb-title">任务看板</h1>
+          <div
+            className="kb-summary"
+            data-testid="kb-summary"
+            data-total={summary.total_cards}
+            data-red={summary.red_band_count}
           >
-            {v.label}
-          </button>
-        ))}
-      </div>
+            <span className="kb-chip">
+              任务 <b>{summary.total_cards}</b>
+            </span>
+            <span className="kb-chip">
+              加权进度 <b>{summary.weighted_progress}%</b>
+            </span>
+            {summary.red_band_count > 0 && (
+              <span className="kb-chip kb-chip--red" data-testid="kb-redband-chip">
+                红带 <b>{summary.red_band_count}</b>
+              </span>
+            )}
+            {summary.cancelled_count > 0 && (
+              <span
+                className="kb-chip kb-chip--muted"
+                data-testid="kb-cancelled-chip"
+                title="已终止，不上板但必须被看见"
+              >
+                已终止 <b>{summary.cancelled_count}</b>
+              </span>
+            )}
+          </div>
+        </header>
 
-      {view === 'board' && (
-        <div
-          className="kb-board"
-          role="tabpanel"
-          id="kb-panel-board"
-          aria-labelledby="kb-tab-board"
-          data-testid="kb-board"
-        >
-          {data.columns.map((column) => (
-            <section
-              key={column.id}
-              className={`kb-col${dragOver === column.id ? ' kb-col--over' : ''}`}
-              data-testid={`kb-col-${column.id}`}
-              data-count={column.count}
-              aria-label={COLUMN_META[column.id].label}
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragOver(column.id);
-              }}
-              onDragLeave={() => setDragOver((c) => (c === column.id ? null : c))}
-              onDrop={(e) => {
-                e.preventDefault();
-                void onDrop(column.id);
-              }}
+        {/* 红带（需求 11）：常驻顶部，只由后端真实信号点亮 */}
+        {cards.filter((c) => c.red_band).length > 0 && (
+          <section className="kb-redband" role="region" aria-label="阻塞红带告警" data-testid="kb-redband">
+            {cards
+              .filter((c) => c.red_band)
+              .map((c) => (
+                <div key={c.id} className="kb-redband__row" data-testid={`kb-redband-${c.id}`}>
+                  <span className="kb-redband__title">{c.goal}</span>
+                  <span className="kb-redband__reasons">
+                    {(c.red_band_detail?.reasons ?? []).map((r, i) => (
+                      <span key={i} className="kb-redband__reason">
+                        {r.detail}
+                      </span>
+                    ))}
+                  </span>
+                  <span className="kb-redband__meta">
+                    {c.blocked_reason ? `原因：${c.blocked_reason}` : '未记录原因'}
+                    {c.red_band_detail?.duration_minutes != null &&
+                      ` · 已 ${Math.round(c.red_band_detail.duration_minutes / 60)} 小时`}
+                    {c.depends_on.length > 0 && ` · 依赖 ${c.depends_on.length} 个前置`}
+                    {c.red_band_detail?.escalated && ' · 已升级'}
+                  </span>
+                </div>
+              ))}
+          </section>
+        )}
+
+        {/* 视图切换：语义用 tablist/tab（e2e 曾因 role=tab vs button 翻车） */}
+        <div className="kb-views" role="tablist" aria-label="看板视图切换">
+          {VIEWS.map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              role="tab"
+              id={`kb-tab-${v.id}`}
+              aria-selected={view === v.id}
+              aria-controls={`kb-panel-${v.id}`}
+              className="kb-tab"
+              data-testid={`kb-tab-${v.id}`}
+              onClick={() => setView(v.id)}
             >
-              <h2 className="kb-col__head">
-                {COLUMN_META[column.id].label}
-                <span className="kb-col__count">{column.count}</span>
-              </h2>
-              <div className="kb-col__body">
-                {column.cards.length === 0 && (
-                  <p className="kb-empty" data-testid={`kb-empty-${column.id}`}>
-                    暂无任务
-                  </p>
-                )}
-                {column.cards.map((card) => (
-                  <KanbanCardView
-                    key={card.id}
-                    card={card}
-                    busy={busy}
-                    onOpen={() => void openDetail(card.id)}
-                    onDragStart={() => {
-                      dragId.current = card.id;
-                    }}
-                  />
-                ))}
-              </div>
-            </section>
+              {v.label}
+            </button>
           ))}
         </div>
-      )}
 
-      {view === 'list' && (
-        <div
-          className="kb-list"
-          role="tabpanel"
-          id="kb-panel-list"
-          aria-labelledby="kb-tab-list"
-          data-testid="kb-list"
-        >
-          <div className="kb-list__sort">
-            <span className="ui-hint">排序</span>
-            {(
-              [
-                ['priority', '优先级'],
-                ['updated', '更新时间'],
-                ['deadline', '截止时间'],
-                ['progress', '进度'],
-              ] as Array<[SortKey, string]>
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className="kb-chip kb-chip--btn"
-                aria-pressed={sortKey === key}
-                data-testid={`kb-sort-${key}`}
-                onClick={() => setSortKey(key)}
+        {view === 'board' && (
+          <div
+            className="kb-board"
+            role="tabpanel"
+            id="kb-panel-board"
+            aria-labelledby="kb-tab-board"
+            data-testid="kb-board"
+          >
+            {data.columns.map((column) => (
+              <section
+                key={column.id}
+                className={`kb-col${dragOver === column.id ? ' kb-col--over' : ''}`}
+                data-testid={`kb-col-${column.id}`}
+                data-count={column.count}
+                aria-label={COLUMN_META[column.id].label}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(column.id);
+                }}
+                onDragLeave={() => setDragOver((c) => (c === column.id ? null : c))}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  void onDrop(column.id);
+                }}
               >
-                {label}
-              </button>
+                <h2 className="kb-col__head">
+                  {COLUMN_META[column.id].label}
+                  <span className="kb-col__count">{column.count}</span>
+                </h2>
+                <div className="kb-col__body">
+                  {column.cards.length === 0 && (
+                    <p className="kb-empty" data-testid={`kb-empty-${column.id}`}>
+                      暂无任务
+                    </p>
+                  )}
+                  {column.cards.map((card) => (
+                    <KanbanCardView
+                      key={card.id}
+                      card={card}
+                      busy={busy}
+                      onOpen={() => void openDetail(card.id)}
+                      onDragStart={() => {
+                        dragId.current = card.id;
+                      }}
+                    />
+                  ))}
+                </div>
+              </section>
             ))}
           </div>
-          <table className="kb-table">
-            <thead>
-              <tr>
-                <th scope="col">任务</th>
-                <th scope="col">状态</th>
-                <th scope="col">进度</th>
-                <th scope="col">权重</th>
-                <th scope="col">子任务</th>
-                <th scope="col">截止</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sorted.map((card) => (
-                <tr key={card.id} data-testid={`kb-row-${card.id}`}>
-                  <td>
-                    <button
-                      type="button"
-                      className="kb-linkbtn"
-                      onClick={() => void openDetail(card.id)}
-                    >
-                      {card.goal}
-                    </button>
-                    {card.red_band && (
-                      <span className="kb-tag kb-tag--red" data-testid={`kb-row-red-${card.id}`}>
-                        红带
-                      </span>
-                    )}
-                  </td>
-                  <td>{card.status}</td>
-                  <td>
-                    {card.weighted_progress}%{' '}
-                    <span className="ui-hint">
-                      {card.progress_source === 'subtasks' ? '加权' : ''}
-                    </span>
-                  </td>
-                  <td>{card.weight}</td>
-                  <td>
-                    {card.done_subtask_count}/{card.subtask_count}
-                  </td>
-                  <td>{card.deadline ? card.deadline.slice(0, 10) : '未设置'}</td>
-                </tr>
+        )}
+
+        {view === 'list' && (
+          <div
+            className="kb-list"
+            role="tabpanel"
+            id="kb-panel-list"
+            aria-labelledby="kb-tab-list"
+            data-testid="kb-list"
+          >
+            <div className="kb-list__sort">
+              <span className="ui-hint">排序</span>
+              {(
+                [
+                  ['priority', '优先级'],
+                  ['updated', '更新时间'],
+                  ['deadline', '截止时间'],
+                  ['progress', '进度'],
+                ] as Array<[SortKey, string]>
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="kb-chip kb-chip--btn"
+                  aria-pressed={sortKey === key}
+                  data-testid={`kb-sort-${key}`}
+                  onClick={() => setSortKey(key)}
+                >
+                  {label}
+                </button>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+            </div>
+            <table className="kb-table">
+              <thead>
+                <tr>
+                  <th scope="col">任务</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">进度</th>
+                  <th scope="col">权重</th>
+                  <th scope="col">子任务</th>
+                  <th scope="col">截止</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sorted.map((card) => (
+                  <tr key={card.id} data-testid={`kb-row-${card.id}`}>
+                    <td>
+                      <button
+                        type="button"
+                        className="kb-linkbtn"
+                        onClick={() => void openDetail(card.id)}
+                      >
+                        {card.goal}
+                      </button>
+                      {card.red_band && (
+                        <span className="kb-tag kb-tag--red" data-testid={`kb-row-red-${card.id}`}>
+                          红带
+                        </span>
+                      )}
+                    </td>
+                    <td>{card.status}</td>
+                    <td>
+                      {card.weighted_progress}%{' '}
+                      <span className="ui-hint">
+                        {card.progress_source === 'subtasks' ? '加权' : ''}
+                      </span>
+                    </td>
+                    <td>{card.weight}</td>
+                    <td>
+                      {card.done_subtask_count}/{card.subtask_count}
+                    </td>
+                    <td>{card.deadline ? card.deadline.slice(0, 10) : '未设置'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
-      {view === 'timeline' && (
-        <div
-          className="kb-timeline"
-          role="tabpanel"
-          id="kb-panel-timeline"
-          aria-labelledby="kb-tab-timeline"
-          data-testid="kb-timeline"
-        >
-          <section aria-label="甘特图">
-            <h2 className="kb-sub">甘特式时间线</h2>
-            <GanttChart rows={buildGanttRows(cards)} />
-          </section>
-          <section aria-label="燃尽图">
-            <h2 className="kb-sub">燃尽图</h2>
-            {burn ? (
-              <BurndownChart data={burn} />
-            ) : (
-              <p className="ui-hint">燃尽数据不可用</p>
-            )}
-          </section>
-        </div>
-      )}
+        {view === 'timeline' && (
+          <div
+            className="kb-timeline"
+            role="tabpanel"
+            id="kb-panel-timeline"
+            aria-labelledby="kb-tab-timeline"
+            data-testid="kb-timeline"
+          >
+            <section aria-label="甘特图">
+              <h2 className="kb-sub">甘特式时间线</h2>
+              <GanttChart rows={buildGanttRows(cards)} />
+            </section>
+            <section aria-label="燃尽图">
+              <h2 className="kb-sub">燃尽图</h2>
+              {burn ? (
+                <BurndownChart data={burn} />
+              ) : (
+                <p className="ui-hint">燃尽数据不可用</p>
+              )}
+            </section>
+          </div>
+        )}
 
-      {detail && (
-        <TaskDetailDrawer
-          detail={detail}
-          busy={busy}
-          onClose={() => setDetail(null)}
-          onOperate={(op) => void operate(detail.task.id, op)}
-          onStart={() => void onStart(detail.task.id)}
-          onSetProgress={(p) => {
-            setBusy(true);
-            void setProgress(detail.task.id, p)
-              .then(() => openDetail(detail.task.id))
-              .catch((e) => setError(kanbanErrorCode(e)))
-              .finally(() => setBusy(false));
-          }}
-        />
-      )}
-    </div>
+        {detail && (
+          <TaskDetailDrawer
+            detail={detail}
+            busy={busy}
+            onClose={() => setDetail(null)}
+            onOperate={(op) => void operate(detail.task.id, op)}
+            onStart={() => void onStart(detail.task.id)}
+            onSetProgress={(p) => {
+              setBusy(true);
+              void setProgress(detail.task.id, p)
+                .then(() => openDetail(detail.task.id))
+                .catch((e) => setError(kanbanErrorCode(e)))
+                .finally(() => setBusy(false));
+            }}
+          />
+        )}
+      </div>
+    </BaseBound>
   );
 }
 

@@ -13,6 +13,7 @@ import type {
 import { LineIcon } from '../ui/LineIcon';
 import { SCOPE_LABEL } from '../agent-teams/teamVisual';
 import { statusMeta } from './statusMap';
+import { useBase } from '../../hooks/useAutosave';
 
 interface Props {
   member: TeamMemberView;
@@ -41,6 +42,7 @@ export function MemberDrawer({
   onSwitchModel,
   onControl,
 }: Props) {
+  useBase({ surface: 'web/src/components/canvasui/MemberDrawer' });
   const closeRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {

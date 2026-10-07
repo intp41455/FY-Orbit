@@ -7,7 +7,7 @@
  *    - move_up / move_down: W / S / 方向键上 / 下（沿着 2.5D depth 纵深探索）
  *    - jump: Space / W / 方向键上（支持输入缓冲与离散边沿触发）
  *    - crouch: S / 方向键下 / C（长按/静态下蹲动作）
- * 2. 文本框与交互元素隔离保护（不污染 input / textarea / select / contenteditable）；
+ * 2. 文本框与交互元素隔离保护（不污染 input / textarea / select / 富文本编辑区）；
  * 3. 边沿检测（Edge vs Held）与跳跃预输入缓冲（Input Buffering）；
  * 4. 游玩时自动拦截方向键与空格的默认页面滚动（preventDefault）。
  */

@@ -13,6 +13,7 @@ import {
   putAutomationPermissions,
 } from '../../api/automation';
 import { useAsync, Spinner, errorMessage } from '../ui';
+import { useBase } from '../../hooks/useAutosave';
 
 const MODES: Array<{ id: AutomationMode; label: string; desc: string }> = [
   { id: 'off', label: '关闭', desc: '不允许任何截图/鼠标/键盘操作（默认）' },
@@ -24,6 +25,7 @@ const MODES: Array<{ id: AutomationMode; label: string; desc: string }> = [
 const TTL_CHOICES = [60, 300, 600];
 
 export function AutomationPermissionCard() {
+  useBase({ surface: 'web/src/components/settings/AutomationPermissionCard' });
   const { data, loading, error, reload } = useAsync(() => fetchAutomationPermissions(), []);
   const [pending, setPending] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);

@@ -32,6 +32,7 @@ import {
 } from '../../api/workflowGen';
 import { NodePalette } from './NodePalette';
 import { PropertyPanel } from './PropertyPanel';
+import { useBase } from '../../hooks/useAutosave';
 
 export const CANVAS_W = 760;
 export const CANVAS_H = 420;
@@ -282,6 +283,7 @@ function ErrorBanner({ message, detail }: { message: string; detail?: string }) 
 }
 
 export function FlowEditor({ initialDoc, sourcePrompt }: FlowEditorProps) {
+  useBase({ surface: 'web/src/components/workflow/FlowEditor' });
   const [nodes, setNodes] = useState<EditorNode[]>([]);
   const [edges, setEdges] = useState<EditorEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);

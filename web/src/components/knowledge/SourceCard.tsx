@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import { isHubSource, type KBSourceStatus } from '../../api/knowledge';
 import { credentialHint, sourceStateLabel } from './kbFormat';
+import { useBase } from '../../hooks/useAutosave';
 
 export interface SourceCardProps {
   source: KBSourceStatus;
@@ -26,6 +27,7 @@ export function SourceCard({
   onSync,
   busy = false,
 }: SourceCardProps) {
+  useBase({ surface: 'web/src/components/knowledge/SourceCard' });
   const [values, setValues] = useState<Record<string, string>>({});
   const state = sourceStateLabel(source);
   const implemented = source.source_id !== 'baidu_pan';
