@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FY 横版组合 Logo —— 浅色底版（深色字）
+  版式与 logo-horizontal.svg 完全一致，仅文字色改为浅底可用色
+  背景：透明。用于白底 / 浅灰底场合（#FFFFFF、#F5F6F8 类）
+  对比度：#07080B on #FFFFFF ≈ 19.5:1（主标）；
+          #5F6779 on #FFFFFF ≈ 5.7:1（副标，达标 AA 正文）
+  图形标保持青→深青渐变（实测 #04211D on #35E0C8 ≈ 10.2:1），浅底上仍然成立
+  ★ 可变文本层同 logo-horizontal.svg，改 id="brand-positioning" / id="brand-subtitle"
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="144" viewBox="0 0 700 144"
+     role="img" aria-label="FY Orbit · 星轨（浅色底版）">
+  <title>FY Orbit · 星轨（浅色底版）</title>
+  <defs>
+    <linearGradient id="fyLogoHLightMarkGradient" x1="0.1585" y1="-0.0915" x2="0.8415" y2="1.0915">
+      <stop offset="0" stop-color="#35E0C8"/>
+      <stop offset="1" stop-color="#1FA894"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="36" y="36" width="72" height="72" rx="18.7" ry="18.7" fill="url(#fyLogoHLightMarkGradient)"/>
+  <g transform="translate(48.2 55.7) scale(0.3261)" fill="#04211D">
+    <path d="M0 0 H64 V24 H24 V42 H56 V66 H24 V100 H0 Z"/>
+    <path d="M72 0 H94 L109 26 L124 0 H146 L120 44 V100 H98 V44 Z"/>
+  </g>
+
+  <text id="brand-positioning" x="132" y="66"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="30" font-weight="700" letter-spacing="0.5" fill="#07080B">Orbit · 星轨</text>
+
+  <text id="brand-subtitle" x="132" y="98"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="15" font-weight="500" letter-spacing="0" fill="#5F6779">本地运行 · 无需联网 · 可视化与代码实时同源 · 统一调度外部 Agent</text>
+</svg>

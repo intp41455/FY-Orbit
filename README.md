@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/readme-banner-1280x320.png" alt="FY Orbit · 星轨 Banner" width="100%" />
+</p>
+
 # FY Orbit · 星轨 (Find Yourself)
 
 <p align="center">
@@ -27,6 +31,10 @@
 * **Langflow / Flowise**：止步于单向拖拽连线，缺乏真正的代码级工程能力与深度开发工具链，复杂逻辑难以编写与调试，缺少工业级协同。
 * **AutoGen / CrewAI**：仅为纯 Python 代码库或终端 CLI，缺乏开箱即用的可视化界面、任务状态看板与持久化基座，报错即崩溃，开发门槛极高。
 * **业界最大的痛点与恐惧 ——「AI 智能体失控焦虑」**：大多数工具一旦点击运行，AI 自动改写代码、调用工具、修改系统，极易产生幻觉偏离轨道，引发误删数据、配置错乱或资费超支等无法挽回的破坏性局面。
+
+<p align="center">
+  <img src="assets/screenshots/13_W1v3_指挥台_玻璃薄荷.png" alt="FY Orbit 统御指挥台" width="90%" />
+</p>
 
 ---
 
@@ -75,11 +83,19 @@
 * **高并发协作**：`parallel` 并行派发、`join` 结果聚合器、`delay` 时序控制、`event_emit` / `event_listen` 异步事件总线。
 * **状态与把关**：`variable_assign` 运行时变量管理、`data_transform` 结构转换、`human_review` 人在回路（HITL）审批。
 
+<p align="center">
+  <img src="assets/screenshots/包B-dsl-canvas-工作流工坊.png" alt="FY Orbit 工业级工作流工坊" width="90%" />
+</p>
+
 ### 2. 三重模式同源切换 (Triple Mode)
 同一套工作流逻辑在三种形态间无损秒切，满足不同角色需求：
 * **🌱 小白向导模式 (Beginner)**：零技术门槛，采用向导式自然语言提问，输入“我想实现……”即刻自动拆解并组装出完整工作流。
 * **⚡ 视觉画布模式 (Visual Canvas)**：基于高自由度平移缩放画布，多色端口类型防错吸附，直观拖拽编排。
 * **🛠️ 极客技术模式 (Technical IDE)**：Monaco 顶级代码编辑器，支持 DSL、AST 语法树实时双向热同步与终端沙箱调试。
+
+<p align="center">
+  <img src="assets/screenshots/08_W4_任务详情_工程工作台.png" alt="FY Orbit 极客工程工作台" width="90%" />
+</p>
 
 ### 3. T6 工业级抗打断与断点原位续作引擎 (Resilience & Outbox)
 * **暂存必须落库**：执行状态、会话快照与中间产物全量流式落盘至 SQLite，杜绝仅驻留内存。
@@ -91,6 +107,10 @@
 * **DOM 原地锁定**：悬停点选界面元素，原地气泡即刻呼出评审窗口，自动挂载组件源码 ID。
 * **区域矩形框选与画笔涂鸦**：自由圈选页面排版、绘制箭头指向细节。
 * **即时闭环对比**：修改后触发局部热重载，自动生成红线条（红增灰删）版本对比，所见即所得。
+
+<p align="center">
+  <img src="assets/screenshots/06_W2_任务详情_协作画布.png" alt="FY Orbit 协同审查画布" width="90%" />
+</p>
 
 ### 5. 高级敏捷规划看板与纯原生 SVG 甘特图
 * **四状态任务流转**：待办、进行中、阻塞与完成状态机，支持前置依赖与抢占认领。
@@ -112,6 +132,10 @@
 * **温馨的创作者自留地**：不同于市面上冰冷单调的纯工程软件，星轨内嵌创作者专属数码小屋，支持像素手绘场景自由布置与晨昏昼夜光影变幻。
 * **桌面伴读互动桌宠**：具备动态状态反馈与伴读交互，时刻陪伴创作者左右。
 * **闲暇轻娱乐小项目**：内嵌数款极简减压轻互动，在长流程自动化调试间歇轻松舒缓心绪、重焕灵感。
+
+<p align="center">
+  <img src="assets/screenshots/10-cabin.png" alt="创作者专属数码空间与闲暇小屋" width="90%" />
+</p>
 
 ### 🔮 3. 确定性天文历法与全维度画像引擎
 * **纯算法本地推算**：四柱生辰八字（干支、藏干、十神、纳音、旺相休囚死）确定性推算。

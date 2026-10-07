@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FY 横版组合 Logo —— 深色底版（青底字）
+  版式：图形标（72）+ 中文定位语（30/700）+ 副标（16/500）
+  背景：透明。用于深色场合（token ink #07080B / surface #12151D / 压暗图）
+  安全区：图形标边长 X = 72，四周留白 36 = 0.5X（≥ 1/4 要求）
+  ─────────────────────────────────────────────────────────
+  ★ 可变文本层：中文产品名尚未拍板，下列两处 <text> 即为待替换内容。
+    直接改 id="brand-positioning" / id="brand-subtitle" 的文本即可；
+    若新名称明显更长，请同步把 viewBox 的 width（当前 576）调大，避免裁切。
+    全量替换口径另见同目录 README.md 与 render_assets.py 的 TEXTS 常量。
+  ─────────────────────────────────────────────────────────
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="700" height="144" viewBox="0 0 700 144"
+     role="img" aria-label="FY Orbit · 星轨">
+  <title>FY Orbit · 星轨</title>
+  <defs>
+    <linearGradient id="fyLogoHMarkGradient" x1="0.1585" y1="-0.0915" x2="0.8415" y2="1.0915">
+      <stop offset="0" stop-color="#35E0C8"/>
+      <stop offset="1" stop-color="#1FA894"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 图形标 -->
+  <rect x="36" y="36" width="72" height="72" rx="18.7" ry="18.7" fill="url(#fyLogoHMarkGradient)"/>
+  <g transform="translate(48.2 55.7) scale(0.3261)" fill="#04211D">
+    <path d="M0 0 H64 V24 H24 V42 H56 V66 H24 V100 H0 Z"/>
+    <path d="M72 0 H94 L109 26 L124 0 H146 L120 44 V100 H98 V44 Z"/>
+  </g>
+
+  <!-- 可变文本层 01：字标名（FY 几何字标 + 此文本 = FY Orbit · 星轨） -->
+  <text id="brand-positioning" x="132" y="66"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="30" font-weight="700" letter-spacing="0.5" fill="#EAECF2">Orbit · 星轨</text>
+
+  <!-- 可变文本层 02：副标 -->
+  <text id="brand-subtitle" x="132" y="98"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="15" font-weight="500" letter-spacing="0" fill="#8A93A8">本地运行 · 无需联网 · 可视化与代码实时同源 · 统一调度外部 Agent</text>
+</svg>

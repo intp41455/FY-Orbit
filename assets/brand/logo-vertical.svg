@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FY 竖版组合 Logo（深色底）
+  版式：图形标（120）在上居中 → 中文定位语两行居中对齐 → 副标一行 → 全部居中轴
+  背景：透明。用于竖版物料（小红书 / 抖音 / 视频号封面、启动闪屏、片尾卡）
+  安全区：图形标边长 X = 120，四周留白 ≥ 40（≥ 1/4 X）
+  ─────────────────────────────────────────────────────────
+  ★ 可变文本层：中文产品名待定。三处 <text>（id 见下）即为待替换内容。
+    定位语被拆成两行是为了竖版窄幅下的可读性：
+      行 1 = 前 6 字，行 2 = 其余
+    若新名称字数不同，请重新分配两行并在 README 的「中文名替换」小节按同一口径操作。
+  ─────────────────────────────────────────────────────────
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="400" viewBox="0 0 480 400"
+     role="img" aria-label="FY Orbit · 星轨（竖版）">
+  <title>FY Orbit · 星轨（竖版）</title>
+  <defs>
+    <linearGradient id="fyLogoVMarkGradient" x1="0.1585" y1="-0.0915" x2="0.8415" y2="1.0915">
+      <stop offset="0" stop-color="#35E0C8"/>
+      <stop offset="1" stop-color="#1FA894"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 图形标：居中于 x = 240 -->
+  <rect x="180" y="40" width="120" height="120" rx="31.2" ry="31.2" fill="url(#fyLogoVMarkGradient)"/>
+  <g transform="translate(200.3 72.81) scale(0.54378)" fill="#04211D">
+    <path d="M0 0 H64 V24 H24 V42 H56 V66 H24 V100 H0 Z"/>
+    <path d="M72 0 H94 L109 26 L124 0 H146 L120 44 V100 H98 V44 Z"/>
+  </g>
+
+  <!-- 可变文本层 01 / 02：字标名（FY 几何字标 + 这两行 = FY Orbit · 星轨） -->
+  <text id="brand-positioning-l1" x="240" y="236" text-anchor="middle"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="46" font-weight="700" letter-spacing="1" fill="#EAECF2">Orbit</text>
+  <text id="brand-positioning-l2" x="240" y="296" text-anchor="middle"
+        font-family="'PingFang SC','Microsoft YaHei',sans-serif"
+        font-size="46" font-weight="700" letter-spacing="1" fill="#EAECF2">星轨</text>
+</svg>

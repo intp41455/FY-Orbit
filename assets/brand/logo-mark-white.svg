@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  FY 纯图形标 —— 反白版（负片）
+  用途：深底场合（深色界面、深色 PPT、视频角标、深色物料）
+  做法：白色实心圆角方 + FY 镂空（真实透明）
+       压在深底上呈「白方块 + 深色 FY」，与青底版形成严格的正负对应
+  禁止：压在浅底（会失去对比，请改用 logo-mark.svg 或 logo-mark-mono.svg）
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480"
+     role="img" aria-label="FY 图形标（反白）">
+  <title>FY 图形标（反白）</title>
+  <defs>
+    <mask id="fyWhiteKnockout" maskUnits="userSpaceOnUse" x="0" y="0" width="480" height="480">
+      <rect x="80" y="80" width="320" height="320" rx="83" ry="83" fill="#FFFFFF"/>
+      <g transform="translate(134.15 167.5) scale(1.45)" fill="#000000">
+        <path d="M0 0 H64 V24 H24 V42 H56 V66 H24 V100 H0 Z"/>
+        <path d="M72 0 H94 L109 26 L124 0 H146 L120 44 V100 H98 V44 Z"/>
+      </g>
+    </mask>
+  </defs>
+  <rect x="80" y="80" width="320" height="320" rx="83" ry="83" fill="#FFFFFF" mask="url(#fyWhiteKnockout)"/>
+</svg>
