@@ -153,7 +153,8 @@
 
 ### 方式二：在线云端网页版（免安装）
 点击进入全球 Anycast CDN 部署的在线公网版本体验：  
-👉 **[在线宣传落地页](https://math-blast-dated-alberta.trycloudflare.com/landing.html)** ｜ **[Web 工作台在线版](https://math-blast-dated-alberta.trycloudflare.com/)**
+👉 **[在线宣传落地页](https://connections-evident-camcorders-eleven.trycloudflare.com/landing.html)** ｜ **[Web 工作台在线版](https://connections-evident-camcorders-eleven.trycloudflare.com/)** ｜ **[Swagger API 文档](https://connections-evident-camcorders-eleven.trycloudflare.com/docs)**
+*(备用高可用镜像：[Cloudflare Pages 全球镜像](https://find-yourself-45j.pages.dev/))*
 
 ### 方式三：源码手动启动
 
@@ -193,3 +194,4 @@ python run.py --port 8000
 ## 📄 开源许可证
 
 本项目基于 [Apache License 2.0](LICENSE) 协议开源。
+
