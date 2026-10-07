@@ -83,3 +83,6 @@ web/**/.playwright-artifacts-*/
 *.log
 .srv*
 
+
+cloudflared.exe
+deploy/landing-dist/
