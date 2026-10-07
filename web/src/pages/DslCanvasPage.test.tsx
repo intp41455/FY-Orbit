@@ -10,7 +10,10 @@ vi.mock('../components/dsl/DslCanvas', () => ({
 vi.mock('../api/workflowGen', () => ({
   workflowGenApi: { status: vi.fn(), generate: vi.fn() },
 }));
-vi.mock('../api/dslCanvas', () => ({
+vi.mock('../api/dslCanvas', async (importOriginal) => ({
+  // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
+  // 只替换网络面 dslCanvasApi。
+  ...(await importOriginal<typeof import('../api/dslCanvas')>()),
   dslCanvasApi: { validate: vi.fn(), schema: vi.fn() },
 }));
 

@@ -36,10 +36,27 @@ function nextId(prefix: string): string {
   return `${prefix}${seq}`;
 }
 
+/**
+ * 节点类型展示名（A-画布搭建器-01：认全 `NODE_TYPES` 的 16 类）。
+ * `Record<DslNodeType, string>` 是穷尽式的：后端新增一类而前端漏文案即 tsc 报错。
+ */
 const NODE_LABELS: Record<DslNodeType, string> = {
   input: '输入 input',
   transform: '变换 transform',
   output: '输出 output',
+  llm: '模型 llm',
+  knowledge_retrieval: '知识检索',
+  question_classifier: '问题分类',
+  parameter_extractor: '参数抽取',
+  iteration: '迭代 iteration',
+  loop: '循环 loop',
+  variable_aggregator: '变量汇聚',
+  template: '模板 template',
+  http_request: 'HTTP 请求',
+  code: '代码 code',
+  tool: '工具 tool',
+  human_input: '人工输入',
+  trigger: '触发器 trigger',
 };
 
 /**
@@ -64,10 +81,29 @@ const VERB_LABELS: Record<DslTransformVerb, string> = {
  * 已换成九档令牌里的琥珀；三种类型仍保持色相分离（琥珀 / 天蓝 / 紫灰），
  * 不会因去绿而变得难以区分。走 var() 顺带清掉三处裸色。
  */
+/**
+ * 节点类型配色（九档令牌；只吃 var() 语义色，不写裸色）。
+ *
+ * 新增 13 类沿用同一套九档令牌：不新增色相、不写裸色，只按「数据 / 流程 /
+ * 外部依赖 / 人机」分组取色，保证色相分离且全部来自 tokens.css。
+ */
 const NODE_COLORS: Record<DslNodeType, string> = {
   input: 'var(--ui-st-waiting)',
   transform: 'var(--ui-sky-600)',
   output: 'var(--ui-st-external)',
+  llm: 'var(--ui-st-external)',
+  knowledge_retrieval: 'var(--ui-st-external)',
+  question_classifier: 'var(--ui-st-external)',
+  parameter_extractor: 'var(--ui-st-external)',
+  iteration: 'var(--ui-sky-600)',
+  loop: 'var(--ui-sky-600)',
+  variable_aggregator: 'var(--ui-sky-600)',
+  template: 'var(--ui-sky-600)',
+  http_request: 'var(--ui-st-external)',
+  code: 'var(--ui-sky-600)',
+  tool: 'var(--ui-st-external)',
+  human_input: 'var(--ui-st-waiting)',
+  trigger: 'var(--ui-st-waiting)',
 };
 
 const CANVAS_W = 640;

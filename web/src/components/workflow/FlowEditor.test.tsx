@@ -4,7 +4,10 @@ import userEvent from '@testing-library/user-event';
 
 // FlowEditor 依赖两个 API 模块。schema 决定左侧面板的节点类型（动态取自
 // 后端），validate 是载入 DSL 的权威校验，exportScript 是导出出口。
-vi.mock('../../api/dslCanvas', () => ({
+vi.mock('../../api/dslCanvas', async (importOriginal) => ({
+  // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
+  // 只替换网络面 dslCanvasApi。
+  ...(await importOriginal<typeof import('../../api/dslCanvas')>()),
   dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn() },
 }));
 vi.mock('../../api/workflowGen', () => ({

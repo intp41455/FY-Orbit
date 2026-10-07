@@ -22,6 +22,11 @@ const INPUT_KINDS = ['literal', 'text_lines'] as const;
 const OUTPUT_FORMATS = ['json', 'text'] as const;
 const AGGREGATE_OPS = ['count', 'sum', 'min', 'max', 'avg', 'first', 'last', 'join', 'unique'] as const;
 const MERGE_OPS = ['concat', 'first', 'last'] as const;
+const KNOWLEDGE_MODES = ['lexical', 'vector', 'hybrid'] as const;
+const VARIABLE_AGGREGATOR_STRATEGIES = ['first_non_null', 'last_non_null'] as const;
+const TRIGGER_KINDS = ['manual', 'conversation', 'schedule', 'webhook'] as const;
+const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
+const CODE_LANGUAGES = ['python'] as const;
 /**
  * 受限动词白名单（与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY`逐字对齐）。
  * 顺序即注册表顺序，前端不做增删——多一个后端就 422，少一个则画布表达力缺失。
@@ -30,7 +35,89 @@ const VERBS: DslTransformVerb[] = [
   'map', 'filter', 'template',
   'branch', 'aggregate', 'merge',
   'agent', 'confirm', 'artifact',
+  'approval',
 ];
+
+// --------------------------------------------------------------------------- //
+// A-画布搭建器-01：13 类新增节点的属性表单
+// --------------------------------------------------------------------------- //
+//
+// 字段表与后端 `services/dsl_canvas.py::NODE_PARAMS_SCHEMAS` 同构（同一套字段名
+// 与枚举）。它是**表单布局**，不是第二份契约：真正的合法性判定仍由后端
+// `validate-ir` 给出，逐字段红字直接吃 IR 诊断（`diagForField`）。
+//
+// 需要注入式解析器的节点（llm / knowledge / tool / http / human_input）在未接通
+// 时**诚实失败**——面板里显式写明，不假装可用（需求「不伪造成功」）。
+
+type FieldKind = 'text' | 'multiline' | 'number' | 'enum' | 'json';
+
+interface NodeFieldSpec {
+  key: string;
+  label: string;
+  kind: FieldKind;
+  options?: readonly string[];
+}
+
+/** 需要外部注入才能真跑的新节点类型（未接通时执行必定诚实失败）。 */
+const NEEDS_RESOLVER: readonly DslNodeType[] = [
+  'llm', 'knowledge_retrieval', 'question_classifier', 'parameter_extractor',
+  'http_request', 'tool', 'human_input',
+];
+
+const NEW_NODE_FIELDS: Partial<Record<DslNodeType, readonly NodeFieldSpec[]>> = {
+  llm: [
+    { key: 'model', label: '模型', kind: 'text' },
+    { key: 'prompt', label: '提示词', kind: 'multiline' },
+    { key: 'system', label: '系统提示（可选）', kind: 'text' },
+    { key: 'temperature', label: '温度（可选）', kind: 'number' },
+    { key: 'max_tokens', label: '最大 token（可选）', kind: 'number' },
+  ],
+  knowledge_retrieval: [
+    { key: 'query', label: '检索词', kind: 'text' },
+    { key: 'mode', label: '检索模式', kind: 'enum', options: KNOWLEDGE_MODES },
+    { key: 'top_k', label: 'top_k（可选）', kind: 'number' },
+    { key: 'document_ids', label: '限定文档 id（JSON 数组）', kind: 'json' },
+  ],
+  question_classifier: [
+    { key: 'model', label: '模型', kind: 'text' },
+    { key: 'classes', label: '候选分类（JSON 数组）', kind: 'json' },
+    { key: 'query', label: '待分类问题（可选）', kind: 'text' },
+  ],
+  parameter_extractor: [
+    { key: 'model', label: '模型', kind: 'text' },
+    { key: 'fields', label: '抽取字段（JSON 数组）', kind: 'json' },
+    { key: 'text', label: '待抽取文本（可选）', kind: 'text' },
+  ],
+  iteration: [
+    { key: 'subflow', label: '子流程（JSON）', kind: 'json' },
+    { key: 'item_field', label: '逐项字段（可选）', kind: 'text' },
+    { key: 'max_items', label: '最多展开条数（可选）', kind: 'number' },
+  ],
+  loop: [
+    { key: 'subflow', label: '子流程（JSON）', kind: 'json' },
+    { key: 'until_field', label: '终止判定字段（可选）', kind: 'text' },
+    { key: 'max_iterations', label: '最多迭代次数（可选）', kind: 'number' },
+  ],
+  variable_aggregator: [
+    { key: 'strategy', label: '汇聚策略', kind: 'enum', options: VARIABLE_AGGREGATOR_STRATEGIES },
+  ],
+  template: [{ key: 'template', label: '模板（{field} 插值）', kind: 'multiline' }],
+  http_request: [
+    { key: 'url', label: 'URL', kind: 'text' },
+    { key: 'method', label: '方法', kind: 'enum', options: HTTP_METHODS },
+    { key: 'allow_domains', label: '域名白名单（JSON 数组，可选）', kind: 'json' },
+  ],
+  code: [
+    { key: 'language', label: '语言', kind: 'enum', options: CODE_LANGUAGES },
+    { key: 'code', label: '代码', kind: 'multiline' },
+  ],
+  tool: [{ key: 'tool', label: '工具名', kind: 'text' }],
+  human_input: [{ key: 'prompt', label: '提问', kind: 'multiline' }],
+  trigger: [
+    { key: 'kind', label: '触发方式', kind: 'enum', options: TRIGGER_KINDS },
+    { key: 'config', label: '触发配置（JSON，可选）', kind: 'json' },
+  ],
+};
 
 export interface PropertyPanelProps {
   node: EditorNode | null;
@@ -395,6 +482,79 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                 </ParamField>
               </>
             )}
+          </>
+        )}
+
+        {NEW_NODE_FIELDS[node.type] && (
+          <>
+            {NEEDS_RESOLVER.includes(node.type) && (
+              <p className="muted" data-testid={`prop-${node.type}-resolver-note`}>
+                该节点需要外部解析器（模型 / 知识库 / 工具 / HTTP / 人工输入）；
+                未接通时执行会如实报失败，不会假装成功。
+              </p>
+            )}
+            {(NEW_NODE_FIELDS[node.type] ?? []).map((spec) => {
+              const path = `params.${spec.key}`;
+              const testId = `prop-${node.type}-${spec.key}`;
+              if (spec.kind === 'json') {
+                return (
+                  <JsonValueField
+                    key={spec.key}
+                    label={spec.label}
+                    value={p[spec.key]}
+                    onCommit={(v) => onChangeParams({ [spec.key]: v })}
+                    testId={testId}
+                    path={path}
+                    nodeId={node.id}
+                    diagnostics={diagnostics}
+                  />
+                );
+              }
+              return (
+                <ParamField
+                  key={spec.key}
+                  label={spec.label}
+                  path={path}
+                  nodeId={node.id}
+                  diagnostics={diagnostics}
+                >
+                  {spec.kind === 'enum' ? (
+                    <select
+                      value={String(p[spec.key] ?? spec.options?.[0] ?? '')}
+                      onChange={(e) => onChangeParams({ [spec.key]: e.target.value })}
+                      data-testid={testId}
+                    >
+                      {(spec.options ?? []).map((o) => (
+                        <option key={o} value={o}>{o}</option>
+                      ))}
+                    </select>
+                  ) : spec.kind === 'number' ? (
+                    <input
+                      type="number"
+                      value={p[spec.key] === undefined || p[spec.key] === null
+                        ? '' : String(p[spec.key])}
+                      onChange={(e) => onChangeParams({
+                        [spec.key]: e.target.value === '' ? undefined : Number(e.target.value),
+                      })}
+                      data-testid={testId}
+                    />
+                  ) : spec.kind === 'multiline' ? (
+                    <textarea
+                      rows={4}
+                      value={String(p[spec.key] ?? '')}
+                      onChange={(e) => onChangeParams({ [spec.key]: e.target.value })}
+                      data-testid={testId}
+                    />
+                  ) : (
+                    <input
+                      value={String(p[spec.key] ?? '')}
+                      onChange={(e) => onChangeParams({ [spec.key]: e.target.value })}
+                      data-testid={testId}
+                    />
+                  )}
+                </ParamField>
+              );
+            })}
           </>
         )}
 
