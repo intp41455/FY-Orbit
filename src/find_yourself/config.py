@@ -78,6 +78,13 @@ class Settings(BaseSettings):
     # confirm/manual 策略的事件永不自动续作；FY_RECOVERY_AUTORESUME=0 可整体关闭。
     recovery_autoresume: bool = True
 
+    # ---- 默认离线运行架构（A-离线优先-01/03）----
+    # 缺省 **True**：零配置首启就不打外网（断网可用；仅 LLM API 为唯一外部依赖，
+    # 且它默认关着）。不是「默认在线 + 可切离线」——那是另一件事。
+    # 语义与门的管辖范围见 `services/offline.py` 与 `docs/离线优先-默认离线运行架构-2026-10-07.md`；
+    # 显式 FY_OFFLINE_MODE=0 才允许远程调用（此时不再猜网络，成败由 provider 如实报）。
+    offline_mode: bool = True
+
     @model_validator(mode="after")
     def validate_security(self):
         if self.environment not in {"local", "production", "test"}:

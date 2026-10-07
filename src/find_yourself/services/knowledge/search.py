@@ -39,13 +39,14 @@ from sqlalchemy.orm import Session
 from ...db.kb_models import KBDocument, KBChunk
 from ..actor import Actor
 from ..errors import ValidationFailed
-from .embeddings import EmbeddingProvider, resolve_default_embedding
+from .embeddings import DEFAULT_EMBEDDING, EmbeddingProvider, create_embedding, resolve_default_embedding
 from .vectorstores import (
     VectorFilterUnsupported,
     VectorStore,
     create_vector_store,
 )
 from .vectorstores.base import VectorRecord
+from ..offline import is_offline
 
 DEFAULT_TOP_K = 8
 MAX_TOP_K = 50
@@ -390,10 +391,23 @@ class KnowledgeSearchService:
     def _resolve_vector_stack(
         self,
     ) -> tuple[VectorStore | None, EmbeddingProvider | None, list[str]]:
-        """组装（embedding, store）；任一环节失败 → (None/部分, warnings) 降级词法。"""
+        """组装（embedding, store）；任一环节失败 → (None/部分, warnings) 降级词法。
+
+        离线模式（``FY_OFFLINE_MODE`` 默认 True）下**强制**走本地 ``hash`` 嵌入：
+        远程 provider 在断网时必然失败，而 hash 嵌入是零依赖确定性实现，
+        配本地向量库即完整可检索——这条路上不碰任何外部服务。
+
+        走 ``create_embedding(DEFAULT_EMBEDDING)`` 而不是直接 ``HashingEmbedding()``：
+        注册表是嵌入层的唯一真源（名字/工厂/替换都归它管），绕过它会在
+        将来换实现时留下一个不被注册表覆盖的旁路。
+        """
         warnings: list[str] = []
         try:
-            embedding = resolve_default_embedding()
+            embedding = (
+                create_embedding(DEFAULT_EMBEDDING)
+                if is_offline()
+                else resolve_default_embedding()
+            )
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"embedding_setup_error:{type(exc).__name__}")
             return None, None, warnings
