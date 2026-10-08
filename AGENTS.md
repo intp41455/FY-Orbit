@@ -103,7 +103,9 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 - 自定义云盘接入与多端同步：研发中（当前仅本地）。
 - 企业模式审批「裁决 → 续跑」链路：仅显示挂起，尚未接线。
 - 插件市场 / 强沙箱 / 包签名 / 自动扫描：部分实现。
-- 桌面出包、真实云模型 key 联调、代码签名证书：需真实资源，未完成。
+- 桌面出包：发行构建链已可用（`deploy/build_release_package.py`，PyInstaller onedir + Vite + 完整性自检 verify.bat + SHA256SUMS），正式 Inno Setup 安装器脚本（`deploy/installer/FY-Orbit.iss`）已落地但需安装 Inno Setup 6 才能出 setup.exe。
+- 代码签名证书：尚未采购，签名脚本 `deploy/sign_windows.ps1` 在未配置证书时如实跳过；拿到证书后无需改链即可签名。
+- 真实云模型 key 联调：未完成（需要真实外部凭证）。
 - 在线网页版为**静态前端预览**，完整功能需在本地运行后端服务。
 
 ---
@@ -112,4 +114,4 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 
 - 不得提交 `.env`、凭证、`personal_history`、`credentials` 等敏感内容（见 `.gitignore`）。
 - 公开发布前核对：许可证文件、依赖许可证清单、宣传文案与实际能力是否一致。
-- **仓库当前缺少顶层 `LICENSE` 文件**，而 README 与落地页声称 Apache-2.0 —— 发布前必须补 `LICENSE` 与 `NOTICE`，或同步更正许可声明。
+- 许可证语义：顶层 `LICENSE` 为 BSL 1.1（变更日 4 年后自动转 Apache-2.0），README 徽章、正文与末尾声明必须与它保持一致，不得再出现「全文 Apache-2.0」的表述。

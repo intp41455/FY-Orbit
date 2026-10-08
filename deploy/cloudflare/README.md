@@ -40,9 +40,10 @@ npx wrangler pages deploy dist --project-name fy-orbit
    SPA 请用 `deploy-app-frontend.bat` 部署。
 
 2. **别在别的目录副本上改落地页。**
-   仓库根目录的 `landing-page-2026-10-06.html` 是给应用本地路由
-   （`/landing.html`）与 45j 站点用的同一份页面，内容与本目录保持一致。
-   改的时候两处要一起改，或者只改这里再复制过去。
+   旧版本根目录有一份 `landing-page-2026-10-06.html`（临时页，已于 02e1008 删除），
+   本目录 `dist/index.html` 已是线上 `fy-orbit.pages.dev` 的**唯一权威来源**。
+   发行包里的 `landing.html` 由 `deploy/build_release_package.py` 直接从这里取，
+   不需要也不允许另存副本。改时只改这里。
 
 ## 关联项目
 

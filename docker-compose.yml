@@ -1,5 +1,24 @@
 version: '3.8'
 
+# 诚实说明：本 Compose 配的是「单机可用的本地部署形态」，而不是生产形态。
+#
+# 此前这里写 FY_ENVIRONMENT=production，但 FY_ENVIRONMENT=production 要求
+# （见 src/find_yourself/config.py 的 validate_security）：
+#   - HTTPS（FY_PUBLIC_URL 必须 https://）
+#   - 禁用本地 token
+#   - PostgreSQL（FY_DATABASE_URL 必须 postgresql*）
+#   - Temporal（FY_TEMPORAL_ADDRESS 必填）
+#   - 私有对象存储（FY_S3_ENDPOINT 必填）
+#   - OIDC（FY_OIDC_* 必填）
+# 而本文件恰恰配的是 SQLite + HTTP + 本地 token，二者直接冲突，
+# 容器在配置校验阶段必然 fail-fast。这里改为真实可启动的形态。
+#
+# 要走真正的生产形态，请自备：
+#   * 反向代理/网关终止 HTTPS 并转发
+#   * PostgreSQL + Temporal + S3/兼容对象存储
+#   * OIDC issuer/client/owner_sub
+# 然后设置 FY_ENVIRONMENT=production 并逐项满足上述校验。
+
 services:
   fy-orbit:
     build:
@@ -11,16 +30,19 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - FY_ENVIRONMENT=production
+      # 单机形态：local + SQLite + HTTP + 本地 token，是代码真能启动的组合
+      - FY_ENVIRONMENT=local
       - FY_DATABASE_URL=sqlite:////app/.runtime/find-yourself.db
-      - FY_SESSION_SECRET=fy_prod_session_secret_key_change_in_production_123456
-      - FY_LOCAL_TOKEN=fy-deploy-token
+      - FY_SESSION_SECRET=${FY_SESSION_SECRET:?必须通过环境变量提供 >=32 字符的随机串}
+      - FY_LOCAL_TOKEN=${FY_LOCAL_TOKEN:?请显式设置本地访问令牌}
       - FY_PUBLIC_URL=http://localhost:8000
       - FY_STATIC_DIR=/app/web/dist
+      - FY_OFFLINE_MODE=1
+      - FY_LOCAL_ONLY=1
     volumes:
       - fy_data:/app/.runtime
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
       interval: 15s
       timeout: 5s
       retries: 3

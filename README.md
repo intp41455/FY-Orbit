@@ -13,9 +13,9 @@
   <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">
     <img src="https://img.shields.io/badge/Release-Windows%20v1.0.0-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
   </a>
-  <img src="https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python&logoColor=white" alt="Python Version" />
+  <img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue?logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/React-18.3-61dafb?logo=react&logoColor=white" alt="React" />
+  <img src="https://img.shields.io/badge/React-19.3-61dafb?logo=react&logoColor=white" alt="React" />
   <img src="https://img.shields.io/badge/PixiJS-8.0-e72264?logo=pixijs&logoColor=white" alt="PixiJS" />
   <img src="https://img.shields.io/badge/Three.js-WebGL%203D-black?logo=three.js&logoColor=white" alt="Three.js" />
   <img src="https://img.shields.io/badge/Deployment-Local--First%20%7C%20Air--Gapped-0078D4" alt="Local First" />
@@ -174,7 +174,7 @@ For commercial licensing, contact: `intp41455@gmail.com`
 1. 直接点击从 GitHub Release 下载官方 Windows 绿色独立安装包：  
    👉 **[下载 FY-Orbit-Windows-v1.0.0.zip ](https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip)**
 2. 解压到任意文件夹；
-3. 双击运行 `FY-Orbit.bat`（或 `start.bat`），系统将自动拉起服务并以独立原生应用窗口启动工作台，零配置开箱即跑！
+3. 双击运行 `FY-Orbit.bat`（或 `start.bat`）：启动器会先校验发行包完整性（SHA-256），通过后拉起本地后端服务，并在系统默认浏览器 / Edge App 独立窗口（无地址栏、无标签页）中打开工作台——零配置开箱即跑。
 
 ### 方式二：项目主页
 
@@ -185,7 +185,7 @@ For commercial licensing, contact: `intp41455@gmail.com`
 ### 方式三：从源码运行
 
 ```bash
-# 1. 准备 Python 3.11+ 虚拟环境
+# 1. 准备 Python 3.12/3.13 虚拟环境
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
@@ -219,5 +219,5 @@ python run.py --port 8000
 
 ## 📖 开源许可证
 
-本项目基于 [Apache License 2.0](LICENSE) 协议开源。
+本项目基于 [Business Source License 1.1](LICENSE) 开源（源码公开、限制商用；个人学习/研究/评估/非商业二次开发免费，变更日 4 年后自动转为 Apache License 2.0）。
 

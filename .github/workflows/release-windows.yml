@@ -1,0 +1,68 @@
+name: Release Windows
+
+# 可复现发行链：**tag 上构建**。
+# 与 release.yml（Docker，当前 push:false 只构不推）并列，这个工作流把 Windows
+# 绿色发行包作为 GitHub Release 的附件交付——产物由同一个 tag、同一条命令
+# （deploy/build_release_package.py）生成，任何人 checkout 同名 tag 都能复现。
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows Green Package & Upload to Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        timeout-minutes: 60
+    steps:
+      - name: Checkout the tagged commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: 'web/package-lock.json'
+
+      - name: Install backend deps (PyInstaller extra)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[desktop]"
+
+      - name: Build web production assets
+        run: |
+          npm --prefix web ci || npm --prefix web install
+          npm --prefix web run build
+
+      - name: Build PyInstaller sidecar
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File desktop\sidecar\build.ps1 -SkipWebBuild
+
+      - name: Assemble deterministic release package
+        run: python deploy/build_release_package.py --keep-stage
+
+      - name: Build Inno Setup installer (when ISCC is available)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File deploy\installer\build_installer.ps1
+
+      - name: Upload ZIP + SHA256 sidecar to the Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            FY-Orbit-Windows-v*.zip
+            FY-Orbit-Windows-v*.zip.sha256
+            deploy/installer/output/FY-Orbit-Setup-v*.exe
+          generate_release_notes: true
