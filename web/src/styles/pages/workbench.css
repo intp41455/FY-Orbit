@@ -1172,22 +1172,6 @@
   }
   .cdbg-col { display: flex; flex-direction: column; gap: var(--ui-s-3); min-width: 0; min-height: 0; }
 
-  /* 窄屏：三栏先并为「配置 + 对话」一行，trace 落到第二行整宽，
-     而不是三栏硬挤导致每栏都读不下去。 */
-  @media (max-width: 1180px) {
-    .cdbg-grid {
-      grid-template-columns: minmax(260px, 1fr) minmax(0, 1.4fr);
-      min-height: 0;
-    }
-    .cdbg-col:last-child { grid-column: 1 / -1; }
-  }
-  @media (max-width: 760px) {
-    .cdbg-grid { grid-template-columns: minmax(0, 1fr); }
-    .cdbg-col:last-child { grid-column: auto; }
-    /* 单栏时取消等高强制，交给内容自然高度，避免大片空白。 */
-    .cdbg-grid { align-items: start; }
-    .cdbg-messages { max-height: none; }
-  }
 
 
 .cdbg-panel {
@@ -1305,6 +1289,7 @@
   .cdbg-grid { grid-template-columns: 300px minmax(0, 1fr) 280px; }
 }
 
+
 /* 1200–1400：右区收右侧抽屉（DOM 保留，data-mode="drawer"），不占中区宽度 */
 @media (max-width: 1400px) and (min-width: 1201px) {
   .wb-zone-right[data-mode='drawer'] {
@@ -1328,7 +1313,15 @@
 }
 
 @media (max-width: 1200px) {
-  .cdbg-grid { grid-template-columns: 280px minmax(0, 1fr); }
+  /* 两栏：配置 + 对话。原先 §1180px 与 §1200px 两条各写一份、且 §1180px 写在更早位置，
+     在 1180–1200px 区间被后者反压；再往上 §1400px 的三列规则又会反压 §1180px ——
+     同一选择器在四个断点上互相覆盖，调一下窗口宽度中间组件就消失。
+     现在只保留这一处两栏定义，断点链 1400 → 1200 → 860 单调递减，行为与书写顺序无关。 */
+  .cdbg-grid {
+    grid-template-columns: 280px minmax(0, 1.4fr);
+    min-height: 0;
+  }
+  .cdbg-col:last-child,
   .cdbg-col--tools { grid-column: 1 / -1; }
 }
 
@@ -1349,6 +1342,9 @@
 
 @media (max-width: 860px) {
   .cdbg-grid { grid-template-columns: minmax(0, 1fr); }
+  /* 单栏时取消等高强制，交给内容自然高度，避免大片空白。 */
+  .cdbg-grid { align-items: start; }
+  .cdbg-col:last-child { grid-column: auto; }
   .cdbg-messages { max-height: none; }
   .appr-payload { grid-template-columns: minmax(0, 1fr); }
   .wb-verify-label { min-width: 0; }
@@ -1391,7 +1387,13 @@
   gap: var(--ui-s-2);
   padding: 0 var(--ui-s-4);
   height: 48px;
-  border-bottom: 1px solid var(--ui-line-2);
+  /* 补上边框与不透明底色：面板是 overflow:hidden 的 flex 容器，
+     入场动画用 transform 上移，输入栏顶部会被裁掉，导致
+     「蓝色搜索框上边界消失」。上边框+实底让它在动画中始终有完整边界。 */
+  border: 1px solid var(--ui-line-2);
+  border-bottom-width: 1px;
+  background: var(--ui-glass-3);
+  border-radius: var(--ui-r-1) var(--ui-r-1) 0 0;
   flex-shrink: 0;
 }
 .wb-cp-input {
@@ -1584,4 +1586,37 @@
 }
 .diff-view .diff-toolbar .row.gap {
   flex: 0 0 auto;
+}
+
+/* ---------------------------------------------------------------- 工作区选择器
+   label 文字与控件同行：字段名靠左固定宽度，控件占剩余空间。
+   窄屏（<= 560px）折回上下堆叠，避免输入框被压到不可用宽度。 */
+.ws-picker-form { gap: var(--ui-s-2); }
+
+.ws-picker-field {
+  display: grid;
+  grid-template-columns: 7.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ui-s-2);
+}
+
+.ws-picker-field__label {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ws-picker-field > input,
+.ws-picker-field > select {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .ws-picker-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--ui-s-1);
+  }
 }

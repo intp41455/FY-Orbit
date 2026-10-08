@@ -70,14 +70,19 @@ export function WorkspacePicker({ workspaces, selectedId, onSelect, onChanged }:
       </div>
 
       {showForm && (
-        <div className="field-stack" style={{ marginTop: '0.6rem' }}>
-          <label>项目名称
+        <div className="field-stack ws-picker-form" style={{ marginTop: '0.6rem' }}>
+          {/* label 文字在左、控件在右同一行：原先 label 包住 input 上下堆叠，
+              字段名与输入框被拉得很远，且「项目名称」这类短标签右侧留白过大。 */}
+          <label className="ws-picker-field">
+            <span className="ws-picker-field__label">项目名称</span>
             <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="my-project" />
           </label>
-          <label>授权根目录（绝对路径）
+          <label className="ws-picker-field">
+            <span className="ws-picker-field__label">授权根目录</span>
             <input value={root} onChange={(e) => setRoot(e.target.value)} placeholder="C:\\Users\\me\\code\\my-project" />
           </label>
-          <label>模式
+          <label className="ws-picker-field">
+            <span className="ws-picker-field__label">模式</span>
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
               <option value="local">local</option>
               <option value="cloud">cloud</option>

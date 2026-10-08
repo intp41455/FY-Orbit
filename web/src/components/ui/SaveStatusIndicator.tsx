@@ -111,15 +111,21 @@ export function SaveStatusIndicator({
               <dd>{formatBytes(freeBytes)}</dd>
             </div>
           </dl>
-          <p className="ui-save-status__timeline">
+          <div className="ui-save-status__timeline">
             保存时间轴：
-            {history.length === 0
-              ? '尚无记录'
-              : history
-                .slice(-5)
-                .map((r) => `${formatRelative(r.at, clock)}·${r.label}`)
-                .join('　|　')}
-          </p>
+            {history.length === 0 ? (
+              '尚无记录'
+            ) : (
+              <ul className="ui-save-status__timeline-list">
+                {history.slice(-5).map((r) => (
+                  <li key={`${r.at}-${r.label}`}>
+                    <span>{formatRelative(r.at, clock)}</span>
+                    <span>{r.label}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       ) : null}
 

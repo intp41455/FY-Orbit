@@ -80,12 +80,32 @@
   color: var(--ui-ink-3);
 }
 
+/* 详情面板：脱离胶囊内联布局，改为锚定浮层。
+   之前用 `flex: 1 1 100%` 在 pill 圆角容器内换行展开，导致
+   ①内容被胶囊圆角裁切 ②长路径/时间轴把胶囊撑得溢出边界
+   ③面板推开下方正文，整页被顶乱。
+   现在改为 absolute 浮层 + max-width 限宽 + 内部可滚。 */
+.ui-save-status {
+  position: relative;
+}
+
 .ui-save-status__panel {
-  flex: 1 1 100%;
-  min-width: 0;
-  border-top: 1px solid var(--ui-line-1);
-  padding-top: var(--ui-s-2);
-  margin-top: var(--ui-s-1);
+  position: absolute;
+  top: calc(100% + var(--ui-s-2));
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  min-width: 260px;
+  max-width: min(420px, calc(100vw - 2 * var(--ui-s-4)));
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: var(--ui-s-3);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-3);
+  box-shadow: 0 8px 24px -8px rgb(0 0 0 / 28%);
 }
 
 .ui-save-status__facts {
@@ -109,6 +129,35 @@
   font-size: var(--ui-fs-xs);
   color: var(--ui-ink-3);
   word-break: break-word;
+}
+
+/* 时间轴逐条换行显示：先前 5 条用全角竖线连成一行，
+   在窄面板里会撑出可横向滚动的长行。 */
+.ui-save-status__timeline-list {
+  margin: var(--ui-s-1) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ui-save-status__timeline-list li {
+  display: flex;
+  gap: var(--ui-s-2);
+  align-items: baseline;
+  min-width: 0;
+}
+
+.ui-save-status__timeline-list li span:first-child {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-ink-4);
+}
+
+.ui-save-status__timeline-list li span:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .ui-save-status__error {
