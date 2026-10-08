@@ -1572,13 +1572,36 @@
   padding-top: 0.6rem;
   border-top: 1px solid color-mix(in srgb, var(--ui-sky-300, #a8d4f0) 45%, transparent);
 }
-.diff-view .diff-toolbar > label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 1 1 220px;
+/* 字段行改为「标签 | 输入框」同一行。
+   原先 label 是 column 方向（文字在上、输入框在下），且外层
+   styles.css 里有 .diff-toolbar { max-width: 34rem } —— 工具条被压在
+   半幅宽度内、右侧留出一大片空白。现在标签固定宽度靠左，输入框
+   与按钮占满剩余空间并靠右。 */
+.diff-view .diff-toolbar__field {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--ui-s-2);
+  flex: 1 1 260px;
   min-width: 0;
   font-size: 0.78rem;
+}
+
+.diff-view .diff-toolbar__label {
+  white-space: nowrap;
+  color: var(--ui-ink-3);
+}
+
+.diff-view .diff-toolbar {
+  /* 覆盖 styles.css 的 max-width: 34rem：那条把工具条压在半幅宽度内，
+     右侧空出一大片。现在占满整行，靠 grid 分配标签/输入框/按钮。 */
+  max-width: none;
+}
+
+.diff-view .diff-toolbar__action {
+  flex: 0 0 auto;
+  align-self: center;
+  justify-self: end;
 }
 .diff-view .diff-toolbar input {
   width: 100%;

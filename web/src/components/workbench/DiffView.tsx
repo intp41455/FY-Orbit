@@ -70,12 +70,16 @@ export function DiffView({ initialWorkspace = '' }: { initialWorkspace?: string 
     <div className="card diff-view" data-testid="diff-view">
       <div className="row spread">
         <strong>Diff 可视化（两次 commit 对照）</strong>
-        <span className="muted small">新增绿 · 删除红 · 修改琥珀标记</span>
+        <span className="muted small">图例：新增行 / 删除行 / 成对修改标记</span>
       </div>
 
-      <div className="field-stack diff-toolbar">
-        <label>
-          git 工作区名称
+      {/* 工具条改为「标签 | 输入框 | 按钮」一行三段：
+          原先 label 包住 input 上下堆叠、按钮再独占一行，输入框被拉到
+          整行宽度、右侧大片留白。现在标签在输入框左侧同一行，
+          输入框与按钮都靠右（justify-self: end），窄屏折回堆叠。 */}
+      <div className="diff-toolbar">
+        <label className="diff-toolbar__field">
+          <span className="diff-toolbar__label">git 工作区名称</span>
           <input
             value={workspace}
             onChange={(e) => setWorkspace(e.target.value)}
@@ -83,11 +87,9 @@ export function DiffView({ initialWorkspace = '' }: { initialWorkspace?: string 
             data-testid="diff-workspace-input"
           />
         </label>
-        <div className="row gap">
-          <button className="small" onClick={() => void loadCommits()} disabled={loading}>
-            {loading ? '加载中…' : '加载提交历史'}
-          </button>
-        </div>
+        <button className="small diff-toolbar__action" onClick={() => void loadCommits()} disabled={loading}>
+          {loading ? '加载中…' : '加载提交历史'}
+        </button>
         {commits.length > 0 && (
           <>
             <label>
