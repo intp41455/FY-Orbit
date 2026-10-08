@@ -706,6 +706,7 @@ class ObservabilityService:
             )
         return {
             "items": items,
+            "agents": items,  # 前端兼容：读 agents 键
             "total": len(items),
             "limit": limit,
             "team_filter": team_id,

@@ -392,6 +392,41 @@ class AgentDispatchService:
 
 
 # 进程内单例；归档目录可用 env 打开（evidence 归档用）。
+
+def _ensure_builtin_tools() -> None:
+    """确保 echo/add 工具已注册到 tool_registry。
+
+    前端下拉框里的 echo/add 是硬编码的，但后端 tool_registry 里没有注册，
+    导致派发子 Agent 时 100% 报 422。这里在模块加载时自动注册。
+    """
+    for name, desc, params in [
+        ("echo", "回显输入参数，用于测试连通性", {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "要回显的文本"}},
+            "required": ["text"],
+        }),
+        ("add", "两数相加", {
+            "type": "object",
+            "properties": {
+                "a": {"type": "number", "description": "第一个数"},
+                "b": {"type": "number", "description": "第二个数"},
+            },
+            "required": ["a", "b"],
+        }),
+    ]:
+        try:
+            tool_registry.register(
+                name=name,
+                description=desc,
+                parameters=params,
+                entry={"type": "builtin", "executor": name},
+            )
+        except Exception:
+            pass  # 已注册则跳过
+
+
+_ensure_builtin_tools()
+
 agent_dispatch = AgentDispatchService(
     archive_dir=os.environ.get("FY_DISPATCH_ARCHIVE_DIR") or None
 )

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from ..deps import csrf_protected, get_actor
 from ...services.tool_registry import tool_registry
+from ...services.mcp_dynamic import mcp_dynamic
 
 router = APIRouter(prefix="/api/tools", tags=["tool-calling"])
 
@@ -76,3 +77,43 @@ def call_history(actor: object = Depends(get_actor),
 def invoke_tool(tool_name: str, body: ToolInvokeBody,
                 actor: object = Depends(csrf_protected)) -> dict:
     return tool_registry.invoke(tool_name, body.arguments)
+
+# --- MCP Server 动态管理（P0-1） ---
+
+class McpServerRegisterBody(BaseModel):
+    key: str = Field(min_length=1, max_length=64, pattern="^[a-z][a-z0-9_-]*$")
+    url: str = Field(min_length=1, max_length=500)
+    headers: dict[str, str] | None = None
+    trust_level: str = Field(default="remote", pattern="^(trusted|remote|untrusted)$")
+    reconnect: bool = True
+
+
+@router.post("/mcp/servers")
+def register_mcp_server(body: McpServerRegisterBody, actor: object = Depends(csrf_protected)) -> dict:
+    """注册/更新一个 MCP Server，并自动发现并注册其工具。"""
+    return mcp_dynamic.register_server(
+        key=body.key,
+        url=body.url,
+        headers=body.headers,
+        trust_level=body.trust_level,
+        reconnect=body.reconnect,
+    )
+
+
+@router.delete("/mcp/servers/{key}")
+def unregister_mcp_server(key: str, actor: object = Depends(csrf_protected)) -> dict:
+    """移除一个 MCP Server 及其工具。"""
+    return mcp_dynamic.unregister_server(key)
+
+
+@router.get("/mcp/servers")
+def list_mcp_servers(actor: object = Depends(get_actor)) -> dict:
+    """列出所有已注册的 MCP Server。"""
+    return mcp_dynamic.list_servers()
+
+
+@router.get("/mcp/servers/{key}/tools")
+def get_mcp_server_tools(key: str, actor: object = Depends(get_actor)) -> dict:
+    """列出某 MCP Server 的工具。"""
+    return mcp_dynamic.get_server_tools(key)
+

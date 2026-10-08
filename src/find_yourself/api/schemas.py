@@ -47,6 +47,7 @@ class MessageCreate(Strict):
     role: Literal["user", "assistant"] = "user"
     client_message_id: str = Field(min_length=1, max_length=120)
     source: str | None = Field(default=None, max_length=200)
+    mode: Literal["listen", "explore", "research", "engineering", "creative"] = "listen"
 
 
 # --- tasks ------------------------------------------------------------------
