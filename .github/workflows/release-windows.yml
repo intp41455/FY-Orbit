@@ -16,6 +16,9 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: write
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Checkout the tagged commit
         uses: actions/checkout@v4
