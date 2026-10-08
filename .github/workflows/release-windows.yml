@@ -1,9 +1,5 @@
 name: Release Windows
 
-# 可复现发行链：**tag 上构建**。
-# 与 release.yml（Docker，当前 push:false 只构不推）并列，这个工作流把 Windows
-# 绿色发行包作为 GitHub Release 的附件交付——产物由同一个 tag、同一条命令
-# （deploy/build_release_package.py）生成，任何人 checkout 同名 tag 都能复现。
 on:
   push:
     tags:
