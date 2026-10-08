@@ -45,10 +45,28 @@ export function OfflineBadge() {
 export function errorMessage(e: unknown): string {
   if (e instanceof NetworkError) return e.message;
   const status = (e as { status?: number }).status;
+  const code = (e as { body?: { code?: string }; code?: string }).body?.code
+    ?? (e as { code?: string }).code;
   const msg = (e as { body?: { message?: string }; message?: string }).body?.message
     ?? (e as Error).message;
-  if (status === 401 || status === 403) return 'You are not authorized for this resource.';
-  return msg ?? 'Unexpected error.';
+
+  // 401 与 403 语义不同：401 是未登录/会话过期，403 是已登录但被拒
+  // （CSRF 缺失、权限不足、配额超限……）。合并成一句话会丢掉真相，
+  // 曾经让「CSRF token 还没拿到就 POST」表现为「点了没反应」。
+  // 这里只为「后端没给 message」时提供按状态码区分的中文兜底，
+  // 后端给了 message 就原样透出。
+  if (!msg || msg === 'Unexpected error.') {
+    if (status === 401) return '尚未登录或会话已过期，请重新登录后再试。';
+    if (status === 403) {
+      if (code === 'csrf' || code === 'csrf_failed' || code === 'invalid_csrf') {
+        return '安全令牌缺失或已过期，正在刷新页面，请稍后重试。';
+      }
+      return '当前账号没有权限执行该操作。';
+    }
+    if (status === 409) return '内容已在别处被修改，请刷新后重试。';
+    if (status === 422) return '提交的内容不符合要求，请检查后重试。';
+  }
+  return msg ?? '出现未知错误。';
 }
 
 // Lightweight async loader hook — calls the async fn on mount and exposes

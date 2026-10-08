@@ -152,7 +152,9 @@ describe('BusPanel', () => {
     render(<BusPanel room="team-other" members={MEMBERS} />);
 
     const alert = await screen.findByRole('alert');
-    expect(alert.textContent).toMatch(/not authorized/i);
+    // 后端给了 message 就应原样透出（中文），不再被改写成英文通用串 ——
+    // 这条用例守的是「错误不被吞掉」，不是某个英文字面量。
+    expect(alert.textContent).toContain('无权访问');
     expect(screen.queryByText('这个房间还没有消息。')).not.toBeInTheDocument();
   });
 

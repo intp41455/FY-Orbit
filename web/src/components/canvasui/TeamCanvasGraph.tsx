@@ -168,7 +168,13 @@ export function TeamCanvasGraph({
   // ---- 平移 ----
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
-    if ((e.target as HTMLElement).closest('[data-cv-node]')) return;
+    const hit = e.target as HTMLElement;
+    // 节点本身不触发平移。
+    if (hit.closest('[data-cv-node]')) return;
+    // 缩放条渲染在平移层内部，必须一起排除：否则在按钮上按下会被判为
+    // 拖动画布并 setPointerCapture，按钮的 click 被吞掉 → 缩小/放大/复位
+    // 三个按钮点了完全没反应。
+    if (hit.closest('.cv-bottombar')) return;
     wrapRef.current?.setPointerCapture?.(e.pointerId);
     dragRef.current = { mode: 'pan', start: { x: e.clientX, y: e.clientY }, orig: pan };
     setPanning(true);

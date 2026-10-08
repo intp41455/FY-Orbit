@@ -757,7 +757,10 @@
 .cv-page .team-toolbar,
 .cv-legacy-root .team-toolbar {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  /* 210px 而非148px：148px 下「工程交付 · 规划 / 编码 / 审查」这类
+     选项被截断，右侧又正好空着一大片。四个字段 + 按钮在1440 宽下
+     能排进一行还留有余量。 */
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: var(--ui-s-2) var(--ui-s-3);
   align-items: end;
 }
@@ -780,11 +783,19 @@
 .cv-legacy-root .team-toolbar input {
   width: 100%;
   min-width: 0;
+  /* 之前 padding 只给了 var(--ui-s-2)，长选项文字视觉上贴边像被遮。 */
+  padding-inline: var(--ui-s-3);
+  text-overflow: ellipsis;
 }
 .cv-page .team-toolbar > button.ui-btn,
 .cv-legacy-root .team-toolbar > button.ui-btn {
-  grid-column: 1 / -1;
+  /* 不再 grid-column: 1/-1 独占整行：用户要求按钮就跟在「团队名称」
+     框后面同一行。min-height 与 nowrap 保证按钮文字不被遮盖。 */
   justify-self: start;
+  align-self: end;
+  min-height: 36px;
+  white-space: nowrap;
+  padding-inline: var(--ui-s-3);
 }
 /* 网格布局自己处理换行，弹性占位没有意义，隐藏但保留 DOM 以免动 JSX。 */
 .cv-page .team-toolbar .cv-spacer,
