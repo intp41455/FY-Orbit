@@ -73,9 +73,21 @@ def process_alive(pid: int) -> bool:
             return False
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+    # POSIX：已被 SIGKILL 但父进程尚未 wait() 的子进程处于**僵尸态**，
+    # 此时 os.kill(pid, 0) 依然成功 —— 会被误判为「仍存活」，导致
+    # kill_process_tree 的 reaped 验证永远为 False（Linux CI 实证）。
+    # 僵尸不占用 CPU/内存，只占一个表项，语义上应视为已回收。
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as fh:
+            # 格式：pid (comm) state ...；comm 可能含空格/括号，故取最后一个 ')' 之后。
+            fields = fh.read().rsplit(b")", 1)[-1].split()
+        if fields and fields[0] == b"Z":
+            return False
+    except OSError:
+        pass
+    return True
 
 
 def kill_process_tree(pid: int) -> dict[str, Any]:

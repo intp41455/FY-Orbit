@@ -16,6 +16,7 @@ Rules from ``18_工程代码工作台与主协调Agent全流程实施规格.md``
 from __future__ import annotations
 
 import http.client
+import os
 import socket
 from typing import Any
 import uuid
@@ -81,6 +82,11 @@ class PreviewService:
             raise Conflict(f"Port {port} is already in use on loopback")
 
         import subprocess
+        # S-1（POSIX）：独立会话/进程组，否则 stop 时 killpg 会被
+        # `pgid != os.getpgrp()` 守卫拦掉，只杀得掉直接子进程，端口不释放。
+        popen_kw: dict[str, object] = {}
+        if os.name != "nt":
+            popen_kw["start_new_session"] = True
         proc = subprocess.Popen(
             [str(c) for c in command],
             cwd=str(cwd),
@@ -88,6 +94,7 @@ class PreviewService:
             stderr=subprocess.STDOUT,
             text=True,
             env=None,
+            **popen_kw,
         )
 
         rec = PreviewSessionRecord(

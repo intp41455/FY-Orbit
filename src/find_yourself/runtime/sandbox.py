@@ -410,6 +410,14 @@ class IsolatedScriptRunner:
         # S-1: use Popen so we hold the PID and can kill the whole tree.
         proc: Optional[subprocess.Popen] = None
         try:
+            popen_kw: dict[str, Any] = {}
+            # S-1（POSIX）：必须在**独立会话/进程组**里启动，否则子进程与父进程
+            # 共享 pgid → kill_process_tree 里的 `pgid != os.getpgrp()` 守卫会
+            # 放弃 killpg、退化成只 kill 直接子进程，孙进程（如 subprocess.Popen
+            # 再起的进程）会存活，超时杀树形同虚设。Windows 无此概念，走
+            # taskkill /T 分支。
+            if os.name != "nt":
+                popen_kw["start_new_session"] = True
             proc = subprocess.Popen(
                 [sys.executable, str(target_script)],
                 cwd=str(run_dir),
@@ -427,6 +435,7 @@ class IsolatedScriptRunner:
                 #    如实上报 False，不假装限额已生效。
                 # 若将来要换成 cgroup/Job Object，删掉 preexec_fn 即可。
                 preexec_fn=preexec,  # noqa: PLW1509
+                **popen_kw,
             )
             try:
                 out, err = proc.communicate(timeout=timeout_sec)
