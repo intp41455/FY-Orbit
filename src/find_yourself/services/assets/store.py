@@ -53,6 +53,24 @@ MAGIC_BYTES = {
 }
 MAX_MAGIC_LEN = max(len(m) for magics in MAGIC_BYTES.values() for m in magics)
 
+# `mimetypes.guess_type` 的返回值跨平台不一致（同一扩展名在 Linux 上得到
+# audio/x-wav、Windows 上得到 audio/wav），故先归一到 MAGIC_BYTES 的规范名，
+# 否则 Linux CI 上 .wav 会被判成「不支持的 MIME 类型」。
+_MIME_ALIASES = {
+    "audio/x-wav": "audio/wav",
+    "audio/wave": "audio/wav",
+    "audio/vnd.wave": "audio/wav",
+    "audio/mp3": "audio/mpeg",
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+}
+
+
+def _normalize_mime(mime: str) -> str:
+    """把平台相关的 MIME 别名归一到规范名。"""
+    key = mime.strip().lower()
+    return _MIME_ALIASES.get(key, key)
+
 
 def _validate_magic(data: bytes, declared_mime: str) -> None:
     """校验文件头魔数与声明的 MIME 类型是否一致。
@@ -69,7 +87,7 @@ def _validate_magic(data: bytes, declared_mime: str) -> None:
         return
 
     head = data[:MAX_MAGIC_LEN]
-    expected_magics = MAGIC_BYTES.get(declared_mime.lower())
+    expected_magics = MAGIC_BYTES.get(_normalize_mime(declared_mime))
     if not expected_magics:
         # 未知类型：拒绝上传，避免未知格式被浏览器当 HTML 解析
         raise ValidationFailed("unknown_mime_type", f"不支持的 MIME 类型：{declared_mime}")
