@@ -151,15 +151,62 @@ class AvatarProfileService:
         row.fingerprint = avatar["fingerprint"]
         row.params_fingerprint = avatar["params_fingerprint"]
         row.engine_version = avatar["engine_version"]
-        # 重新生成 ⇒ 之前的自评与「专属小人」标记失效（评的是旧角色）
+        # 重新生成 ⇒ 之前的自评失效（评的是旧角色）。
+        #
+        # 注意：这里**刻意不清空** is_house_avatar。用户诉求是「首次进入可 DIY，
+        # 确认之后全局锁定同一个角色」。若在此把专属标记清掉，微调一次就会让
+        # 小屋 /house 返回 404，前端回退默认小人 —— 用户看到的就是「刚调完角色，
+        # 进小屋却换了另一个人」，正是本次要修的缺陷。
+        #
+        # 身份语义（身份仍需重新确认，因为长得不一样了）：
+        #   - 首次生成：state=draft，小屋本就取不到（草稿不进场景），行为不变。
+        #   - 已确认后微调：继续 is_house_avatar=True，小屋立刻换成新长相，
+        #     无需二次确认；state 退回 draft 表示「这次改动还没被用户点头认可」。
         row.likeness_score = None
         row.likeness_note = ""
-        row.is_house_avatar = False
         row.version = (row.version or 0) + 1
         row.updated_at = utcnow()
         self.db.commit()
         self.db.refresh(row)
         return self._render(row)
+
+    def preview(
+        self,
+        actor: Actor,
+        *,
+        overrides: Any,
+        portrait: Any = None,
+    ) -> dict[str, Any]:
+        """微调实时预览：**只重算，不落库**。
+
+        给角色工坊的微调面板用：用户每改一个下拉框就调一次，拿回新的像素包
+        立刻画到预览台。不写库、不改 state、不动 is_house_avatar、不加 version。
+
+        portrait 省略时以已存档案的画像为底稿（正常路径）；显式传入则以传入
+        值为准并与已存 overrides 合并（预览「同时改画像 + 改外观」的效果）。
+        """
+        owner_id = self._require_owner(actor)
+        row = self._row(owner_id)
+        if row is None:
+            raise NotFound("avatar_not_found", "No pixel avatar generated yet")
+
+        base_portrait = row.portrait if portrait is None else _clean_portrait(portrait)
+        merged = dict(row.overrides or {})
+        merged.update(_clean_overrides(overrides))
+        avatar = ag.build_avatar(base_portrait, overrides=merged or None)
+        return {
+            "params": avatar["params"],
+            "layers": avatar["layers"],
+            "matrix": avatar["matrix"],
+            "palette": avatar["palette"],
+            "char_keys": ag.CHAR_KEYS,
+            "char_palette": avatar["char_palette"],
+            "width": avatar["width"],
+            "height": avatar["height"],
+            "param_space_size": avatar["param_space_size"],
+            "tuned": avatar["tuned"],
+            "preview_only": True,
+        }
 
     def confirm(
         self,
@@ -238,13 +285,25 @@ class AvatarProfileService:
         return card
 
     def house_avatar(self, actor: Actor) -> dict[str, Any]:
-        """小屋消费：只返回**已确认且已设为专属**的那一份，否则 404。
+        """小屋消费：只返回**已设为专属**的那一份，否则 404。
 
-        小屋场景据此回退到自己的默认小人，绝不把草稿渲染进场景。
+        「专属」标记一旦由用户确认过就长期保留，后续微调不会撤销它 ——
+        否则用户每调一次外观，进小屋就换回默认小人（本次修复的缺陷）。
+        小屋场景在 404 时回退到自己的默认小人，绝不凭空造一个角色。
         """
         owner_id = self._require_owner(actor)
         row = self._row(owner_id)
-        if row is None or row.state != "confirmed" or not row.is_house_avatar:
+        # 准入只看 is_house_avatar —— 它是「用户确认过并要求投放小屋」的**唯一**标记
+        # （全仓库仅 confirm() 会把它置 True，首次 generate 恒为 False）。
+        #
+        # 为什么不再强求 state == "confirmed"：用户确认角色后再微调外观时，
+        # generate() 会把 state 退回 draft（含义是「本次改动尚未被点头认可」）。
+        # 若强求 confirmed，用户微调一次小屋就空了，进屋看到默认小人 ——
+        # 正是「刚调完角色却换了个人」的缺陷。state 表达「本次改动是否已认可」，
+        # is_house_avatar 表达「这个身份是否投放小屋」，两者语义不同，不该混用。
+        #
+        # 红线未被削弱：从未确认过的角色 is_house_avatar 恒为 False，照样 404。
+        if row is None or not row.is_house_avatar:
             raise NotFound("avatar_no_house_avatar", "No confirmed house avatar set")
         avatar = ag.build_avatar(row.portrait, overrides=row.overrides or None)
         return {

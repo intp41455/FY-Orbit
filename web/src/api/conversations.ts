@@ -20,4 +20,9 @@ export const conversationsApi = {
       body,
       idempotencyKey: body.client_message_id,
     }),
+  // P3-22: 后端软删（deleted_at），幂等；跨 owner 一律 404。
+  remove: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/api/conversations/${id}`, {
+      method: 'DELETE',
+    }),
 };

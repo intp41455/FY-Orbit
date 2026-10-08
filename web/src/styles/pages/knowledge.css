@@ -1347,3 +1347,34 @@
     transform: none;
   }
 }
+
+/* -----------------------------------------------------------------------
+ * ima 通道提示：未接入横幅可收起。
+ * 收起后仍如实显示「未接入」，只把长说明折起来 —— 不制造已就绪的错觉。
+ * --------------------------------------------------------------------- */
+.ima-notice-body {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ui-s-2, 0.5rem);
+}
+
+.ima-notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ima-notice-body > .ui-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ima-notice-collapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-s-2, 0.5rem);
+  flex-wrap: wrap;
+}
+
+.ima-notice-collapsed > .ui-btn {
+  white-space: nowrap;
+}

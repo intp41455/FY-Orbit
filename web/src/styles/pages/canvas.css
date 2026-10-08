@@ -751,6 +751,47 @@
   padding: 0 var(--ui-s-2);
 }
 
+/* 团队工具条排版修正（用户反馈：字段挤在一起、排版乱）。
+   flex-wrap 只保证「不重叠」，不保证「整齐」—— 字段无宽度约束时折返点
+   随窗口宽度漂移。改用 auto-fit 网格：每格等宽、按钮独占一行尾。 */
+.cv-page .team-toolbar,
+.cv-legacy-root .team-toolbar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: var(--ui-s-2) var(--ui-s-3);
+  align-items: end;
+}
+.cv-page .team-toolbar .cv-field,
+.cv-legacy-root .team-toolbar .cv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.cv-page .team-toolbar .cv-field > label,
+.cv-legacy-root .team-toolbar .cv-field > label {
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-3);
+  white-space: nowrap;
+}
+.cv-page .team-toolbar select,
+.cv-page .team-toolbar input,
+.cv-legacy-root .team-toolbar select,
+.cv-legacy-root .team-toolbar input {
+  width: 100%;
+  min-width: 0;
+}
+.cv-page .team-toolbar > button.ui-btn,
+.cv-legacy-root .team-toolbar > button.ui-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+/* 网格布局自己处理换行，弹性占位没有意义，隐藏但保留 DOM 以免动 JSX。 */
+.cv-page .team-toolbar .cv-spacer,
+.cv-legacy-root .team-toolbar .cv-spacer {
+  display: none;
+}
+
 .cv-legacy-root .team-grid {
   position: relative;
   display: block;

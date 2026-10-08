@@ -22,13 +22,56 @@ const APP_SCALE_BASE_WIDTH = 1440;
 const APP_SCALE_MIN = 0.8;
 const APP_SCALE_MAX = 1.1;
 
+/* ---------------- 全局字号缩放（Ctrl+滚轮 / Ctrl+±） ----------------
+   与窗口等比缩放是两件事：
+     - applyAppScale 管「窗口多宽 → 整体多大」，随窗口宽度自动变；
+     - 字号缩放管「字多大」，由用户手动调，记住选择，刷新后保持。
+   两者都作用在 #root 的 zoom 上，所以必须相乘而不是互相覆盖。 */
+const FONT_SCALE_STORAGE_KEY = 'fy.fontScale';
+const FONT_SCALE_MIN = 0.85;
+const FONT_SCALE_MAX = 1.3;
+const FONT_SCALE_STEP = 0.05;
+
+function readFontScale(): number {
+  try {
+    const raw = window.localStorage.getItem(FONT_SCALE_STORAGE_KEY);
+    if (!raw) return 1;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return 1;
+    return Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, n));
+  } catch {
+    return 1;
+  }
+}
+
+let fontScale = readFontScale();
+
+function applyFontScale(): void {
+  try {
+    window.localStorage.setItem(FONT_SCALE_STORAGE_KEY, String(fontScale));
+  } catch {
+    // 隐私模式等场景写不进去：缩放仍然生效，只是不持久化。
+  }
+  applyAppScale();
+}
+
 function applyAppScale(): void {
   const root = document.getElementById('root');
   if (!root) return;
   const ratio = window.innerWidth / APP_SCALE_BASE_WIDTH;
   const scale = Math.min(APP_SCALE_MAX, Math.max(APP_SCALE_MIN, ratio));
   // 保留 3 位小数，避免连续 resize 时产生无意义的极小抖动。
-  root.style.zoom = scale.toFixed(3);
+  root.style.zoom = (scale * fontScale).toFixed(3);
+}
+
+function nudgeFontScale(delta: number): void {
+  const next = Math.min(FONT_SCALE_MAX, Math.max(FONT_SCALE_MIN, fontScale + delta));
+  // 已经到边界时不再变化，避免用户以为按键坏了。
+  if (next === fontScale) return;
+  fontScale = next;
+  applyFontScale();
+  // 把当前字号报出来，让「按加减到底生效了」有据可查。
+  window.dispatchEvent(new CustomEvent('fy:fontscale', { detail: { scale: fontScale } }));
 }
 
 // Register the service worker. It only precaches the static shell (vite.config
@@ -44,6 +87,38 @@ let appScaleTimer = 0;
 window.addEventListener('resize', () => {
   window.clearTimeout(appScaleTimer);
   appScaleTimer = window.setTimeout(applyAppScale, 200);
+});
+
+/* 快捷键：Ctrl/Cmd + 滚轮 或 Ctrl/Cmd + 「+」「-」「0」。
+   输入框聚焦时不拦截 —— 那是用户正在打字，Ctrl+滚轮应该是浏览器原生行为。 */
+function isEditableTarget(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  return t.closest('input, textarea, select, [contenteditable="true"]') !== null;
+}
+
+window.addEventListener('wheel', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  if (isEditableTarget(e.target)) return;
+  e.preventDefault();
+  nudgeFontScale(e.deltaY < 0 ? FONT_SCALE_STEP : -FONT_SCALE_STEP);
+}, { passive: false });
+
+window.addEventListener('keydown', (e) => {
+  if (!e.ctrlKey && !e.metaKey) return;
+  if (isEditableTarget(e.target)) return;
+  const k = e.key;
+  if (k === '+' || k === '=' || k === 'Add') {
+    e.preventDefault();
+    nudgeFontScale(FONT_SCALE_STEP);
+  } else if (k === '-' || k === '_' || k === 'Subtract') {
+    e.preventDefault();
+    nudgeFontScale(-FONT_SCALE_STEP);
+  } else if (k === '0') {
+    e.preventDefault();
+    fontScale = 1;
+    applyFontScale();
+    window.dispatchEvent(new CustomEvent('fy:fontscale', { detail: { scale: fontScale } }));
+  }
 });
 
 createRoot(container).render(

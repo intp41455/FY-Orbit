@@ -1551,3 +1551,37 @@
   .appr-step[data-tone='running'] .appr-step-dot { animation: none; }
   .cdbg-linked { animation: none; }
 }
+
+
+/* 「差异审查」标题与工具条的关系：原来标题独占一行、下面紧跟 label + 输入框，
+   视觉上像两件事。用户要求把 git 工作区名称并到标题后面，并把工具条与标题
+   用一条分隔线区隔开，避免挤在一起。 */
+.diff-view > .row.spread {
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.diff-view .diff-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid color-mix(in srgb, var(--ui-sky-300, #a8d4f0) 45%, transparent);
+}
+.diff-view .diff-toolbar > label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 220px;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+.diff-view .diff-toolbar input {
+  width: 100%;
+  min-width: 0;
+}
+.diff-view .diff-toolbar .row.gap {
+  flex: 0 0 auto;
+}

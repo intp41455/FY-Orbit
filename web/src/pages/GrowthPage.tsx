@@ -3,7 +3,6 @@ import { memoryApi } from '../api/memory';
 import type { MemoryHit } from '../api/types';
 import { errorMessage } from '../components/ui';
 import { LineIcon } from '../components/ui/LineIcon';
-import { ChatIcon } from '../components/chatui/ChatIcons';
 import { EmptyState } from '../components/chatui/EmptyState';
 import { Skeleton } from '../components/chatui/Skeleton';
 import { StatusTag } from '../components/chatui/StatusTag';
@@ -52,15 +51,7 @@ export function GrowthPage() {
           <h2>成长记录</h2>
           <span className="ui-hint">
             检索由服务端在授权范围内完成；假设/玄学/精神分析解释均带证据边界，不作为确定事实画像。
-          </span>
-        </div>
-
-        {/* 阶段视图公告（后端事实：/api/memory 只有检索命中，没有阶段数据源） */}
-        <div className="growth-notice" role="status">
-          <ChatIcon name="clock" size={18} title="等待后端阶段数据源" />
-          <span className="growth-notice-body">
-            <strong>阶段视图未接入：</strong>
-            阶段视图需要后端阶段数据源（当前 /api/memory 仅提供检索命中），本轮未接入。以下为已授权正式记忆的检索结果。
+            阶段视图尚未接入：它需要后端阶段数据源，当前 /api/memory 只提供检索命中。
           </span>
         </div>
 

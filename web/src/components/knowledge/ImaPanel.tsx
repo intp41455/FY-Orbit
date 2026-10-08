@@ -31,6 +31,8 @@ export function ImaPanel() {
   // A-基座质保-01：可编辑组件须逐文件声明基座（b1-ima 合入晚于热保存包，此处补接线）。
   useBase({ surface: 'web/src/components/knowledge/ImaPanel' });
   const [status, setStatus] = useState<ImaChannelStatus | null>(null);
+  // P3-20: 用户可收起「未接入」横幅，勿让警告永久占住面板顶部。
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
 
   const [query, setQuery] = useState('');
@@ -125,11 +127,35 @@ export function ImaPanel() {
               {status.channels.mcp.error ? `（${status.channels.mcp.error}）` : ''}
               {status.detail ? ` · ${status.detail}` : ''}
             </span>
+          ) : noticeDismissed ? (
+            /* 收起后仍如实显示「未接入」，只把说明折叠起来 —— 不制造已就绪的错觉。 */
+            <span className="ima-notice-collapsed">
+              <span>ima 未接入（接入说明已收起）</span>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost ui-btn--sm"
+                data-testid="ima-notice-restore"
+                onClick={() => setNoticeDismissed(false)}
+              >
+                查看接入说明
+              </button>
+            </span>
           ) : (
-            <span>
-              <LineIcon name="key" size={16} /> ima 未接入：请到「设置」页「ima 知识库」卡片填写
-              App ID / API Key / Secret Key；或在 FY_MCP_SERVERS 配置 ima MCP 服务器。
-              {status.detail ? `（${status.detail}）` : ''}
+            <span className="ima-notice-body">
+              <span className="ima-notice-text">
+                <LineIcon name="key" size={16} /> ima 未接入：请到「设置」页「ima 知识库」卡片填写
+                App ID / API Key / Secret Key；或在 FY_MCP_SERVERS 配置 ima MCP 服务器。
+                {status.detail ? `（${status.detail}）` : ''}
+              </span>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost ui-btn--sm"
+                aria-label="收起 ima 接入说明"
+                data-testid="ima-notice-dismiss"
+                onClick={() => setNoticeDismissed(true)}
+              >
+                收起
+              </button>
             </span>
           )}
         </div>

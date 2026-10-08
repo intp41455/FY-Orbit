@@ -25,11 +25,28 @@ router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
 def _serialize_conversation(c: Conversation) -> dict:
+    # P1-3: 补充 message_count，前端历史列表直接显示条数
+    from sqlalchemy import select, func
+    from ...db.models import Message
+    # 这里只能同步查，列表接口改用子查询更高效；先在序列化里加字段
+    message_count = 0
+    try:
+        # 避免循环导入，延迟导入
+        from ...db.session import get_session
+        session = get_session()
+        message_count = session.execute(
+            select(func.count(Message.id)).where(
+                Message.conversation_id == c.id, Message.deleted_at.is_(None)
+            )
+        ).scalar() or 0
+    except Exception:
+        pass
     return {
         "id": c.id, "title": c.title, "domain": c.domain, "mode": c.mode,
         "created_at": c.created_at.isoformat() if c.created_at else None,
         "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         "version": c.version,
+        "message_count": message_count,
     }
 
 
@@ -58,12 +75,27 @@ async def create_conversation(body: ConversationCreate,
 @router.get("")
 async def list_conversations(actor: Actor = Depends(get_actor),
                              svc: Services = Depends(get_services)) -> list[dict]:
+    from sqlalchemy import select, func, outerjoin
+    from ...db.models import Message
+    # 子查询：每个 conversation 的 message_count
+    subq = (
+        select(Message.conversation_id, func.count(Message.id).label("msg_cnt"))
+        .where(Message.deleted_at.is_(None))
+        .group_by(Message.conversation_id)
+        .subquery()
+    )
     rows = svc.session.execute(
-        select(Conversation).where(
-            Conversation.owner_id == actor.owner_id, Conversation.deleted_at.is_(None)
-        ).order_by(Conversation.updated_at.desc())
-    ).scalars()
-    return [_serialize_conversation(c) for c in rows]
+        select(Conversation, subq.c.msg_cnt)
+        .outerjoin(subq, Conversation.id == subq.c.conversation_id)
+        .where(Conversation.owner_id == actor.owner_id, Conversation.deleted_at.is_(None))
+        .order_by(Conversation.updated_at.desc())
+    ).all()
+    result = []
+    for c, cnt in rows:
+        d = _serialize_conversation(c)
+        d["message_count"] = cnt or 0
+        result.append(d)
+    return result
 
 
 def _get_owned(svc: Services, actor: Actor, conversation_id: str) -> Conversation:
@@ -77,8 +109,31 @@ def _get_owned(svc: Services, actor: Actor, conversation_id: str) -> Conversatio
 @router.get("/{conversation_id}")
 async def get_conversation(conversation_id: str, actor: Actor = Depends(get_actor),
                            svc: Services = Depends(get_services)) -> dict:
+    from sqlalchemy import select, func
+    from ...db.models import Message
     c = _get_owned(svc, actor, conversation_id)
-    return _serialize_conversation(c)
+    d = _serialize_conversation(c)
+    # 单条查 message_count（避免序列化里再查一次 DB）
+    cnt = svc.session.execute(
+        select(func.count(Message.id)).where(
+            Message.conversation_id == c.id, Message.deleted_at.is_(None)
+        )
+    ).scalar() or 0
+    d["message_count"] = cnt
+    return d
+
+
+@router.delete("/{conversation_id}")
+async def delete_conversation(conversation_id: str,
+                             actor: Actor = Depends(csrf_protected),
+                             svc: Services = Depends(get_services)) -> dict:
+    """软删除会话。幂等：已删除的会话再删一次同样返回 200。"""
+    c = _get_owned(svc, actor, conversation_id)
+    if c.deleted_at is None:
+        c.deleted_at = utcnow()
+        svc.audit.append(actor, "conversation.deleted", c.id, {})
+        svc.session.commit()
+    return {"id": c.id, "deleted": True}
 
 
 @router.post("/{conversation_id}/messages")

@@ -71,6 +71,8 @@ FY-Orbit-Windows-v1.0.0.zip
 
 # 本地发行打包产物（由 deploy/build_release_package.py 生成，不入库）
 /dist-package/
+# release/ 是本地绿色包组装目录（含 exe 与 _internal 全部依赖），体积大且不可审查 —— 严禁入库。
+/release/
 /.build_stage*/
 /FY-Orbit.bat
 /landing.html

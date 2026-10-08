@@ -41,8 +41,15 @@ export class ApiError extends Error {
 // CSRF token issued by the backend (in /auth/me and dev-token responses).
 // Writes echo it back via X-CSRF-Token. HttpOnly session cookie is never read.
 let csrfToken: string | null = null;
+function updateCsrfMeta(t: string | null): void {
+  if (typeof document === "undefined") return;
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta) meta.setAttribute("content", t ?? "");
+}
+
 export function setCsrfToken(t: string | null): void {
   csrfToken = t;
+  updateCsrfMeta(t);
 }
 
 /** P1-19: 当前 CSRF token（模块态优先，meta 兜底），供非 client.ts 的请求方复用。 */

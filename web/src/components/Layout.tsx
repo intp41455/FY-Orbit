@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from './ErrorBoundary';
 import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
@@ -78,20 +78,112 @@ const NAV: NavItem[] = [
   { to: '/knowledge', label: '知识库', sub: '本地文档 RAG · 适配器', kbd: null, icon: 'knowledge', space: 'personal' },
 ];
 
+/**
+ * 路由 → 空间。**唯一事实源**：空间是路由的纯函数，不另存本地状态。
+ *
+ * 匹配用路径边界（全等或 `to + '/'` 前缀）而不是裸 `startsWith`：
+ * 裸前缀会让 `/chat` 吃掉 `/chat-debug`，此前只是靠 NAV 里 workbench 段
+ * 排在 personal 段之前才碰巧正确 —— 顺序一变就静默串空间。
+ */
 function spaceForPath(pathname: string): Space {
-  const hit = NAV.find((n) => pathname.startsWith(n.to));
+  const hit = NAV.find((n) => pathname === n.to || pathname.startsWith(`${n.to}/`));
   return hit?.space ?? 'workbench';
+}
+
+/** 切换空间时落到该空间的入口页：让「空间」与「路由」始终指同一件事。 */
+const SPACE_HOME: Record<Space, string> = {
+  workbench: '/workbench',
+  personal: '/chat',
+};
+
+/** 全局字号缩放控件（侧栏底部，常驻可见但低调）。
+ *
+ * 与 main.tsx 的 applyFontScale 分工：那边负责「真正改 CSS」，这边只负责
+ * 「显示当前值 + 提供按钮」。两者通过 window 自定义事件通信 —— 缩放是全局
+ * CSS 关注点，不该为了显示一个百分比就让整棵 React 树重渲染。 */
+function FontScaleIndicator() {
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    const onScale = (e: Event) => {
+      const detail = (e as CustomEvent<{ scale: number }>).detail;
+      if (detail && Number.isFinite(detail.scale)) setScale(detail.scale);
+    };
+    // 挂载时主动问一次当前值（main.tsx 已经把上次的选择写进 localStorage 并应用了）。
+    try {
+      const raw = window.localStorage.getItem('fy.fontScale');
+      const n = raw ? Number(raw) : 1;
+      setScale(Number.isFinite(n) ? n : 1);
+    } catch {
+      /* 隐私模式读不到就保持 100%，不影响功能 */
+    }
+    window.addEventListener('fy:fontscale', onScale);
+    return () => window.removeEventListener('fy:fontscale', onScale);
+  }, []);
+
+  const pct = Math.round(scale * 100);
+
+  return (
+    <div
+      className="font-scale-indicator"
+      data-testid="font-scale-indicator"
+      title="Ctrl+滚轮 或 Ctrl+加号/减号 调整全局字号；Ctrl+0 复位"
+    >
+      <button
+        type="button"
+        className="font-scale-btn"
+        data-testid="font-scale-minus"
+        aria-label="字号调小"
+        onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '-', ctrlKey: true, bubbles: true }))}
+      >
+        −
+      </button>
+      <button
+        type="button"
+        className="font-scale-value"
+        data-testid="font-scale-value"
+        aria-label="复位到 100%"
+        onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '0', ctrlKey: true, bubbles: true }))}
+      >
+        {pct}%
+      </button>
+      <button
+        type="button"
+        className="font-scale-btn"
+        data-testid="font-scale-plus"
+        aria-label="字号调大"
+        onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: '+', ctrlKey: true, bubbles: true }))}
+      >
+        +
+      </button>
+      <span className="font-scale-hint">Ctrl+滚轮调字号</span>
+    </div>
+  );
 }
 
 export function Layout() {
   const { owner, logout } = useAuth();
   const location = useLocation();
-  const derived = spaceForPath(location.pathname);
-  const [space, setSpace] = useState<Space>(derived);
+  const navigate = useNavigate();
 
-  // The active space follows the route so a deep link lands in the right rail,
-  // while the manual switch stays available within a space.
-  useEffect(() => { setSpace(derived); }, [derived]);
+  // 空间 = 路由的纯函数。这里曾同时持有 `space` state 与路由派生的 `derived`，
+  // 手动切换只改 state 而不改路由，导致 effect（依赖 derived）不重跑，
+  // 侧栏分组与实际所在页面长期不一致。改为单事实源后该失效模式消失。
+  const space = spaceForPath(location.pathname);
+
+  // 切空间 = 导航到该空间入口页。已在该空间时是 no-op，
+  // 免得从 `/history` 点一下「个人空间」就被拽回 `/chat`。
+  function switchSpace(next: Space) {
+    if (next === space) return;
+    navigate(SPACE_HOME[next]);
+  }
+
+  // P3-21: owner 展示名。优先真实昵称；只有 sub（游客哈希）时脱敏。
+  const ownerSub = owner?.sub ?? '';
+  const ownerLabel = owner?.name?.trim()
+    || (ownerSub ? `${ownerSub.slice(0, 8)}…` : '')
+    || '本地访客';
+  const ownerLabelFull = owner?.name?.trim() || ownerSub || '本地访客';
 
   const items = NAV.filter((n) => n.space === space);
 
@@ -115,7 +207,7 @@ export function Layout() {
             type="button"
             className={space === 'workbench' ? 'active' : ''}
             aria-pressed={space === 'workbench'}
-            onClick={() => setSpace('workbench')}
+            onClick={() => switchSpace('workbench')}
           >
             <LineIcon name="workbench" size={16} /> 工作台空间
           </button>
@@ -123,7 +215,7 @@ export function Layout() {
             type="button"
             className={space === 'personal' ? 'active' : ''}
             aria-pressed={space === 'personal'}
-            onClick={() => setSpace('personal')}
+            onClick={() => switchSpace('personal')}
           >
             <LineIcon name="avatar" size={16} /> 个人空间
           </button>
@@ -174,9 +266,19 @@ export function Layout() {
             <span style={{ color: 'var(--amber)', fontWeight: 700 }}>查看</span>
           </NavLink>
           <div className="identity" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{owner?.name ?? owner?.sub ?? 'owner'}</span>
+            {/* P3-21: 不裸露完整 owner id。游客会话 sub 是 32 位哈希，
+                直接铺在侧栏既占版面又泄漏内部标识；这里只露前 8 位，
+                完整值留在 title / aria-label 里供需要时查看。 */}
+            <span
+              title={ownerLabelFull}
+              aria-label={ownerLabelFull}
+              data-testid="sidebar-owner"
+            >
+              {ownerLabel}
+            </span>
             <NotificationBell />
           </div>
+          <FontScaleIndicator />
           <button type="button" className="small ghost" onClick={() => void logout()}>
             登出
           </button>

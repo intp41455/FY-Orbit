@@ -166,6 +166,7 @@ const PET_DEPTH_OFFSET = 6 / 152;
 
 /** 边界渐隐的虚拟宽度（人物靠近世界缘时两侧变暗，给出「到头了」的视觉收束）。 */
 const EDGE_FADE_VW = 64;
+const WORLD_TILE_ROWS = 8;
 
 const BUBBLE_MS = 3600;
 
@@ -684,7 +685,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   /** 键盘控制与输入系统（支持 WASD、方向键、空格跳跃、S 长按下蹲） */
   const input = createCabinInput({
-    target: (options.host as HTMLElement | null | undefined) ?? (typeof window !== 'undefined' ? window : null),
+    target: typeof window !== 'undefined' ? window : null,
   });
 
   /** 跳跃物理参数与实时状态 */
@@ -941,7 +942,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
     let idx = 0;
     const rowOffset = 50; // SPAWN_TILE y 居中
-    for (let r = 0; r < 8; r++) {
+    for (let r = 0; r < WORLD_TILE_ROWS; r++) {
       const worldRow = (rowOffset - 4 + r + MAP_ROWS) % MAP_ROWS;
       for (let c = bounds.col0; c <= bounds.col1 && c < MAP_COLS; c++) {
         if (idx >= tileSprites.length) break;
@@ -1702,7 +1703,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
     // 纵深相机 Y 轴视差上下偏移
     farLayer.position.y = Math.round(groundY - FAR_VH * worldScale - cameraY * PARALLAX.far * worldScale);
-    groundLayer.position.y = Math.max(0, Math.round(groundY - 100 * worldScale - cameraY * PARALLAX.ground * worldScale));
+    groundLayer.position.y = Math.round(groundY - 100 * worldScale - cameraY * PARALLAX.ground * worldScale);
 
     // 中景/近景分段拼接位移（包含 Y 轴纵深平移）
     syncSegments(midSegs, midSegNeed, PARALLAX.mid, MID_VH, Math.round(groundY - MID_VH * worldScale - cameraY * PARALLAX.mid * worldScale));

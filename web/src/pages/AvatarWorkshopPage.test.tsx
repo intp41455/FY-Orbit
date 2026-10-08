@@ -211,8 +211,13 @@ describe('W11 · 微调与还原', () => {
     await waitFor(() => expect(api.generateAvatar).toHaveBeenCalledTimes(1));
 
     api.generateAvatar.mockClear();
-    const outfit = screen.getByDisplayValue('ponytail');
-    expect(outfit).toBeInTheDocument();
+    // 显示中文标签，但 <option value> 仍是后端枚举原值 —— 契约不因中文化而变。
+    const hairStyle = screen.getByLabelText('发型') as HTMLSelectElement;
+    expect(hairStyle).toBeInTheDocument();
+    const ponytailOption = screen.getByRole('option', { name: '马尾' }) as HTMLOptionElement;
+    expect(ponytailOption.value).toBe('ponytail');
+    // 选项文字不得再裸露原始英文枚举
+    expect(screen.queryByRole('option', { name: 'ponytail' })).toBeNull();
   });
 
   it('「还原 AI 底稿」= 传空 overrides（丢掉全部微调）', async () => {

@@ -20,6 +20,7 @@ import {
   createShareCard,
   generateAvatar,
   getMyAvatar,
+  previewAvatar,
   isAvatarNotFound,
   type AvatarProfile,
   type AvatarTuning,
@@ -35,6 +36,7 @@ import {
   walkFrames,
 } from '../components/avatar/avatarPixels';
 import type { AvatarAnimation } from '../components/avatar/AvatarPreview';
+import type { AvatarPreviewPackage } from '../api/avatar';
 import '../styles/pages/cabin.css';
 import {
   AssetWall,
@@ -57,16 +59,29 @@ interface PortraitField {
   label: string;
   hint: string;
   placeholder: string;
+  maxLength?: number;
+}
+
+// P1-5: MBTI 16 合法值白名单（大小写不敏感）
+const VALID_MBTI = new Set([
+  'ISTJ', 'ISFJ', 'INFJ', 'INTJ',
+  'ISTP', 'ISFP', 'INFP', 'INTP',
+  'ESTP', 'ESFP', 'ENFP', 'ENTP',
+  'ESTJ', 'ESFJ', 'ENFJ', 'ENTJ',
+]);
+
+function isValidMBTI(v: string): boolean {
+  return VALID_MBTI.has(v.toUpperCase());
 }
 
 const PORTRAIT_FIELDS: PortraitField[] = [
-  { key: 'mbti', label: 'MBTI 性格', hint: '16 型之一，来自测评模块', placeholder: 'INFJ' },
+  { key: 'mbti', label: 'MBTI 性格', hint: '16 型之一，来自测评模块', placeholder: 'INFJ', maxLength: 4 },
   { key: 'bazi_element', label: '八字五行', hint: '五行主导：木火土金水', placeholder: '木' },
   { key: 'bazi_day_master', label: '日主天干', hint: '甲乙丙丙戊己庚辛壬癸', placeholder: '甲' },
   { key: 'sun_sign', label: '太阳星座', hint: '决定头饰', placeholder: 'leo' },
   { key: 'moon_sign', label: '月亮星座', hint: '决定披风', placeholder: 'pisces' },
   { key: 'asc_sign', label: '上升星座', hint: '决定随身挂饰', placeholder: 'libra' },
-  { key: 'name', label: '姓名 / 昵称', hint: '只用于分享卡显示', placeholder: '你的昵称' },
+  { key: 'name', label: '姓名 / 昵称', hint: '只用于分享卡显示（最多 32 字）', placeholder: '你的昵称', maxLength: 32 },
   { key: 'mood', label: '近期情绪', hint: 'sunny / calm / melancholy', placeholder: 'calm' },
 ];
 
@@ -166,6 +181,15 @@ const HAIR_STYLE_LABELS: Record<string, string> = {
 };
 
 /** 每个微调项的枚举原值 → 中文含义（页面提示行用，不改选项本身）。 */
+/** 取某个微调项的中文标签；缺表项时回退原值，不让界面显示 undefined。 */
+function tuningLabel(key: keyof typeof TUNING_OPTIONS, value: string): string {
+  if (key === 'hair_tone') return HAIR_TONE_LABELS[value]?.label ?? value;
+  if (key === 'outfit') return OUTFIT_LABELS[value] ?? value;
+  if (key === 'mouth') return MOUTH_LABELS[value] ?? value;
+  if (key === 'eye') return EYE_LABELS[value] ?? value;
+  return HAIR_STYLE_LABELS[value] ?? value;
+}
+
 const TUNING_GLOSS: Record<keyof typeof TUNING_OPTIONS, (v: string) => string> = {
   hair_style: (v) => HAIR_STYLE_LABELS[v] ?? v,
   hair_tone: (v) => HAIR_TONE_LABELS[v]?.label ?? v,
@@ -197,6 +221,9 @@ export function AvatarWorkshopPage() {
   const [tuning, setTuning] = useState<AvatarTuning>({});
   const [hueShift, setHueShift] = useState(0);
   const [animation, setAnimation] = useState<AvatarAnimation>('idle');
+  // 微调实时预览包（后端 /api/avatar/preview 重算，不落库）。
+  // 有了它，改下拉框能立刻看到新长相，不必点「应用微调」。
+  const [previewPkg, setPreviewPkg] = useState<AvatarPreviewPackage | null>(null);
 
   // --- 自评 ---
   const [score, setScore] = useState(7);
@@ -278,6 +305,7 @@ export function AvatarWorkshopPage() {
     try {
       const res = await generateAvatar(payloadPortrait, currentTuning());
       setProfile(res);
+      setPreviewPkg(null);   // 已落库，预览包作废，界面显示的就是生效后的角色
       setPhase('ready');
       setCard(null);
     } catch (e) {
@@ -390,14 +418,49 @@ export function AvatarWorkshopPage() {
   }, [card]);
 
   /* ---------------- 派生动画帧 ---------------- */
+  // 微调中且后端已回传预览包时用预览包，否则用已保存的档案。
+  // 这两个来源的 layers 结构完全一致，AvatarStage 无需区分。
+  const previewLayers = previewPkg?.layers ?? profile?.avatar.layers ?? null;
+
   const idle = useMemo(
-    () => (profile ? idleFrames(profile.avatar.layers) : null),
-    [profile],
+    () => (previewLayers ? idleFrames(previewLayers) : null),
+    [previewLayers],
   );
   const walk = useMemo(
-    () => (profile ? walkFrames(profile.avatar.layers) : null),
-    [profile],
+    () => (previewLayers ? walkFrames(previewLayers) : null),
+    [previewLayers],
   );
+
+  /* ---------------- 微调 → 实时预览（不落库） ---------------- */
+  // 每次微调变化都重算一次像素。用 ref 记住最新回调，避免把 tuning 对象
+  // 放进依赖数组导致每敲一个字符都重建 effect。
+  const tuningRef = useRef({ tuning, hueShift });
+  tuningRef.current = { tuning, hueShift };
+  const portraitRef = useRef(payloadPortrait);
+  portraitRef.current = payloadPortrait;
+
+  useEffect(() => {
+    if (!profile) return;            // 没有底稿就没法预览
+    let alive = true;
+    // 微调为空说明用户还没动过，预览台显示的就是已保存档案，没必要请求。
+    if (Object.keys(tuning).length === 0 && hueShift === 0) {
+      setPreviewPkg(null);
+      return;
+    }
+    const next: AvatarTuning = { ...tuning };
+    if (hueShift !== 0) next.hue_shift = hueShift;
+    void (async () => {
+      try {
+        const pkg = await previewAvatar(next);
+        if (alive) setPreviewPkg(pkg);
+      } catch {
+        // 预览失败不打扰用户：预览是辅助，底稿还在，
+        // 用户点「应用微调」仍会拿到后端 422/400 的真实提示。
+        if (alive) setPreviewPkg(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [profile, tuning, hueShift]);
 
   const avatar = profile?.avatar ?? null;
   const advisory = profile?.advisory ?? null;
@@ -455,31 +518,41 @@ export function AvatarWorkshopPage() {
               并在预览里标注「待补画像」—— 不会假装那是你的真实数据。
             </p>
 
-            {PORTRAIT_FIELDS.map((f) => (
-              <div className="cabin-ni-field" key={f.key}>
-                <label className="cabin-ni-field-label" style={{ cursor: 'pointer' }}>
+            {PORTRAIT_FIELDS.map((f) => {
+              const isMBTI = f.key === 'mbti';
+              const mbtiValue = (draft.mbti ?? '').trim().toUpperCase();
+              const mbtiInvalid = isMBTI && mbtiValue && !isValidMBTI(mbtiValue);
+              return (
+                <div className="cabin-ni-field" key={f.key}>
+                  <label className="cabin-ni-field-label" style={{ cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(consent[f.key])}
+                      style={{ width: 16, height: 16, accentColor: 'var(--ui-sky-600)' }}
+                      onChange={(e) =>
+                        setConsent((c) => ({ ...c, [f.key]: e.target.checked }))
+                      }
+                    />
+                    <span>{f.label}</span>
+                  </label>
                   <input
-                    type="checkbox"
-                    checked={Boolean(consent[f.key])}
-                    style={{ width: 16, height: 16, accentColor: 'var(--ui-sky-600)' }}
-                    onChange={(e) =>
-                      setConsent((c) => ({ ...c, [f.key]: e.target.checked }))
-                    }
+                    type="text"
+                    className={`ui-input${mbtiInvalid ? ' ui-input--error' : ''}`}
+                    placeholder={f.placeholder}
+                    disabled={!consent[f.key]}
+                    aria-label={f.label}
+                    value={draft[f.key] ?? ''}
+                    maxLength={f.maxLength}
+                    onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
+                    onBlur={isMBTI ? () => {} : undefined}
                   />
-                  <span>{f.label}</span>
-                </label>
-                <input
-                  type="text"
-                  className="ui-input"
-                  placeholder={f.placeholder}
-                  disabled={!consent[f.key]}
-                  aria-label={f.label}
-                  value={draft[f.key] ?? ''}
-                  onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
-                />
-                <span className="cabin-ni-field-hint">{f.hint}</span>
-              </div>
-            ))}
+                  <span className="cabin-ni-field-hint">
+                    {f.hint}{f.maxLength ? `（${(draft[f.key] ?? '').length}/${f.maxLength}）` : ''}
+                    {mbtiInvalid && ' · 非 16 型合法值，生成时将按中性默认处理'}
+                  </span>
+                </div>
+              );
+            })}
 
             <div className="cabin-ni-avatar-two">
               <label className="cabin-ni-field">
@@ -577,13 +650,20 @@ export function AvatarWorkshopPage() {
                 <MetaList
                   rows={[
                     { label: '参数空间', value: `${avatar.param_space_size.toLocaleString()} 种组合` },
-                    { label: '呈现短码', value: (profile?.params_fingerprint ?? '—').slice(0, 8) },
-                    { label: '底稿短码', value: (profile?.fingerprint ?? '—').slice(0, 8) },
                     { label: '色板', value: `${Object.keys(avatar.palette).length} 色` },
                     { label: '状态', value: profile?.state === 'confirmed' ? '已确认' : '草稿' },
                     { label: '微调', value: avatar.tuned ? '已微调（可一键还原）' : '未微调' },
                   ]}
                 />
+
+                {/* 内部凭据默认折叠：短码用于复现/回溯，不是用户关心的信息。 */}
+                <details className="avatar-labels">
+                  <summary>技术详情（短码，可用于复现）</summary>
+                  <ul>
+                    <li>呈现短码：<code>{(profile?.params_fingerprint ?? '—').slice(0, 8)}</code></li>
+                    <li>底稿短码：<code>{(profile?.fingerprint ?? '—').slice(0, 8)}</code></li>
+                  </ul>
+                </details>
 
                 <details className="avatar-labels">
                   <summary>查看生成依据（可回溯）</summary>
@@ -613,10 +693,8 @@ export function AvatarWorkshopPage() {
                     gloss={`当前：${TUNING_GLOSS[key](tuningValue(key))}`}
                   >
                     {/*
-                      选项文字刻意保持**后端枚举原值**（不是中文翻译）：
-                      这些是 FROZEN_CONTRACT 里的契约标识，显示原值可以直接对照
-                      `tests/unit/test_tuning_options_contract.py` 校验的白名单；
-                      中文含义放在下面的提示行里，用户既看得懂也能查得准。
+                      显示中文标签，但 <option value> 仍是后端枚举原值 ——
+                      用户看的是中文，契约与白名单校验保持不变。
                     */}
                     <select
                       className="ui-select"
@@ -627,7 +705,7 @@ export function AvatarWorkshopPage() {
                     >
                       {TUNING_OPTIONS[key].map((opt) => (
                         <option key={opt} value={opt}>
-                          {opt}
+                          {tuningLabel(key, opt)}
                         </option>
                       ))}
                     </select>

@@ -1,5 +1,6 @@
 """个性化像素角色 HTTP surface (W11 · 个性化像素角色生成系统).
 
+* ``POST /api/avatar/preview``     —— 微调实时预览（重算像素，**不落库**）
 * ``POST /api/avatar/generate``    —— 画像 → 角色包（本地生成，落草稿档案）
 * ``PUT  /api/avatar/confirm``     —— 草稿 → 已确认 + 「像不像自己」自评 + 设为专属小人
 * ``GET  /api/avatar/me``          —— 读当前档案（含矩阵，前端直接渲染）
@@ -44,6 +45,20 @@ class GenerateBody(BaseModel):
     )
 
 
+class PreviewBody(BaseModel):
+    # extra="forbid"：多余字段是客户端 bug，宁可报错也别让它「看起来生效了」
+    model_config = ConfigDict(extra="forbid")
+
+    overrides: dict[str, Any] = Field(
+        default_factory=dict,
+        description="当前微调面板的全部取值（未改动可省略）",
+    )
+    portrait: dict[str, Any] | None = Field(
+        default=None,
+        description="可选：同时预览「改画像」的效果；省略则沿用已存画像",
+    )
+
+
 class ConfirmBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -73,6 +88,22 @@ async def generate_avatar(
     """画像 → 像素角色包。重复调用是 upsert，不会堆出多个角色。"""
     return AvatarProfileService(db).generate(
         actor, portrait=body.portrait, overrides=body.overrides
+    )
+
+
+@router.post("/preview")
+async def preview_avatar(
+    body: PreviewBody,
+    actor: Actor = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    """微调实时预览：重算像素但**不落库**。
+
+    与 /generate 的区别是这里不写库：用户随便试微调都不会污染已确认的角色，
+    只有显式点「应用微调」才会真正生效。
+    """
+    return AvatarProfileService(db).preview(
+        actor, overrides=body.overrides, portrait=body.portrait
     )
 
 

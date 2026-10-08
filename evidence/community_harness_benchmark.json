@@ -1,0 +1,207 @@
+{
+  "timestamp": "2026-10-08T00:46:00.075895+00:00",
+  "evaluation_type": "synthetic_unit_assertions",
+  "configurations": [
+    "baseline",
+    "peri",
+    "peri+ecc"
+  ],
+  "task_results": {
+    "precision_file_modification": {
+      "baseline": {
+        "passed": true,
+        "duration_ms": 12.5,
+        "rework_count": 0,
+        "artifacts_count": 1,
+        "ecc_skills_used": [],
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "duration_ms": 12.5,
+        "rework_count": 0,
+        "artifacts_count": 1,
+        "ecc_skills_used": [],
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "duration_ms": 12.5,
+        "rework_count": 0,
+        "artifacts_count": 1,
+        "ecc_skills_used": [
+          "tdd-workflow"
+        ],
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      }
+    },
+    "test_execution": {
+      "baseline": {
+        "passed": true,
+        "exit_code": 0,
+        "duration_ms": 45.0,
+        "cost_status": "actual",
+        "evidence_type": "real_execution"
+      },
+      "peri": {
+        "passed": true,
+        "exit_code": 0,
+        "duration_ms": 45.0,
+        "cost_status": "actual",
+        "evidence_type": "real_execution"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "exit_code": 0,
+        "duration_ms": 45.0,
+        "cost_status": "actual",
+        "evidence_type": "real_execution"
+      }
+    },
+    "invalid_tool_arg_recovery": {
+      "baseline": {
+        "passed": true,
+        "initial_error": "ValidationError: 'amount' must be numeric float",
+        "recovery_successful": true,
+        "duration_ms": 18.0,
+        "rework_count": 1,
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "initial_error": "ValidationError: 'amount' must be numeric float",
+        "recovery_successful": true,
+        "duration_ms": 18.0,
+        "rework_count": 1,
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "initial_error": "ValidationError: 'amount' must be numeric float",
+        "recovery_successful": true,
+        "duration_ms": 18.0,
+        "rework_count": 1,
+        "cost_status": "estimated",
+        "evidence_type": "synthetic"
+      }
+    },
+    "timeout_and_cancel": {
+      "baseline": {
+        "passed": true,
+        "cancelled": true,
+        "duration_ms": 5.0,
+        "cost_status": "unknown",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "cancelled": true,
+        "duration_ms": 5.0,
+        "cost_status": "unknown",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "cancelled": true,
+        "duration_ms": 5.0,
+        "cost_status": "unknown",
+        "evidence_type": "synthetic"
+      }
+    },
+    "budget_ceiling_enforcement": {
+      "baseline": {
+        "passed": true,
+        "budget_slice_usd": 0.05,
+        "blocked_at_ceiling": true,
+        "duration_ms": 4.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "budget_slice_usd": 0.05,
+        "blocked_at_ceiling": true,
+        "duration_ms": 4.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "budget_slice_usd": 0.05,
+        "blocked_at_ceiling": true,
+        "duration_ms": 4.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      }
+    },
+    "malicious_sandbox_escape_rejection": {
+      "baseline": {
+        "passed": true,
+        "boundary_blocked": true,
+        "attempts_tested": 3,
+        "rejection_rate": 100.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "boundary_blocked": true,
+        "attempts_tested": 3,
+        "rejection_rate": 100.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "boundary_blocked": true,
+        "attempts_tested": 3,
+        "rejection_rate": 100.0,
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      }
+    },
+    "cross_domain_privacy_rejection": {
+      "baseline": {
+        "passed": true,
+        "boundary_blocked": true,
+        "reason": "Grant missing for consumer domain 'work' targeting source domain 'personal'",
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri": {
+        "passed": true,
+        "boundary_blocked": true,
+        "reason": "Grant missing for consumer domain 'work' targeting source domain 'personal'",
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      },
+      "peri+ecc": {
+        "passed": true,
+        "boundary_blocked": true,
+        "reason": "Grant missing for consumer domain 'work' targeting source domain 'personal'",
+        "cost_status": "actual",
+        "evidence_type": "synthetic"
+      }
+    }
+  },
+  "summary": {
+    "evaluation_type": "synthetic_unit_assertions",
+    "retraction_statement": "正式纠正并撤回'真实 Harness 对照及安全拦截率 100%'的结论。当前 7 项检查包含固定成功值、模拟修复与布尔值比较，仅作为本地单测逻辑路径检查，不构成真实异构 LLM 模型端到端对抗或真实基准评测。",
+    "total_synthetic_checks": 21,
+    "passed_synthetic_checks": 21,
+    "real_execution_evals": 3,
+    "real_execution_passed": 3,
+    "synthetic_evals": 18,
+    "synthetic_passed": 18,
+    "real_harness_success_rate": 1.0,
+    "boundary_safety_rate": null,
+    "live_model_harness_benchmark": "BLOCKED_EXTERNAL",
+    "blocked_reason": "缺少公网模型 API Key (ANTHROPIC_API_KEY/OPENAI_API_KEY)，无法对外部异构模型开展真实端到端对抗比较。无凭据项不计入真实 Harness 成功率。",
+    "status": "PARTIAL"
+  }
+}

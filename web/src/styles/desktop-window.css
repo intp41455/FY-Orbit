@@ -19,6 +19,9 @@
 .desk-pet-container {
   /* 组件内的 deskPetCompanion.css 晚于本文件加载，同权重会覆盖，故必须 !important。 */
   bottom: 78px !important;
+  /* P3-21: 原 990 与弹层同级，会压住页面右下角按钮/文字。
+     降到 60 —— 仍浮在普通内容之上，但低于任何弹窗与提示条。 */
+  z-index: 60 !important;
 }
 
 /* ----------------------------------------------------------------------
@@ -30,4 +33,97 @@
 .sidebar {
   overflow-x: hidden;
   overflow-wrap: anywhere;
+}
+
+
+/* ==================================================================
+   排版修正（用户实测反馈）
+   ================================================================== */
+
+/* 1) 侧栏底部 owner 标识：32 位哈希是单行不可断的长串，会横向顶出圆角边框。
+      症状：字（或哈希）超出边框。修法：允许收缩 + 任意位置断行 + 等宽字体。
+      .identity 是 flex 容器，子项默认 min-width:auto 不会被压缩，
+      所以必须显式 min-width:0，否则 overflow-wrap 不生效。 */
+.sidebar-foot .identity {
+  min-width: 0;
+}
+.sidebar-foot .identity > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+/* 2) 资产分组 fieldset：默认浏览器边框 + 白底，在玻璃质感页面上很突兀。
+      改为淡天蓝磨砂玻璃，保留足够对比度；legend 也要一起配，
+      否则圆角会把 legend 文字切成锯齿。 */
+fieldset.asset-group {
+  border: 1px solid color-mix(in srgb, var(--ui-sky-300, #a8d4f0) 55%, transparent);
+  border-radius: var(--ui-r-md, 12px);
+  background: color-mix(in srgb, var(--ui-sky-100, #eaf4fd) 55%, transparent);
+  padding: 0.75rem 0.9rem 0.9rem;
+  margin: 0 0 0.75rem;
+}
+fieldset.asset-group > legend {
+  padding: 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ui-sky-800, #1c3a5e);
+}
+
+
+/* 全局字号缩放控件：侧栏底部常驻，但刻意做得低调 ——
+   小号、低对比、无填充背景，不会跟主操作按钮抢注意力。 */
+.font-scale-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+.font-scale-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.font-scale-btn:hover {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--sky-deep);
+}
+.font-scale-value {
+  min-width: 40px;
+  padding: 0 0.2rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.font-scale-value:hover {
+  background: rgba(56, 189, 248, 0.14);
+  color: var(--sky-deep);
+}
+.font-scale-hint {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  opacity: 0.75;
+  white-space: nowrap;
 }

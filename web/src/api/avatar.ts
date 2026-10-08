@@ -132,6 +132,25 @@ export interface AvatarPackage {
 }
 
 /** 档案行 = 角色包 + 持久化元数据。 */
+/**
+ * POST /api/avatar/preview 的返回：像素包 + `preview_only: true`。
+ *
+ * 与 AvatarProfile.avatar 同构，额外带 preview_only 标记，便于调用方
+ * 明确知道「这份像素还没生效」。
+ */
+export interface AvatarPreviewPackage {
+  width: number;
+  height: number;
+  matrix: string[];
+  layers: AvatarLayers;
+  palette: Record<string, string>;
+  char_keys: string[];
+  char_palette: AvatarCharPalette;
+  param_space_size: number;
+  tuned: boolean;
+  preview_only: true;
+}
+
 export interface AvatarProfile {
   id: string;
   state: 'draft' | 'confirmed';
@@ -294,6 +313,28 @@ export function generateAvatar(
   return request<AvatarProfile>('/api/avatar/generate', {
     method: 'POST',
     body: { portrait: whitelistPortrait(portrait), overrides: whitelistTuning(overrides) },
+  });
+}
+
+/**
+ * POST /api/avatar/preview —— 微调实时预览，**不落库**。
+ *
+ * 用户每改一个微调下拉框就调一次，拿回新的像素包立刻画到预览台。
+ * 与 generateAvatar 的区别是不写库：随便试都不会污染已确认的角色，
+ * 只有显式点「应用微调」才真正生效。
+ *
+ * 诚实：必须已生成过底稿（后端对从未生成过的档案返回 404）。
+ */
+export function previewAvatar(
+  overrides: AvatarTuning,
+  portrait?: PortraitInput,
+): Promise<AvatarPreviewPackage> {
+  return request<AvatarPreviewPackage>('/api/avatar/preview', {
+    method: 'POST',
+    body: {
+      overrides: whitelistTuning(overrides),
+      ...(portrait ? { portrait: whitelistPortrait(portrait) } : {}),
+    },
   });
 }
 

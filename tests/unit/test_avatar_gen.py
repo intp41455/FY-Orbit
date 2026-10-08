@@ -391,11 +391,21 @@ def test_reaching_generate_resets_likeness_and_house_flag(client: TestClient, he
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()["likeness_score"] == 9
     assert confirmed.json()["is_house_avatar"] is True
-    # 重新生成 = 换了角色，旧的自评与专属标记必须失效
+    # 重新生成 = 换了角色，旧的自评失效（评的是旧角色）。
+    #
+    # 但 is_house_avatar **不再被清空**：用户诉求是「首次进入可 DIY，
+    # 确认之后全局锁定同一个角色」。若在这里清掉，微调一次小屋就 404，
+    # 前端回退默认小人 —— 用户看到的就是「刚调完角色，进小屋却换了个人」。
+    # state 退回 draft 表示「这次改动还没被点头」，与「是否投放小屋」是两回事。
     again = _gen(client, headers).json()
     assert again["state"] == "draft"
     assert again["likeness_score"] is None
-    assert again["is_house_avatar"] is False
+    assert again["is_house_avatar"] is True
+
+    # 红线仍在：重新生成后小屋必须还能取到角色（否则就是「微调一次小屋空了」）。
+    house = client.get("/api/avatar/house", headers=headers)
+    assert house.status_code == 200, house.text
+    assert house.json()["fingerprint"] == again["params_fingerprint"]
 
 
 def test_me_returns_404_before_any_generation(client: TestClient, headers: dict):

@@ -679,9 +679,78 @@ export function ProfilesPage() {
             </div>
           </div>
         ) : (
-          <div className="card ui-panel ui-panel--pad" style={{ textAlign: 'center' }}>
-            正在加载档案主体…
-          </div>
+          /* 三态而不是「非空即渲染」。旧写法只认 loading 与有主体两态：
+             后端返回空数组时 activeSubject 恒为 null，页面永远停在
+             「正在加载档案主体…」，看上去像卡死。空态必须给出可点的下一步，
+             否则用户既看不到原因也走不出去。 */
+          loading ? (
+            <div className="card ui-panel ui-panel--pad" style={{ textAlign: 'center' }} role="status">
+              正在加载档案主体…
+            </div>
+          ) : subjects.length === 0 ? (
+            <section
+              className="card ui-panel ui-panel--pad cabin-ni-profiles-empty"
+              data-testid="profiles-empty"
+              aria-labelledby="profiles-empty-title"
+            >
+              <h3 className="ui-panel-title" id="profiles-empty-title">
+                还没有画像对象
+              </h3>
+              <p className="ui-hint">
+                画像必须挂在一个对象上才能建立。先新建一个档案对象（可选「本人档案」，
+                也可以是研究或工作对象），再往里导入对话文本、反思日记或会议记录，
+                系统才会按说话人切片并建立可追溯的证据链。
+              </p>
+              <ol className="cabin-ni-profiles-empty-steps">
+                <li>新建档案对象，填写名称与类别（类别决定它在本页的语义）。</li>
+                <li>在「语料导入与说话人切片」粘贴文本并提交，确认说话人归属。</li>
+                <li>在「画像版本」点「启动画像综合推演」，生成首个 Revision。</li>
+              </ol>
+              <div className="cabin-ni-profiles-empty-actions">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--primary"
+                  onClick={() => setShowNewSubject(true)}
+                >
+                  <LineIcon name="plus" size={16} />
+                  新建第一个档案对象
+                </button>
+                <button
+                  type="button"
+                  className="ui-btn"
+                  onClick={() => void loadSubjects()}
+                >
+                  <LineIcon name="refresh" size={16} />
+                  重新加载对象列表
+                </button>
+              </div>
+              {error && (
+                <p className="ui-hint">
+                  若你确信已经有对象，请点「重新加载对象列表」；仍失败说明后端读取失败，请看上方错误提示。
+                </p>
+              )}
+            </section>
+          ) : (
+            /* 有对象但当前没选中：正常路径下 loadSubjects 会自动选第一个，
+               走到这里说明选中动作被打断（切换瞬间的中间态）。给一个明确落点，
+               不把用户晾在这里。 */
+            <section
+              className="card ui-panel ui-panel--pad"
+              data-testid="profiles-no-active-subject"
+              style={{ textAlign: 'center' }}
+            >
+              <p className="ui-panel-sub">共 {subjects.length} 个画像对象，尚未选中。</p>
+              <p className="ui-hint">点下方按钮选中一个对象即可继续。</p>
+              <button
+                type="button"
+                className="ui-btn ui-btn--primary"
+                style={{ marginTop: 'var(--ui-s-2)' }}
+                onClick={() => void selectSubject(subjects[0])}
+              >
+                选中「{subjects[0].label}」
+              </button>
+            </section>
+          )
         )}
       </div>
     </BaseBound>

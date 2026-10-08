@@ -18,6 +18,7 @@
  */
 
 import { TILE } from './cabinConfig';
+import { shade } from './cabinPixelArt';
 import { PixelBuffer, bufferToTexture, type PixelTexture } from './cabinPixels';
 import type { Category, FurnitureDef, PlacedItem, Rotation } from './gameplay/buildApi';
 
@@ -73,6 +74,93 @@ const CATEGORY_COLORS: Record<Category, { main: number; highlight: number; shado
 
 /** 缓存纹理 */
 const FURNITURE_TEXTURE_CACHE = new Map<string, PixelTexture>();
+
+
+/**
+ * 床类家具像素画：床架 + 床垫 + 枕头 + 被子。
+ * 取代旧的纯色方块绘制，使床在场景中可辨识为家具而非色块。
+ */
+function drawBed(buf: PixelBuffer, w: number, h: number, colors: { main: number; highlight: number; shadow: number }): void {
+  const frameH = Math.max(6, Math.round(h * 0.12));
+  const mattressTop = frameH + 2;
+  const mattressH = h - mattressTop - 2;
+
+  // 床架（底部 + 两侧立柱）
+  for (let y = h - frameH; y < h; y++) {
+    for (let x = 2; x < w - 2; x++) {
+      buf.setPx(x, y, colors.shadow, 1);
+    }
+  }
+  for (let y = 2; y < h - frameH; y++) {
+    buf.setPx(2, y, colors.shadow, 1);
+    buf.setPx(3, y, colors.shadow, 0.85);
+    buf.setPx(w - 3, y, colors.shadow, 1);
+    buf.setPx(w - 4, y, colors.shadow, 0.85);
+  }
+  // 床头板
+  for (let y = 2; y < Math.round(h * 0.35); y++) {
+    for (let x = 2; x < w - 2; x++) {
+      buf.setPx(x, y, colors.main, 1);
+    }
+  }
+  for (let x = 2; x < w - 2; x++) {
+    buf.setPx(x, 2, colors.highlight, 1);
+  }
+
+  // 床垫
+  for (let y = mattressTop; y < h - 2; y++) {
+    for (let x = 4; x < w - 4; x++) {
+      buf.setPx(x, y, colors.highlight, 1);
+    }
+  }
+  // 床垫顶部高光
+  for (let x = 4; x < w - 4; x++) {
+    buf.setPx(x, mattressTop, 0xffffff, 0.35);
+  }
+
+  // 枕头（床头区域）
+  const pillowH = Math.max(4, Math.round(mattressH * 0.22));
+  const pillowW = Math.max(8, Math.round((w - 12) * 0.4));
+  const pillowX = 6;
+  const pillowY = mattressTop + 2;
+  for (let y = pillowY; y < pillowY + pillowH; y++) {
+    for (let x = pillowX; x < pillowX + pillowW; x++) {
+      buf.setPx(x, y, 0xf0f4f8, 1);
+    }
+  }
+  for (let x = pillowX; x < pillowX + pillowW; x++) {
+    buf.setPx(x, pillowY, 0xffffff, 0.6);
+  }
+
+  // 被子（床尾区域，覆盖床垫下半部）
+  const blanketTop = pillowY + pillowH + 2;
+  for (let y = blanketTop; y < h - 3; y++) {
+    for (let x = 4; x < w - 4; x++) {
+      buf.setPx(x, y, colors.main, 1);
+    }
+  }
+  // 被子褶皱
+  const foldColor = shade(colors.main, 0.82);
+  for (let y = blanketTop + 2; y < h - 3; y += 4) {
+    for (let x = 4; x < w - 4; x++) {
+      buf.setPx(x, y, foldColor, 0.5);
+    }
+  }
+  // 被子边缘高光
+  for (let x = 4; x < w - 4; x++) {
+    buf.setPx(x, blanketTop, colors.highlight, 0.8);
+  }
+
+  // 外圈轮廓
+  for (let x = 1; x < w - 1; x++) {
+    buf.setPx(x, 1, 0x221a14, 0.9);
+    buf.setPx(x, h - 2, 0x221a14, 0.9);
+  }
+  for (let y = 1; y < h - 1; y++) {
+    buf.setPx(1, y, 0x221a14, 0.9);
+    buf.setPx(w - 2, y, 0x221a14, 0.9);
+  }
+}
 
 /**
  * 为指定家具生成像素纹理（按格数缩放与旋转）。
@@ -153,8 +241,10 @@ export function createFurnitureTexture(def: FurnitureDef, rotation: Rotation = 0
         buf.setPx(x, y, colors.highlight, 0.95);
       }
     }
+  } else if (def.category === 'bed') {
+    drawBed(buf, pixelW, pixelH, colors);
   } else {
-    // 桌椅 / 床 / 柜体（厚重实木 / 软垫质感）
+    // 桌椅 / 柜体（厚重实木质感）
     // 主体方框
     for (let y = 2; y < pixelH - 2; y += 1) {
       for (let x = 2; x < pixelW - 2; x += 1) {

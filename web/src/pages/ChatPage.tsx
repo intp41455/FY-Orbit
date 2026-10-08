@@ -347,9 +347,10 @@ export function ChatPage() {
       }
       // 与 conversationsApi.postMessage 逐字一致，只是多带 signal 以便真实中止：
       // POST /api/conversations/{id}/messages + Idempotency-Key: client_message_id
+      // 后端 MessageCreate schema 无 mode 字段（会话创建时已设定），此处不再发送 mode
       await request<Message>(`/api/conversations/${convId}/messages`, {
         method: 'POST',
-        body: { content, client_message_id: clientMessageId, mode },
+        body: { content, client_message_id: clientMessageId },
         idempotencyKey: clientMessageId,
         signal: controller.signal,
       });
@@ -366,7 +367,11 @@ export function ChatPage() {
       } else if (e instanceof NetworkError && e.kind === 'offline') {
         setError('离线：消息未发送。');
       } else {
-        setError(errorMessage(e));
+        // P0-2: 友好错误提示 + 保留输入框内容（不清空 text）
+        // errorMessage(e) 已包含后端返回的中文 message，直接透出
+        const friendly = errorMessage(e).replace('Request validation failed', '请求参数校验失败，请检查内容是否为空或包含非法字符');
+        setError(friendly);
+        // 不调用 setText('') —— 保留用户输入，便于修正后重试
       }
     } finally {
       setSubmitting(false);
@@ -396,6 +401,24 @@ export function ChatPage() {
         onAction: () => setArchived(id, false),
       });
     }
+  }
+
+  function deleteConversation(id: string) {
+    const c = conversations.find((x) => x.id === id);
+    const name = c ? displayTitle(c) : id;
+    void conversationsApi
+      .remove(id)
+      .then(() => {
+        setConversations((prev) => prev.filter((x) => x.id !== id));
+        setArchivedIds((prev) => prev.filter((x) => x !== id));
+        // 删掉的正好是当前打开的会话 → 退回新会话空态，否则消息区会指向已删对象
+        if (activeId === id) {
+          setActiveId(null);
+          setMessages([]);
+        }
+        push({ text: `已删除会话「${name}」。`, kind: 'info', timeout: 5000 });
+      })
+      .catch((e) => push({ text: `删除失败：${errorMessage(e)}`, kind: 'error' }));
   }
 
   function saveAlias(id: string, value: string) {
@@ -482,6 +505,12 @@ export function ChatPage() {
         label: '重命名…',
         icon: <LineIcon name="edit" size={16} />,
         onSelect: () => setRenameId(c.id),
+      },
+      {
+        key: 'delete',
+        label: '删除会话',
+        icon: <LineIcon name="trash" size={16} />,
+        onSelect: () => deleteConversation(c.id),
       },
       isArchived
         ? {
