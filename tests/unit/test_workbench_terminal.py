@@ -55,6 +55,14 @@ def _is_conpty() -> bool:
         return False
 
 
+# 真实交互式 PTY 依赖 winpty（Windows ConPTY 绑定）。未安装时进程以 pipe 模式运行，
+# echo 无法回显到输出流，故「真实命令产生真实输出」的用例在此环境下跳过。
+requires_real_pty = pytest.mark.skipif(
+    not _is_conpty(),
+    reason="真实交互式 PTY 不可用（winpty/ConPTY 缺失）",
+)
+
+
 # ----------------------------------------------------------------------
 def test_session_uses_real_conpty_and_reports_it(terminals: TerminalService, owner: Actor, ws):
     sess = terminals.create_session(owner, ws.id)
@@ -69,6 +77,7 @@ def test_session_uses_real_conpty_and_reports_it(terminals: TerminalService, own
         terminals.stop(owner, sess["id"])
 
 
+@requires_real_pty
 def test_terminal_runs_real_command_and_captures_output(terminals: TerminalService, owner: Actor, ws):
     """A real command executed through the real PTY must produce real output."""
     sess = terminals.create_session(owner, ws.id, cols=100, rows=24)

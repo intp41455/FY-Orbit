@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from find_yourself.adapters.community_harness_adapter import (
     CCBAdapter,
@@ -14,7 +16,31 @@ from find_yourself.adapters.community_harness_adapter import (
     TaskEnvelope,
 )
 
+#: 外部 harness 工具根目录（不进版本库，需在开发机手工预备）。
+#: 缺失时相关用例跳过，而不是失败——它们验证的是「外部工具握手」，
+#: 在干净克隆 / CI 上本就不具备该前置条件。
+HARNESS_TOOLS_DIR = Path(".runtime/harness-lab/tools")
+HARNESS_ECC_DIR = Path(".runtime/harness-lab/candidates/ecc")
 
+requires_ccb = pytest.mark.skipif(
+    not (HARNESS_TOOLS_DIR / "ccb").exists(),
+    reason="CCB harness 未预备（.runtime/harness-lab/tools/ccb 缺失）",
+)
+requires_cc_fleet = pytest.mark.skipif(
+    not (HARNESS_TOOLS_DIR / "cc-fleet").exists(),
+    reason="cc-fleet harness 未预备（.runtime/harness-lab/tools/cc-fleet 缺失）",
+)
+requires_peri = pytest.mark.skipif(
+    not (HARNESS_TOOLS_DIR / "peri" / "bin" / "peri.exe").exists(),
+    reason="Peri harness 未预备（.runtime/harness-lab/tools/peri/bin/peri.exe 缺失）",
+)
+requires_ecc = pytest.mark.skipif(
+    not HARNESS_ECC_DIR.exists(),
+    reason="ECC 候选技能未预备（.runtime/harness-lab/candidates/ecc 缺失）",
+)
+
+
+@requires_ccb
 def test_ccb_adapter_probe() -> None:
     adapter = CCBAdapter()
     probe_res = adapter.probe()
@@ -25,6 +51,7 @@ def test_ccb_adapter_probe() -> None:
     assert "学习研究用途" in probe_res["license"]
 
 
+@requires_cc_fleet
 def test_cc_fleet_adapter_probe() -> None:
     adapter = CCFleetAdapter()
     probe_res = adapter.probe()
@@ -35,6 +62,7 @@ def test_cc_fleet_adapter_probe() -> None:
     assert "provider_profiles" in probe_res["capabilities"]
 
 
+@requires_peri
 def test_peri_adapter_probe() -> None:
     adapter = PeriAdapter()
     probe_res = adapter.probe()
@@ -56,6 +84,7 @@ def test_community_harness_registry() -> None:
     assert "ECC" in names
 
 
+@requires_peri
 def test_peri_submit_and_sandbox_boundary_enforcement() -> None:
     from find_yourself.adapters.community_harness_adapter import (
         HarnessSandbox,
@@ -97,6 +126,7 @@ def test_peri_submit_and_sandbox_boundary_enforcement() -> None:
     assert "traversal" in attack_result.error_message.lower() or "sensitive" in attack_result.error_message.lower()
 
 
+@requires_peri
 def test_peri_cancellation_and_status() -> None:
     adapter = PeriAdapter()
     envelope = TaskEnvelope(
@@ -121,6 +151,7 @@ def test_peri_cancellation_and_status() -> None:
     assert status["status"] == "cancelled"
 
 
+@requires_peri
 def test_peri_ecc_skills_staging() -> None:
     from find_yourself.adapters.community_harness_adapter import TaskEnvelope
 
@@ -140,6 +171,7 @@ def test_peri_ecc_skills_staging() -> None:
     assert "security-review" in staged_events[0]["details"]["staged_skills"]
 
 
+@requires_peri
 def test_harness_benchmark_runner_full_suite() -> None:
     from find_yourself.adapters.community_harness_adapter import HarnessBenchmarkRunner
 
@@ -237,6 +269,7 @@ def test_s6_dispatcher_routes_by_capability() -> None:
     assert r2.status == "not_integrated"
 
 
+@requires_ecc
 def test_s6_ecc_verification_records_approval() -> None:
     from find_yourself.adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
 
@@ -257,6 +290,7 @@ def test_s6_ecc_verification_records_approval() -> None:
     assert result.ecc_verified is True
 
 
+@requires_peri
 def test_s6_process_tree_kill_and_reclamation() -> None:
     import subprocess as _sp
     import sys as _sys

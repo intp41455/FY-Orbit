@@ -7,11 +7,28 @@ lifecycle, Git status, preview isolation flags and orchestrator lease takeover.
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
 from fastapi.testclient import TestClient
 from helpers import login_owner
+
+
+def _is_conpty() -> bool:
+    try:
+        import winpty  # noqa: F401
+        return os.name == "nt"
+    except Exception:
+        return False
+
+
+# 该用例断言命令被真实回显到交互式 PTY；无 winpty/ConPTY 时终端退化为 pipe，
+# 不会产生回显，故在此环境下跳过。
+requires_real_pty = pytest.mark.skipif(
+    not _is_conpty(),
+    reason="真实交互式 PTY 不可用（winpty/ConPTY 缺失）",
+)
 
 
 @pytest.fixture()
@@ -103,6 +120,7 @@ def test_tree_and_events(client: TestClient, headers: dict[str, str], ws_id: str
 
 
 # ----------------------------------------------------------------------
+@requires_real_pty
 def test_terminal_lifecycle_over_http(client: TestClient, headers: dict[str, str], ws_id: str):
     r = client.post(
         f"/api/workbench/workspaces/{ws_id}/terminals",

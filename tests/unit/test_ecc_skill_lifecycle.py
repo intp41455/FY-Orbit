@@ -24,7 +24,16 @@ from find_yourself.skills.harness import TrustedSkillEvaluationWorker
 
 ECC_DIR = Path(".runtime/harness-lab/candidates/ecc")
 
+#: ECC 候选技能包不进版本库（.runtime/ 已 gitignore），需在开发机手工预备。
+#: 缺失时整组跳过——这些用例验证的是「对已落盘候选包的评估/晋升流程」，
+#: 干净克隆 / CI 上不具备该前置条件，不应报红。
+requires_ecc_candidates = pytest.mark.skipif(
+    not ECC_DIR.exists(),
+    reason="ECC 候选技能未预备（.runtime/harness-lab/candidates/ecc 缺失）",
+)
 
+
+@requires_ecc_candidates
 def test_ecc_candidates_exist_on_disk() -> None:
     assert ECC_DIR.exists(), f"ECC candidate directory {ECC_DIR} must exist"
     candidate_skills = [p.parent.name for p in ECC_DIR.glob("*/SKILL.md")]
@@ -34,6 +43,7 @@ def test_ecc_candidates_exist_on_disk() -> None:
     assert "verification-loop" in candidate_skills
 
 
+@requires_ecc_candidates
 def test_ecc_tdd_workflow_staging_evaluation_and_owner_promotion(session, owner) -> None:
     audit = AuditService(session)
     svc = SkillService(session, audit)
@@ -103,6 +113,7 @@ def test_ecc_tdd_workflow_staging_evaluation_and_owner_promotion(session, owner)
     assert svc.can_invoke(staged.id) is False
 
 
+@requires_ecc_candidates
 def test_ecc_security_review_evaluation_and_promotion(session, owner) -> None:
     audit = AuditService(session)
     svc = SkillService(session, audit)
@@ -148,6 +159,7 @@ def test_ecc_security_review_evaluation_and_promotion(session, owner) -> None:
     assert promoted.state == "active"
 
 
+@requires_ecc_candidates
 def test_ecc_tampered_or_failed_eval_cannot_promote(session, owner) -> None:
     audit = AuditService(session)
     svc = SkillService(session, audit)

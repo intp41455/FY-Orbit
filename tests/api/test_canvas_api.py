@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from helpers import login_owner
+
+# Peri harness 二进制未随仓库分发（.runtime/harness-lab/tools/peri/bin/peri.exe）。
+# 缺失时 harness-run 会以 budget_exceeded 收尾，无法产生真实执行结果，
+# 故这些端到端用例在无 Peri 环境下整体跳过。
+_PERI_BIN = Path(".runtime/harness-lab/tools/peri/bin/peri.exe")
+requires_peri = pytest.mark.skipif(
+    not _PERI_BIN.exists(),
+    reason="Peri harness 未预备（.runtime/harness-lab/tools/peri/bin/peri.exe 缺失）",
+)
 
 
 def test_canvas_api_lifecycle(client: TestClient) -> None:
@@ -308,6 +319,7 @@ def test_canvas_community_harnesses_probe(client: TestClient) -> None:
     assert "ECC" in names
 
 
+@requires_peri
 def test_canvas_community_harness_run_and_boundary_rejection(client: TestClient) -> None:
     headers = login_owner(client)
 
