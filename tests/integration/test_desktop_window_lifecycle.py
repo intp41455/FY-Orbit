@@ -127,6 +127,10 @@ def test_desktop_no_window_terminate_frees_port(tmp_path: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        # POSIX：独立会话/进程组。否则 terminate() 只能触达直接子进程，
+        # uvicorn 工作子进程会继承监听套接字继续存活 → 端口永不释放，
+        # 断言 `is_port_listening(port) is False` 恒红（Linux CI 实证）。
+        **(dict(start_new_session=True) if sys.platform != "win32" else {}),
     )
 
     try:
@@ -152,7 +156,12 @@ def test_desktop_no_window_terminate_frees_port(tmp_path: Path) -> None:
         if sys.platform == "win32":
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
         else:
-            proc.terminate()
+            # SIGTERM 只打直接子进程；工作子进程持有监听套接字 → 端口不释放。
+            # 因上面用了 start_new_session，子进程自成进程组，故对**整组**发信号。
+            try:
+                os.killpg(os.getpgid(proc.pid), 15)
+            except (ProcessLookupError, PermissionError, OSError):
+                proc.terminate()
         proc.wait(timeout=10.0)
 
         time.sleep(0.5)

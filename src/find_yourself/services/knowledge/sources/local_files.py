@@ -20,11 +20,15 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any, Iterator
 
 from ...errors import ValidationFailed
 from .base import KnowledgeSource, RawDocument, SourceCapabilities, SourceRef
+
+# 跨平台盘符前缀：Linux 上 Path("C:/x") 既非绝对路径、drive 也为空，必须显式识别。
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 #: 允许抓取的扩展名 = ingest 管线的文本段（``SUPPORTED_EXTENSIONS`` 里的
 #: 纯文本子集）。**刻意不含 .html/.htm**：ingest 白名单里没有它们，列出来
@@ -97,10 +101,17 @@ class LocalFilesSource(KnowledgeSource):
         # "a/../../b" 的 "/" 也不参与分词。故先归一化再判定。
         normalized = raw.replace("\\", "/")
         candidate = Path(normalized)
+        # 跨平台：Windows 盘符（C:/x、C:\x）在 Windows 上 drive 非空 / is_absolute
+        # 为真，但在 Linux 上二者皆假 → 会被当普通文件名放行（漏检）。
+        # 故显式用正则识别盘符，另拦 UNC（\\server\share）。
+        is_drive_abs = bool(_WINDOWS_DRIVE_RE.match(raw))
+        is_unc = raw.startswith("\\\\") or raw.startswith("//")
         if (
             candidate.is_absolute()
             or candidate.drive
             or Path(raw).drive
+            or is_drive_abs
+            or is_unc
             or ".." in normalized.split("/")
         ):
             raise ValidationFailed(

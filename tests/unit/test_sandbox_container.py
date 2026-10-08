@@ -11,6 +11,7 @@ Docker 不可用时诚实 SKIP（绝不假装隔离通过）。
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 
@@ -39,9 +40,53 @@ def _docker_ok() -> bool:
     return docker_ready
 
 
+def _peer_container_ok() -> bool:
+    """反连目标容器（fy-p11-pg）是否在本地就绪。
+
+    门禁 ①（网络隔离）与变异对照都需要一个**真实存在的对端容器**做反连测试；
+    它由 P9/P11 的本地编排创建，不属于本仓库分发的资源。CI 上只有裸 Docker
+    daemon、没有该容器，故这两条用例的**前置条件不成立**，应跳过而不是
+    把 fixture 断言炸成 ERROR。
+    """
+    if not _docker_ok():
+        return False
+    try:
+        r = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", "fy-p11-pg"],
+            capture_output=True, text=True, timeout=30,
+        )
+        return r.returncode == 0 and r.stdout.strip().lower() == "true"
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def _sandbox_image_ok() -> bool:
+    """沙箱镜像是否已在本地。CI 拉取被墙时 ensure_ready() 会抛 RuntimeError，
+    使 module fixture 直接崩；先探测可避免把「资源未预备」误报成用例失败。"""
+    if not _docker_ok():
+        return False
+    image = os.environ.get("FY_SANDBOX_IMAGE", DEFAULT_IMAGE)
+    try:
+        r = subprocess.run(["docker", "image", "inspect", image],
+                           capture_output=True, text=True, timeout=30)
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 pytestmark = pytest.mark.skipif(
     not _docker_ok(),
     reason="P9 容器化沙箱需要 Docker daemon（不可用时诚实跳过，绝不假装隔离）",
+)
+
+requires_image = pytest.mark.skipif(
+    not _sandbox_image_ok(),
+    reason=f"沙箱镜像未在本地预备（{DEFAULT_IMAGE}）——需先 docker pull/build",
+)
+
+requires_peer_container = pytest.mark.skipif(
+    not _peer_container_ok(),
+    reason="反连目标容器 fy-p11-pg 未运行——门禁 ① 的前置条件不成立",
 )
 
 
@@ -65,6 +110,7 @@ def postgres_ip() -> str:
 
 
 # ---- 基础执行 ---------------------------------------------------------------
+@requires_image
 def test_simple_command_runs_and_returns_output(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "echo hello-from-sandbox"], timeout_s=60)
     assert res["exit_code"] == 0
@@ -72,6 +118,7 @@ def test_simple_command_runs_and_returns_output(runner: ContainerSandboxRunner):
     assert res["timed_out"] is False
 
 
+@requires_image
 def test_no_container_leftover_after_normal_run(runner: ContainerSandboxRunner):
     runner.run(["sh", "-c", "true"], timeout_s=60)
     r = subprocess.run(["docker", "ps", "-q", "--filter", f"network={SANDBOX_NETWORK}"],
@@ -80,6 +127,7 @@ def test_no_container_leftover_after_normal_run(runner: ContainerSandboxRunner):
 
 
 # ---- 门禁 ①：网络隔离 -------------------------------------------------------
+@requires_peer_container
 def test_sandbox_cannot_reach_postgres_container(runner: ContainerSandboxRunner, postgres_ip: str):
     """门禁 ①：沙箱内连 Postgres 容器必须失败（internal 网络 + DOCKER-ISOLATION）。"""
     res = runner.run(["sh", "-c", f"nc -z -w 2 {postgres_ip} 5432 && echo REACHABLE || echo BLOCKED"],
@@ -88,6 +136,7 @@ def test_sandbox_cannot_reach_postgres_container(runner: ContainerSandboxRunner,
     assert "BLOCKED" in res["stdout"], f"Postgres 竟然可达！stdout={res['stdout']!r}"
 
 
+@requires_image
 def test_sandbox_cannot_reach_external_internet(runner: ContainerSandboxRunner):
     """internal 网络无外网路由：DNS/外连必须失败。"""
     res = runner.run(["sh", "-c", "nc -z -w 2 1.1.1.1 443 && echo REACHABLE || echo BLOCKED"],
@@ -95,6 +144,7 @@ def test_sandbox_cannot_reach_external_internet(runner: ContainerSandboxRunner):
     assert "BLOCKED" in res["stdout"], "internal 网络竟然能出外网！"
 
 
+@requires_image
 def test_sandbox_network_is_internal():
     """网络 Internal=true（inspect 复核，不轻信创建返回）。"""
     r = subprocess.run(["docker", "network", "inspect", SANDBOX_NETWORK,
@@ -104,6 +154,7 @@ def test_sandbox_network_is_internal():
     assert r.stdout.strip().lower() == "true"
 
 
+@requires_peer_container
 def test_mutation_probe_removed_network_isolation_allows_reach(runner: ContainerSandboxRunner,
                                                                postgres_ip: str):
     """变异探针（②号门禁的对照实验，每次运行显式执行并如实报告）：
@@ -125,6 +176,7 @@ def test_mutation_probe_removed_network_isolation_allows_reach(runner: Container
 
 
 # ---- 门禁 ②：资源配额真实生效 -----------------------------------------------
+@requires_image
 def test_memory_quota_oom_kills_for_real(runner: ContainerSandboxRunner):
     """内存配额：64MB 限额下吃 200MB → 被 OOM kill（exit 137），不是「碰巧没吃完」。"""
     res = runner.run(
@@ -134,6 +186,7 @@ def test_memory_quota_oom_kills_for_real(runner: ContainerSandboxRunner):
     assert res["timed_out"] is False  # 是 OOM kill，不是超时
 
 
+@requires_image
 def test_cpu_and_pids_quota_visible_in_inspect(runner: ContainerSandboxRunner):
     """cpus/pids 配额写入容器真实配置（docker inspect 复核）。"""
     r = subprocess.run(
@@ -158,6 +211,7 @@ def test_cpu_and_pids_quota_visible_in_inspect(runner: ContainerSandboxRunner):
 
 
 # ---- 门禁 ③：超时后孙进程确实死亡 -------------------------------------------
+@requires_image
 def test_grandchildren_die_after_timeout(runner: ContainerSandboxRunner):
     """S-1 容器态：父进程派生孙进程，超时 kill 容器 ⇒ 孙进程随之死亡。
 
@@ -190,6 +244,7 @@ def test_grandchildren_die_after_timeout(runner: ContainerSandboxRunner):
         subprocess.run(["docker", "rm", "-f", cid], capture_output=True, timeout=30)
 
 
+@requires_image
 def test_runner_timeout_kills_and_reports(runner: ContainerSandboxRunner):
     """runner 超时语义：exit 137 + timed_out=True + 容器清理。"""
     res = runner.run(["sh", "-c", "sleep 120"], timeout_s=3)
@@ -201,17 +256,20 @@ def test_runner_timeout_kills_and_reports(runner: ContainerSandboxRunner):
 
 
 # ---- 收紧项 -----------------------------------------------------------------
+@requires_image
 def test_read_only_rootfs_blocks_writes(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "touch /etc/pwned && echo WROTE || echo READONLY"],
                      timeout_s=60)
     assert "READONLY" in res["stdout"]
 
 
+@requires_image
 def test_runs_as_non_root(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "id -u"], timeout_s=60)
     assert res["stdout"].strip() == "65534"
 
 
+@requires_image
 def test_capabilities_dropped(runner: ContainerSandboxRunner):
     """cap-drop ALL：CapEff 必须为 0（/proc/self/status 的编程判定）。"""
     res = runner.run(["sh", "-c", "grep CapEff /proc/self/status"], timeout_s=60)
@@ -219,6 +277,7 @@ def test_capabilities_dropped(runner: ContainerSandboxRunner):
     assert res["stdout"].split()[-1] == "0000000000000000"
 
 
+@requires_image
 def test_no_new_privileges_enforced(runner: ContainerSandboxRunner):
     r = subprocess.run(
         ["docker", "run", "-d", "--rm", "--init", f"--network={SANDBOX_NETWORK}",
@@ -235,6 +294,7 @@ def test_no_new_privileges_enforced(runner: ContainerSandboxRunner):
 
 
 # ---- 诚实上报 ---------------------------------------------------------------
+@requires_image
 def test_describe_isolation_reports_container_level(runner: ContainerSandboxRunner):
     d = runner.describe_isolation()
     assert d["isolation_level"] == "container"
@@ -247,21 +307,25 @@ def test_describe_isolation_reports_container_level(runner: ContainerSandboxRunn
     assert d["not_enforced"]
 
 
+@requires_image
 def test_image_is_pinned_by_digest():
     assert "@sha256:" in DEFAULT_IMAGE, "沙箱镜像必须按 digest 固定，禁用可变 tag"
 
 
+@requires_image
 def test_runner_reports_env_injection(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "echo $FY_PROBE"], timeout_s=60,
                      env={"FY_PROBE": "injected"})
     assert res["stdout"].strip() == "injected"
 
 
+@requires_image
 def test_exit_code_propagation(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "exit 42"], timeout_s=60)
     assert res["exit_code"] == 42
 
 
+@requires_image
 def test_stderr_captured(runner: ContainerSandboxRunner):
     res = runner.run(["sh", "-c", "echo oops >&2"], timeout_s=60)
     assert res["exit_code"] == 0
