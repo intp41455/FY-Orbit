@@ -31,12 +31,10 @@ if (-not $Version) {
     }
 }
 
-# 同步 setup.exe 里的版本号
+# 版本号通过 ISCC /D 注入（.iss 用 #ifndef 守卫）。
+# 不要复制 .iss 到 %TEMP%：Source/OutputDir 都是相对 .iss 自身路径解析的，
+# 挪走会让 "..\..\.build_stage" 和 "output" 指到错误位置（CI 实测踩坑）。
 $IssPath = Join-Path $PSScriptRoot "FY-Orbit.iss"
-$content = Get-Content $IssPath -Raw -Encoding UTF8
-$content = $content -replace '#define MyAppVersion ".*?"', "#define MyAppVersion `"$Version`""
-$tmpIss = Join-Path $env:TEMP "FY-Orbit-$Version.iss"
-Set-Content $tmpIss $content -Encoding UTF8
 
 if (-not (Test-Path $Stage)) {
     Write-Host "[installer] 缺少装配目录 $Stage，请先跑 build_release_package.py --build --keep-stage" -ForegroundColor Red
@@ -53,7 +51,7 @@ if (-not $iscc) {
 }
 
 if (-not $iscc) {
-    Write-Warning "[installer] 未检测到 Inno Setup 6，无法编译 setup.exe。脚本已生成在 $tmpIss。"
+    Write-Warning "[installer] 未检测到 Inno Setup 6，无法编译 setup.exe。安装脚本在 $IssPath。"
     Write-Host "[installer] 绿色 ZIP 可用；要走 ISCC 发行，需先安装 Inno Setup 6。"
     exit 0
 }
@@ -62,7 +60,7 @@ if (-not $iscc) {
 $isccPath = if ($iscc.Source) { $iscc.Source } else { $iscc.FullName }
 Write-Host "[installer] ISCC: $isccPath"
 Write-Host "[installer] Version: $Version"
-& $isccPath $tmpIss
+& $isccPath "/DMyAppVersion=$Version" $IssPath
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $exe = Join-Path $Root "deploy\installer\output\FY-Orbit-Setup-v$Version.exe"

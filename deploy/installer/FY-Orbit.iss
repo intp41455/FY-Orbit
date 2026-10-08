@@ -15,7 +15,11 @@
 ;   本脚本只负责把它们装进 Inno Setup 包，不负责编译。
 
 #define MyAppName "FY Orbit · 星轨"
+; 版本号可由 ISCC /DMyAppVersion=x.y.z 覆盖（build_installer.ps1 注入 git tag）；
+; 未注入时用下面的默认值。
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "FY Orbit"
 #define MyAppURL "https://github.com/intp41455/FY-Orbit"
 #define MyAppExeName "FY-Orbit.bat"
