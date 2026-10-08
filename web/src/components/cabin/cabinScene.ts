@@ -312,7 +312,18 @@ function stampElements(buf: PixelBuffer, defs: readonly ElementDefLike[], prng: 
     for (let i = 0; i < def.count; i++) {
       const x = Math.floor(prng() * buf.width);
       const baseY = Math.floor(def.baseYMin + prng() * (def.baseYMax - def.baseYMin));
-      placements.push({ snap, x, y: baseY - snap.height * def.scale, scale: def.scale });
+      // 自适应缩放：如果元素顶部超出缓冲区，等比缩小直到能放下。
+      // PINE_ROWS 45 行 × scale 2 = 90px，baseYMin 34 时 y = 34-90 = -56，
+      // 树顶被裁到缓冲区外，90px 的树只剩 34px 可见 —— 用户看到的「树被砍掉上半截」。
+      // 现在检测 y < 0 时缩小 scale，让元素完整落在缓冲区内。
+      let scale = def.scale;
+      const elemH = snap.height * scale;
+      const y = baseY - elemH;
+      if (y < 0) {
+        // 需要缩小到 baseY / elemH 的比例
+        scale = Math.max(1, Math.floor(scale * baseY / elemH));
+      }
+      placements.push({ snap, x, y: baseY - snap.height * scale, scale });
     }
   }
   placements.sort((a, b) => a.y + a.snap.height * a.scale - (b.y + b.snap.height * b.scale));
