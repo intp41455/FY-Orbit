@@ -44,6 +44,15 @@ from find_yourself.services.errors import NotFound, PermissionDenied, Validation
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 32
 
+#: 各资产类型的「合法文件名 + 合法魔数头」，供只验大小上限的用例构造合规 payload。
+#: doc 用 application/pdf（\x25PDF），因为它必须落在 MAGIC_BYTES 白名单内。
+_VALID_HEAD_BY_KIND: dict[str, tuple[str, bytes]] = {
+    "image": ("ok.png", b"\x89PNG\r\n\x1a\n"),
+    "audio": ("ok.wav", b"RIFF"),
+    "music": ("ok.wav", b"RIFF"),
+    "doc": ("ok.pdf", b"%PDF"),
+}
+
 
 def _tz_result_value(self, value, dialect):  # type: ignore[no-untyped-def]
     if value is not None and value.tzinfo is None:
@@ -113,11 +122,20 @@ def test_invalid_kind_and_empty_payload_rejected(svc, session_maker):
 @pytest.mark.parametrize("kind", ASSET_KINDS)
 def test_size_limit_per_kind(kind, svc, session_maker, root):
     limit = MAX_BYTES_BY_KIND[kind]
-    ok_payload = b"\x00" * 16
-    svc.store_bytes(Actor.owner("owner"), owner_id="owner", name="ok", data=ok_payload, kind=kind)
+    # 用带合法魔数 + 正确后缀的 payload，避免被「文件头与声明类型不匹配」拦下
+    # （本用例只验大小上限，不应受魔数校验影响）。
+    name, head = _VALID_HEAD_BY_KIND[kind]
+    ok_payload = head + b"\x00" * 16
+    svc.store_bytes(
+        Actor.owner("owner"), owner_id="owner", name=name, data=ok_payload, kind=kind
+    )
     with pytest.raises(PayloadTooLarge) as err:
         svc.store_bytes(
-            Actor.owner("owner"), owner_id="owner", name="big", data=b"\x00" * (limit + 1), kind=kind
+            Actor.owner("owner"),
+            owner_id="owner",
+            name=name,
+            data=head + b"\x00" * (limit + 1),
+            kind=kind,
         )
     assert err.value.http_status == 413
     # 超限不留脏行、不留脏文件
