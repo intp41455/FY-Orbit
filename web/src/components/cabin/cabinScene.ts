@@ -322,7 +322,7 @@ function stampElements(buf: PixelBuffer, defs: readonly ElementDefLike[], prng: 
         const maxScale = baseY / Math.max(1, snap.height);
         scale = Math.min(scale, maxScale * 0.95);
       }
-      placements.push({ snap, x, y: baseY - snap.height * scale, scale }); (同步 P0 修复 + 游戏修复 + 待办文件)
+      placements.push({ snap, x, y: baseY - snap.height * scale, scale });
     }
   }
   placements.sort((a, b) => a.y + a.snap.height * a.scale - (b.y + b.snap.height * b.scale));
