@@ -1,0 +1,7 @@
+# 确保 Service Worker 永不被长效缓存，否则会一直劫持页面导航
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# 宣传页 HTML 保持每次回源校验，便于内容更新即时生效
+/index.html
+  Cache-Control: no-cache, must-revalidate

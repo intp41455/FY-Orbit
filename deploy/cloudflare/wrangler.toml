@@ -1,6 +1,10 @@
 name = "fy-orbit"
 compatibility_date = "2024-09-23"
-pages_build_output_dir = "../../web/dist"
+# ⚠️ 本目录 = 宣传落地页（fy-orbit.pages.dev）的静态站点根。
+# 千万不要把它指到 ../../web/dist —— 那是 Web 工作台 SPA 的产物，
+# 一旦部署到 fy-orbit 项目就会把落地页覆盖成应用界面（历史上已踩过）。
+# Web 工作台 SPA 请用 deploy-app-frontend.bat 部署到 find-yourself 项目。
+pages_build_output_dir = "./dist"
 
 [vars]
 # 生产部署时由构建环境或 Cloudflare Dashboard 注入真实的后端公网 URL
