@@ -106,6 +106,11 @@ For commercial licensing, contact: `intp41455@gmail.com`
 * **实时消息传递**：Agent 之间的消息与状态回写走统一事件总线，任务派发与结果回收有据可查。
 * **任务分配与认领**：支持任务指派、抢占式认领与前置依赖约束，调度过程可观察。
 * **能力对标**：在编排灵活性、状态持久化与工程工具链三个维度上对标主流图编排与编码 Agent 框架的能力边界。
+* **协作可视化**：以中枢为中心的拓扑画布，统一编排中枢与实机连接探针，预算切片派发与结构化交接包同步可见。
+
+<p align="center">
+  <img src="assets/screenshots/04-multi-agent-team-canvas.png" alt="FY Orbit 多 Agent 协作可视化画布" width="90%" />
+</p>
 
 ### 3. 三重模式同源切换
 同一套工作流逻辑在三种形态间无损切换：
@@ -113,22 +118,18 @@ For commercial licensing, contact: `intp41455@gmail.com`
 * **⚡ 视觉画布模式 (Visual Canvas)**：基于高自由度平移缩放画布，多色端口类型防错吸附，直观拖拽编排。
 * **🛠️ 工程向，支持 DSL、AST 语法树实时双向热同步与终端沙箱调试。
 
-<p align="center">
-  <img src="assets/screenshots/04-multi-agent-team-canvas.png" alt="FY Orbit 多智能体团队协同画布" width="90%" />
-</p>
-
 ### 4. 抗打断与断点续作
 * **暂存必须落库**：执行状态、会话快照与中间产物全量流式落盘至 SQLite，杜绝仅驻留内存。
 * **断网/重启秒级续作**：系统重启或网络恢复后，自动扫描未决断点并无缝原位接力开工。
 * **事务外发箱 (`Outbox`)**：先占位、再执行、后确认，杜绝外部 API 误发与重复扣费。
 
-### 5. 规划看板与排期视图
-* **四状态任务流转**：待办、进行中、阻塞与完成状态机，支持前置依赖与抢占认领。
-* **原生 SVG 甘特规划图 (`GanttChart`)**：直观呈现任务排期重叠、时序依赖与里程碑节点。
-* **动态燃尽与燃起图 (`BurndownChart`)**：真实执行轨迹与理想工期斜率对比，量化项目健康度。
+### 5. 统一可观测与成本仪表盘
+* **全链路 Trace 追踪**：每次运行的事件流、工具调用与决策路径完整落盘，可逐条回放。
+* **实时事件流 (SSE)**：支持按执行者（Actor）过滤，实时观察调度与执行轨迹。
+* **成本与进度归因**：按模型/调用方/自然日三维记账，Token 消耗与任务进度可量化对齐。
 
 <p align="center">
-  <img src="assets/screenshots/03-agile-kanban-gantt.png" alt="FY Orbit 任务看板与甘特图" width="90%" />
+  <img src="assets/screenshots/03-agile-kanban-gantt.png" alt="FY Orbit 统一可观测与成本仪表盘" width="90%" />
 </p>
 
 ### 6. 工程工具链内嵌
@@ -148,7 +149,7 @@ For commercial licensing, contact: `intp41455@gmail.com`
 * **Three.js 3D 知识星图**：将本地知识库渲染为三维星系旋臂与引力连线，支持空间漫游与聚焦抽屉。
 
 <p align="center">
-  <img src="assets/screenshots/06-knowledge-3d-galaxy.png" alt="FY Orbit 3D 知识星图" width="90%" />
+  <img src="assets/screenshots/06-knowledge-3d-galaxy.png" alt="FY Orbit 本地知识库与 3D 知识星图" width="90%" />
 </p>
 
 ### 2. 数码小屋与桌宠
@@ -157,7 +158,7 @@ For commercial licensing, contact: `intp41455@gmail.com`
 * **闲暇小项目**：内嵌数款极简减压互动，在长流程调试间歇放松一下。
 
 <p align="center">
-  <img src="assets/screenshots/07-personal-cabin-digital-space.png" alt="FY Orbit 数码小屋" width="90%" />
+  <img src="assets/screenshots/07-personal-cabin-digital-space.png" alt="FY Orbit 数码小屋与桌宠" width="90%" />
 </p>
 
 ### 3. 确定性排盘与画像
