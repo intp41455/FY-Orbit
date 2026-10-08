@@ -328,7 +328,8 @@ def test_local_files_fetch_missing_file_explicit_failure(kb_root):
 
 def test_local_files_rejects_traversal_refs(kb_root):
     src = LocalFilesSource(root_dir=str(kb_root))
-    for bad in ["../outside.md", "a/../../b.md", "C:/abs.md", ""]:
+    # 两种分隔符都要覆盖，否则会漏掉目标平台的穿越形态。
+    for bad in ["../outside.md", "a/../../b.md", "..\\..\\outside.md", "a\\..\\..\\b.md", "C:/abs.md", ""]:
         with pytest.raises(ValidationFailed) as err:
             list(src.fetch_document(
                 SourceRef(source_id=src.source_id, external_id=bad, name="x")))

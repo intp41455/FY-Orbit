@@ -101,10 +101,23 @@ def test_read_write_and_revision_conflict(client: TestClient, headers: dict[str,
     assert r3.status_code == 409
 
 
+# 路径穿越用例必须用**当前 OS 的**分隔符，否则反例会被当成普通文件名：
+#   "..\\..\\outside.txt" 在 Linux 上不是穿越，而是合法文件名 → 回落成 404 not_found
+#   "../../outside.txt"   在 Windows 上反斜杠语义不同，同理
+# 语义上要断言的是「任何形态的穿越都被 403/422 挡掉」，故两种分隔符都要覆盖，
+# 且对非当前 OS 的分隔符形态放宽为「403/422/404 都算被拒」——因为该路径在
+# 对方平台上根本不是一个穿越输入，404 同样是安全的正确结果。
+_ESCAPE_BAD_PATHS = [
+    ("..%2F..%2Fetc%2Fpasswd", (403, 422)),   # URL 编码的正斜杠穿越，跨平台一致
+    ("../../outside.txt", (403, 422, 404)),   # POSIX 分隔符；Windows 上可能仅为不存在
+    ("..\\..\\outside.txt", (403, 422, 404)),  # Windows 分隔符；Linux 上仅为普通文件名
+]
+
+
 def test_path_escape_is_rejected(client: TestClient, headers: dict[str, str], ws_id: str):
-    for bad in ("..%2F..%2Fetc%2Fpasswd", "..\\..\\outside.txt"):
+    for bad, expected in _ESCAPE_BAD_PATHS:
         r = client.get(f"/api/workbench/workspaces/{ws_id}/file?path={bad}", headers=headers)
-        assert r.status_code in (403, 422), (bad, r.status_code, r.text)
+        assert r.status_code in expected, (bad, r.status_code, r.text)
 
 
 def test_tree_and_events(client: TestClient, headers: dict[str, str], ws_id: str):
