@@ -44,7 +44,11 @@ from .presets import get_preset
 DEFAULT_SECRET_FIELDS: dict[str, tuple[str, ...]] = {
     "openai_chat": ("api_key",),
     "anthropic": ("api_key",),
-    "mcp_server": (),
+    # 远程 MCP（http/sse/ws）需要认证头；stdio 不需要。故「允许但不强制」——
+    # 是否必填由 credential_fields 的 required 决定。
+    # 实际注入路径：config.headers 里写 {credential.api_token}，由
+    # McpServerAdapter._render_headers() 渲染后透传给 McpClient.from_url。
+    "mcp_server": ("api_token", "authorization", "headers"),
     "http_webhook": ("api_token",),
     "knowledge_source": ("api_key", "app_key", "app_secret"),
     "tool_plugin": ("api_token",),

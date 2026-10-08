@@ -60,15 +60,28 @@ class Capability:
 
     ``name`` uses a ``<domain>.<action>`` shape inside the hub namespace
     (``chat`` / ``tool:<tool>`` / ``knowledge.search`` ...).
+
     ``tags`` drive v1 routing (router.py) — they are matched against the task hint.
+    ``tags`` 用英文品类词，因为英文标签不会作为子串出现在中文句子里。
+
+    ``aliases`` 是**显式声明的中文别名/同义词**，专治中文路由：``tags=["math"]`` 的
+    能力匹配不到「帮我算一下数学加法」，但 ``aliases=("加法", "求和")`` 能。
+    别名走子串匹配（中文「数学」确实出现在句中），因此允许单字；``tags`` 仍要求
+    长度 >= 2，避免英文短词（"a"、"go"）在长句里子串误命中。
     """
 
     name: str
     tags: tuple[str, ...] = ()
     description: str = ""
+    aliases: tuple[str, ...] = ()
 
     def to_public(self) -> dict[str, Any]:
-        return {"name": self.name, "tags": list(self.tags), "description": self.description}
+        return {
+            "name": self.name,
+            "tags": list(self.tags),
+            "description": self.description,
+            "aliases": list(self.aliases),
+        }
 
     @classmethod
     def from_public(cls, raw: Any) -> "Capability":
@@ -77,10 +90,12 @@ class Capability:
         if not isinstance(raw, dict) or not raw.get("name"):
             raise ValidationFailed("hub_invalid_capability", "能力条目缺少 name")
         tags = raw.get("tags") or []
+        aliases = raw.get("aliases") or []
         return cls(
             name=str(raw["name"]),
             tags=tuple(str(t) for t in tags if str(t).strip()),
             description=str(raw.get("description") or ""),
+            aliases=tuple(str(a) for a in aliases if str(a).strip()),
         )
 
 
@@ -365,7 +380,8 @@ class ChatModelAdapter:
         tags = ("chat", "llm", "text")
         tags = tags + ("local", "free") if local else tags + ("cloud",)
         declared = [Capability.from_public(c) for c in (self.config.get("capabilities") or [])]
-        base = [Capability(name="chat", tags=tags, description=f"对话补全（{provider_id}）")]
+        base = [Capability(name="chat", tags=tags, description=f"对话补全（{provider_id}）",
+                            aliases=("对话", "聊天", "问答", "答疑", "写东西", "润色"))]
         return _merge_capabilities(base, declared)
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
@@ -452,6 +468,50 @@ class McpServerAdapter:
             )
         return McpTrustPolicy(level=level)
 
+    #: 不能当作「凭证值」的平铺键 —— 它们是连接的结构字段或模板本身。
+    _CONFIG_RESERVED_KEYS = frozenset({
+        "kind", "server", "url", "transport", "trust", "headers", "command",
+        "env", "params", "credentials", "capabilities", "method", "timeout_seconds",
+        "retries", "response_path", "provider_id", "base_url", "model",
+        "source_id", "api_key_", "prompt", "system",
+    })
+
+    def _credential_ctx(self) -> dict[str, Any]:
+        """汇总凭证：``credentials`` 子字典 + 平铺的凭证键（平铺优先）。
+
+        两条注入路径必须都支持，否则用户「填了 token 却报模板缺值」：
+        * ``ConnectionService.adapter_config()``（connections.py:170-175）把解密后的
+          凭证**平铺**进 config（``cfg["api_token"]``），没有 credentials 子字典
+        * ``build_adapter(credentials=...)``（adapters.py:912-913）把凭证并进 cfg，
+          manifest 导入路径可能显式带 credentials 子字典
+
+        平铺键优先：它是用户刚填的实时值；子字典作为兜底。
+        """
+        creds: dict[str, Any] = {}
+        nested = self.config.get("credentials")
+        if isinstance(nested, dict):
+            creds.update({str(k): v for k, v in nested.items() if v not in (None, "")})
+        for key, value in self.config.items():
+            if key in self._CONFIG_RESERVED_KEYS:
+                continue
+            if value in (None, "", {}, []):
+                continue
+            creds[str(key)] = value
+        return creds
+
+    def _render_headers(self) -> dict[str, str]:
+        """渲染 ``config.headers``，支持 ``{credential.<key>}`` / ``{param.<key>}``。
+
+        与 WebhookAdapter 同一套模板语法，保证用户在两类连接里写凭证占位符
+        的方式一致；空 headers 直接返回空 dict，调用方据此走无认证分支。
+        """
+        raw = self.config.get("headers")
+        if not isinstance(raw, dict) or not raw:
+            return {}
+        ctx = {"param": dict(self.config.get("params") or {}),
+               "credential": self._credential_ctx()}
+        return {str(k): str(v) for k, v in render_template(dict(raw), ctx).items()}
+
     def _connect(self) -> Any:
         if self._client is not None:
             return self._client
@@ -470,7 +530,16 @@ class McpServerAdapter:
                     "hub_mcp_invalid_transport",
                     f"未知 MCP 远端传输 '{transport}'；可用：http / sse / ws",
                 )
-            self._client = McpClient.from_url(url, transport=transport, trust=self._trust())
+            # 远程 MCP 认证头：此前完全没透传，导致任何需要 Bearer token 的
+            # 远程 MCP Server 都固定 401 —— 凭证填了也用不上。
+            # headers 支持 {credential.<key>} 模板（与 WebhookAdapter 同一套
+            # render_template，同在本模块），空则不传该参数以保持向后兼容。
+            headers = self._render_headers()
+            if headers:
+                self._client = McpClient.from_url(
+                    url, transport=transport, trust=self._trust(), headers=headers)
+            else:
+                self._client = McpClient.from_url(url, transport=transport, trust=self._trust())
             return self._client
         raise ValidationFailed(
             "hub_mcp_invalid_command",
@@ -541,6 +610,9 @@ class McpServerAdapter:
 
     def capabilities(self) -> list[Capability]:
         server = self.server_key()
+        # MCP 工具名五花八门（add/echo/summarize/...），别名无法内置猜测，
+        # 所以 discovered 不带 aliases —— 中文别名由 config.capabilities 里
+        # 用户显式声明的条目通过 _merge_capabilities 补进来。
         discovered = [
             Capability(name=f"tool:{name}", tags=("tool", "mcp", server),
                        description=f"MCP 工具 {name}（{server}）")
@@ -680,7 +752,8 @@ class WebhookAdapter:
         if declared:
             return _merge_capabilities([], declared)
         return [Capability(name="http.call", tags=("http", "webhook"),
-                           description="通用 HTTP 调用")]
+                           description="通用 HTTP 调用",
+                           aliases=("调用接口", "请求接口", "发请求"))]
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
         started = time.perf_counter()
@@ -790,14 +863,17 @@ class KnowledgeSourceAdapter:
         caps = getattr(source, "capabilities", None)
         out: list[Capability] = [
             Capability(name="knowledge.list", tags=("knowledge", "list"),
-                       description=f"列出 {source.source_id} 的知识库/目录")
+                       description=f"列出 {source.source_id} 的知识库/目录",
+                       aliases=("知识库", "目录", "清单", "有哪些文档"))
         ]
         if getattr(caps, "searchable", False):
             out.append(Capability(name="knowledge.search", tags=("knowledge", "search"),
-                                  description=f"服务端检索 {source.source_id}"))
+                                  description=f"服务端检索 {source.source_id}",
+                                  aliases=("搜索", "检索", "查找", "查一下", "找资料")))
         if getattr(caps, "full_text", False):
             out.append(Capability(name="knowledge.fetch", tags=("knowledge", "document"),
-                                  description=f"抓取 {source.source_id} 文档正文"))
+                                  description=f"抓取 {source.source_id} 文档正文",
+                                  aliases=("读文档", "正文", "原文", "打开文件")))
         declared = [Capability.from_public(c) for c in (self.config.get("capabilities") or [])]
         return _merge_capabilities(out, declared)
 
@@ -857,14 +933,16 @@ class KnowledgeSourceAdapter:
 
 
 def _merge_capabilities(discovered: list[Capability], declared: list[Capability]) -> list[Capability]:
-    """Discovered capabilities first; declared ones fill gaps / add tags."""
+    """Discovered capabilities first; declared ones fill gaps / add tags & aliases."""
     out: list[Capability] = list(discovered)
     by_name = {c.name: i for i, c in enumerate(out)}
     for cap in declared:
         if cap.name in by_name:
             idx = by_name[cap.name]
-            merged = tuple(dict.fromkeys(tuple(out[idx].tags) + tuple(cap.tags)))
-            out[idx] = Capability(name=cap.name, tags=merged,
+            merged_tags = tuple(dict.fromkeys(tuple(out[idx].tags) + tuple(cap.tags)))
+            # 别名同样并集合并：用户声明的中文别名不能被自动发现的空别名覆盖掉。
+            merged_aliases = tuple(dict.fromkeys(tuple(out[idx].aliases) + tuple(cap.aliases)))
+            out[idx] = Capability(name=cap.name, tags=merged_tags, aliases=merged_aliases,
                                   description=cap.description or out[idx].description)
         else:
             out.append(cap)

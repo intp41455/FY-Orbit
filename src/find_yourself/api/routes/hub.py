@@ -42,6 +42,8 @@ class CapabilityPayload(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     tags: list[str] = Field(default_factory=list, max_length=20)
     description: str = Field(default="", max_length=300)
+    # 中文别名/同义词：路由时走子串匹配，让中文任务描述能命中英文标签的能力。
+    aliases: list[str] = Field(default_factory=list, max_length=20)
 
 
 class CredentialFieldPayload(BaseModel):

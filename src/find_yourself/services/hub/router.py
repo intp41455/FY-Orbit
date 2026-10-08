@@ -72,6 +72,14 @@ def _matches(capability: Capability, tokens: list[str], hint: str) -> list[str]:
         low = tag.lower()
         if low in tokens or (len(low) >= 2 and low in lowered):
             hits.append(tag)
+    # 显式声明的中文别名：子串匹配就是主力命中手段。
+    # 英文标签永远不可能作为子串出现在中文句子里（这是中文路由失效的根因），
+    # 而「数学」确实出现在「帮我算一下数学加法」里 —— 所以别名放宽到长度 >= 1，
+    # 让「查」「写」「算」这类单字别名也能用。
+    for alias in capability.aliases:
+        low = alias.lower()
+        if low in tokens or low in lowered:
+            hits.append(alias)
     if capability.name.lower() in tokens or capability.name.lower() in lowered:
         hits.append(capability.name)
     return list(dict.fromkeys(hits))
@@ -169,8 +177,14 @@ class CapabilityRouter:
             hits = _matches(capability, tokens, text)
             if not hits:
                 continue
-            reasons = [f"标签命中：{', '.join(hits)}"]
-            score = 2.0 * len([h for h in hits if h in capability.tags])
+            tag_hits = [h for h in hits if h in capability.tags]
+            alias_hits = [h for h in hits if h in capability.aliases]
+            reasons = [f"标签命中：{', '.join(tag_hits)}"] if tag_hits else []
+            score = 2.0 * len(tag_hits)
+            if alias_hits:
+                # 别名是用户显式声明的精确意图，权重高于品类标签。
+                reasons.append(f"中文别名命中：{', '.join(alias_hits)}")
+                score += 3.0 * len(alias_hits)
             if capability.name in hits:
                 score += 1.0
             if item["healthy"] is True:
