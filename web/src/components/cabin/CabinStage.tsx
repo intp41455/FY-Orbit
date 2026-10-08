@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createCabinScene, type CabinScene } from './cabinScene';
+import type { PlacedItem } from './gameplay/buildApi';
 import { observeViewport, resolveViewport } from './cabinViewport';
 import type { CabinConfig, DialogueSpeaker } from './cabinConfig';
 import type { PixelPalette } from './cabinPixels';
@@ -24,6 +25,13 @@ interface CabinStageProps {
   personWalkFrames?: readonly (readonly string[])[];
   personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
+  /**
+   * W11 室外家具移除黑名单：按后端黑名单过滤后的清单。
+   * 不传时场景用内置 DEFAULT_PLACED_FURNITURE。
+   */
+  furniture?: readonly PlacedItem[];
+  /** 画面内点删家具后回传仍在场的清单；CabinPage 据此算差集并落库。 */
+  onPlacedItemsChange?: (items: readonly PlacedItem[]) => void;
 }
 
 /**
@@ -35,7 +43,16 @@ interface CabinStageProps {
  * 因此它们变化时必须重建场景。重建放在一个**由调用方 key 控制的子组件**里，
  * 本组件自身既有行为（config / speech 同步、resize、防泄漏）保持不变。
  */
-export function CabinStage({ config, speech, onSpeak, personWalkFrames, personIdleFrames, personPalette }: CabinStageProps) {
+export function CabinStage({
+  config,
+  speech,
+  onSpeak,
+  personWalkFrames,
+  personIdleFrames,
+  personPalette,
+  furniture,
+  onPlacedItemsChange,
+}: CabinStageProps) {
   // 自定义小人身份串：帧矩阵 + 调色板任一变化即视为换了角色，需要重建纹理。
   // 用矩阵首帧做身份代表（内容变即身份变），避免每次渲染都重建场景。
   const [personIdentity, setPersonIdentity] = useState(() => personKey(personWalkFrames, personPalette));
@@ -50,6 +67,8 @@ export function CabinStage({ config, speech, onSpeak, personWalkFrames, personId
       config={config}
       speech={speech}
       onSpeak={onSpeak}
+      furniture={furniture}
+      onPlacedItemsChange={onPlacedItemsChange}
       personWalkFrames={personWalkFrames}
       personIdleFrames={personIdleFrames}
       personPalette={personPalette}
@@ -77,6 +96,8 @@ function CabinStageCanvas({
   config,
   speech,
   onSpeak,
+  onPlacedItemsChange,
+  furniture,
   personWalkFrames,
   personIdleFrames,
   personPalette,
@@ -84,6 +105,10 @@ function CabinStageCanvas({
   config: CabinConfig;
   speech: CabinSpeechRequest | null;
   onSpeak?: (speaker: DialogueSpeaker) => void;
+  /** 画面内点删家具后回传新的摆放清单；CabinPage 走既有乐观锁链路落库。 */
+  onPlacedItemsChange?: (items: readonly PlacedItem[]) => void;
+  /** 按后端黑名单过滤后的室外家具清单；不传则用场景默认清单。 */
+  furniture?: readonly PlacedItem[];
   personWalkFrames?: readonly (readonly string[])[];
   personIdleFrames?: readonly (readonly string[])[];
   personPalette?: PixelPalette;
@@ -92,6 +117,8 @@ function CabinStageCanvas({
   const sceneRef = useRef<CabinScene | null>(null);
   const onSpeakRef = useRef(onSpeak);
   onSpeakRef.current = onSpeak;
+  const onPlacedItemsChangeRef = useRef(onPlacedItemsChange);
+  onPlacedItemsChangeRef.current = onPlacedItemsChange;
   const configRef = useRef(config);
   configRef.current = config;
   const [initError, setInitError] = useState(false);
@@ -109,7 +136,12 @@ function CabinStageCanvas({
       canvas,
       host,
       config: configRef.current,
-      callbacks: { onSpeak: (s) => onSpeakRef.current?.(s) },
+      // createCabinScene 的形参是可变数组，传副本避免 readonly 摩擦。
+      furniture: furniture ? [...furniture] : undefined,
+      callbacks: {
+        onSpeak: (s) => onSpeakRef.current?.(s),
+        onFurnitureRemove: (items) => onPlacedItemsChangeRef.current?.(items),
+      },
       personWalkFrames,
       personIdleFrames,
       personPalette,

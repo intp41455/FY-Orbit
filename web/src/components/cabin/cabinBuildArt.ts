@@ -289,10 +289,10 @@ export function createFurnitureTexture(def: FurnitureDef, rotation: Rotation = 0
  * 默认温馨庭院与居室摆件样例（来自 build.py 真实家具）。
  */
 export const DEFAULT_PLACED_FURNITURE: readonly PlacedItem[] = [
-  { id: 'inst_desk', furniture_id: 'b4_writing_desk', x: 67, y: 51, rotation: 0 },
-  { id: 'inst_stool', furniture_id: 'b4_stool', x: 68, y: 52, rotation: 0 },
-  { id: 'inst_bed', furniture_id: 'b4_single_bed', x: 64, y: 50, rotation: 0 },
-  { id: 'inst_rug', furniture_id: 'b4_rug_small', x: 66, y: 51, rotation: 0 },
-  { id: 'inst_lamp', furniture_id: 'b4_floor_lamp', x: 70, y: 50, rotation: 0 },
-  { id: 'inst_plant', furniture_id: 'b4_pot_plant', x: 71, y: 51, rotation: 0 },
+  { id: 'inst_desk', furniture_id: 'b4_writing_desk', x: 74, y: 51, rotation: 0 },
+  { id: 'inst_stool', furniture_id: 'b4_stool', x: 76, y: 52, rotation: 0 },
+  { id: 'inst_bed', furniture_id: 'b4_single_bed', x: 72, y: 50, rotation: 0 },
+  { id: 'inst_rug', furniture_id: 'b4_rug_small', x: 70, y: 51, rotation: 0 },
+  { id: 'inst_lamp', furniture_id: 'b4_floor_lamp', x: 78, y: 50, rotation: 0 },
+  { id: 'inst_plant', furniture_id: 'b4_pot_plant', x: 79, y: 51, rotation: 0 },
 ];

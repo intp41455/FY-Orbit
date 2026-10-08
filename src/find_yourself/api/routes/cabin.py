@@ -25,11 +25,12 @@ from sqlalchemy.orm import Session
 from ..deps import csrf_protected, get_actor, get_db
 from ...services.actor import Actor
 from ...services.cabin_interior import (
+    CabinInteriorService,
+    CabinExteriorService,
     FURNITURE_CATALOG,
     HOUSE_IDS,
     MAX_ITEMS,
     MAX_LAYOUT_BYTES,
-    CabinInteriorService,
 )
 
 router = APIRouter(prefix="/api/cabin", tags=["cabin"])
@@ -44,6 +45,56 @@ class InteriorPutBody(BaseModel):
         ge=0,
         description="Optimistic lock: 0 = must not exist yet, n = must be at version n",
     )
+
+
+class ExteriorPutBody(BaseModel):
+    """室外家具移除清单（黑名单）。"""
+
+    # extra="forbid": unknown field is a client bug, not something to ignore.
+    model_config = ConfigDict(extra="forbid")
+
+    removed_ids: list[str] = Field(
+        default_factory=list,
+        description="用户明确移除的室外家具 id（黑名单）",
+    )
+    expected_version: int = Field(
+        ge=0,
+        description="Optimistic lock: 0 = must not exist yet, n = must be at version n",
+    )
+
+
+@router.get("/exterior/{house_id}")
+async def get_exterior(
+    house_id: str,
+    actor: Actor = Depends(get_actor),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Read which exterior furniture items the owner removed (blacklist)."""
+    return CabinExteriorService(db).get_exterior(actor, house_id)
+
+
+@router.put("/exterior/{house_id}")
+async def put_exterior(
+    house_id: str,
+    body: ExteriorPutBody,
+    actor: Actor = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Persist the removed-items blacklist (optimistic lock)."""
+    return CabinExteriorService(db).put_exterior(
+        actor, house_id, body.removed_ids, body.expected_version
+    )
+
+
+@router.delete("/exterior/{house_id}")
+async def delete_exterior(
+    house_id: str,
+    expected_version: int,
+    actor: Actor = Depends(csrf_protected),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Restore all exterior furniture (clear the blacklist)."""
+    return CabinExteriorService(db).delete_exterior(actor, house_id, expected_version)
 
 
 @router.get("/furniture")

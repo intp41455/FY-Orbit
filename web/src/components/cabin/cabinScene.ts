@@ -187,6 +187,8 @@ interface ThemeTextures {
   /** 近景道具段（同上）。 */
   near: PixelTexture[];
   ground: PixelTexture;
+  /** R1：地平线处的地面色（= ground 渐变首色），用作地平线以下的兜底底色。 */
+  horizonColor: number;
 }
 
 const themeCache = new Map<CabinBackgroundId, ThemeTextures>();
@@ -484,7 +486,7 @@ function buildThemeTextures(bg: CabinBackgroundId): ThemeTextures {
     near.push(tiled(toTexture(buf, `cabin-near-${bg}-${v}`)));
   }
 
-  return { sky, clouds, stars, nebula, far, mid, near, ground };
+  return { sky, clouds, stars, nebula, far, mid, near, ground, horizonColor: g.top };
 }
 
 function getThemeTextures(bg: CabinBackgroundId): ThemeTextures {
@@ -566,6 +568,14 @@ function particleArt(k: ParticleKindDef): ParticleArtDef {
 export interface CabinSceneCallbacks {
   /** 点击小人/宠物时回调（台词由 React 层经 resolveDialogue 决定后调 speak()）。 */
   onSpeak?: (speaker: DialogueSpeaker) => void;
+  /**
+   * 画面内点击家具把它移走后回调，参数是移除后的完整列表。
+   *
+   * 为什么需要：家具此前只有 setPlacedFurniture() 这一个单向入口，没有任何删除路径，
+   * 默认摆件因此永远钉死。React 层不接这个回调时，画面内删除照常生效，
+   * 只是下次外部 setPlacedFurniture() 覆盖时已删项会回来 —— 回调是可选的，不接不报错。
+   */
+  onFurnitureRemove?: (items: PlacedItem[]) => void;
 }
 
 export interface CabinScene {
@@ -658,7 +668,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     canvas: options.canvas,
     width: initialView.width,
     height: initialView.height,
-    background: 0x0b1030,
+    background: 0x0b1030, // R1：清屏色；下方 skySpr/groundLayer 已铺满画布，此色仅作兜底
     antialias: false, // 像素风：关抗锯齿
     resolution: 1, // 像素风：1x 渲染 + CSS image-rendering: pixelated
     autoDensity: false,
@@ -709,6 +719,11 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   const bgLayer = new Container();
   const skySpr = new Sprite(currentTextures.sky.texture);
+  // R1：地平线以下的纯色兜底层。放在 bgLayer 最底并铺满整个画布，
+  // 任何一层因高度/位移计算偏差露出空隙时，露出的是地平线地面色而非清屏色，
+  // 从根上消除画布边缘的硬边界。
+  const groundFillSpr = new Sprite(Texture.WHITE);
+  groundFillSpr.tint = currentTextures.horizonColor;
   const starLayer = new TilingSprite({
     texture: (currentTextures.stars ?? currentTextures.sky).texture,
     width: 8,
@@ -755,6 +770,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   ambientGlow.anchor.set(0.5, 0.5);
   ambientGlow.blendMode = 'add';
   bgLayer.addChild(
+    groundFillSpr,
     skySpr,
     starLayer,
     nebulaLayer,
@@ -909,6 +925,30 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   const furnitureFloorLayer = new Container();
   const furnitureWallLayer = new Container();
   const furnitureSprites: Map<string, Sprite> = new Map();
+  /** R2-3：当前悬停的家具 id（无悬停为 null），驱动高亮与文字提示。 */
+  let hoveredFurnitureId: string | null = null;
+
+  /**
+   * R2-3：跟随鼠标的「点击移走 · 名称」提示层。
+   * 直角像素框 + 1px 深色描边（沿用 showBubble 的画法），不使用圆角与抗锯齿。
+   * 带 ✕ 前缀而非纯变色，保证状态不只靠颜色传达（UI 基准硬性要求）。
+   */
+  const furnitureHintG = new Graphics();
+  const furnitureHint = new Text({
+    text: '',
+    style: {
+      fontFamily: '"Microsoft YaHei", "PingFang SC", sans-serif',
+      fontSize: 12,
+      fill: 0x1f2937,
+    },
+  });
+  furnitureHint.anchor.set(0.5, 1);
+  furnitureHint.visible = false;
+  furnitureHint.eventMode = 'none';
+  const furnitureHintC = new Container();
+  furnitureHintC.addChild(furnitureHintG, furnitureHint);
+  furnitureHintC.visible = false;
+  furnitureHintC.eventMode = 'none';
 
   const rebuildFurnitureSprites = () => {
     furnitureUnderLayer.removeChildren();
@@ -922,6 +962,17 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       const tex = createFurnitureTexture(def, item.rotation);
       const spr = new Sprite(tex.texture);
       spr.roundPixels = true;
+      // R2-1：家具此前是纯装饰 Sprite（eventMode 默认 'passive'），
+      // 点击既不拾取也不高亮 —— 这正是「消不掉」的直接原因之一。
+      spr.eventMode = 'static';
+      spr.cursor = 'pointer';
+      // R2-2：点击即移除。走数组 + 重建，避免外部 setPlacedFurniture() 之后失去交互。
+      spr.on('pointertap', (ev: FederatedPointerEvent) => {
+        ev.stopPropagation();
+        removeFurniture(item.id);
+      });
+      spr.on('pointerover', () => setFurnitureHover(item.id, true));
+      spr.on('pointerout', () => setFurnitureHover(item.id, false));
       furnitureSprites.set(item.id, spr);
       if (def.layer === 'under') {
         furnitureUnderLayer.addChild(spr);
@@ -934,6 +985,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   };
 
   rebuildFurnitureSprites();
+  furnitureHintC.visible = false;
 
   const syncWorldTiles = () => {
     const vw = viewWidth();
@@ -960,6 +1012,73 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     for (; idx < tileSprites.length; idx++) {
       tileSprites[idx].visible = false;
     }
+  };
+
+  /**
+   * R2-2：移除一件家具。走 `placedFurniture` 数组再重建，
+   * 因此 React 层随后调用 setPlacedFurniture() 覆盖时不会「复活」已删项。
+   */
+  const removeFurniture = (itemId: string): boolean => {
+    const idx = placedFurniture.findIndex((it) => it.id === itemId);
+    if (idx < 0) return false;
+    placedFurniture.splice(idx, 1);
+    rebuildFurnitureSprites();
+    syncFurnitureToCamera();
+    if (hoveredFurnitureId === itemId) hoveredFurnitureId = null;
+    layoutFurnitureHint();
+    options.callbacks?.onFurnitureRemove?.(placedFurniture);
+    return true;
+  };
+
+  /** R2-3：悬停高亮 —— 用提亮 + 描边提示，不依赖颜色单一通道传达状态。 */
+  const setFurnitureHover = (itemId: string, on: boolean): void => {
+    if (on) {
+      hoveredFurnitureId = itemId;
+    } else if (hoveredFurnitureId === itemId) {
+      hoveredFurnitureId = null;
+    }
+    applyFurnitureHover();
+    layoutFurnitureHint();
+  };
+
+  const applyFurnitureHover = (): void => {
+    for (const [id, spr] of furnitureSprites) {
+      const hit = id === hoveredFurnitureId;
+      spr.tint = hit ? 0xffffff : 0xf2f6ff;
+      spr.alpha = hit ? 1 : 0.98;
+    }
+    // 提示层置顶：家具在气泡层之下，提示若留在原层会被说话气泡压住。
+    if (furnitureHintC.visible && app.stage.children.includes(furnitureHintC)) {
+      app.stage.addChild(furnitureHintC);
+    }
+  };
+
+  /** R2-3：跟随悬停家具的文字提示「点击移走 · 名称」+ 一条删除线图标。 */
+  const layoutFurnitureHint = (): void => {
+    const id = hoveredFurnitureId;
+    const item = id ? placedFurniture.find((it) => it.id === id) : undefined;
+    const def = item ? B4_CATALOG_MAP.get(item.furniture_id) : undefined;
+    if (!item || !def) {
+      furnitureHintC.visible = false;
+      return;
+    }
+    const spr = furnitureSprites.get(id!);
+    if (!spr || !spr.visible) {
+      furnitureHintC.visible = false;
+      return;
+    }
+    furnitureHint.text = `✕ 点击移走 · ${def.label}`;
+    const w = furnitureHint.width + 14;
+    const h = furnitureHint.height + 8;
+    furnitureHintG.clear();
+    furnitureHintG.rect(-w / 2 - 1, -h - 1, w + 2, h + 2).fill(0x3a4a63);
+    furnitureHintG.rect(-w / 2, -h, w, h).fill({ color: 0xffffff, alpha: 0.95 });
+    furnitureHint.position.set(-w / 2 + 7, -h + 4);
+    furnitureHintC.visible = true;
+    furnitureHintC.position.set(
+      clamp(spr.x, w / 2 + 8, Math.max(width - w / 2 - 8, w / 2 + 8)),
+      Math.max(h + 10, spr.y - 8),
+    );
   };
 
   const syncFurnitureToCamera = () => {
@@ -999,6 +1118,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     edgeLayer,
     timeOverlay,
     bubbleLayer,
+    furnitureHintC,
   );
   app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
@@ -1131,10 +1251,25 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     }
   };
 
+  // R1：地平线到画布底的实算高度（虚拟像素）。
+  // 原先 layoutLayers 写死 GROUND_VH=152，tick() 又用 `- 100` 魔数，两处不一致；
+  // 且地面层被整体上顶，底部露出清屏色 0x0b1030 —— 即「背景只显示一半 + 边缘硬边界」。
+  // 这里始终按当前画布实算，并向上留 1px 余量吃掉亚像素缝隙。
+  const groundBandVh = (): number =>
+    Math.max(GROUND_VH, (height - groundY) / Math.max(0.0001, worldScale)) + 1;
+
+  // 地面层随纵深镜头的纵向位移（虚拟像素，向下为正）。
+  const groundDepthShift = (): number => Math.max(0, cameraY * PARALLAX.ground);
+
   const layoutLayers = () => {
     skySpr.position.set(0, 0);
     skySpr.width = width;
+    // R1：天空仍只画到地平线，保持 SKY_VH→groundY 的渐变映射（拉高会丢地平线辉光）；
+    // 地平线以下由 groundFillSpr（纯色兜底）+ groundLayer（纹理）铺满。
     skySpr.height = groundY;
+    groundFillSpr.position.set(0, 0);
+    groundFillSpr.width = width;
+    groundFillSpr.height = height;
     const vw = viewWidth();
     const lw = layerVirtualWidth(vw, PARALLAX_MARGIN / 2);
     const lwTight = layerVirtualWidth(vw, 1);
@@ -1144,7 +1279,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       [nebulaLayer, lw, SKY_VH, 0, PARALLAX_MARGIN / 2],
       [cloudLayer, lw, SKY_VH, 0, PARALLAX_MARGIN / 2],
       [farLayer, lw, FAR_VH, groundY - FAR_VH * worldScale, PARALLAX_MARGIN / 2],
-      [groundLayer, lwTight, GROUND_VH, groundY, 1],
+      [groundLayer, lwTight, groundBandVh(), groundY, 1],
     ];
     for (const [layer, localW, localH, y, margin] of tileLayers) {
       layer.scale.set(worldScale);
@@ -1343,6 +1478,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       cloudLayer.visible = !!currentTextures.clouds;
       farLayer.texture = currentTextures.far.texture;
       groundLayer.texture = currentTextures.ground.texture;
+      // R1：兜底层跟随主题地平线色，切换背景时不能留旧色的硬边。
+      groundFillSpr.tint = currentTextures.horizonColor;
       // 中景/近景分段：每槽一张不同变体（变体数 < 槽位数时才循环）
       midSegs.forEach((s, i) => {
         s.texture = currentTextures.mid[i % currentTextures.mid.length].texture;
@@ -1703,7 +1840,10 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
     // 纵深相机 Y 轴视差上下偏移
     farLayer.position.y = Math.round(groundY - FAR_VH * worldScale - cameraY * PARALLAX.far * worldScale);
-    groundLayer.position.y = Math.round(groundY - 100 * worldScale - cameraY * PARALLAX.ground * worldScale);
+    // R1：地面层只做横向视差 + 随地面纵深的轻微纵向位移，
+    // 顶部钉在 groundY（原先 `- groundBandVh()` 会把它整体上顶，侵入天空带，
+    // 同时高度又不够，于是地平线上下同时出现未覆盖区）。
+    groundLayer.position.y = Math.round(groundY + groundDepthShift() - cameraY * PARALLAX.ground * worldScale);
 
     // 中景/近景分段拼接位移（包含 Y 轴纵深平移）
     syncSegments(midSegs, midSegNeed, PARALLAX.mid, MID_VH, Math.round(groundY - MID_VH * worldScale - cameraY * PARALLAX.mid * worldScale));
@@ -1789,6 +1929,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       app.ticker.remove(tick);
       tileSprites.length = 0;
       furnitureSprites.clear();
+      hoveredFurnitureId = null;
+      furnitureHintC.visible = false;
       // 注意：不销毁模块级缓存纹理（themeCache / spriteCache / glow / shadow），
       // React StrictMode 双挂载时新场景直接复用；缓存总量有界（约 40 张小纹理）。
       app.destroy(true, { children: true });
@@ -1801,6 +1943,9 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       placedFurniture = [...items];
       rebuildFurnitureSprites();
       syncFurnitureToCamera();
+      // 外部覆盖后旧悬停 id 可能已不存在，必须复位，否则提示层残留。
+      hoveredFurnitureId = null;
+      furnitureHintC.visible = false;
     },
     getPlacedFurniture() {
       return [...placedFurniture];

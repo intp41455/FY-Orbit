@@ -33,7 +33,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..db.workbench_models import CabinInterior
+from ..db.types import utcnow
+from ..db.workbench_models import CabinExteriorRemoved, CabinInterior
 from .actor import Actor
 from .errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 
@@ -310,3 +311,130 @@ class CabinInteriorService:
             "version": row.version,
             "defaulted": defaulted,
         }
+
+
+# ---------------------------------------------------------------------------
+# 室外：已移除家具黑名单
+# ---------------------------------------------------------------------------
+
+#: 室外默认清单里允许被移除的家具 id。
+#: 与前端 cabinPixelArt.ts 的 DEFAULT_PLACED_FURNITURE 一一对应。
+EXTERIOR_REMOVABLE: frozenset[str] = frozenset(
+    {
+        "b4_writing_desk",
+        "b4_stool",
+        "b4_single_bed",
+        "b4_rug_small",
+        "b4_floor_lamp",
+        "b4_pot_plant",
+    }
+)
+
+MAX_REMOVED_IDS = 64
+MAX_REMOVED_BYTES = 4 * 1024
+
+
+class CabinExteriorService:
+    """Persist *which* exterior furniture the owner removed.
+
+    存黑名单而非整份摆放清单：默认清单会随版本新增家具，若存整份清单，
+    旧存档会把后来新增的家具永久藏掉，且用户没有任何界面能把它找回来。
+    黑名单只表达「用户明确删掉了这几件」，新增家具自动出现。
+
+    安全与契约对齐 ``CabinInteriorService``：
+    * 按 (owner_id, house_id) 隔离；他人存档报404 而非 403（不确认存在性）。
+    * version 乐观锁：过期版本 409，避免多标签页互相覆盖。
+    * 未知家具 id 显式报错，不静默丢弃。
+    """
+
+    def __init__(self, db: Session) -> None:
+        self.db = db
+
+    def _row(self, actor: Actor, house_id: str):
+        if house_id not in HOUSE_IDS:
+            raise NotFound("unknown_house", f"未知房屋模板：{house_id}")
+        return (
+            self.db.execute(
+                select(CabinExteriorRemoved).where(
+                    CabinExteriorRemoved.owner_id == actor.owner_id,
+                    CabinExteriorRemoved.house_id == house_id,
+                )
+            )
+            .scalars()
+            .first()
+        )
+
+    def get_exterior(self, actor: Actor, house_id: str) -> dict:
+        row = self._row(actor, house_id)
+        if row is None:
+            return {"house_id": house_id, "removed_ids": [], "version": 0}
+        return {
+            "house_id": house_id,
+            "removed_ids": list(row.payload.get("removed_ids", [])),
+            "version": row.version,
+        }
+
+    def put_exterior(
+        self, actor: Actor, house_id: str, removed_ids: list[str], expected_version: int
+    ) -> dict:
+        actor.require_authenticated()
+
+        unknown = [i for i in removed_ids if i not in EXTERIOR_REMOVABLE]
+        if unknown:
+            raise ValidationFailed(
+                "unknown_furniture",
+                f"这些家具不可移除或不存在：{', '.join(sorted(unknown))}",
+            )
+        if len(removed_ids) > MAX_REMOVED_IDS:
+            raise ValidationFailed(
+                "too_many_removed", f"移除记录过多（上限 {MAX_REMOVED_IDS}）"
+            )
+        # 去重并排序，保证同内容同版本，便于测试断言与版本比较。
+        normalized = sorted(set(removed_ids))
+        payload = {"removed_ids": normalized}
+        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) > MAX_REMOVED_BYTES:
+            raise ValidationFailed("payload_too_large", "移除清单过大")
+
+        row = self._row(actor, house_id)
+        if row is None:
+            if expected_version != 0:
+                raise Conflict(
+                    "version_mismatch",
+                    f"存档不存在（期望版本 {expected_version}）",
+                )
+            row = CabinExteriorRemoved(
+                id=str(uuid.uuid4()),
+                owner_id=actor.owner_id,
+                house_id=house_id,
+                payload=payload,
+                version=1,
+            )
+            self.db.add(row)
+        else:
+            if row.version != expected_version:
+                raise Conflict(
+                    "version_mismatch",
+                    f"版本冲突：期望 {expected_version}，实际 {row.version}",
+                )
+            row.payload = payload
+            row.version += 1
+            row.updated_at = utcnow()
+        self.db.commit()
+        return {
+            "house_id": house_id,
+            "removed_ids": normalized,
+            "version": row.version,
+        }
+
+    def delete_exterior(self, actor: Actor, house_id: str, expected_version: int) -> dict:
+        """清空黑名单，恢复全部室外家具。"""
+        row = self._row(actor, house_id)
+        if row is None:
+            return {"house_id": house_id, "removed_ids": [], "version": 0}
+        if row.version != expected_version:
+            raise Conflict(
+                "version_mismatch", f"版本冲突：期望 {expected_version}，实际 {row.version}"
+            )
+        self.db.delete(row)
+        self.db.commit()
+        return {"house_id": house_id, "removed_ids": [], "version": 0}

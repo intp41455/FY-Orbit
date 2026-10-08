@@ -264,6 +264,30 @@ class OrchestratorLease(Base):
     )
 
 
+class CabinExteriorRemoved(Base):
+    """数码小屋室外家具移除记录 (W11 · 室外场景家具可移除)。
+
+    One row per ``(owner_id, house_id)``。只存「用户明确删掉了哪几件」，
+    不存整份摆放清单 —— 默认清单会随版本新增家具，整份存档会把新家具
+    永久藏掉且用户无从恢复。黑名单能正确表达数据生命周期。
+
+    The row is owner-private: every query filters on ``owner_id`` and the
+    service reports another tenant's row as 404 so existence never leaks.
+    """
+
+    __tablename__ = "cabin_exterior_removed"
+
+    id: Mapped[str] = mapped_column(ID, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String(200), index=True)
+    house_id: Mapped[str] = mapped_column(String(32), index=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        TZDateTime, default=utcnow, onupdate=utcnow
+    )
+
+
 class CabinInterior(Base):
     """数码小屋室内布置 (W1 · 小屋室内场景与家具布置系统).
 

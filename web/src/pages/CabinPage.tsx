@@ -34,6 +34,14 @@ import {
 } from '../components/cabin/interior/interiorLayout';
 import { loadInteriorWithCache, saveInterior } from '../components/cabin/interior/cabinInteriorApi';
 import {
+  filterRemoved,
+  loadExteriorWithCache,
+  loadLocalRemoved,
+  persistRemoved,
+} from '../components/cabin/interior/cabinExteriorApi';
+import { DEFAULT_PLACED_FURNITURE } from '../components/cabin/cabinBuildArt';
+import type { PlacedItem } from '../components/cabin/gameplay/buildApi';
+import {
   PLACE_FEEDBACK_LINES,
   resolveFurnitureInteraction,
 } from '../components/cabin/interior/furnitureInteraction';
@@ -245,6 +253,16 @@ export function CabinPage() {
   const [layout, setLayout] = useState<InteriorLayout>(() => defaultLayout(config.house));
   /** 后端权威版本（乐观锁）。与本地草稿的 layout.version 分开维护。 */
   const [serverVersion, setServerVersion] = useState(0);
+  // ---- 室外家具移除黑名单（W11）----
+  // 存「删掉了哪些 id」而不是整份摆放：以后新增的家具会自动出现，
+  // 旧存档不会把它们永久藏掉且用户无从恢复。
+  const [exteriorRemoved, setExteriorRemoved] = useState<string[]>([]);
+  const [exteriorVersion, setExteriorVersion] = useState(0);
+  /** 按黑名单过滤后的室外家具清单，直接喂给 CabinStage。 */
+  const exteriorFurniture = useMemo(
+    () => filterRemoved(DEFAULT_PLACED_FURNITURE, exteriorRemoved),
+    [exteriorRemoved],
+  );
   const [dirty, setDirty] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -319,6 +337,22 @@ export function CabinPage() {
         const fresh = local ?? defaultLayout(houseId);
         setLayout(fresh);
         setServerVersion(0);
+        // 室外家具黑名单：后端为准，本地缓存兜底秒开。
+        setExteriorVersion(0);
+        // 本地缓存同步读取（先画出来，避免等网络时家具全闪回来），
+        // 再以��端为准覆盖。loadLocalRemoved 是同步函数，不是 Promise。
+        const cached = loadLocalRemoved(houseId);
+        setExteriorRemoved(cached ?? []);
+        void loadExteriorWithCache(houseId)
+          .then((res) => {
+            setExteriorRemoved(res.removedIds);
+            setExteriorVersion(res.version);
+          })
+          .catch(() => {
+            // 后端读失败：保留本地缓存的内容，不清空 —— 静默清空等于
+            // 把用户已删的家具全部恢复，且没有任何提示。
+            if (!cached) setExteriorRemoved([]);
+          });
         if (seededRef.current.has(houseId)) return;
         seededRef.current.add(houseId);
         void saveInterior(houseId, fresh, 0)
@@ -345,6 +379,38 @@ export function CabinPage() {
   }, [view, config.house]);
 
   /** 统一的草稿更新入口：标脏 + 体积护栏。 */
+  /**
+   * 画面内点删家具 → 算出仍在场的家具 → 取差集得到 removed 名单
+   * → 先落本地（刷新不闪）再 PUT 后端。
+   * localOnly=true 时如实提示「仅本次会话有效」，不冒充已同步。
+   */
+  const handleExteriorItemsChange = useCallback(
+    (items: readonly PlacedItem[]) => {
+      const alive = new Set(items.map((i) => i.furniture_id));
+      const nextRemoved = DEFAULT_PLACED_FURNITURE.filter((d) => !alive.has(d.furniture_id)).map(
+        (d) => d.furniture_id,
+      );
+      setExteriorRemoved(nextRemoved);
+      void persistRemoved(config.house, nextRemoved, exteriorVersion).then((r) => {
+        setExteriorVersion(r.version);
+        if (r.localFailed) {
+          setSaveState({
+            kind: 'error',
+            text: '家具改动未能保存：云端与本地都写入失败，刷新后会恢复原样',
+          });
+        } else if (r.localOnly) {
+          setSaveState({
+            kind: 'local',
+            text: '家具改动仅本次会话有效（未同步到云端）',
+          });
+        } else {
+          setSaveState({ kind: 'saved', text: `家具已保存（版本 ${r.version}）` });
+        }
+      });
+    },
+    [config.house, exteriorVersion],
+  );
+
   const mutate = useCallback((next: InteriorLayout) => {
     if (isLayoutTooLarge(next)) {
       setSaveState({ kind: 'error', text: '布置体积超过 64KB 上限，未应用本次改动' });
@@ -598,6 +664,8 @@ export function CabinPage() {
             config={config}
             speech={speech}
             onSpeak={handleSpeak}
+            onPlacedItemsChange={handleExteriorItemsChange}
+            furniture={exteriorFurniture}
             personWalkFrames={houseWalkFrames}
             personIdleFrames={houseIdleFrames}
             personPalette={housePalette}
