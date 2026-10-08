@@ -1,6 +1,10 @@
 FY Orbit · 星轨 (Find Yourself)
 Copyright 2026 intp41455
 
+本项目采用 Business Source License 1.1 授权（源码公开、限制商用），
+授权变更日为各版本首次发布后 4 年，届时自动转为 Apache License 2.0。
+完整条款见仓库根目录 LICENSE 文件。
+
 本产品包含第三方开源组件，其许可证与版本清单见：
   - 后端：pyproject.toml / uv.lock
   - 前端：web/package.json / web/package-lock.json

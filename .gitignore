@@ -81,3 +81,10 @@ FY-Orbit-Windows-v1.0.0.zip
 # 宣传落地页静态站点：必须入库（线上 fy-orbit.pages.dev 的唯一权威来源，见 deploy/cloudflare/README.md）
 !deploy/cloudflare/dist/
 !deploy/cloudflare/dist/**
+
+# Cloudflare Wrangler 本地构建缓存（不应入库）
+.wrangler/
+
+# 根目录二进制发行包（应走 GitHub Release 分发，不入库）
+/FY-Orbit-v*.zip
+/manual/

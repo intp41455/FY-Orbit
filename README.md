@@ -20,8 +20,36 @@
   <img src="https://img.shields.io/badge/Three.js-WebGL%203D-black?logo=three.js&logoColor=white" alt="Three.js" />
   <img src="https://img.shields.io/badge/Deployment-Local--First%20%7C%20Air--Gapped-0078D4" alt="Local First" />
   <img src="https://img.shields.io/badge/Safety-SHA--256%20Audit%20%7C%20HITL-cb8bff" alt="Audit Chain" />
-  <img src="https://img.shields.io/badge/License-Apache%202.0-orange" alt="License" />
+  <img src="https://img.shields.io/badge/License-BSL%201.1-orange" alt="License" />
 </p>
+
+---
+
+## ⚖️ 授权声明 / License Notice
+
+本项目 **FY Orbit · 星轨** 采用「源码公开、限制商用」（Source-Available）的授权模式，
+许可证为 **Business Source License 1.1**（授权变更日 4 年后自动转为 Apache License 2.0）。
+
+- ✅ **允许**：个人学习、研究、评估；非商业用途的二次开发与分发（须保留本声明与许可证）。
+- ❌ **禁止**：任何形式的商业使用——包括但不限于商业产品/服务集成、SaaS 托管、对外收费部署、
+  企业内部生产环境使用。
+- ❌ **禁止**：摘取本项目核心思路、架构或代码，包装为闭源产品据为己有。
+- ❌ **禁止**：移除或篡改本授权声明、版权与许可证信息。
+
+如需商业授权，请联系：`intp41455@gmail.com`
+
+**FY Orbit** is source-available and **free for non-commercial use only**, licensed under the
+Business Source License 1.1 (converting to Apache License 2.0 four years after each release).
+
+- ✅ **Permitted**: Personal learning, research, evaluation, and non-commercial modification/distribution.
+- ❌ **Prohibited**: Any commercial use, including commercial product integration, SaaS offerings,
+  paid deployment, or internal production use by for-profit entities.
+- ❌ **Prohibited**: Repackaging this project's architecture, core ideas, or code into a closed-source product.
+- ❌ **Prohibited**: Removing or altering this license notice or copyright information.
+
+For commercial licensing, contact: `intp41455@gmail.com`
+
+> 完整条款见 [LICENSE](./LICENSE) · Full terms in [LICENSE](./LICENSE)
 
 ---
 
