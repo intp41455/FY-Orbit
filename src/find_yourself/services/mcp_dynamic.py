@@ -9,7 +9,7 @@ import asyncio
 import threading
 from typing import Any, Optional
 
-from .mcp import McpClient, assemble_mcp_tools
+from ..adapters.mcp import McpClient, assemble_mcp_tools
 from .tool_registry import tool_registry, ToolRegistryService
 from ..config import settings
 

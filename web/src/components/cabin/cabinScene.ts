@@ -729,11 +729,6 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   const bgLayer = new Container();
   const skySpr = new Sprite(currentTextures.sky.texture);
-  // R1：地平线以下的纯色兜底层。放在 bgLayer 最底并铺满整个画布，
-  // 任何一层因高度/位移计算偏差露出空隙时，露出的是地平线地面色而非清屏色，
-  // 从根上消除画布边缘的硬边界。
-  const groundFillSpr = new Sprite(Texture.WHITE);
-  groundFillSpr.tint = currentTextures.horizonColor;
   const starLayer = new TilingSprite({
     texture: (currentTextures.stars ?? currentTextures.sky).texture,
     width: 8,
@@ -785,7 +780,6 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   ambientGlow.anchor.set(0.5, 0.5);
   ambientGlow.blendMode = 'add';
   bgLayer.addChild(
-    groundFillSpr,
     skySpr,
     starLayer,
     nebulaLayer,
