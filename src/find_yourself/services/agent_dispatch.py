@@ -430,3 +430,34 @@ _ensure_builtin_tools()
 agent_dispatch = AgentDispatchService(
     archive_dir=os.environ.get("FY_DISPATCH_ARCHIVE_DIR") or None
 )
+
+def _ensure_builtin_tools() -> None:
+    """确保 echo/add 工具已注册到 tool_registry。"""
+    for name, desc, params in [
+        ("echo", "回显输入参数，用于测试连通性", {
+            "type": "object",
+            "properties": {"text": {"type": "string", "description": "要回显的文本"}},
+            "required": ["text"],
+        }),
+        ("add", "两数相加", {
+            "type": "object",
+            "properties": {
+                "a": {"type": "number", "description": "第一个数"},
+                "b": {"type": "number", "description": "第二个数"},
+            },
+            "required": ["a", "b"],
+        }),
+    ]:
+        try:
+            tool_registry.register(
+                name=name,
+                description=desc,
+                parameters=params,
+                entry={"type": "builtin", "executor": name},
+            )
+        except Exception:
+            pass
+
+
+_ensure_builtin_tools()
+

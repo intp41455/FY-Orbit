@@ -317,13 +317,12 @@ function stampElements(buf: PixelBuffer, defs: readonly ElementDefLike[], prng: 
       // 树顶被裁到缓冲区外，90px 的树只剩 34px 可见 —— 用户看到的「树被砍掉上半截」。
       // 现在检测 y < 0 时缩小 scale，让元素完整落在缓冲区内。
       let scale = def.scale;
-      const elemH = snap.height * scale;
-      const y = baseY - elemH;
-      if (y < 0) {
-        // 需要缩小到 baseY / elemH 的比例
-        scale = Math.max(1, Math.floor(scale * baseY / elemH));
+      const elemTop = baseY - snap.height * scale;
+      if (elemTop < 0) {
+        const maxScale = baseY / Math.max(1, snap.height);
+        scale = Math.min(scale, maxScale * 0.95);
       }
-      placements.push({ snap, x, y: baseY - snap.height * scale, scale });
+      placements.push({ snap, x, y: baseY - snap.height * scale, scale }); (同步 P0 修复 + 游戏修复 + 待办文件)
     }
   }
   placements.sort((a, b) => a.y + a.snap.height * a.scale - (b.y + b.snap.height * b.scale));
@@ -756,6 +755,11 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   cloudLayer.visible = !!currentTextures.clouds;
   const farLayer = new TilingSprite({ texture: currentTextures.far.texture, width: 8, height: 8 });
   const groundLayer = new TilingSprite({ texture: currentTextures.ground.texture, width: 8, height: 8 });
+  // 纯色兜底层：铺满画布，跟随主题地平线色，防止地面只显示一半
+  const groundFillSpr = new Sprite(Texture.WHITE);
+  groundFillSpr.width = app.screen.width;
+  groundFillSpr.height = app.screen.height;
+  groundFillSpr.tint = 0x8b7355; // 默认土地色，会在主题切换时更新
   /**
    * 中景/近景**分段精灵池**：每层多个槽位，每槽一张不同种子的道具段纹理。
    * 相机移动时把槽位按屏幕偏移摆开（而不是靠 tilePosition 重置），
@@ -787,6 +791,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     nebulaLayer,
     cloudLayer,
     farLayer,
+    groundFillSpr,
     groundLayer,
     ...midSegs,
     ...nearSegs,
