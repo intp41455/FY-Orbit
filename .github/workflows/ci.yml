@@ -25,6 +25,9 @@ jobs:
       # 测试环境专用占位密钥（>=32 字符）。settings 校验要求非空且足够长，
       # 缺失会让整个 Settings 构造失败、连带几百条用例全红。
       FY_SESSION_SECRET: ci-only-session-secret-0123456789abcdef0123456789
+      # 桌面登录窗口鉴权所需的本机令牌；缺失会让 desktop 进程启动即崩，
+      # 连带 test_desktop_window_lifecycle 等集成用例失败。
+      FY_LOCAL_TOKEN: ci-only-local-token-0123456789abcdef0123456789
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

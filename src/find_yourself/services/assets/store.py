@@ -294,8 +294,10 @@ class AssetService:
         # 磁盘名用服务端生成的 id，彻底杜绝用户文件名带来的穿越/覆盖风险。
         rel = f"{_owner_segment(owner_id)}/{asset_id}{suffix}"
 
+        resolved_mime = _guess_mime(clean_name, kind, mime)
+
         # 魔数校验：防止 SVG 等伪装文件导致同源 XSS
-        _validate_magic(data, row.mime)
+        _validate_magic(data, resolved_mime)
         target = resolve_within(self.root, rel)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
@@ -306,7 +308,7 @@ class AssetService:
             kind=kind,
             name=clean_name,
             storage_path=rel,
-            mime=_guess_mime(clean_name, kind, mime),
+            mime=resolved_mime,
             size=len(data),
             meta=dict(meta or {}),
         )
