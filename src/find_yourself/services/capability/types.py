@@ -17,9 +17,13 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
+
+# 跨平台盘符前缀：在 Linux 上 Path("C:/x") 不是绝对路径，必须显式识别。
+_WINDOWS_DRIVE_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 #: 能力域：本机能力 vs 跨 agent/应用能力（03：四类万能接口都挂 cross_agent 域）。
 DOMAIN_LOCAL = "local"
@@ -273,10 +277,17 @@ class PathEscape(Exception):
 
 
 def resolve_path(resource: str, roots: Sequence[Path]) -> Path:
-    """把请求资源解析为绝对路径：绝对路径原样 resolve，相对路径相对首个根解析。"""
+    """把请求资源解析为绝对路径：绝对路径原样 resolve，相对路径相对首个根解析。
+
+    跨平台注意：``C:/x`` 或 ``C:\\x`` 在 Windows 上 ``is_absolute()`` 为真，但在
+    Linux 上 ``PurePosixPath("C:/x").is_absolute()`` 为 **假**——会被当成相对路径
+    拼到根下面，从而**漏判越界**。故显式识别盘符前缀，命中即视为绝对路径，
+    直接交给 ``resolve()``（在 Linux 上它会落在 cwd，自然不在任何 root 内 → 拒绝）。
+    """
     raw = Path(resource)
+    has_drive = bool(getattr(raw, "drive", "")) or bool(_WINDOWS_DRIVE_RE.match(resource))
     base = roots[0] if roots else Path.cwd()
-    if raw.is_absolute():
+    if raw.is_absolute() or has_drive:
         return raw.resolve()
     return (base / raw).resolve()
 

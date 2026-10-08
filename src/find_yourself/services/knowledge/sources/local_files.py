@@ -91,8 +91,18 @@ class LocalFilesSource(KnowledgeSource):
         raw = (external_id or "").strip()
         if not raw:
             raise ValidationFailed("local_files_bad_ref", "external_id 不能为空")
-        candidate = Path(raw)
-        if candidate.is_absolute() or candidate.drive or ".." in candidate.parts:
+        # external_id 约定为 posix 相对路径。必须**先**把反斜杠视为分隔符做穿越
+        # 检测：在 Linux 上 Path("..\\..\\x").parts 只有一段，反斜杠不参与分词，
+        # 于是 "..\\..\\x" 会被当成普通文件名放行（漏检）；反之 Windows 上
+        # "a/../../b" 的 "/" 也不参与分词。故先归一化再判定。
+        normalized = raw.replace("\\", "/")
+        candidate = Path(normalized)
+        if (
+            candidate.is_absolute()
+            or candidate.drive
+            or Path(raw).drive
+            or ".." in normalized.split("/")
+        ):
             raise ValidationFailed(
                 "local_files_bad_ref",
                 f"external_id 必须是根目录内的相对路径：{raw!r}",
