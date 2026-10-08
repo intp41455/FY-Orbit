@@ -52,6 +52,9 @@ jobs:
       - name: Assemble deterministic release package
         run: python deploy/build_release_package.py --keep-stage
 
+      - name: Install Inno Setup 6 (CI runner has no ISCC)
+        run: choco install innosetup -y --no-progress
+
       - name: Build Inno Setup installer (when ISCC is available)
         run: powershell -NoProfile -ExecutionPolicy Bypass -File deploy\installer\build_installer.ps1
 

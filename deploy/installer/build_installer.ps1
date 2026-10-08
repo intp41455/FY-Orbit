@@ -1,4 +1,4 @@
-# 用 Inno Setup 把 .build_stage/FY-Orbit 装成正式 setup.exe
+﻿# 用 Inno Setup 把 .build_stage/FY-Orbit 装成正式 setup.exe
 #
 # 为什么需要这个脚本而不是直接写 ISCC 命令：
 #   * Inno Setup 不在 CI/标准环境里，必须先探测；
@@ -58,9 +58,11 @@ if (-not $iscc) {
     exit 0
 }
 
-Write-Host "[installer] ISCC: $($iscc.Source ?? $iscc.FullName)"
+# 兼容 Windows PowerShell 5.1：?? 需要 PS7，且 .ps1 必须带 UTF-8 BOM 才能正确解析中文
+$isccPath = if ($iscc.Source) { $iscc.Source } else { $iscc.FullName }
+Write-Host "[installer] ISCC: $isccPath"
 Write-Host "[installer] Version: $Version"
-& $iscc.Source $tmpIss
+& $isccPath $tmpIss
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $exe = Join-Path $Root "deploy\installer\output\FY-Orbit-Setup-v$Version.exe"
