@@ -12,12 +12,11 @@
 import pytest
 from sqlalchemy import select
 
-from find_yourself.db.models import AuditEvent, Skill
-from find_yourself.services.actor import Actor
+from find_yourself.db.models import AuditEvent
 from find_yourself.services.errors import NotFound, ValidationFailed
 from find_yourself.services.grant import GrantService
 from find_yourself.services.marketplace import MarketplaceService
-from find_yourself.services.marketplace_rating import MarketplaceRatingStore, bayesian_score
+from find_yourself.services.marketplace_rating import MarketplaceRatingStore
 from find_yourself.services.skill import SkillService
 
 

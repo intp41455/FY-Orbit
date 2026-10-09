@@ -17,7 +17,6 @@ from find_yourself.services.errors import Conflict, ValidationFailed
 from find_yourself.services.git_service import GitService
 from find_yourself.services.workspace import WorkspaceService
 
-
 pytestmark = pytest.mark.skipif(shutil.which("git") is None, reason="git not available on PATH")
 
 

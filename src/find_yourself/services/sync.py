@@ -9,13 +9,13 @@ Implements Phase A & D requirements of 13_双端产品续作与验收清单.md:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.sync_models import (
@@ -27,7 +27,7 @@ from ..db.sync_models import (
 )
 from ..db.types import utcnow
 from .actor import Actor
-from .errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from .errors import Conflict, NotFound, ValidationFailed
 
 
 class SyncService:
@@ -134,7 +134,7 @@ class SyncService:
         client_device_id: str | None = None,
     ) -> dict[str, Any]:
         """Push client changes to sync store.
-        
+
         Strictly enforces:
         1. Mode check: if 'local_only', upload is rejected.
         2. Paused check.

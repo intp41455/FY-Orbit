@@ -14,14 +14,21 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import (
-    Artifact, Memory, MemoryRevision, Proposal, SearchDocument, SourceRelation, Tombstone,
-    User, UserConsent,
+    Artifact,
+    Memory,
+    MemoryRevision,
+    Proposal,
+    SearchDocument,
+    SourceRelation,
+    Tombstone,
+    User,
+    UserConsent,
 )
 from ..db.types import utcnow
 from .actor import Actor
+from .audit import AuditService
 from .errors import NotFound
 from .hasher import digest
-from .audit import AuditService
 
 
 class DeletionService:

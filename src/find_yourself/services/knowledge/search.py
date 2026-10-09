@@ -33,12 +33,14 @@ import os
 import re
 from typing import Any, Iterable
 
-from sqlalchemy import or_, select, text as sql_text
+from sqlalchemy import or_, select
+from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
-from ...db.kb_models import KBDocument, KBChunk
+from ...db.kb_models import KBChunk, KBDocument
 from ..actor import Actor
 from ..errors import ValidationFailed
+from ..offline import is_offline
 from .embeddings import DEFAULT_EMBEDDING, EmbeddingProvider, create_embedding, resolve_default_embedding
 from .vectorstores import (
     VectorFilterUnsupported,
@@ -46,7 +48,6 @@ from .vectorstores import (
     create_vector_store,
 )
 from .vectorstores.base import VectorRecord
-from ..offline import is_offline
 
 DEFAULT_TOP_K = 8
 MAX_TOP_K = 50

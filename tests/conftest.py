@@ -12,20 +12,20 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from find_yourself.db.base import Base
-from find_yourself.db import models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
 import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
-import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
+import find_yourself.db.claim_models  # noqa: F401  (P5 共享任务板 task_claims)
 import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
 import find_yourself.db.fork_models  # noqa: F401  (P4 存档分叉 archive_forks)
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
 import find_yourself.db.review_models  # noqa: F401  (P9 点哪评哪评审意见)
-import find_yourself.db.claim_models  # noqa: F401  (P5 共享任务板 task_claims)
-from find_yourself.services.audit import AuditService
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
+from find_yourself.db import models  # noqa: F401
+from find_yourself.db.base import Base
 from find_yourself.services.actor import Actor
+from find_yourself.services.audit import AuditService
 
 
 @pytest.fixture()

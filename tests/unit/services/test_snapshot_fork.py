@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import pytest
 
-from find_yourself.services.actor import Actor
 from find_yourself.services.errors import Conflict, NotFound
 from find_yourself.services.snapshot_fork import (
     FORK_ACTIVE,
@@ -229,6 +228,7 @@ def test_timeline_empty_is_empty_list(svc):
 
 def test_fork_and_discard_write_audit_frames(svc, owner, session):
     from sqlalchemy import select
+
     from find_yourself.db.models import AuditEvent
 
     plan = svc.fork(owner, source_thread_id="audit-t")

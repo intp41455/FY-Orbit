@@ -36,8 +36,8 @@ from find_yourself.db.types import TZDateTime
 from find_yourself.services.dsl_canvas import (
     AGGREGATE_OPS,
     MAP_OPS,
-    NODE_TYPES,
     MERGE_OPS,
+    NODE_TYPES,
     OUTPUT_FORMATS,
     TRANSFORM_VERBS,
     VERB_REGISTRY,
@@ -935,8 +935,7 @@ class TestHttpSurface:
 # =========================================================================== #
 class TestExistingEnumsUnchanged:
     def test_legacy_enums_keep_their_values(self):
-        from find_yourself.services.dsl_canvas import (
-            CONDITION_OPS, FILTER_OPS, INPUT_KINDS, MAP_OPS)
+        from find_yourself.services.dsl_canvas import CONDITION_OPS, FILTER_OPS, INPUT_KINDS
         assert MAP_OPS == ("set", "upper", "lower")
         assert FILTER_OPS == ("eq", "ne", "gt", "lt", "contains")
         assert CONDITION_OPS == FILTER_OPS

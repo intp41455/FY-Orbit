@@ -17,12 +17,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import find_yourself.db.canvas_models
-import find_yourself.db.models
-import find_yourself.db.profile_models
-import find_yourself.db.sync_models
-import find_yourself.db.team_models
-import find_yourself.db.workbench_models
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base

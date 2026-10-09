@@ -11,25 +11,30 @@ Implements:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
 import json
 import re
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from find_yourself.db.models import (
-    AuditEvent, ProfileEvidence, ProfileFeedback, ProfileImport, ProfileRevision,
-    ProfileRun, ProfileSubject, SourceSegment, Tombstone,
+    ProfileEvidence,
+    ProfileFeedback,
+    ProfileImport,
+    ProfileRevision,
+    ProfileRun,
+    ProfileSubject,
+    SourceSegment,
+    Tombstone,
 )
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
-from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from find_yourself.services.errors import NotFound, ValidationFailed
 
 
 class ProfileService:

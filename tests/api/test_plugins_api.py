@@ -10,7 +10,6 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-
 from helpers import login_owner
 
 

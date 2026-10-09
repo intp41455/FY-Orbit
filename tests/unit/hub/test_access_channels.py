@@ -12,7 +12,7 @@ import sys
 import httpx
 import pytest
 
-from find_yourself.adapters.a2a import A2AClient, TrustedEndpointRegistry, UntrustedEndpointError
+from find_yourself.adapters.a2a import A2AClient, TrustedEndpointRegistry
 from find_yourself.adapters.mcp import (
     McpClient,
     McpPrompt,
@@ -23,17 +23,15 @@ from find_yourself.adapters.mcp import (
 )
 from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.hub.access import (
-    CHANNEL_A2A,
     CHANNEL_CLI,
     CHANNEL_MCP,
     CHANNEL_PLUGIN,
-    ACCESS_CHANNELS,
-    AccessRegistry,
     A2AAccessChannel,
+    AccessRegistry,
     CliChannelAdapter,
+    InvokeCall,
     McpAccessChannel,
     PluginChannelAdapter,
-    InvokeCall,
 )
 from find_yourself.services.hub.adapters import HealthReport
 

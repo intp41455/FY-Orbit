@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import time
 from decimal import Decimal
-from unittest.mock import MagicMock
 
 import pytest
 from fastapi import Request
 from sqlalchemy.orm import Session
 
-from find_yourself.api.oidc import pkce_pair, new_nonce, new_state
+from find_yourself.api.oidc import new_nonce, new_state, pkce_pair
 from find_yourself.api.routes.auth import _cookie_secure
 from find_yourself.config import Settings
 from find_yourself.db.models import AuditEvent, Task

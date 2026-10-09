@@ -23,9 +23,9 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..deps import Services, csrf_protected, get_actor, get_services
 from ...services.actor import Actor
 from ...services.errors import DomainError
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/hitl", tags=["hitl"])
 

@@ -32,9 +32,9 @@ from sqlalchemy.orm import Session
 
 from ..db.models import Skill, SkillEvaluation
 from .actor import Actor
+from .audit import AuditService
 from .errors import Conflict, NotFound, ValidationFailed
 from .hasher import digest
-from .audit import AuditService
 from .plugin_signing import (
     DEFAULT_SIGNING_ALGORITHM,
     classify_package,

@@ -8,8 +8,8 @@ terminal; anything pipe-backed must be labelled ``command_log`` instead.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import time
+from pathlib import Path
 
 import pytest
 

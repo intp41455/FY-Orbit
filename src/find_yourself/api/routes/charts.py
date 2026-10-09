@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_db, get_services, Services
+from fastapi import APIRouter, Depends, HTTPException, status
+
 from ...charts.engine import ChartImporter, DeterministicChartEngine
 from ...charts.interpreter import ChartInterpreter
 from ...charts.models import (
@@ -15,8 +14,8 @@ from ...charts.models import (
     DailyFortuneRequest,
     DailyFortuneResult,
     ExternalChartImportRequest,
-    InterpretRequest,
     InterpretationResult,
+    InterpretRequest,
     SynastryRequest,
     SynastryResult,
     TarotDrawRequest,
@@ -24,7 +23,7 @@ from ...charts.models import (
 )
 from ...charts.retrieval import DualPathRetrievalService
 from ...services.actor import Actor
-
+from ..deps import Services, csrf_protected, get_services
 
 router = APIRouter(prefix="/api/charts", tags=["charts"])
 

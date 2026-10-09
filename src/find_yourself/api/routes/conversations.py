@@ -13,20 +13,21 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
+from ...config import Settings
 from ...db.models import Conversation, Message
 from ...db.types import utcnow
-from ..deps import csrf_protected, get_actor, get_services, get_settings, Services
-from ...config import Settings
-from ..schemas import ConversationCreate, MessageCreate
 from ...services.actor import Actor
-from ...services.errors import NotFound, PermissionDenied, Conflict
+from ...services.errors import NotFound
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
+from ..schemas import ConversationCreate, MessageCreate
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 
 def _serialize_conversation(c: Conversation) -> dict:
     # P1-3: 补充 message_count，前端历史列表直接显示条数
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from ...db.models import Message
     # 这里只能同步查，列表接口改用子查询更高效；先在序列化里加字段
     message_count = 0
@@ -75,7 +76,8 @@ async def create_conversation(body: ConversationCreate,
 @router.get("")
 async def list_conversations(actor: Actor = Depends(get_actor),
                              svc: Services = Depends(get_services)) -> list[dict]:
-    from sqlalchemy import select, func, outerjoin
+    from sqlalchemy import func, select
+
     from ...db.models import Message
     # 子查询：每个 conversation 的 message_count
     subq = (
@@ -109,7 +111,8 @@ def _get_owned(svc: Services, actor: Actor, conversation_id: str) -> Conversatio
 @router.get("/{conversation_id}")
 async def get_conversation(conversation_id: str, actor: Actor = Depends(get_actor),
                            svc: Services = Depends(get_services)) -> dict:
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     from ...db.models import Message
     c = _get_owned(svc, actor, conversation_id)
     d = _serialize_conversation(c)

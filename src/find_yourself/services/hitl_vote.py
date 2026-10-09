@@ -337,7 +337,14 @@ class HitlVoteService:
             # 同 tally()：平手不报 leader。
             "leader": None if len(leader) > 1 else (leader[0] if leader else None),
             "tied": len(leader) > 1,
-            "tie_options": leader if len(leader) > 1 else [],
+            # ⚠️ 这里**不要**再写一次 "tie_options"。
+            # 本 dict 字面量上面已经有一处 ``"tie_options": session_row.tie_options or []``，
+            # 重复键会让后者**静默覆盖**前者（Python 不报错，只留最后一个）——
+            # 于是平手被后续投票打破、``session_row.tie_options`` 已是历史落库值时，
+            # API 返回的却是「当前 tally 的实时平手集」，与库里存的不一致。
+            # 语义上这里应以上面那处**落库值为准**：``tied``/``leader`` 是实时视图，
+            # ``tie_options`` 是「当初平手时冻结的候选集」，两者本就不是一回事。
+            # （ruff F601 就是盯着这行报的错。）
         }
 
     def list_votes(

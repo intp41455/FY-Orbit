@@ -28,10 +28,10 @@ from typing import Any, Iterator, Sequence
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
+    ChannelVersions,
     Checkpoint,
     CheckpointMetadata,
     CheckpointTuple,
-    ChannelVersions,
 )
 
 _SCHEMA = """

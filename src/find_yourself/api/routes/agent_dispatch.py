@@ -19,17 +19,15 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.agent_dispatch import (
     DispatchValidationError,
     agent_dispatch,
 )
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/agent-dispatch", tags=["agent-dispatch"])
 

@@ -14,9 +14,9 @@ import hashlib
 import json
 import math
 import re
+import zoneinfo
 from typing import Any
 from uuid import uuid4
-import zoneinfo
 
 from .models import (
     ChartRequest,
@@ -30,7 +30,6 @@ from .models import (
     TarotDrawRequest,
     TarotDrawResult,
 )
-
 
 ENGINE_VERSION = "1.0.0-deterministic"
 
@@ -409,8 +408,8 @@ class DeterministicChartEngine:
         quotes = [
             f"今日天干{day_stem}地支{day_branch}，五行{day_element}气流转。{rel_desc}",
             f"星轨提示：当{user_element}性本心遇上{day_pillar}之日，行动应如流水避碍，心智当如高山笃定。",
-            f"万物自宾，静观有得。保持专注呼吸，在有序的小节律中积蓄破局的力量。",
-            f"今日适合把目光投向具体的小事，一次干净利落的提交，胜过千百次犹豫的推演。",
+            "万物自宾，静观有得。保持专注呼吸，在有序的小节律中积蓄破局的力量。",
+            "今日适合把目光投向具体的小事，一次干净利落的提交，胜过千百次犹豫的推演。",
         ]
         oracle_message = quotes[(day_offset + u_idx) % len(quotes)]
 

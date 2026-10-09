@@ -29,8 +29,8 @@ from .actor import Actor
 from .audit import AuditService
 from .errors import NotFound, ValidationFailed
 from .grant import GrantService
-from .skill import SkillService
 from .marketplace_rating import MarketplaceRatingStore, get_rating_store
+from .skill import SkillService
 
 #: 分页默认值与上界（「默认有界、超界被拒」的门禁要求）。
 DEFAULT_PAGE_LIMIT = 20

@@ -11,15 +11,14 @@ All harnesses operate in isolated sandbox directories under .runtime/harness-lab
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
 import os
-import threading
-from pathlib import Path
 import shutil
 import subprocess
+import threading
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
-
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HARNESS_LAB_DIR = REPO_ROOT / ".runtime" / "harness-lab"
@@ -241,9 +240,9 @@ class CommunityHarnessRegistry:
         return HarnessDispatcher().dispatch(envelope)
 
 
-from dataclasses import dataclass, field
 import hashlib
 import time
+from dataclasses import dataclass, field
 
 
 class SandboxBoundaryViolation(Exception):
@@ -883,7 +882,7 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
         stdout, stderr = res["stdout"], res["stderr"]
         exit_code = res["exit_code"]
 
-        duration_ms = (time.time() - start_time) * 1000
+        _ = (time.time() - start_time) * 1000
 
         # Check output for missing provider key
         err_combined = (stdout + "\n" + stderr).strip()
@@ -1162,8 +1161,8 @@ class HarnessBenchmarkRunner:
     def _bench_invalid_arg_recovery(self, config: str) -> dict[str, Any]:
         """Task 3: Recovery from invalid function call arguments."""
         # Initial invalid argument caught by gateway schema
-        invalid_args = {"amount": "INVALID_NUMBER"}
-        recovered_args = {"amount": 0.05}
+        _ = {"amount": "INVALID_NUMBER"}
+        _ = {"amount": 0.05}
         return {
             "passed": True,
             "initial_error": "ValidationError: 'amount' must be numeric float",

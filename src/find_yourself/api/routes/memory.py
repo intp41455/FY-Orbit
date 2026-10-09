@@ -11,8 +11,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from ..deps import csrf_protected, get_actor, get_services, Services
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
 

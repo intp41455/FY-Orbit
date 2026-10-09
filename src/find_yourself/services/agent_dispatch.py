@@ -36,7 +36,6 @@ from .scheduler import (
     CHANNEL_INTERNAL_AGENT,
     TASK_FAILED,
     TASK_RECLAIMED,
-    TASK_SUCCEEDED,
     DispatchRequest,
     UnifiedScheduler,
 )

@@ -6,8 +6,8 @@ values never promote an actor — that is BUG-03. Services take an ``Actor`` and
 decide authorization from it, not from client claims.
 """
 
-from datetime import datetime
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from ..db.types import utcnow
 from .errors import PermissionDenied, Unauthenticated

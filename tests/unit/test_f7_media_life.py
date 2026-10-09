@@ -11,22 +11,20 @@ Verifies:
 
 from __future__ import annotations
 
-import hashlib
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy.orm import Session
 
-from find_yourself.adapters.artifacts import LocalArtifactStore, S3ArtifactStore
-from find_yourself.adapters.creative_tools import CreativeToolsService, TOOL_CATALOG
+from find_yourself.adapters.artifacts import LocalArtifactStore
+from find_yourself.adapters.creative_tools import CreativeToolsService
 from find_yourself.db.models import Artifact, Task
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.budget import BudgetService
 from find_yourself.services.deletion import DeletionService
-from find_yourself.services.errors import DomainError, NotFound
+from find_yourself.services.errors import DomainError
 
 
 @pytest.fixture

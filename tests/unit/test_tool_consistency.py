@@ -9,6 +9,7 @@ DB-backed referencer consistency check (missing/orphan).
 from __future__ import annotations
 
 import pytest
+
 from find_yourself.db.base import Base
 from find_yourself.db.models import ServiceIdentity
 from find_yourself.services.actor import Actor

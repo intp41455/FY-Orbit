@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from find_yourself.services.git_repo_service import GitRepoService
 from find_yourself.services.errors import ValidationFailed
+from find_yourself.services.git_repo_service import GitRepoService
 
 
 def _git(cwd: Path, *args: str) -> str:

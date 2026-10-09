@@ -8,23 +8,21 @@
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from find_yourself.db.base import Base
-import find_yourself.db.models  # noqa: F401
 import find_yourself.db.collaboration_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+from find_yourself.db.base import Base
 from find_yourself.db.collaboration_models import Notification
 from find_yourself.db.types import utcnow
-from find_yourself.runtime.sse import TaskEventBus, TaskEvent
+from find_yourself.runtime.sse import TaskEventBus
 from find_yourself.services.actor import Actor
 from find_yourself.services.collaboration import (
-    CollaborationService,
     NOTIFICATION_DEFAULT_LIMIT,
-    NOTIFICATION_MAX_LIMIT,
+    CollaborationService,
 )
 
 

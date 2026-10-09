@@ -24,7 +24,6 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -36,14 +35,11 @@ from ..marketplace_rating import MarketplaceRatingStore, get_rating_store
 from .scaffold import (
     CONTROLLER_FORBIDDEN_RULE,
     ESSENTIAL_KEYS,
-    LAYERS,
     LAYER_LABELS,
-    MIN_MEMBERS,
-    SCENARIOS,
     SCENARIO_LABELS,
+    SCENARIOS,
     TEMPLATE_SCHEMA_VERSION,
     ScaffoldTemplateService,
-    template_schema,
     user_templates_dir,
     validate_template,
 )

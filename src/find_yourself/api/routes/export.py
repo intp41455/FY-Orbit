@@ -9,14 +9,12 @@ only tamper-evidence results (seq count + problem strings), not event payloads.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
 
-from ...db.models import Conversation, Grant, Memory, Message
-from ...services.export import ExportService
-from ..deps import csrf_protected, get_actor, get_services, Services
-from ..schemas import ExportRequest
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied
+from ...services.export import ExportService
+from ..deps import Services, csrf_protected, get_actor, get_services
+from ..schemas import ExportRequest
 
 router = APIRouter(prefix="/api", tags=["export"])
 

@@ -16,6 +16,7 @@ import find_yourself.db.kb_models  # noqa: F401
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import ValidationFailed
+from find_yourself.services.knowledge.embeddings import HashingEmbedding
 from find_yourself.services.knowledge.ingest import KnowledgeIngestService
 from find_yourself.services.knowledge.search import (
     KnowledgeSearchService,
@@ -25,7 +26,6 @@ from find_yourself.services.knowledge.search import (
     ensure_vector_index,
     list_rerankers,
     rrf_fuse,
-    score_chunk,
     weighted_fuse,
 )
 from find_yourself.services.knowledge.vectorstores import (
@@ -33,7 +33,6 @@ from find_yourself.services.knowledge.vectorstores import (
     create_vector_store,
     register_vector_store,
 )
-from find_yourself.services.knowledge.embeddings import HashingEmbedding
 
 # 语料：query 用近义表述（词法覆盖率 < MIN_QUERY_COVERAGE=0.34 → 词法路必须 miss，
 # hash 嵌入共享词形 → 向量路命中），验证双路互补。

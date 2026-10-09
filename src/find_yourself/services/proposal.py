@@ -10,7 +10,7 @@
   approved_pending_execution`` and enqueue a single-use outbox operation.
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import update
@@ -19,9 +19,9 @@ from sqlalchemy.orm import Session
 from ..db.models import Operation, Proposal
 from ..db.types import utcnow
 from .actor import Actor
-from .errors import Conflict, NotFound, PermissionDenied, ValidationFailed
-from .hasher import digest
 from .audit import AuditService
+from .errors import Conflict, NotFound, ValidationFailed
+from .hasher import digest
 
 EXTERNAL_OPS = {"task.merge", "task.release"}
 IMMEDIATE_OPS = {

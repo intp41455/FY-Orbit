@@ -36,10 +36,9 @@ from sqlalchemy.orm import Session
 
 from ..db.models import AuditEvent
 from ..db.types import utcnow
+from .actor import Actor
 from .anchor_store import AnchorRecord, AnchorStore, FileAnchorStore
 from .hasher import digest
-from .actor import Actor
-
 
 #: Key under which an optional ``message_id`` travels inside ``details``.
 #:

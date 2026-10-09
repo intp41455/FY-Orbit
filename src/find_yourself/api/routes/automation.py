@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..deps import Services, csrf_protected, get_actor, get_db, get_services
 from ...services.actor import Actor
 from ...services.automation import (
     MAX_FULL_TTL_SECONDS,
@@ -25,7 +24,7 @@ from ...services.automation import (
     MODE_ORDER,
     get_permissions,
 )
-from ...services.errors import ValidationFailed
+from ..deps import Services, csrf_protected, get_actor, get_db, get_services
 
 router = APIRouter(prefix="/api/automation", tags=["automation"])
 

@@ -10,13 +10,12 @@ Integrates with locally installed NousResearch/hermes-agent CLI:
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
-import os
-from pathlib import Path
 import shutil
 import subprocess
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 

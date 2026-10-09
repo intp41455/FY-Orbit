@@ -17,9 +17,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..deps import csrf_protected, get_actor, get_services, get_settings, Services
 from ...services.actor import Actor
 from ...services.butler import ButlerService
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/butler", tags=["butler"])
 

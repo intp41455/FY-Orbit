@@ -388,7 +388,6 @@ class UnifiedScheduler:
         req.report = report
 
         def _run() -> None:
-            began = False
             try:
                 with self._lock:
                     # 回收竞态：线程还没跑到就被标记 reclaimed，则不再执行。
@@ -397,7 +396,6 @@ class UnifiedScheduler:
                     record.status = TASK_RUNNING
                     record.started_at = _now_iso()
                     self._emit_locked(record, TASK_RUNNING)
-                    began = True
                 output = worker.executor(req)
                 with self._lock:
                     if record.status != TASK_RUNNING:

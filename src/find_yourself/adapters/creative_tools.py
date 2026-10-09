@@ -17,18 +17,17 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
 from ..db.models import Artifact
-from ..db.types import utcnow
 from ..services.actor import Actor
 from ..services.audit import AuditService
 from ..services.budget import BudgetService
-from ..services.errors import Conflict, DomainError, NotFound, PermissionDenied, ValidationFailed
+from ..services.errors import DomainError, NotFound
 from .artifacts import LocalArtifactStore, S3ArtifactStore
 
 
@@ -309,7 +308,7 @@ class CreativeToolsService:
         # Write to S3 or local store
         sha256 = hashlib.sha256(data_bytes).hexdigest()
         size = len(data_bytes)
-        stored_path = f"artifacts/{artifact_id}.{extension}"
+        _ = f"artifacts/{artifact_id}.{extension}"
 
         if self.s3_store and self.s3_store.available:
             self.s3_store.put_bytes(artifact_id, data_bytes, media_type=media_type)

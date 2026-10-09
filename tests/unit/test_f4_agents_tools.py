@@ -16,10 +16,8 @@ from __future__ import annotations
 
 import hashlib
 import sys
-import time
-from datetime import timedelta
+
 import pytest
-from starlette.testclient import TestClient
 
 from find_yourself.adapters.a2a import (
     A2AClient,
@@ -39,7 +37,6 @@ from find_yourself.adapters.specialized_agents import (
     ResearchAgentService,
     create_agent_app,
 )
-from find_yourself.db.types import utcnow
 from find_yourself.runtime.delegation import (
     BudgetExhausted,
     DelegationCoordinator,
@@ -47,12 +44,10 @@ from find_yourself.runtime.delegation import (
     MaxDepthExceeded,
     SubtaskFailed,
 )
-from find_yourself.services.actor import Actor
 from find_yourself.services.agent import AgentService
 from find_yourself.services.audit import AuditService
 from find_yourself.services.auth import AuthService
 from find_yourself.services.errors import Conflict, PermissionDenied, Unauthenticated
-
 
 # ============================================================================
 # 1. Outbound A2A Client & Specialized Agents

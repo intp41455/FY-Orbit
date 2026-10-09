@@ -1,6 +1,5 @@
 """Test for using three new node types in a valid DSL."""
 
-from find_yourself.api.routes import dsl_canvas
 from helpers import login_owner
 
 # DSL with three new node types: trigger -> variable_aggregator -> template

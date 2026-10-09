@@ -20,7 +20,6 @@ from find_yourself.adapters.a2a import (
 from find_yourself.services.scheduler import (
     CHANNEL_A2A,
     DispatchRequest,
-    NoRouteError,
     UnifiedScheduler,
 )
 

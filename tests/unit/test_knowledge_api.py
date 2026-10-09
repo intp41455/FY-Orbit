@@ -33,6 +33,7 @@ from find_yourself.db.base import Base
 from find_yourself.db.kb_models import KBChunk
 from find_yourself.db.models import AuditEvent
 from find_yourself.db.types import TZDateTime
+from find_yourself.runtime.gateway import MockModelProvider, ModelGateway
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.chat_orchestration import ChatOrchestrationService
@@ -42,7 +43,6 @@ from find_yourself.services.knowledge import (
     set_kb_session_factory,
 )
 from find_yourself.services.knowledge.ingest import KnowledgeIngestService
-from find_yourself.runtime.gateway import MockModelProvider, ModelGateway
 from find_yourself.services.tool_registry import ToolRegistryService
 
 LOCAL_TOKEN = "dev-token-secret-w3"

@@ -17,10 +17,10 @@ tracked separately — official/norms/clinical conclusions are never fabricated.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import hashlib
 import json
 import uuid
+from dataclasses import dataclass, field
 
 from ..services.errors import ValidationFailed
 

@@ -7,7 +7,7 @@ Verifies:
 """
 
 from find_yourself.api.app import create_app
-from find_yourself.api.routes import api_router, discover_local_routes, discover_entry_point_routes
+from find_yourself.api.routes import api_router, discover_entry_point_routes, discover_local_routes
 
 
 def test_core_routes_mounted():

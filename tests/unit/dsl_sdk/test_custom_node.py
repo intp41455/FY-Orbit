@@ -12,11 +12,12 @@
 from __future__ import annotations
 
 import pytest
+from _dsl_docs import lit, out
 
-from find_yourself.services.dsl_canvas import DslValidationError, VERB_REGISTRY
+from find_yourself.services.dsl_canvas import VERB_REGISTRY, DslValidationError
 from find_yourself.services.dsl_sdk import (
-    CUSTOM_NODE_REGISTRY,
     CUSTOM_AGENT_PREFIX,
+    CUSTOM_NODE_REGISTRY,
     CodeWorkflow,
     DslSdkError,
     GraphBuilder,
@@ -25,8 +26,6 @@ from find_yourself.services.dsl_sdk import (
     custom_node_catalog,
     register_custom_node,
 )
-
-from _dsl_docs import lit, out
 
 
 @pytest.fixture()

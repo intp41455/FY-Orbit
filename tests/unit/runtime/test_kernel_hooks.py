@@ -18,7 +18,6 @@ from find_yourself.runtime.hooks import (
 )
 from find_yourself.runtime.kernel import SingleLoopKernel
 
-
 # ---------------------------------------------------------------------------
 # Hook 总线（07）
 # ---------------------------------------------------------------------------
@@ -187,10 +186,11 @@ def client(tmp_path):
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
+
+    import find_yourself.db.resilience_models  # noqa: F401
     from find_yourself.api.app import create_app
     from find_yourself.config import Settings
     from find_yourself.db.base import Base
-    import find_yourself.db.resilience_models  # noqa: F401
 
     eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
                         poolclass=StaticPool, future=True)

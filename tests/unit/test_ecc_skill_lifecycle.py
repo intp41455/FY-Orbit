@@ -13,6 +13,7 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
 from find_yourself.services.actor import Actor
@@ -20,7 +21,6 @@ from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import Conflict, PermissionDenied
 from find_yourself.services.skill import SkillService
 from find_yourself.skills.harness import TrustedSkillEvaluationWorker
-
 
 ECC_DIR = Path(".runtime/harness-lab/candidates/ecc")
 

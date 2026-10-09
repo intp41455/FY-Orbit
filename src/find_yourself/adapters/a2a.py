@@ -19,7 +19,6 @@ All inputs are synthetic; no private content or secrets are echoed.
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 PROTOCOL_VERSION = "0.3.0"
@@ -210,9 +209,10 @@ def _error(req_id, code: int, message: str, data: Any = None) -> dict:
 # Outbound A2A Client & Server-side Trusted Endpoint Registry (F4)
 # ============================================================================
 
-from dataclasses import dataclass, field
-import httpx
 import secrets
+from dataclasses import dataclass
+
+import httpx
 
 
 class A2AClientError(Exception):

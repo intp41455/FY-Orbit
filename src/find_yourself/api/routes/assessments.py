@@ -11,8 +11,8 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from ...adapters.assessments import scorer
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/assessments", tags=["assessments"])
 

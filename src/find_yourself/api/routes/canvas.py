@@ -8,8 +8,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
-from ..deps import csrf_protected, get_actor, get_services, Services
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/canvas", tags=["canvas"])
 
@@ -512,9 +512,9 @@ async def get_benchmark_summary(
     actor: Actor = Depends(get_actor),
 ) -> dict[str, Any]:
     """Retrieve the latest community harness benchmark comparison results."""
-    from pathlib import Path
     import json
-    from ...adapters.community_harness_adapter import HarnessBenchmarkRunner, REPO_ROOT
+
+    from ...adapters.community_harness_adapter import REPO_ROOT, HarnessBenchmarkRunner
 
     evidence_file = REPO_ROOT / "evidence" / "community_harness_benchmark.json"
     if evidence_file.exists():

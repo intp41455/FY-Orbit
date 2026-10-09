@@ -14,9 +14,9 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
 
-from ..deps import get_actor
 from ...services.actor import Actor
 from ...services.offline import OFFLINE_MODE_ENV, is_offline, remote_block_reason, status
+from ..deps import get_actor
 
 router = APIRouter(prefix="/api/offline", tags=["offline"])
 

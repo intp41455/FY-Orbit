@@ -26,13 +26,22 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
-    Boolean, CheckConstraint, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+    Boolean,
+    CheckConstraint,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from find_yourself.db.base import Base
 from find_yourself.db.types import ID, TZDateTime, utcnow
+
 # W6：kind / state 白名单与 services.hub 共用同一份常量，杜绝两边漂移。
 from find_yourself.services.hub import CONNECTION_STATES, HUB_KINDS
 

@@ -46,7 +46,7 @@ from sqlalchemy.types import JSON
 from ..db.base import Base
 from ..db.types import TZDateTime, utcnow
 from .actor import Actor
-from .errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from .errors import Conflict, PermissionDenied, ValidationFailed
 
 #: 「每日」语义使用的固定 Asia/Shanghai 偏移（UTC+8），无 tzdata 依赖。
 LOCAL_TZ = timezone(timedelta(hours=8), "Asia/Shanghai")
@@ -1127,7 +1127,7 @@ class CabinGameplayService:
         watered = isinstance(prev, dict) and bool(prev.get("watered"))
         qty = spot["qty"] * (2 if watered and spot["material"] in WATERABLE_MATERIALS else 1)
         granted, capped = self._grant_material(row, spot["material"], qty)
-        coins = self._grant_coins(row, spot["coins"])
+        _ = self._grant_coins(row, spot["coins"])
         before_int, after_int = self._grant_intimacy(row, spot["intimacy"])
 
         # 消耗一次灰尘（如果有）
@@ -1142,7 +1142,7 @@ class CabinGameplayService:
             for mid, mqty in (event.get("items") or {}).items():
                 self._grant_material(row, mid, mqty)
         if event.get("coins"):
-            coins = self._grant_coins(row, int(event["coins"]))
+            _ = self._grant_coins(row, int(event["coins"]))
         if event.get("intimacy"):
             before_int, after_int = self._grant_intimacy(row, int(event["intimacy"]))
 
@@ -1265,7 +1265,7 @@ class CabinGameplayService:
         base = 4
         gain = base * 2 if liked else base
         before_int, after_int = self._grant_intimacy(row, gain)
-        coins = self._grant_coins(row, 0)
+        _ = self._grant_coins(row, 0)
 
         # 每日首次照料额外奖励（任务书 §1.2）
         first_today = self._first_care_today(row, now, "feed")
@@ -1275,7 +1275,6 @@ class CabinGameplayService:
             for mid, q in bonus_items.items():
                 self._grant_material(row, mid, q)
             self._grant_coins(row, 5)
-            coins = row.coins
 
         progress = self._advance_quests(row, "feed", 1)
         return {

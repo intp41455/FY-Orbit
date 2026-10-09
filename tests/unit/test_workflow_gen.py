@@ -34,17 +34,16 @@ import find_yourself.db.models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
-from find_yourself.db.models import AuthSession
 from find_yourself.runtime.gateway import CallResult, ModelGateway
 from find_yourself.services.actor import Actor
 from find_yourself.services.workflow_gen import (
     BASE_URL_PLACEHOLDER,
-    FlowGraph,
     GEN_MAX_ATTEMPTS,
+    FlowGraph,
     GraphEdge,
     GraphNode,
-    WorkflowGenService,
     WorkflowGenerationFailed,
+    WorkflowGenService,
     build_generation_prompt,
     default_script_name,
     dsl_to_graph,

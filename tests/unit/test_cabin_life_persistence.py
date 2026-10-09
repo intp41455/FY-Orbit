@@ -17,9 +17,9 @@
 from __future__ import annotations
 
 import importlib
+import sys
 from datetime import timezone
 from pathlib import Path
-import sys
 from typing import Iterator
 
 import pytest
@@ -32,12 +32,18 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
 from find_yourself.services.actor import Actor
-from find_yourself.services.cabin_life import crafting, npcs, persistence, state, themes
+from find_yourself.services.cabin_life import npcs, persistence, state, themes
 from find_yourself.services.cabin_life.persistence import (
     LifeSaveCorrupt,
     LifeSaveRow,
@@ -45,12 +51,6 @@ from find_yourself.services.cabin_life.persistence import (
     read_save,
 )
 from find_yourself.services.cabin_life.service import ACTIONS, LifeService
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
 
 _proj_root = str(Path(__file__).resolve().parents[2])
 if _proj_root not in sys.path:
@@ -448,7 +448,6 @@ def _corrupt_row(**overrides) -> LifeSaveRow:
     """构造一行**合法**存档，再按需把某个字段改成坏数据。"""
     save = state.new_save("o1", "forest")
     row = LifeSaveRow(owner_id="o1")
-    from find_yourself.services.cabin_life.persistence import apply_save
 
     apply_save(row, save)
     for key, value in overrides.items():
@@ -510,7 +509,6 @@ def test_corrupt_save_never_silently_resets_to_blank():
 
 def test_valid_save_roundtrips_without_loss():
     """合法存档 row → LifeSave → row 往返无损。"""
-    from find_yourself.services.cabin_life.persistence import apply_save
 
     save = state.new_save("o1", "magic")
     save.coins = 777

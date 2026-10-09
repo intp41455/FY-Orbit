@@ -1,11 +1,8 @@
 """Unit tests for ProfileService (04 specification)."""
 
-from datetime import datetime
 import pytest
 
-from find_yourself.services.actor import Actor
-from find_yourself.services.audit import AuditService
-from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from find_yourself.services.errors import NotFound, ValidationFailed
 from find_yourself.services.profile import ProfileService
 
 
@@ -96,7 +93,7 @@ def test_delete_import_cascades_and_tombstone(profile_svc, owner):
     s = profile_svc.create_subject(owner, label="Alice", kind="person")
     imp = profile_svc.import_document(owner, content=doc, filename="to_delete.txt", subject_id=s.id)
 
-    from find_yourself.db.models import ProfileImport, SourceSegment, Tombstone
+    from find_yourself.db.models import ProfileImport, Tombstone
     assert profile_svc.session.get(ProfileImport, imp.id) is not None
 
     # Delete import

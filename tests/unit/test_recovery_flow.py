@@ -11,7 +11,6 @@ from types import SimpleNamespace
 from typing import Iterator, TypedDict
 
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import create_engine
@@ -34,7 +33,6 @@ from find_yourself.services.stream_persistence import (
     get_segments,
     persist_stream,
 )
-
 
 # ---------------------------------------------------------------------------
 # 服务级（复用根 conftest 的 session/audit/owner fixtures）

@@ -36,7 +36,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
     DslSuspended,
@@ -46,6 +45,7 @@ from ...services.dsl_canvas import (
     execute_node,
 )
 from ...services.dsl_sdk import mode_overview
+from ..deps import csrf_protected, get_actor
 from . import dsl_canvas as _canvas_routes
 from .dsl_canvas import _extract_doc
 

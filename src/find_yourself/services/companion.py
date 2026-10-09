@@ -11,9 +11,7 @@ Implements productized requirements for personal companion interactions:
 
 from __future__ import annotations
 
-import re
 from typing import Any
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,7 +20,7 @@ from ..db.models import Conversation, Message, Proposal
 from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .audit import AuditService
-from .errors import DomainError, PermissionDenied, ValidationFailed
+from .errors import DomainError
 from .proposal import ProposalService
 
 CRISIS_KEYWORDS = [

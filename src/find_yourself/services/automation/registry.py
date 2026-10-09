@@ -27,10 +27,18 @@ automation.press_key    5 (SYSTEM_FS)  full（带 TTL）
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import permissions as perm
 from .backend import AutomationBackend
+
+if TYPE_CHECKING:  # pragma: no cover - 仅供类型检查器解析字符串注解
+    # 下面 ``_permissions`` / ``get_permissions`` 的注解写的是字符串形式
+    # （``"AutomationPermissionManager | None"``），但这个类名在本模块里
+    # **从未被导入** —— 运行时注解不求值所以一直没炸，直到有工具调用
+    # ``typing.get_type_hints()`` 才会变真 NameError。这里补 TYPE_CHECKING
+    # 守卫导入：让类型检查器与ruff F821 都能看到名字，又不在运行时代价。
+    from .permissions import AutomationPermissionManager
 
 
 #: 工具名 -> (描述, required_level, 最低权限档位, 参数 JSON Schema)

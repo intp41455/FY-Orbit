@@ -9,9 +9,9 @@ import asyncio
 import threading
 from typing import Any, Optional
 
-from ..adapters.mcp import McpClient, assemble_mcp_tools
-from .tool_registry import tool_registry, ToolRegistryService
+from ..adapters.mcp import McpClient
 from ..config import settings
+from .tool_registry import ToolRegistryService, tool_registry
 
 
 class McpDynamicService:
@@ -56,8 +56,7 @@ class McpDynamicService:
         Returns:
             注册结果（包含发现的工具列表）
         """
-        from .mcp import ReconnectPolicy, McpTrustPolicy
-        from .mcp import TRUST_TRUSTED, TRUST_REMOTE, TRUST_UNTRUSTED
+        from .mcp import TRUST_REMOTE, TRUST_TRUSTED, TRUST_UNTRUSTED, McpTrustPolicy, ReconnectPolicy
 
         trust_map = {
             "trusted": TRUST_TRUSTED,
@@ -94,7 +93,7 @@ class McpDynamicService:
                     },
                 )
                 registered.append(tool_name)
-            except Exception as e:
+            except Exception:
                 # 已存在则跳过，记录错误
                 pass
 

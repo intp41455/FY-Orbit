@@ -17,7 +17,7 @@
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Index, JSON, String, Text
+from sqlalchemy import JSON, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base

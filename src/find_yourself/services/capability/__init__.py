@@ -20,13 +20,13 @@ from .broker import CapabilityBroker, build_capability_broker
 from .grants import CapabilityGrantRow, GrantSpec, GrantStore
 from .levels import (
     LEVEL_IDS,
-    LEVEL_ORDER,
-    LEVEL_SPECS,
     LEVEL_L1,
     LEVEL_L2,
     LEVEL_L3,
     LEVEL_L4,
     LEVEL_L5,
+    LEVEL_ORDER,
+    LEVEL_SPECS,
     LevelRegistry,
 )
 from .profiles import PROFILE_FINE, PROFILE_NOVICE, ProfileManager

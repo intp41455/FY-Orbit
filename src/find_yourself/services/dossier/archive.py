@@ -42,11 +42,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...db.models import AuditEvent, Task, TaskAttempt, TaskDependency, TaskEvent
+from ...db.team_models import AgentInstance, TeamDefinition
 from ..actor import Actor
 from ..audit import AuditService
 from ..errors import NotFound, ValidationFailed
-from ...db.models import AuditEvent, Task, TaskAttempt, TaskDependency, TaskEvent
-from ...db.team_models import AgentInstance, TeamDefinition
 
 #: 「一秒上手」简报的默认字数上限（**硬约束**，超限明确标注截断）。
 DEFAULT_BRIEFING_LIMIT = 4000

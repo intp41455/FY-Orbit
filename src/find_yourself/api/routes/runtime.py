@@ -14,10 +14,10 @@ from typing import Any
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..deps import Services, csrf_protected, get_actor, get_services
 from ...runtime.hooks import HOOK_EVENTS, WIRED_EVENTS, get_default_hook_bus
 from ...runtime.kernel import SingleLoopKernel
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_services
 
 router = APIRouter(prefix="/api/runtime", tags=["runtime-kernel"])
 

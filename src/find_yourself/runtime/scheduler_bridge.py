@@ -37,7 +37,6 @@ import logging
 import threading
 from typing import Any, Callable
 
-from .agent_bus import OWNER_PREFIX, SYSTEM_IDENTITY, AgentBus
 from ..services.scheduler.core import (
     TASK_FAILED,
     TASK_RECLAIMED,
@@ -46,6 +45,7 @@ from ..services.scheduler.core import (
     TaskRecord,
     UnifiedScheduler,
 )
+from .agent_bus import OWNER_PREFIX, SYSTEM_IDENTITY, AgentBus
 
 logger = logging.getLogger(__name__)
 

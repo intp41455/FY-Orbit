@@ -18,8 +18,8 @@ from sqlalchemy.orm import Session
 from ..db.models import USER_PLANS, AuthSession, ServiceIdentity, User, UserConsent
 from ..db.types import utcnow
 from .actor import Actor
-from .errors import PermissionDenied, Unauthenticated, ValidationFailed
 from .audit import AuditService
+from .errors import PermissionDenied, Unauthenticated, ValidationFailed
 from .passwords import hash_password, verify_password
 
 LOOPBACK = {"127.0.0.1", "localhost", "::1"}
@@ -156,7 +156,7 @@ class AuthService:
         row = rows[0]
         if row.lease_expires_at is not None and row.lease_expires_at <= utcnow():
             raise Unauthenticated("service_expired", "Service identity lease expired")
-        
+
         tools = tuple(c.removeprefix("tool:") for c in (row.capabilities or []) if c.startswith("tool:"))
         budget_caps = [c.removeprefix("budget:") for c in (row.capabilities or []) if c.startswith("budget:")]
         budget_cents = int(budget_caps[0]) if budget_caps and budget_caps[0].isdigit() else None

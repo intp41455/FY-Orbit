@@ -22,9 +22,9 @@ import pytest
 from find_yourself.config import Settings
 from find_yourself.runtime.gateway import (
     CallResult,
+    MockModelProvider,
     ModelGateway,
     ModelProviderUnavailable,
-    MockModelProvider,
     PriceUnknown,
     ProviderRoute,
 )
@@ -38,7 +38,6 @@ from find_yourself.runtime.providers.base import (
 from find_yourself.services.actor import Actor
 from find_yourself.services.butler import ButlerService
 from find_yourself.services.errors import Conflict, PermissionDenied
-
 
 # --------------------------------------------------------------------------- #
 # doubles

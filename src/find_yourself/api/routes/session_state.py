@@ -32,7 +32,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_actor, get_db
 from ...db.models import Message
 from ...services.errors import NotFound
 from ...services.short_term_memory import (
@@ -52,6 +51,7 @@ from ...services.state_persistence import (
     import_tool_registry,
 )
 from ...services.tool_registry import tool_registry
+from ..deps import csrf_protected, get_actor, get_db
 from . import dsl_canvas as _dsl_routes
 
 router = APIRouter(prefix="/api/session-state", tags=["session-state"])
@@ -176,7 +176,7 @@ async def read_window(
     session_key: str,
     actor: object = Depends(get_actor),
 ) -> dict:
-    from ...services.state_persistence import get_cached_window, export_memory_window
+    from ...services.state_persistence import export_memory_window, get_cached_window
 
     window = get_cached_window(session_key)
     if window is None:

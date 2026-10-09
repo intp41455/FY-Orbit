@@ -845,7 +845,7 @@ class ObservabilityService:
 
             remaining_steps = step_total - step_now
             task_id = item.get("task_id")
-            member_id = item.get("agent_instance_id")
+            _ = item.get("agent_instance_id")
 
             if not task_id:
                 # 团队成员级：team_events 一次事件可推进多步，与 max_steps 不一一对应，

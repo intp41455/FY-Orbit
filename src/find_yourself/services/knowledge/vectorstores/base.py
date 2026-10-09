@@ -22,8 +22,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
-from ....services.errors import ValidationFailed
-
 
 class VectorStoreError(RuntimeError):
     """向量后端写入/查询失败（基础设施级，调用方决定降级或上抛）。"""

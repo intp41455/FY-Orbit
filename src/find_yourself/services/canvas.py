@@ -11,12 +11,12 @@ Implements:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import re
 import shutil
 import subprocess
 import threading
+from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Any
 from uuid import uuid4
 
@@ -27,15 +27,22 @@ from sqlalchemy.orm.attributes import flag_modified
 from find_yourself.adapters.community_harness_adapter import PeriAdapter, TaskEnvelope
 from find_yourself.adapters.hermes_adapter import HermesAdapter
 from find_yourself.adapters.research_agent_adapter import ResearchAgentAdapter
-from find_yourself.db.models import CanvasEvent, CanvasInstance, DispatchRecord, Grant, HandoffPacket, Memory, Task
+from find_yourself.db.models import (
+    CanvasEvent,
+    CanvasInstance,
+    DispatchRecord,
+    Grant,
+    HandoffPacket,
+    Memory,
+    Task,
+)
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.budget import BudgetService
+from find_yourself.services.errors import Conflict, NotFound, ValidationFailed
 from find_yourself.services.grant import GrantService
-from find_yourself.services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
 from find_yourself.services.verification import TrustedVerificationRunner
-
 
 TEMPLATES = {
     "personal": {
@@ -1683,7 +1690,7 @@ class CanvasService:
         next_steps: list[str] | None = None,
     ) -> HandoffPacket:
         actor.require_owner()
-        inst = self.get_instance(actor, instance_id)
+        _ = self.get_instance(actor, instance_id)
 
         packet = HandoffPacket(
             id=f"hnd-{uuid4().hex[:12]}",

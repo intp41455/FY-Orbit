@@ -5,11 +5,11 @@ from __future__ import annotations
 
 import json
 
-import find_yourself.db.prompt_models  # noqa: F401  (register tables on Base.metadata)
 from fastapi.testclient import TestClient
-
 from helpers import login_owner
 from test_streaming_sse import parse_sse
+
+import find_yourself.db.prompt_models  # noqa: F401  (register tables on Base.metadata)
 
 TEMPLATE = {
     "name": "chat.debug.researcher",

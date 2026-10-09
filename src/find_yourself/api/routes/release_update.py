@@ -16,10 +16,9 @@ from dataclasses import asdict
 
 from fastapi import APIRouter, Depends
 
-from ..deps import get_actor, get_services, Services, csrf_protected
-from ...services.actor import Actor
-from ...services.errors import DomainError
 from ...services import release_update
+from ...services.actor import Actor
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/release/update", tags=["release-update"])
 

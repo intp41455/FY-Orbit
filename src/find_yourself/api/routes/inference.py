@@ -10,10 +10,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from ..deps import Services, get_actor, get_services, get_settings, csrf_protected
 from ...config import Settings
 from ...runtime.gateway import ModelGateway
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_services, get_settings
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
 

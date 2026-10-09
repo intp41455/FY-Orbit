@@ -9,11 +9,11 @@ content, task text or tokens.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
-from fastapi.responses import PlainTextResponse, JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 
-from ..deps import get_services, Services
 from ...services.task_reaper import degraded_markers
+from ..deps import Services, get_services
 
 router = APIRouter(tags=["health"])
 

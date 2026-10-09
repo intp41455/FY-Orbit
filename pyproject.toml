@@ -64,7 +64,14 @@ lsp = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8,<10", "pytest-asyncio>=0.25,<2", "ruff>=0.11,<1"]
+# `pytest-cov` 从传递依赖升为显式 dev 依赖：覆盖率门禁（见下方
+# `[tool.coverage]` 与 ci.yml）依赖它，不能再靠「恰好被别的包带进来」。
+dev = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.25,<2",
+  "pytest-cov>=6,<8",
+  "ruff>=0.11,<1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -81,12 +88,73 @@ default = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+# 注意：**不**把 `--cov` 放进 addopts。
+# 覆盖率插桩会让全套测试明显变慢（本机实测 11 分钟 → 更久），挂在每次本地
+# `pytest` 上会让人为了快而习惯性 `-p no:cov`，门禁反而被绕过。
+# 正确做法：覆盖率门禁只在 CI 显式开启（见 .github/workflows/ci.yml），
+# 本地按需 `pytest --cov=find_yourself` 自取。
+
+[tool.coverage.run]
+source = ["find_yourself"]
+omit = [
+  "*/tests/*",
+  "*/__main__.py",
+]
+
+[tool.coverage.report]
+# `exclude_lines` 把「不可执行的防御性分支」从分母里摘掉（abstractmethod、
+# TYPE_CHECKING、`__main__` 守卫、`...` 占位）。它们**不可能**被测试覆盖，
+# 留在分母里会系统性压低数字、逼人去写无意义的覆盖。
+exclude_lines = [
+  "pragma: no cover",
+  "if TYPE_CHECKING:",
+  "if __name__ == .__main__.:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
+  "\\.\\.\\.",
+]
 
 [tool.ruff]
 line-length = 110
 target-version = "py312"
-extend-exclude = ["evidence", ".venv", "desktop"]
+# `desktop/` 曾整体排除 —— 它恰是发行链的关键一环（Inno Setup 构建脚本、
+# 生命周期脚本都在此），排除等于「发行脚本无人看门」。现纳入检查。
+# 保留排除项仅限确实不该 lint 的产物目录。
+extend-exclude = ["evidence", ".venv", "web/node_modules"]
 
 [tool.ruff.lint]
-select = ["E9", "F63"]
+# 规则集选择原则：**先保真 bug 类，再逐步收风格类**。
+#
+# 历史状态：select = ["E9", "F63"] —— 只查「语法错误」与「未定义的 future 注解」。
+# 实证空转：全仓 0 违规、形同虚设（审计报告 §二 已记录），等于没有静态门禁。
+#
+# 现在启用：
+#   F  = pyflakes 全部（未定义名 / 未使用导入变量 / 重复定义 / 可疑比较 ...）
+#   E9 = 语法级错误
+#   I  = isort 导入排序
+#   W  = pycodestyle 警告（尾随空格 / 缺行尾换行 / 无效转义 ...）
+# 暂不启用（存量噪声大，单独一轮治理，避免一次性淹没真信号）：
+#   E501 line-too-long
+#   E402 module-import-not-at-top（刻意延迟导入 / 再导出处是设计选择）
+#   E741 ambiguous-variable-name
+#   E702 multiple-statements-on-one-line
+select = ["F", "E9", "I", "W"]
+ignore = [
+    # 再导出枢纽（db/models.py 等）通过显式 noqa 豁免，此处不全局关 F401 ——
+    # 全局关掉就等于放弃了「死导入」这项检查，枢纽与非枢纽无法区分。
+    "E501",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试断言里的「构造后仅用于副作用」的对象：赋值本身是场景搭建的一部分
+# （例如 `sessionmaker(bind=engine)` 触发建表、`apply_save = build_applier(...)`
+# 走一遍注册流程），删掉变量名会连副作用一起丢，留`_` 又降低可读性。
+# 故测试内豁免 F841。src/ 下的同类问题仍按F841 报（那里的死代码是真死代码）。
+"tests/**" = ["F841"]
+# 再导出枢纽：本模块对外承诺的名字集合，不做「未使用」判定。
+# 见 src/find_yourself/db/models.py 的 "Re-export" 注释块。
+"src/find_yourself/db/models.py" = ["F401", "E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["find_yourself"]
 

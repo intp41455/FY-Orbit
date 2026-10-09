@@ -30,9 +30,9 @@ from ...db.types import utcnow
 from ...runtime.sse import bus as sse_bus  # P8 · 复用共享总线，不新写
 from ...services.actor import Actor
 from ...services.collaboration import (
-    CollaborationService,
     NOTIFICATION_DEFAULT_LIMIT,
     NOTIFICATION_MAX_LIMIT,
+    CollaborationService,
 )
 from ...services.errors import DomainError, ValidationFailed
 from ..deps import Services, csrf_protected, get_actor, get_services

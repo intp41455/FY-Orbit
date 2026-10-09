@@ -1,6 +1,8 @@
 import re
 from datetime import datetime, timedelta
+
 from pydantic import BaseModel, ConfigDict, Field
+
 from .contracts import AgentManifest, ChangeProposal, MemoryRecord, ProposalCreate, now, uid
 from .store import digest
 

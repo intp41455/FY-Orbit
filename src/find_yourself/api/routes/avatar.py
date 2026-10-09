@@ -23,9 +23,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from ...services.actor import Actor
 from ...services.avatar_gen import SHARE_BADGE_FIELDS
 from ...services.avatar_profile import AvatarProfileService
-from ...services.actor import Actor
 from ..deps import csrf_protected, get_actor, get_db
 
 router = APIRouter(prefix="/api/avatar", tags=["avatar"])

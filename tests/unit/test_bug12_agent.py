@@ -2,7 +2,6 @@
 
 import pytest
 
-from find_yourself.services.actor import Actor
 from find_yourself.services.agent import AgentService
 from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import Conflict

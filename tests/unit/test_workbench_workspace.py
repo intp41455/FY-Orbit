@@ -7,8 +7,8 @@ behaviour under test is the actual behaviour, not a mock of it.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 import pytest
 

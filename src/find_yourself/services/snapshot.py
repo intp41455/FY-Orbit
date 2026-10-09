@@ -31,11 +31,10 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from ..config import Settings
-from ..db.types import utcnow
 from .actor import Actor
 from .audit import AuditService
-from .errors import DomainError, NotFound
 from .auto_stash import auto_stash
+from .errors import DomainError, NotFound
 
 _MANIFEST_NAME = "manifest.json"
 

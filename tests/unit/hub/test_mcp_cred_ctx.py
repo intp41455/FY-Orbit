@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from find_yourself.services.hub.adapters import McpServerAdapter
 
-
 # --------------------------------------------------------------------------- #
 # 路径一：平铺（ConnectionService.adapter_config 的实际形状）
 # --------------------------------------------------------------------------- #

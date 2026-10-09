@@ -36,10 +36,10 @@ from sqlalchemy import select
 
 from ...db.models import Proposal
 from ...db.prompt_models import PROMPT_SCOPES, PromptRenderLog, PromptTemplate
-from ..deps import Services, csrf_protected, get_actor, get_services
 from ...services.actor import Actor
 from ...services.errors import ValidationFailed
 from ...services.prompt import PromptService
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/prompts", tags=["prompt-templates"])
 

@@ -22,12 +22,12 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete, select
+from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_actor, get_db
 from ...db.staging_models import WorkStash
 from ...services.actor import Actor
 from ...services.errors import NotFound, ValidationFailed
-from sqlalchemy.orm import Session
+from ..deps import csrf_protected, get_actor, get_db
 
 router = APIRouter(prefix="/api/stash", tags=["work-stash"])
 

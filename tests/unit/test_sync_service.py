@@ -15,15 +15,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from find_yourself.db.base import Base
-from find_yourself.db.sync_models import (
-    LOCAL_ONLY_CATEGORIES,
-    OPT_IN_SYNC_CATEGORIES,
-    SyncConflict,
-    SyncJournal,
-    SyncSetting,
-)
 from find_yourself.services.actor import Actor
-from find_yourself.services.errors import Conflict, ValidationFailed
+from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.sync import SyncService
 
 

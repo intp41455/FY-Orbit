@@ -12,16 +12,17 @@ Verifies:
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.prompt_models  # noqa: F401
 from find_yourself.db.base import Base
 from find_yourself.db.models import Skill
 from find_yourself.db.prompt_models import PromptTemplate
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.prompt_models  # noqa: F401
 from find_yourself.skills.discovery import (
     discover_and_create_prompts,
     discover_and_stage_skills,

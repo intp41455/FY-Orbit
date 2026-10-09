@@ -81,15 +81,15 @@ def test_backup_restore_drill_with_tombstone_replay(tmp_path):
         url = f"postgresql+psycopg://{PG_USER}:{PG_PASSWORD}@127.0.0.1:{HOST_PORT}/{drill_db}"
         from find_yourself.db.session import engine_from_url
         engine = engine_from_url(url)
-        import find_yourself.db.models  # noqa: F401
-        import find_yourself.db.profile_models  # noqa: F401
         import find_yourself.db.canvas_models  # noqa: F401
-        import find_yourself.db.sync_models  # noqa: F401
-        import find_yourself.db.workbench_models  # noqa: F401
-        import find_yourself.db.team_models  # noqa: F401
-        import find_yourself.db.kb_models  # noqa: F401
-        import find_yourself.db.plugin_models  # noqa: F401
         import find_yourself.db.collaboration_models  # noqa: F401
+        import find_yourself.db.kb_models  # noqa: F401
+        import find_yourself.db.models  # noqa: F401
+        import find_yourself.db.plugin_models  # noqa: F401
+        import find_yourself.db.profile_models  # noqa: F401
+        import find_yourself.db.sync_models  # noqa: F401
+        import find_yourself.db.team_models  # noqa: F401
+        import find_yourself.db.workbench_models  # noqa: F401
         with engine.connect() as c:
             c.exec_driver_sql("CREATE EXTENSION IF NOT EXISTS vector")
             c.commit()

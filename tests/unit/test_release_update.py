@@ -19,7 +19,6 @@ import pytest
 from find_yourself.services import release_update as ru
 from find_yourself.services.errors import Conflict, ValidationFailed
 
-
 # ---------------------------------------------------------------------------
 # 版本号比较
 # ---------------------------------------------------------------------------

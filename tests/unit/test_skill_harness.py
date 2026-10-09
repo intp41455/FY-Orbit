@@ -10,10 +10,10 @@ Verifies:
 from __future__ import annotations
 
 import pytest
+
 from find_yourself.services.actor import Actor
 from find_yourself.services.errors import Conflict, ValidationFailed
 from find_yourself.skills.harness import (
-    FunctionCallingGateway,
     SkillLearningLoop,
     TrustedSkillEvaluationWorker,
     gateway,

@@ -17,14 +17,19 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse, RedirectResponse
 from itsdangerous import BadData, URLSafeTimedSerializer
 
-from ..deps import (
-    SESSION_COOKIE, csrf_protected, get_actor, get_services, get_settings, Services,
-)
-from ..schemas import AuthMe, LocalDevTokenRequest
-from ...services.actor import Actor
-from ...services.errors import Unauthenticated, PermissionDenied
 from ...config import Settings
+from ...services.actor import Actor
+from ...services.errors import PermissionDenied, Unauthenticated
+from ..deps import (
+    SESSION_COOKIE,
+    Services,
+    csrf_protected,
+    get_actor,
+    get_services,
+    get_settings,
+)
 from ..oidc import OIDCClient, OIDCSession
+from ..schemas import AuthMe, LocalDevTokenRequest
 
 router = APIRouter(tags=["auth"])
 

@@ -1,9 +1,8 @@
 """BUG-08: explicit ORM constraints, no create_all-as-schema, DB-enforced invariants."""
 
-from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError
 
 from find_yourself.db.models import Grant, Proposal, Task

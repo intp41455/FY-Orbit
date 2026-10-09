@@ -18,11 +18,10 @@ import socket
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import login_owner
 
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
-
-from helpers import login_owner
 
 OWNER_SUB = "owner-sub-123"
 

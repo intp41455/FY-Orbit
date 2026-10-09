@@ -47,7 +47,7 @@ import yaml
 
 from ..actor import Actor
 from ..audit import AuditService
-from ..errors import DomainError, NotFound, ValidationFailed
+from ..errors import NotFound, ValidationFailed
 
 # ---------------------------------------------------------------------------
 # 冻结契约（跨包锁四：P12 / P16 按此消费，禁止各写各的）

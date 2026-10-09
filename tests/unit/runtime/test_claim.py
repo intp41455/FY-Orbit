@@ -98,9 +98,9 @@ def test_claim_is_atomic_under_concurrency(session, audit, owner, tmp_path):
 
     db_file = tmp_path / "claim_concurrency.sqlite"
     eng = create_engine(f"sqlite:///{db_file}", future=True)
-    from find_yourself.db.base import Base
-    import find_yourself.db.models  # noqa: F401
     import find_yourself.db.claim_models  # noqa: F401
+    import find_yourself.db.models  # noqa: F401
+    from find_yourself.db.base import Base
     Base.metadata.create_all(eng)
     sm = sessionmaker(bind=eng, expire_on_commit=False, future=True)
 
@@ -189,6 +189,7 @@ def test_reclaim_expired_returns_task_to_board(board, owner, session):
 
     # 手工把租约推到过去（模拟时间流逝，不 sleep）
     from sqlalchemy import select
+
     from find_yourself.db.claim_models import TaskClaim
 
     row = session.execute(select(TaskClaim).where(TaskClaim.id == res.id)).scalars().one()
@@ -213,6 +214,7 @@ def test_claim_by_capability_filter(board, owner):
     board.publish(owner, title="后端活", payload={"capability": "backend"})
 
     from sqlalchemy import update
+
     from find_yourself.db.claim_models import TaskClaim
 
     board._session.execute(
@@ -231,6 +233,7 @@ def test_lease_default_is_positive():
 
 def test_claim_writes_audit_frames(board, owner, session):
     from sqlalchemy import select
+
     from find_yourself.db.models import AuditEvent
 
     board.publish(owner, title="留痕任务")

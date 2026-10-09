@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 from datetime import timedelta
+
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from find_yourself.db.models import Base, Task
+from find_yourself.db.models import Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.canvas import CanvasService
-from find_yourself.services.errors import ValidationFailed, NotFound
+from find_yourself.services.errors import ValidationFailed
 
 
 @pytest.fixture
@@ -923,8 +923,7 @@ def test_pre_execution_persistence_and_crash_reconciliation(
     """Issue 3 / P0.1: DispatchRecord is persisted in 'running' state BEFORE invoking Hermes;
     if a crash occurred and the same idempotency key is retried, it enters unknown_needs_reconciliation
     without re-executing the external process."""
-    from find_yourself.db.models import DispatchRecord, BudgetReservation
-    from sqlalchemy.orm import sessionmaker
+    from find_yourself.db.models import BudgetReservation, DispatchRecord
 
     # 0. Deterministically mock HermesAdapter.probe to healthy
     monkeypatch.setattr(
@@ -1015,6 +1014,7 @@ def test_truthful_budget_settlement_unknown_vs_known(
     """Issue 2 / P0.2: Unknown provider cost is held in 'unknown' state without freeing budget;
     known cost settles at actual cost."""
     from decimal import Decimal
+
     from find_yourself.db.models import BudgetReservation
     from find_yourself.services.errors import Conflict
 
@@ -1258,7 +1258,7 @@ def test_hermes_dispatch_failure_missing_telemetry_holds_unknown_budget(
 ) -> None:
     """12 Review P0: Process failure without telemetry (missing tokens/cost) cannot prove zero consumption;
     holds budget in 'unknown' state."""
-    from find_yourself.db.models import BudgetReservation, DispatchRecord
+    from find_yourself.db.models import BudgetReservation
 
     session = canvas_service.session
     root_task = create_task(session, owner, task_id="task-missing-telem-01", domain="personal")
@@ -1304,6 +1304,7 @@ def test_budget_monthly_cap_covers_canvas_dispatches_and_settlement(
     """12 Review P0: Canvas dispatches (scope='canvas_dispatch') and settled actual expenses
     must count towards the rolling monthly limit; triggers alert >= 80% and raises Conflict on breach."""
     from decimal import Decimal
+
     from find_yourself.services.errors import Conflict
 
     monkeypatch.setattr(

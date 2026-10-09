@@ -21,21 +21,17 @@ Tracks variance, success rate, cost, latency, step count, and safety scores.
 from __future__ import annotations
 
 import hashlib
-import math
 import statistics
 import time
-from dataclasses import dataclass, field
-from decimal import Decimal
-from typing import Any, Callable, Dict, List, Literal, Optional
+from dataclasses import dataclass
+from typing import Any, Callable, List, Literal
 
 from ..db.types import utcnow
 from ..services.actor import Actor
-from .local_agents import LocalAgentsHarness, LocalAgentsConfig
-from .delegation import DelegationCoordinator, SubtaskFailed
-from .gateway import CallResult, MockModelProvider, ModelGateway, ModelRequest
-from .graph import TaskGraphState
+from .delegation import DelegationCoordinator
 from .hooks import HookBus
 from .kernel import SingleLoopKernel
+from .local_agents import LocalAgentsConfig, LocalAgentsHarness
 from .sandbox import IsolatedScriptRunner, SandboxConfig
 
 #: Deterministic input for the ``engineering_task`` dimension. The script under

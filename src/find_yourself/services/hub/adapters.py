@@ -381,7 +381,7 @@ class ChatModelAdapter:
                 checked_at=_stamp(),
                 endpoint_ref=_endpoint_ref(str(self.config.get("base_url") or "")),
             )
-        started = time.perf_counter()
+        _ = time.perf_counter()
         report = probe_provider(self._spec(), timeout_seconds=timeout_seconds)
         return HealthReport(
             ok=bool(report.ok),
@@ -409,6 +409,7 @@ class ChatModelAdapter:
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
         from ...runtime.providers import ProviderError, build_provider
+
         # 延迟导入同本文件其它 runtime.providers 引用：services.hub <-> runtime.providers
         # 存在循环依赖，模块顶部导入会炸。名字在调用时才解析，所以漏导入不会在
         # 导入期暴露 —— 只有真正调用时才发现（这正是它一度藏住的原因）。

@@ -12,11 +12,11 @@ from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.hub.adapters import InvokeResult
 from find_yourself.services.knowledge.graph import (
+    GraphService,
     KBGraphEdge,
     KBGraphNode,
     LLMExtractor,
     RuleBasedExtractor,
-    GraphService,
     get_extractor,
     list_extractors,
 )

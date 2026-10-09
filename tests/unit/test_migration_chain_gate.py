@@ -155,7 +155,7 @@ def test_migration_chain_actually_runs_on_a_fresh_database() -> None:
     """从空库 upgrade 到 head 必须真能跑通，且表真的建出来。
 
     **为什么这条最重要**：前五条都是对「元数据」的断言，而元数据正确
-    不等于迁移能跑通。例如某个迁移文件 import 了一个不存在的模型 —— 
+    不等于迁移能跑通。例如某个迁移文件 import 了一个不存在的模型 ——
     元数据完全正常，但 upgrade 会在执行时炸。
 
     只查 get_heads() 是假绿：它只证明 alembic 能列出 revision，不证明能执行。

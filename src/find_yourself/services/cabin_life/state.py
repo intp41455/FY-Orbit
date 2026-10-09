@@ -17,7 +17,6 @@ from dataclasses import asdict, dataclass, field
 
 from . import clock, crafting, interaction, npcs, quests, shop, themes
 from .clock import GameClock
-from .shop import ShopState
 
 
 @dataclass

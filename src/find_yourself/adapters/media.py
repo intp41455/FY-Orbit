@@ -10,16 +10,14 @@ from __future__ import annotations
 
 import threading
 import uuid
-from dataclasses import dataclass, field
-from datetime import timedelta
+from dataclasses import dataclass
 from decimal import Decimal
 
-from ..db.types import utcnow
+from ..db.models import Artifact
+from ..services.actor import Actor
 from ..services.audit import AuditService
 from ..services.budget import BudgetService
 from ..services.errors import Conflict, NotFound
-from ..db.models import Artifact
-from ..services.actor import Actor
 
 
 @dataclass
@@ -46,7 +44,7 @@ class LocalMediaRunner:
         actor.require_owner()
         job = MediaJob(id=uuid.uuid4().hex, owner_id=actor.owner_id, kind=kind)
         # Reserve cost atomically before doing work (no unknown-price charge).
-        reservation = budget.reserve(actor, task_id=task_id, amount=request_cost,
+        _ = budget.reserve(actor, task_id=task_id, amount=request_cost,
                                      idempotency_key=idempotency_key)
         job.cost_reserved = request_cost
         job.status = "processing"

@@ -126,9 +126,15 @@ def test_default_storage_names_do_not_collide_across_backends():
     均须带自身身份前缀。
     """
     from find_yourself.services.knowledge.vectorstores import (
-        LanceDBStore as _LDB,
         ChromaStore as _CHR,
+    )
+    from find_yourself.services.knowledge.vectorstores import (
         FaissStore as _FAI,
+    )
+    from find_yourself.services.knowledge.vectorstores import (
+        LanceDBStore as _LDB,
+    )
+    from find_yourself.services.knowledge.vectorstores import (
         QdrantStore as _QDR,
     )
     from find_yourself.services.knowledge.vectorstores import sqlite_vec_backend

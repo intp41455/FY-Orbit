@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from sqlalchemy import func, select
 from fastapi.testclient import TestClient
+from helpers import login_owner
+from sqlalchemy import func, select
 
 from find_yourself.db.models import AuditEvent
-
-from helpers import login_owner
 
 
 def test_a10_readonly_maintenance_no_writes(client: TestClient, session_maker):

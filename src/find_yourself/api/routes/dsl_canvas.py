@@ -21,7 +21,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
     AGGREGATE_OPS,
@@ -39,6 +38,7 @@ from ...services.dsl_canvas import (
 )
 from ...services.dsl_code_export import export_dsl_code, parse_dsl_code
 from ...services.dsl_ir import validate_ir  # P1 · 收集式 IR 校验（只读调用，禁改 dsl_ir）
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/dsl-canvas", tags=["dsl-canvas"])
 

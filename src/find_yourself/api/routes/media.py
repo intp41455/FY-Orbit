@@ -19,8 +19,8 @@ from sqlalchemy import func, select
 
 from ...adapters.media import runner
 from ...db.models import AuditEvent, Skill
-from ..deps import Services, csrf_protected, get_actor, get_services
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(tags=["media-maintenance"])
 

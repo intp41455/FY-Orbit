@@ -30,7 +30,8 @@ from sqlalchemy import CheckConstraint, Index, Integer, String, select
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
-from ...config import Settings, settings as load_settings
+from ...config import Settings
+from ...config import settings as load_settings
 from ...db.base import Base
 from ...db.types import ID, TZDateTime, utcnow
 from ..actor import Actor

@@ -20,12 +20,12 @@ from find_yourself.services.knowledge import (
     secret_store,
 )
 from find_yourself.services.knowledge.sources import build_source
+from find_yourself.services.knowledge.sources.baidu_pan import BaiduPanSource
 from find_yourself.services.knowledge.sources.base import (
     SourceRef,
     UnsupportedCapability,
     retry_call,
 )
-from find_yourself.services.knowledge.sources.baidu_pan import BaiduPanSource
 from find_yourself.services.knowledge.sources.ima import ImaSource
 
 KB_ID = "kb-1"
@@ -384,7 +384,7 @@ def test_local_files_sync_via_service_roundtrip(session, kb_root):
 
 # ---- person_kb 硬编码治理 -----------------------------------------------------
 def test_person_kb_unconfigured_reports_honestly(monkeypatch):
-    """不再默认硬编码 D:\person-kb\kb.db：未配置时如实报不可用并给出环境变量名。"""
+    r"""不再默认硬编码 D:\person-kb\kb.db：未配置时如实报不可用并给出环境变量名。"""
     from find_yourself.adapters.person_kb import PERSON_KB_DB_ENV, PersonKbAdapter
 
     monkeypatch.delenv(PERSON_KB_DB_ENV, raising=False)

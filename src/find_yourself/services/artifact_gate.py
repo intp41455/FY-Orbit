@@ -152,7 +152,7 @@ class ArtifactGateService:
         # 有策略」这件事在登记时就验证掉（而不是等到判定时才发现），
         # 以及让视图能如实告诉调用方「这一版要满足什么」。
         try:
-            required = required_checks_for(artifact_kind)
+            _ = required_checks_for(artifact_kind)
         except ValueError as exc:  # pragma: no cover - 与上面的白名单同源
             raise ValidationFailed("unknown_artifact_kind", str(exc)) from exc
 

@@ -23,7 +23,8 @@ import socket
 from dataclasses import dataclass
 from typing import Callable
 
-from ..config import Settings, settings as _settings_singleton
+from ..config import Settings
+from ..config import settings as _settings_singleton
 from .errors import Conflict
 
 __all__ = [

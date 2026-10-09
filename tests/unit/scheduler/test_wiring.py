@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
+from find_yourself.runtime.delegation import DelegationCoordinator
 from find_yourself.services.scheduler import (
     CHANNEL_INTERNAL_AGENT,
     TASK_SUCCEEDED,
     UnifiedScheduler,
 )
 from find_yourself.services.tool_registry import ToolRegistryService
-from find_yourself.runtime.delegation import DelegationCoordinator
 
 
 @pytest.fixture()
@@ -101,8 +101,8 @@ def test_delegation_scheduler_failure_counts_as_attempt_and_retries():
 
 def test_dispatch_same_pool_internal_and_a2a_workers_share_scheduler(registry):
     """同池证据：内部 dispatch worker 与 A2A 入站 worker 注册进同一调度中心。"""
-    from find_yourself.services.agent_dispatch import AgentDispatchService
     from find_yourself.api.routes.a2a import ensure_inbound_worker
+    from find_yourself.services.agent_dispatch import AgentDispatchService
 
     sch = UnifiedScheduler()
     svc = AgentDispatchService(registry=registry, scheduler=sch)

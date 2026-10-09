@@ -21,30 +21,30 @@ from sqlalchemy.orm import Session
 from ..config import Settings
 from ..services.actor import Actor
 from ..services.agent import AgentService
+from ..services.agent_teams import AgentTeamService
 from ..services.audit import AuditService
 from ..services.auth import AuthService
 from ..services.budget import BudgetService
+from ..services.canvas import CanvasService
 from ..services.capability import CapabilityBroker, build_capability_broker
 from ..services.deletion import DeletionService
-from ..services.errors import PermissionDenied, Unauthenticated, ValidationFailed
-from ..services.grant import GrantService
-from ..services.memory import MemoryService
-from ..services.outbox import OutboxService
-from ..services.proposal import ProposalService
-from ..services.skill import SkillService
-from ..services.profile import ProfileService
-from ..services.canvas import CanvasService
-from ..services.sync import SyncService
-from ..services.workspace import WorkspaceService
-from ..services.terminal import TerminalService
+from ..services.errors import PermissionDenied, Unauthenticated
 from ..services.git_service import GitService
-from ..services.preview import PreviewService
-from ..services.preview_sources import PreviewSourceService
-from ..services.orchestrator_lease import OrchestratorLeaseService
-from ..services.agent_teams import AgentTeamService
+from ..services.grant import GrantService
 from ..services.hitl import HitlInterruptService
 from ..services.kanban import KanbanService
+from ..services.memory import MemoryService
 from ..services.model_catalog import ModelCatalog
+from ..services.orchestrator_lease import OrchestratorLeaseService
+from ..services.outbox import OutboxService
+from ..services.preview import PreviewService
+from ..services.preview_sources import PreviewSourceService
+from ..services.profile import ProfileService
+from ..services.proposal import ProposalService
+from ..services.skill import SkillService
+from ..services.sync import SyncService
+from ..services.terminal import TerminalService
+from ..services.workspace import WorkspaceService
 
 SESSION_COOKIE = "fy_session"
 CSRF_HEADER = "x-csrf-token"

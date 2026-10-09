@@ -19,11 +19,11 @@ import httpx
 
 from .base import (
     CallResult,
-    normalize_messages,
     ProviderEndpoint,
     ProviderMalformedResponse,
     ProviderTransportError,
     classify_status,
+    normalize_messages,
     sanitize_message,
 )
 

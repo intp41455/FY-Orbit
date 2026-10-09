@@ -10,20 +10,19 @@ Core components adhering to 15_技能发现安全审查与自我迭代Harness清
 from __future__ import annotations
 
 import datetime
-import hashlib
-import json
 import re
 from typing import Any, Callable
 from uuid import uuid4
+
 import yaml
 
 from ..services.actor import Actor
-from ..services.errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from ..services.errors import Conflict, NotFound, ValidationFailed
 
 
 class TrustedSkillEvaluationWorker:
     """Independent security and functional evaluation worker.
-    
+
     Verifies that skills cannot be promoted via caller self-declared booleans.
     """
 

@@ -25,12 +25,11 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from ..actor import Actor
-from ..audit import AuditService
 from ...db.models import AuditEvent
 from ...db.types import utcnow
+from ..actor import Actor
+from ..audit import AuditService
 
 #: 审计 action 前缀（检索键之一）。
 CAPABILITY_ACTION_PREFIX = "capability."

@@ -297,7 +297,7 @@ async def quality_storage(actor: Actor = Depends(get_actor)) -> dict[str, Any]:
     """基座本地存储位置（导出包与豁免清单都落这里）；前端「占用空间」从这里取口径。"""
     actor.require_authenticated()
     root = quality_dir()
-    exports = root / "exports"
+    _ = root / "exports"
     return {
         "quality_dir": str(root),
         "exists": root.is_dir(),

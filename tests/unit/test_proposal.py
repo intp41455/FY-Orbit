@@ -77,5 +77,6 @@ def test_expired_proposal_rejected(session):
 
 def utcnow_minus():
     from datetime import timedelta
+
     from find_yourself.db.types import utcnow
     return utcnow() - timedelta(minutes=5)

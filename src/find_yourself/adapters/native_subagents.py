@@ -74,7 +74,7 @@ class HostCapabilities:
             return
         if state == "unsupported":
             raise ValidationFailed(
-                f"capability_unsupported",
+                "capability_unsupported",
                 f"Host '{self.agent_host}' does not support '{operation}'",
             )
         raise ValidationFailed(
@@ -162,7 +162,7 @@ class NativeSubAgentAdapter:
         caps = self._CATALOG.get(agent_host)
         if caps is None:
             raise ValidationFailed(
-                f"unknown_agent_host",
+                "unknown_agent_host",
                 f"No capability record for host '{agent_host}'. It must be probed and "
                 "registered before it can be used for a team.",
             )

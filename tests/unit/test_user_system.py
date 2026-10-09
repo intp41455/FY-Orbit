@@ -14,10 +14,9 @@ from sqlalchemy import select
 
 from find_yourself.db.models import AuthSession, User, UserConsent
 from find_yourself.services.audit import AuditService
-from find_yourself.services.auth import AuthService
+from find_yourself.services.auth import LOGIN_MAX_FAILURES, AuthService
 from find_yourself.services.deletion import DeletionService
 from find_yourself.services.errors import PermissionDenied, Unauthenticated, ValidationFailed
-from find_yourself.services.auth import LOGIN_MAX_FAILURES
 
 
 def _auth(session) -> AuthService:

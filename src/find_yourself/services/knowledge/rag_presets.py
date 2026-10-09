@@ -27,8 +27,7 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from sqlalchemy import Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy import select
+from sqlalchemy import Index, String, Text, UniqueConstraint, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...db.base import Base

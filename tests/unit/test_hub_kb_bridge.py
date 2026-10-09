@@ -18,8 +18,7 @@ from find_yourself.db.workbench_models import HubConnection
 from find_yourself.services.actor import Actor
 from find_yourself.services.errors import NotFound, PermissionDenied, ValidationFailed
 from find_yourself.services.hub.connections import HubService
-from find_yourself.services.knowledge import KnowledgeService
-from find_yourself.services.knowledge import hub_bridge
+from find_yourself.services.knowledge import KnowledgeService, hub_bridge
 
 API_KEY = "hub-side-key-abcdef123456"
 BASE_URL = "https://ima.example"

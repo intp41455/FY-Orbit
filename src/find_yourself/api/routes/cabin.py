@@ -22,16 +22,16 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_actor, get_db
 from ...services.actor import Actor
 from ...services.cabin_interior import (
-    CabinInteriorService,
-    CabinExteriorService,
     FURNITURE_CATALOG,
     HOUSE_IDS,
     MAX_ITEMS,
     MAX_LAYOUT_BYTES,
+    CabinExteriorService,
+    CabinInteriorService,
 )
+from ..deps import csrf_protected, get_actor, get_db
 
 router = APIRouter(prefix="/api/cabin", tags=["cabin"])
 

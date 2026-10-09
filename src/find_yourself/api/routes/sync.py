@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from typing import Any
+
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_actor, get_session
 from ...services.actor import Actor
 from ...services.sync import SyncService
+from ..deps import csrf_protected, get_actor, get_session
 
 router = APIRouter(prefix="/api/sync", tags=["sync"])
 

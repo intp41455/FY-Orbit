@@ -32,8 +32,6 @@ from sqlalchemy.exc import IntegrityError
 
 from find_yourself.db.models import AuditEvent, Grant, Memory
 from find_yourself.db.types import utcnow
-from find_yourself.services.actor import Actor
-from find_yourself.services.audit import AuditService
 from find_yourself.services.canvas import CanvasService
 from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.grant import GrantService

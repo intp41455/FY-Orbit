@@ -25,13 +25,10 @@ signature → atomic replace → rollback」成熟桌面应用的最小闭环。
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 import os
 import re
 import shutil
-import subprocess
-import sys
 import time
 import urllib.request
 from dataclasses import dataclass, field

@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     CheckConstraint,
     Index,
@@ -20,7 +21,6 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
-from sqlalchemy import JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base

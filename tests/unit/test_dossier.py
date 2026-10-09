@@ -14,9 +14,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select
 
-from find_yourself.db.models import AuditEvent, Task, TaskAttempt, TaskEvent
+from find_yourself.db.models import Task, TaskAttempt, TaskEvent
 from find_yourself.db.team_models import AgentInstance, TeamDefinition
 from find_yourself.services.actor import Actor
 from find_yourself.services.dossier.archive import TaskArchive

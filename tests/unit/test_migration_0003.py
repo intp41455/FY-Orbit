@@ -10,13 +10,12 @@ Verifies:
 """
 
 import importlib
-from pathlib import Path
 import sys
+from pathlib import Path
 
+import sqlalchemy as sa
 from alembic.operations import Operations
 from alembic.runtime.migration import MigrationContext
-import sqlalchemy as sa
-import pytest
 
 _proj_root = str(Path(__file__).resolve().parents[2])
 if _proj_root not in sys.path:

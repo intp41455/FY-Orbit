@@ -24,10 +24,13 @@ import pytest
 from find_yourself.adapters.mcp import (
     ERR_CONFIRMATION_REQUIRED,
     ERR_UNTRUSTED_SERVER,
+    TRUST_REMOTE,
+    TRUST_TRUSTED,
+    TRUST_UNTRUSTED,
+    McpClient,
     McpConfirmationRequired,
     McpError,
     McpInlineShellBlocked,
-    McpClient,
     McpPrompt,
     McpResource,
     McpStdioServer,
@@ -35,9 +38,6 @@ from find_yourself.adapters.mcp import (
     McpTrustPolicy,
     McpUntrustedServer,
     ReconnectPolicy,
-    TRUST_REMOTE,
-    TRUST_TRUSTED,
-    TRUST_UNTRUSTED,
     assemble_mcp_tools,
 )
 from find_yourself.services.tool_registry import ToolRegistryService

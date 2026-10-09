@@ -15,21 +15,26 @@ Written to verify:
 from __future__ import annotations
 
 import concurrent.futures
-from datetime import datetime, timedelta, timezone
-import json
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
 from find_yourself.db.models import (
-    Artifact, Conversation, Grant, Memory, MemoryRevision, Message, Proposal,
-    SearchDocument, SourceRelation, Task,
+    Artifact,
+    Conversation,
+    Grant,
+    Memory,
+    Message,
+    Proposal,
+    SearchDocument,
+    SourceRelation,
+    Task,
 )
 from find_yourself.db.types import utcnow
-from find_yourself.services.actor import Actor
 from find_yourself.services.deletion import DeletionService
-from find_yourself.services.errors import PermissionDenied, ValidationFailed
+from find_yourself.services.errors import PermissionDenied
 from find_yourself.services.grant import GrantService
 from find_yourself.services.memory import MemoryService
 
@@ -421,8 +426,8 @@ def test_m14_export_bundle_format_and_security(session, audit, owner):
 # M11/R03: Context compression source retention & outbound model domain isolation
 # ---------------------------------------------------------------------------
 def test_m11_r03_context_compression_sources_and_outbound_spy(session, audit, owner):
-    from find_yourself.services.context import ContextService
     from find_yourself.runtime.gateway import ModelGateway, ModelRequest
+    from find_yourself.services.context import ContextService
 
     ctx_svc = ContextService()
 
@@ -454,6 +459,7 @@ def test_m11_r03_context_compression_sources_and_outbound_spy(session, audit, ow
 async def test_t06_depth_limit_stops_task():
     from temporalio.testing import WorkflowEnvironment
     from temporalio.worker import Worker
+
     from find_yourself.workflows.activities import Activities
     from find_yourself.workflows.fake import InMemoryPorts
     from find_yourself.workflows.workflow import TaskWorkflow

@@ -6,7 +6,6 @@ fail_fast 早停、skipped 混不进 succeeded、止损硬上限（默认 5）�
 
 from __future__ import annotations
 
-import threading
 import time
 
 import pytest

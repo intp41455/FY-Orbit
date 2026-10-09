@@ -12,13 +12,13 @@ In accordance with Architecture Decision §10.3:
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any, Callable
 
+import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
-import yaml
 
 from find_yourself.db.models import Skill
 from find_yourself.db.prompt_models import PromptTemplate

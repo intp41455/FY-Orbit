@@ -12,13 +12,18 @@ from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import sessionmaker
 
 from find_yourself.db.models import (
-    BudgetLedger, BudgetReservation, Memory, Operation, Proposal, Task,
+    BudgetLedger,
+    BudgetReservation,
+    Memory,
+    Operation,
+    Proposal,
+    Task,
 )
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
-from find_yourself.services.proposal import ProposalService
 from find_yourself.services.pg_ports import PostgresCorePorts
+from find_yourself.services.proposal import ProposalService
 
 PG_URL = os.environ.get("FY_DATABASE_URL", "")
 pytestmark = pytest.mark.skipif(not PG_URL.startswith("postgresql"), reason="requires real Postgres")

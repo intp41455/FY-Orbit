@@ -18,9 +18,7 @@ from typing import Any
 import pytest
 
 from find_yourself.runtime.providers.base import approx_tokens, normalize_messages
-from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.hub.adapters import ChatModelAdapter, McpServerAdapter
-
 
 # --------------------------------------------------------------------------- #
 # normalize_messages —— 所有 provider 共用的消息归一化

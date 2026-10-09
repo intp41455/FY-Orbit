@@ -37,7 +37,6 @@ from find_yourself.runtime.providers.ollama import OllamaProvider
 from find_yourself.runtime.providers.openai_compat import OpenAICompatibleProvider
 from find_yourself.services.model_catalog import ModelCatalog
 
-
 # --------------------------------------------------------------------------- #
 # helpers
 # --------------------------------------------------------------------------- #

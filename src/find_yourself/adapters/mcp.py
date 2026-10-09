@@ -243,7 +243,7 @@ class _StdioTransport(_LineTransport):
         self._proc = proc
 
     def send_line(self, text: str) -> None:
-        stdin, stdout = self._proc.stdin, None
+        stdin = self._proc.stdin
         if stdin is None:
             raise _TransportDead("stdio child has no stdin")
         try:

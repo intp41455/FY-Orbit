@@ -12,20 +12,18 @@ Verifies the end-to-end chain between Hermes and ResearchAgent:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 import hashlib
+from datetime import timedelta
+
 import pytest
 from sqlalchemy.orm import Session
 
-from find_yourself.adapters.hermes_adapter import HermesAdapter
-from find_yourself.adapters.research_agent_adapter import ResearchAgentAdapter
-from find_yourself.db.models import BudgetReservation, DispatchRecord, Grant, HandoffPacket, Memory, Task
+from find_yourself.db.models import BudgetReservation, DispatchRecord, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.canvas import CanvasService
-from find_yourself.services.errors import Conflict, ValidationFailed
+from find_yourself.services.errors import ValidationFailed
 
 
 @pytest.fixture

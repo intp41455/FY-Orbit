@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .rng import clamp, weighted_pick, rng_for
+from .rng import clamp, rng_for, weighted_pick
 from .themes import get_theme
 
 MINUTES_PER_DAY = 1440

@@ -5,13 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+
 from find_yourself.adapters.community_harness_adapter import (
     CCBAdapter,
     CCFleetAdapter,
     CommunityHarnessRegistry,
-    ECCAdapter,
     HarnessBenchmarkRunner,
-    HarnessExecutionResult,
     PeriAdapter,
     TaskEnvelope,
 )
@@ -87,8 +86,6 @@ def test_community_harness_registry() -> None:
 @requires_peri
 def test_peri_submit_and_sandbox_boundary_enforcement() -> None:
     from find_yourself.adapters.community_harness_adapter import (
-        HarnessSandbox,
-        SandboxBoundaryViolation,
         TaskEnvelope,
     )
 
@@ -136,7 +133,7 @@ def test_peri_cancellation_and_status() -> None:
         executor="peri",
     )
     # Cancel an execution
-    exec_id = f"test-exec-cancel-id"
+    exec_id = "test-exec-cancel-id"
     from find_yourself.adapters.community_harness_adapter import _ACTIVE_EXECUTIONS
     _ACTIVE_EXECUTIONS[exec_id] = {
         "task_id": envelope.task_id,
@@ -173,7 +170,6 @@ def test_peri_ecc_skills_staging() -> None:
 
 @requires_peri
 def test_harness_benchmark_runner_full_suite() -> None:
-    from find_yourself.adapters.community_harness_adapter import HarnessBenchmarkRunner
 
     runner = HarnessBenchmarkRunner()
     report = runner.run_benchmark()
@@ -227,7 +223,9 @@ def test_s6_authorization_gate_rejects_unauthorized() -> None:
 
 def test_s6_budget_gateway_enforces_ceiling() -> None:
     from find_yourself.adapters.community_harness_adapter import (
-        HarnessBudgetGateway, PeriAdapter, TaskEnvelope,
+        HarnessBudgetGateway,
+        PeriAdapter,
+        TaskEnvelope,
     )
 
     root = f"s6-budget-{int(__import__('time').time() * 1000)}"
@@ -250,7 +248,9 @@ def test_s6_budget_gateway_enforces_ceiling() -> None:
 
 def test_s6_dispatcher_routes_by_capability() -> None:
     from find_yourself.adapters.community_harness_adapter import (
-        CommunityHarnessRegistry, HarnessDispatcher, TaskEnvelope,
+        CommunityHarnessRegistry,
+        HarnessDispatcher,
+        TaskEnvelope,
     )
 
     d = HarnessDispatcher()
@@ -295,6 +295,7 @@ def test_s6_process_tree_kill_and_reclamation() -> None:
     import subprocess as _sp
     import sys as _sys
     import time as _time
+
     from find_yourself.adapters.community_harness_adapter import kill_process_tree, process_alive
 
     # Spawn a child that outlives its parent on its own (a detached tree).
@@ -326,9 +327,12 @@ def test_s6_process_tree_kill_and_reclamation() -> None:
 
 def test_s6_active_executions_persist_and_reconcile() -> None:
     import json as _json
+
     from find_yourself.adapters.community_harness_adapter import (
-        _ACTIVE_EXECUTIONS, persist_active_executions, reconcile_active_executions,
+        _ACTIVE_EXECUTIONS,
         HARNESS_LAB_DIR,
+        persist_active_executions,
+        reconcile_active_executions,
     )
 
     exec_id = f"s6-persist-{int(__import__('time').time() * 1000)}"

@@ -1,25 +1,23 @@
 """Tests for F3: LangGraph 4 routes, local agent harness isolation, and PostgresCorePorts guards."""
 
 from decimal import Decimal
+
 import pytest
 from langgraph.checkpoint.memory import MemorySaver
 
 from find_yourself.db.models import Grant
 from find_yourself.db.types import utcnow
-from find_yourself.runtime.local_agents import LocalAgentsConfig, LocalAgentsHarness
 from find_yourself.runtime.gateway import (
     MockModelProvider,
     ModelGateway,
-    ModelNotConfigured,
-    ModelPricing,
     ModelRequest,
     PriceUnknown,
 )
 from find_yourself.runtime.graph import compile_task_graph
+from find_yourself.runtime.local_agents import LocalAgentsConfig, LocalAgentsHarness
 from find_yourself.services.actor import Actor
-from find_yourself.services.errors import PermissionDenied, ValidationFailed
+from find_yourself.services.errors import PermissionDenied
 from find_yourself.services.pg_ports import PostgresCorePorts
-
 
 # ---------------------------------------------------------------------------
 # 1. LangGraph: 4 Verified Routes

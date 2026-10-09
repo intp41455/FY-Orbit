@@ -20,14 +20,11 @@ Workflow:
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import sys
-from typing import Any
-import pytest
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 from helpers import login_owner
-
 
 DEFECTIVE_CODE = '''import re
 

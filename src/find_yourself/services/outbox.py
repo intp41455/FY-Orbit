@@ -7,16 +7,15 @@ records a receipt. Lost responses move the row to ``unknown`` for reconciliation
 rather than blind retry.
 """
 
-from uuid import uuid4
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from ..db.models import Operation, Proposal
 from ..db.types import utcnow
-from .errors import Conflict, NotFound
 from .actor import Actor
 from .audit import AuditService
+from .errors import NotFound
 
 
 class OutboxService:

@@ -19,9 +19,6 @@ from find_yourself.services.claw import (
     ThreeLayerPipeline,
 )
 from find_yourself.services.claw.conflicts import ConflictService, DetectionSignal
-from find_yourself.services.errors import Conflict as DomainConflict
-from find_yourself.services.errors import ValidationFailed
-
 
 # ---------------------------------------------------------------------------
 # 机制-01 指令校验门

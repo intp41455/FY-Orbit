@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
-from find_yourself.runtime.evaluation import UnifiedEvaluator, EVAL_SAMPLES
+from find_yourself.runtime.evaluation import UnifiedEvaluator
 
 
 def test_f9_evaluator_executes_matrix_and_measures_variance(tmp_path: Path):

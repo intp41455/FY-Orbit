@@ -17,9 +17,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, model_validator
 
-from ..deps import csrf_protected, get_actor
-from ...services.tool_registry import tool_registry
 from ...services.mcp_dynamic import mcp_dynamic
+from ...services.tool_registry import tool_registry
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/tools", tags=["tool-calling"])
 

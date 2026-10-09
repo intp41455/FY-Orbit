@@ -16,10 +16,10 @@ from typing import Any, Callable
 
 from ..services.scheduler import (
     CHANNEL_INTERNAL_AGENT,
+    DEFAULT_PRIORITY,
     TASK_FAILED,
     TASK_RECLAIMED,
     TASK_SUCCEEDED,
-    DEFAULT_PRIORITY,
     DispatchRequest,
     UnifiedScheduler,
 )

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..deps import Services, get_actor, get_services, get_settings, csrf_protected
 from ...config import Settings
 from ...runtime.sse import stamp_stream
 from ...services.actor import Actor
@@ -17,6 +16,7 @@ from ...services.chat_orchestration import ChatOrchestrationService
 from ...services.prompt import PromptService
 from ...services.stream_persistence import get_segments, persist_stream
 from ...services.streaming import StreamingService
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/streaming", tags=["streaming"])
 

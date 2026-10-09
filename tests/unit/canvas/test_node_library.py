@@ -15,7 +15,6 @@ import pytest
 
 from find_yourself.services.dsl_canvas import (
     EXTENDED_NODE_TYPES,
-    FLOW_TYPES,
     NODE_PARAMS_SCHEMAS,
     NODE_TYPES,
     DslSuspended,
@@ -26,7 +25,6 @@ from find_yourself.services.dsl_canvas import (
     validate_dsl,
 )
 from find_yourself.services.dsl_ir import validate_ir
-
 
 # --------------------------------------------------------------------------- #
 # 工具

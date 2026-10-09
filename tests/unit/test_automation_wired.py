@@ -9,7 +9,6 @@ from __future__ import annotations
 from find_yourself.services.automation import wire_automation_tools
 from find_yourself.skills.harness import gateway
 
-
 EXPECTED = {
     "automation.screenshot",
     "automation.list_windows",

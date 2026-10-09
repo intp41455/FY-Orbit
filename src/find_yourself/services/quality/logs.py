@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,11 +31,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...db.models import AuditEvent
+from ...db.staging_models import WorkStash
 from ..actor import Actor
 from ..audit import AuditService
 from ..errors import NotFound, ValidationFailed
-from ...db.models import AuditEvent
-from ...db.staging_models import WorkStash
 
 #: 五级分级（需求 ①）。顺序即严重度降序。
 LEVELS: tuple[str, ...] = ("error", "warning", "info", "debug", "change")

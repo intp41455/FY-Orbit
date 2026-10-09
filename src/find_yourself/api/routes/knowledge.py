@@ -24,12 +24,12 @@ from ...services.actor import Actor
 from ...services.knowledge import (
     DEFAULT_TOP_K,
     KnowledgeService,
+    hub_bridge,
     register_kb_search_tool,
     set_kb_session_factory,
 )
-from ...services.knowledge.ingest import MAX_FILE_BYTES, SUPPORTED_EXTENSIONS
-from ...services.knowledge import hub_bridge
 from ...services.knowledge.graph import GraphService
+from ...services.knowledge.ingest import MAX_FILE_BYTES, SUPPORTED_EXTENSIONS
 from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/kb", tags=["knowledge"])

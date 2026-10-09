@@ -13,8 +13,6 @@ from find_yourself.services.avatar_profile import (
     chart_to_portrait,
     personality_dimensions,
 )
-from find_yourself.services.errors import ValidationFailed
-
 
 BAZI_CHART = SimpleNamespace(
     system="bazi",

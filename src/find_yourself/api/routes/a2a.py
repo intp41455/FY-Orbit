@@ -16,16 +16,16 @@ from fastapi import APIRouter, Depends, Request
 
 from ...adapters.a2a import (
     AGENT_CARD_PATH,
-    A2AInboundError,
     JSONRPC_PATH,
     A2ADispatcher,
+    A2AInboundError,
     build_agent_card,
     message_text,
 )
-from ...db.models import Task
-from ..deps import Services, csrf_protected, get_services, get_settings
 from ...config import Settings
+from ...db.models import Task
 from ...services.actor import Actor
+from ..deps import Services, csrf_protected, get_services, get_settings
 
 router = APIRouter(tags=["a2a"])
 
@@ -80,7 +80,8 @@ def _inbound_worker_executor(req) -> dict:
 
 def ensure_inbound_worker(scheduler=None) -> None:
     """把 A2A 入站 worker 登记进统一调度中心（幂等）。"""
-    from ...services.scheduler import CHANNEL_A2A, scheduler as default_scheduler
+    from ...services.scheduler import CHANNEL_A2A
+    from ...services.scheduler import scheduler as default_scheduler
 
     sch = scheduler or default_scheduler
     if sch.get_worker(A2A_INBOUND_WORKER_ID) is not None:
@@ -102,6 +103,8 @@ def build_inbound_handler(scheduler=None):
         CHANNEL_A2A,
         DispatchRequest,
         NoRouteError,
+    )
+    from ...services.scheduler import (
         scheduler as default_scheduler,
     )
 

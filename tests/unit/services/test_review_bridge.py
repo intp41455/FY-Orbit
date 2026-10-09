@@ -20,7 +20,6 @@ from find_yourself.services.review_bridge import (
     NOTE_RESOLVED,
     REFRESH_APPLIED,
     REFRESH_FAILED,
-    ROUTE_COMPUTER_USE,
     ROUTE_WHITEBOX,
     NoteDraft,
     ReviewBridge,

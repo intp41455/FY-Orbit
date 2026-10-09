@@ -14,10 +14,10 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
 from ...db.models import Proposal
-from ..deps import csrf_protected, get_actor, get_services, Services
-from ..schemas import ProposalCreate, ProposalDecision
 from ...services.actor import Actor
 from ...services.errors import NotFound
+from ..deps import Services, csrf_protected, get_actor, get_services
+from ..schemas import ProposalCreate, ProposalDecision
 
 router = APIRouter(prefix="/api/proposals", tags=["proposals"])
 

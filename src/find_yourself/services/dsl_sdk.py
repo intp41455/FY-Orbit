@@ -46,8 +46,8 @@ from typing import Any, Callable, Sequence
 
 from .dsl_canvas import (
     AgentResolver,
-    RunResult,
     DslValidationError,
+    RunResult,
     run_dsl,
     verb_catalog,
 )

@@ -13,18 +13,17 @@ Tests:
 from __future__ import annotations
 
 from uuid import uuid4
+
 import pytest
 from sqlalchemy import select
 
 from find_yourself.adapters.assessments import CATALOG, scorer
-from find_yourself.db.models import Conversation, Message, Skill
-from find_yourself.services.actor import Actor
+from find_yourself.db.models import Conversation, Message
 from find_yourself.services.audit import AuditService
-from find_yourself.services.companion import CompanionService, PERSPECTIVE_DISCLAIMER
-from find_yourself.services.errors import Conflict, NotFound, PermissionDenied
+from find_yourself.services.companion import PERSPECTIVE_DISCLAIMER, CompanionService
+from find_yourself.services.errors import Conflict
 from find_yourself.services.proposal import ProposalService
 from find_yourself.services.skill import SkillService
-
 
 # ============================================================================
 # 1. U02: Conversation History Refresh & Restoration

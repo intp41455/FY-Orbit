@@ -13,10 +13,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict
 
-from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 from ...config import Settings
 from ...services.actor import Actor
 from ...services.recovery import RecoveryService, playbook_view
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/recovery", tags=["recovery"])
 

@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import threading
 import time
-import base64
 from datetime import timezone
 from typing import Iterator
 
@@ -33,17 +32,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.api.oidc import OIDCClient
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
 
 
 # --- Test-only SQLite TZ shim (see module docstring; Core defect noted) -------
@@ -145,8 +144,8 @@ def _build_issuer_app(base: str, private_pem: bytes, pub_pem: bytes) -> FastAPI:
 @pytest.fixture()
 def issuer() -> Iterator[str]:
     """Run the OIDC stub on a real loopback socket; yield its base URL."""
-    from cryptography.hazmat.primitives.asymmetric import rsa
     from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
 
     priv = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     private_pem = priv.private_bytes(

@@ -30,16 +30,15 @@ from __future__ import annotations
 import difflib
 import hashlib
 import os
-from pathlib import Path
 import shutil
 import time
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from find_yourself.db.types import utcnow
 from find_yourself.db.workbench_models import (
     FileRevision,
     WorkspaceEvent,

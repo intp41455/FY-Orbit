@@ -21,12 +21,13 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, JSON, Select, String, select
+from sqlalchemy import JSON, Boolean, Select, String, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from ...db.base import Base
 from ...db.types import TZDateTime, utcnow
 from ..errors import NotFound, PermissionDenied, ValidationFailed
+from .levels import LEVEL_ORDER
 from .types import (
     EFFECT_ALLOW,
     EFFECT_DENY,
@@ -38,7 +39,6 @@ from .types import (
     path_matches_prefix,
     process_matches,
 )
-from .levels import LEVEL_ORDER
 
 
 @dataclass

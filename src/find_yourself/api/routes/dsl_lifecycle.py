@@ -25,7 +25,6 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 from ...config import Settings
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
@@ -36,6 +35,7 @@ from ...services.dsl_canvas import (
     validate_assembly,
 )
 from ...services.errors import DomainError
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/dsl-lifecycle", tags=["dsl-lifecycle"])
 

@@ -12,7 +12,6 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import sessionmaker
 
 from find_yourself.db import models  # noqa: F401  (register tables on Base)
-from find_yourself.db.base import Base
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService

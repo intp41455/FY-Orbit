@@ -14,8 +14,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import find_yourself.db.models
-import find_yourself.db.team_models
 from find_yourself.db.base import Base
 from find_yourself.db.models import Task
 from find_yourself.db.types import utcnow

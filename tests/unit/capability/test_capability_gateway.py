@@ -95,8 +95,9 @@ def test_service_actor_subject_mismatch_rejected(broker, agent):
 
 def test_expired_service_credential_rejected(broker, tmp_path):
     """过期的 service 凭据在网关被否决（RBAC 收编语义）。"""
-    from find_yourself.db.types import utcnow
     from datetime import timedelta
+
+    from find_yourself.db.types import utcnow
     actor = Actor.service("short-lived", "agent", allowed_tools=["local.fs.read"],
                           expires_at=utcnow() - timedelta(seconds=1))
     res = broker.decide(

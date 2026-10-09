@@ -13,13 +13,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import hmac
-import os
-import shutil
-import time
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 from xml.sax.saxutils import escape
 
 
@@ -35,7 +31,6 @@ def _build_canonical_query(params: dict[str, str], exclude_sig: bool = False) ->
     return "&".join(f"{k}={v}" for k, v in encoded)
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import PlainTextResponse
 
 
 def _sha256_hex(data: bytes) -> str:

@@ -8,9 +8,9 @@ from __future__ import annotations
 import json
 
 import pytest
+from helpers import login_owner
 
 from find_yourself.db.workbench_models import HubConnection
-from helpers import login_owner
 
 # 本项目错误约定（services/errors.py）：ValidationFailed → 422，NotFound → 404，
 # PermissionDenied → 403。断言按真实约定写，不臆造 400。

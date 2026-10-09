@@ -12,11 +12,9 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from ...db.models import Agent, AgentLease, Task
-from ...db.types import utcnow
-from ..deps import Services, csrf_protected, get_actor, get_services
+from ...db.models import Agent, AgentLease
 from ...services.actor import Actor
-from ...services.errors import NotFound
+from ..deps import Services, csrf_protected, get_services
 
 router = APIRouter(prefix="/api/agents", tags=["agents-lifecycle"])
 

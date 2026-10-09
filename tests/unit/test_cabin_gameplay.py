@@ -17,8 +17,7 @@
 from __future__ import annotations
 
 import re
-from datetime import timedelta
-from datetime import timezone
+from datetime import timedelta, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -29,17 +28,17 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime, utcnow
 from find_yourself.services.cabin_gameplay import CabinSave
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
 
 LOCAL_TOKEN = "dev-token-secret-w2"
 
@@ -800,8 +799,8 @@ def test_preference_view_marks_unrecognised_personality(client: TestClient, head
 # ----------------------------------------------------------------------
 def test_blueprint_furniture_ids_exist_in_w1_catalog() -> None:
     """蓝图里的家具 id 必须真实存在于 W1 的后端白名单，否则解锁了也摆不上。"""
-    from find_yourself.services.cabin_interior import FURNITURE_CATALOG
     from find_yourself.services.cabin_gameplay import BLUEPRINTS
+    from find_yourself.services.cabin_interior import FURNITURE_CATALOG
 
     missing = sorted(set(BLUEPRINTS) - set(FURNITURE_CATALOG))
     assert not missing, f"蓝图引用了 W1 白名单里没有的家具: {missing}"

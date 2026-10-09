@@ -16,7 +16,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...db.claw_models import (
@@ -27,7 +27,6 @@ from ...db.claw_models import (
 from ..actor import Actor
 from ..audit import AuditService
 from .conflicts import ClawConflictRecord
-from .gates import _values_differ
 
 # ---------------------------------------------------------------------------
 # 机制-01 · 发令前指令校验门
@@ -136,7 +135,7 @@ class HealthDashboard:
             q_gate = q_gate.where(ClawGateDecision.task_id == task_id)
         gates = list(self.s.execute(q_gate).scalars().all())
         revise = sum(1 for g in gates if g.verdict == "revise")
-        reject = sum(1 for g in gates if g.verdict == "reject")
+        _ = sum(1 for g in gates if g.verdict == "reject")
         escal = sum(1 for g in gates if g.verdict == "escalate")
         total_gates = len(gates)
         revise_rate = round(revise / total_gates, 4) if total_gates else 0.0

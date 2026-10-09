@@ -2106,10 +2106,6 @@ class DslRunStore:
 # create_all 因测试模块 import 本模块而同样能看到）。
 # ---------------------------------------------------------------------------
 
-from find_yourself.db.base import Base as _FlowBase  # noqa: E402
-from find_yourself.db.types import ID as _FlowID  # noqa: E402
-from find_yourself.db.types import TZDateTime as _FlowTZ  # noqa: E402
-from find_yourself.db.types import utcnow as _flow_utcnow  # noqa: E402
 from sqlalchemy import CheckConstraint as _FlowCheck  # noqa: E402
 from sqlalchemy import ForeignKey as _FlowFK  # noqa: E402
 from sqlalchemy import Integer as _FlowInt  # noqa: E402
@@ -2118,6 +2114,11 @@ from sqlalchemy import UniqueConstraint as _FlowUQ  # noqa: E402
 from sqlalchemy.orm import Mapped as _FlowMapped  # noqa: E402
 from sqlalchemy.orm import mapped_column as _flow_column  # noqa: E402
 from sqlalchemy.types import JSON as _FlowJSON  # noqa: E402
+
+from find_yourself.db.base import Base as _FlowBase  # noqa: E402
+from find_yourself.db.types import ID as _FlowID  # noqa: E402
+from find_yourself.db.types import TZDateTime as _FlowTZ  # noqa: E402
+from find_yourself.db.types import utcnow as _flow_utcnow  # noqa: E402
 
 from .errors import NotFound as _FlowNotFound  # noqa: E402
 from .errors import ValidationFailed as _FlowValidation  # noqa: E402

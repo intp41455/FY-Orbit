@@ -1,6 +1,5 @@
 """BUG-06: atomic budget reservation, caps, settle/release and cancel propagation."""
 
-from decimal import Decimal
 
 import pytest
 

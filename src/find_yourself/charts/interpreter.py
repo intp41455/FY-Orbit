@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from typing import Any
-from .models import ChartResult, InterpretationResult
 
+from .models import ChartResult, InterpretationResult
 
 DISCLAIMER_TEXT = (
     "【文化与娱乐免责声明】命理与星盘解读仅作为传统文化研究、生活自省隐喻与心理投射工具，"

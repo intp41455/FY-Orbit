@@ -15,14 +15,14 @@ Verifies:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import socket
 import subprocess
 import sys
 import time
 import urllib.request
-import pytest
+from pathlib import Path
 
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_SCRIPT = REPO_ROOT / "desktop" / "app" / "run_desktop.py"

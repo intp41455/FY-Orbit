@@ -27,7 +27,6 @@ from langgraph.graph import END, START, StateGraph
 from ..services.actor import Actor
 from ..services.errors import Conflict, NotFound, ValidationFailed
 
-
 # ---------------------------------------------------------------------------
 # ADR-07: explicit, ORDERED route-criteria table.
 #

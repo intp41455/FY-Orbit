@@ -7,7 +7,7 @@ deadline, then credentials are revoked. This is the BUG-12 lifecycle primitive
 (real A2A handshake and health probes are wired by the Runtime shard later).
 """
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -16,8 +16,8 @@ from sqlalchemy.orm import Session
 from ..db.models import Agent, AgentLease, ServiceIdentity
 from ..db.types import utcnow
 from .actor import Actor
-from .errors import Conflict, NotFound, ValidationFailed
 from .audit import AuditService
+from .errors import Conflict, NotFound
 
 DRAINABLE = {"enabled", "healthy"}
 

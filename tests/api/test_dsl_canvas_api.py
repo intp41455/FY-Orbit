@@ -8,10 +8,10 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from helpers import login_owner
 
 from find_yourself.api.routes import dsl_canvas
 from find_yourself.services.dsl_canvas import NODE_TYPES
-from helpers import login_owner
 
 _THREE_NODE_DOC = {
     "version": "1",

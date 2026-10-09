@@ -19,8 +19,10 @@ from .base import (
     ProviderTransportError,
     classify_status,
     normalize_messages,
-    approx_tokens as _approx_tokens,
     sanitize_message,
+)
+from .base import (
+    approx_tokens as _approx_tokens,
 )
 
 PROVIDER_ID = "openai_compat"

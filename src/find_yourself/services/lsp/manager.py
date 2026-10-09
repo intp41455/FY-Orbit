@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import quote
 
 from .bridge import LSPConnection

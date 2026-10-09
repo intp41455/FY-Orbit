@@ -20,21 +20,21 @@
 from __future__ import annotations
 
 import ast
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
 import sqlalchemy as sa
-import json
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from find_yourself.db.base import Base
-import find_yourself.db.models  # noqa: F401
 import find_yourself.db.canvas_models  # noqa: F401
 import find_yourself.db.collaboration_models  # noqa: F401  (本次新增)
+import find_yourself.db.models  # noqa: F401
+import find_yourself.services.collaboration as collaboration_module
+from find_yourself.db.base import Base
 from find_yourself.db.canvas_models import CanvasInstance
 from find_yourself.db.collaboration_models import (
     ALL_ROLES,
@@ -46,8 +46,6 @@ from find_yourself.db.collaboration_models import (
     Comment,
     Notification,
 )
-import find_yourself.services.collaboration as collaboration_module
-from find_yourself.services.collaboration import NotificationTarget
 from find_yourself.db.models import Artifact, AuditEvent, Memory, Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
@@ -56,6 +54,7 @@ from find_yourself.services.collaboration import (
     COMMENT_DEFAULT_LIMIT,
     COMMENT_MAX_LIMIT,
     CollaborationService,
+    NotificationTarget,
 )
 from find_yourself.services.errors import NotFound, PermissionDenied, ValidationFailed
 from find_yourself.services.grant import MAX_GRANT_SECONDS, GrantService

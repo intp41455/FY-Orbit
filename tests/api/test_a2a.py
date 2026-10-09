@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import pytest
 from fastapi.testclient import TestClient
-
-from find_yourself.adapters.a2a import A2ADispatcher, build_agent_card
-
 from helpers import login_owner
+
+from find_yourself.adapters.a2a import A2ADispatcher
 
 
 def test_agent_card_has_required_fields(client: TestClient):

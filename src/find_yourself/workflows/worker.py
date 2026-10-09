@@ -93,6 +93,7 @@ def _build_pg_activities(effect_dir: str) -> Activities:
     # Imported lazily so --adapter fake / health-only paths do not require a
     # working SQL stack, and so a missing Core module surfaces as config_error.
     from sqlalchemy import text
+
     from ..db.session import engine_from_url, session_factory
     from ..services.pg_ports import PostgresCorePorts
 

@@ -12,13 +12,12 @@ from __future__ import annotations
 
 import argparse
 import os
-from pathlib import Path
-import shutil
 import socket
 import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
 
 
 def find_free_port(preferred: int = 8088) -> int:
@@ -205,7 +204,7 @@ def main() -> int:
             webview_dir.mkdir(parents=True, exist_ok=True)
 
             if edge_path:
-                print(f"[FindYourself Desktop] Opening standalone application window via Edge App mode...")
+                print("[FindYourself Desktop] Opening standalone application window via Edge App mode...")
                 win_cmd = [
                     str(edge_path),
                     f"--app=http://127.0.0.1:{port}",

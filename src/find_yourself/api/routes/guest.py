@@ -23,11 +23,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
-from ..deps import SESSION_COOKIE, get_actor, get_services, get_settings, Services, csrf_protected
 from ...config import Settings
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied
-from ...services.auth import AuthService
+from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(tags=["auth"])
 

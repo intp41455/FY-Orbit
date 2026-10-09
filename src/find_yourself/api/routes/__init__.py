@@ -14,6 +14,7 @@ import importlib
 import logging
 import pkgutil
 import sys
+
 from fastapi import APIRouter
 
 logger = logging.getLogger("find_yourself.api.routes")
@@ -41,8 +42,8 @@ from . import (  # noqa: F401
     collaboration,
     conversations,
     dsl_canvas,
-    dsl_lifecycle,
     dsl_debug,
+    dsl_lifecycle,
     export,
     git_repo,
     guest,

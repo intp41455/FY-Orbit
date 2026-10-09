@@ -16,6 +16,7 @@ rows and constraints.
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -29,11 +30,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import Mapped, mapped_column
-from pgvector.sqlalchemy import Vector
 
+from ..workflows.models import Stage as WorkflowStage
 from .base import Base
 from .types import HASH64, ID, MONEY, TZDateTime, utcnow
-from ..workflows.models import Stage as WorkflowStage
 
 # ---------------------------------------------------------------------------
 # Allowed status values (mirrored as DB CHECK constraints; single source here)
@@ -794,11 +794,30 @@ class SearchDocument(Base):
 # ---------------------------------------------------------------------------
 # Re-export 04 Profile and 05 Canvas models
 # ---------------------------------------------------------------------------
-from find_yourself.db.profile_models import (  # noqa: E402
-    ProfileSubject, ProfileImport, SourceSegment, ProfileEvidence,
-    ProfileRun, ProfileRevision, ProfileFeedback,
+# ⚠️ 本块是**再导出枢纽**，不是死导入。ruff F401 只看「本文件有没有用这个名字」，
+# 而这里的定义处当然「没被本文件使用」—— 但外部模块正按名字从这里取：
+#   ProfileEvidence← profile.py、canvas.py 等
+#   CanvasInstance      ← canvas.py:30 等
+#   DispatchRecord      ← 3 处；HandoffPacket ← 2 处（已逐个grep 核实）
+# 所以这里**必须**豁免 F401。
+#
+# 历史事故（别再犯）：首次开F401 时直接 `ruff --fix` 把本块整段删掉，
+# 后果是 28 个测试文件收集失败（ImportError: cannot import name
+# 'ProfileEvidence'）—— 纯自动修复看不见跨模块的再导出依赖。
+# 正解是「事前交叉验证 + 枢纽单独 noqa」，不是一把梭。
+from find_yourself.db.canvas_models import (  # noqa: E402, F401
+    CanvasEvent,
+    CanvasInstance,
+    DispatchRecord,
+    HandoffPacket,
 )
-from find_yourself.db.canvas_models import (  # noqa: E402
-    CanvasInstance, DispatchRecord, HandoffPacket, CanvasEvent,
+from find_yourself.db.profile_models import (  # noqa: E402, F401
+    ProfileEvidence,
+    ProfileFeedback,
+    ProfileImport,
+    ProfileRevision,
+    ProfileRun,
+    ProfileSubject,
+    SourceSegment,
 )
 

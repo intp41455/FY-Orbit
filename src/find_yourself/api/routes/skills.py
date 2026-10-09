@@ -17,15 +17,14 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ...db.models import Skill
-from ..deps import Services, csrf_protected, get_actor, get_services
 from ...services.actor import Actor
 from ...services.errors import Conflict, NotFound
 from ...skills.harness import (
-    FunctionCallingGateway,
     SkillLearningLoop,
     TrustedSkillEvaluationWorker,
     gateway,
 )
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/skills", tags=["skills-lifecycle"])
 
@@ -115,7 +114,7 @@ async def sandbox_evaluate(
 async def trusted_evaluate(skill_id: str, body: TrustedEvaluateBody, actor: Actor = Depends(csrf_protected),
                           svc: Services = Depends(get_services)) -> dict:
     """Evaluate skill using independent TrustedSkillEvaluationWorker.
-    
+
     Guarantees that caller cannot bypass security by self-reporting booleans.
     """
     eval_result = TrustedSkillEvaluationWorker.evaluate_package(body.package)

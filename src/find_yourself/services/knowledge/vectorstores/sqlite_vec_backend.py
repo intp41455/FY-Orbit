@@ -19,7 +19,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Sequence
 
-from sqlalchemy import event, text as sql_text
+from sqlalchemy import event
+from sqlalchemy import text as sql_text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 

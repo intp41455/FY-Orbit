@@ -18,14 +18,14 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 
+from ...services.actor import Actor
+from ...services.errors import DomainError
 from ...services.lsp import (
     LSPServerManager,
     LSPService,
     PathOutsideAllowedRoots,
 )
 from ..deps import Services, get_actor, get_services
-from ...services.actor import Actor
-from ...services.errors import DomainError
 
 router = APIRouter(prefix="/api/lsp", tags=["code-intelligence"])
 

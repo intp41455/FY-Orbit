@@ -27,7 +27,7 @@ from find_yourself.db.models import AuditEvent
 from find_yourself.runtime.sse import inject_message_id, stamp_stream
 from find_yourself.services.actor import Actor
 from find_yourself.services.anchor_store import FileAnchorStore
-from find_yourself.services.audit import AuditService, MESSAGE_ID_KEY, message_id_of
+from find_yourself.services.audit import MESSAGE_ID_KEY, AuditService, message_id_of
 from find_yourself.services.hasher import digest
 
 

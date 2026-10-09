@@ -11,13 +11,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from find_yourself.api.deps import get_actor, get_services, get_settings, csrf_protected
+from find_yourself.api.deps import csrf_protected, get_actor, get_services, get_settings
 from find_yourself.api.routes import dsl_lifecycle
 from find_yourself.runtime.evaluation import BatchCase, UnifiedEvaluator, parse_eval_csv
-from find_yourself.services.actor import Actor
-from find_yourself.services.dsl_canvas import DslFlowStore, evaluate_flow_batch
+from find_yourself.services.dsl_canvas import evaluate_flow_batch
 from find_yourself.services.errors import ValidationFailed
-
 
 CHATFLOW_DOC = {
     "version": "1",

@@ -10,20 +10,19 @@
 """
 
 import json
+
 import pytest
 from sqlalchemy import select
 
 from find_yourself.db.models import AuditEvent
-from find_yourself.services.errors import NotFound, ValidationFailed
+from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.marketplace_rating import MarketplaceRatingStore
 from find_yourself.services.templates.market import (
-    CRITICAL_DANGEROUS_TOOLS,
     TEMPLATE_PACKAGE_MAGIC,
     TemplateMarketService,
 )
 from find_yourself.services.templates.scaffold import (
     ScaffoldTemplateService,
-    user_templates_dir,
 )
 
 

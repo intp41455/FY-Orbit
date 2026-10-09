@@ -1,12 +1,11 @@
 """API tests for catalog artifacts: get, presigned, and deleted state."""
 
 from fastapi.testclient import TestClient
+from helpers import login_owner
 
 from find_yourself.adapters.artifacts import build_artifact_store
 from find_yourself.contracts import uid
 from find_yourself.db.models import Artifact, utcnow
-
-from helpers import login_owner
 
 
 def test_artifact_api_get_and_presigned(client: TestClient, session_maker, settings):

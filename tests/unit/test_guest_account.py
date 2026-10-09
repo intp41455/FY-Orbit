@@ -26,21 +26,21 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.models import USER_PLANS, USER_STATUSES, Memory, User
 from find_yourself.db.types import TZDateTime
 from find_yourself.services.actor import Actor
-from find_yourself.services.auth import AuthService
 from find_yourself.services.audit import AuditService
+from find_yourself.services.auth import AuthService
 from find_yourself.services.errors import PermissionDenied, Unauthenticated, ValidationFailed
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
 
 LOCAL_TOKEN = "dev-token-secret-w8"
 

@@ -27,19 +27,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from ..deps import csrf_protected, get_actor, get_services
 from ...services.actor import Actor
-from ...services.errors import DomainError, ValidationFailed
+from ...services.errors import DomainError
 from ...services.grant import GrantService
 from ...services.marketplace import DEFAULT_PAGE_LIMIT, MarketplaceService
 from ...services.skill import SkillService
 from ...services.templates.cursor_context import CursorContextEngine
 from ...services.templates.market import TemplateMarketService
 from ...services.templates.scaffold import ScaffoldTemplateService
+from ..deps import csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/plugins", tags=["plugin-marketplace"])
 

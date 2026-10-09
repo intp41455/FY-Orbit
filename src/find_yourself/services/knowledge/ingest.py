@@ -17,14 +17,15 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from uuid import uuid4
 from io import BytesIO
+from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...db.kb_models import KBDocument, KBChunk
+from ...db.kb_models import KBChunk, KBDocument
 from ...db.types import utcnow
 from ..actor import Actor
 from ..audit import AuditService

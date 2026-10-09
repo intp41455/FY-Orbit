@@ -39,7 +39,7 @@ import threading
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 #: 每房间保留的消息条数（超出后最旧的被丢弃）。

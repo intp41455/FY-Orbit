@@ -17,7 +17,7 @@ mock 掉 DB 的测试只能证明 mock 是这么配的。
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from typing import Iterator
 
 import pytest
@@ -27,17 +27,17 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.hitl_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime, utcnow
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
-import find_yourself.db.hitl_models  # noqa: F401
 
 LOCAL_TOKEN = "dev-token-secret-hitl"
 

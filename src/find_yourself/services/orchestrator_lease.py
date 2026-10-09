@@ -32,8 +32,8 @@ from uuid import uuid4
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from find_yourself.db.models import Proposal, Task
 from find_yourself.db.canvas_models import DispatchRecord
+from find_yourself.db.models import Proposal, Task
 from find_yourself.db.types import utcnow
 from find_yourself.db.workbench_models import OrchestratorLease
 from find_yourself.services.actor import Actor

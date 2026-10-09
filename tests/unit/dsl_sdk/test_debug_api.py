@@ -13,13 +13,10 @@
 
 from __future__ import annotations
 
-import pytest
+from _dsl_docs import doc_of, lit, out, xf
 from fastapi.testclient import TestClient
 
-from find_yourself.api.routes import dsl_canvas as canvas_routes
 from find_yourself.services.dsl_canvas import run_dsl
-
-from _dsl_docs import doc_of, lit, out, xf
 
 
 def _pipeline_doc() -> dict:

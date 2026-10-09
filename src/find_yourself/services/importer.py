@@ -45,7 +45,7 @@ class HistoryImportService:
             title = sess_dict["title"] or f"Imported {platform} session"
 
             # Deterministic/stable mapping of imported conversation
-            conv_client_key = f"person-kb:{platform}:{raw_sess_id}"
+            _ = f"person-kb:{platform}:{raw_sess_id}"
             conv = self.s.execute(
                 select(Conversation).where(
                     Conversation.owner_id == actor.owner_id,

@@ -12,9 +12,9 @@ from functools import lru_cache
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.git_repo_service import GitRepoService
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/git-repo", tags=["git-repo"])
 

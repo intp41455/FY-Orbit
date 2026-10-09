@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 
 import pytest
@@ -20,7 +19,6 @@ from find_yourself.services.lsp import (
     decode_messages,
     encode_message,
 )
-
 
 # ---------------------------------------------------------------------------
 # 协议桥：分帧编解码（纯函数）
@@ -201,10 +199,10 @@ def test_service_definition_via_fake_connection(tmp_path):
 # ---------------------------------------------------------------------------
 
 def _client(tmp_path):
-    from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
+
     from find_yourself.api.app import create_app
     from find_yourself.config import Settings
     from find_yourself.db.base import Base
@@ -228,17 +226,15 @@ def _client(tmp_path):
 
 def test_lsp_api_servers_and_not_installed(tmp_path):
     """servers 端点如实报状态；definition 对未安装服务端显式 503。"""
-    from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
+
     from find_yourself.api.app import create_app
+    from find_yourself.api.routes import lsp as lsp_route
     from find_yourself.config import Settings
     from find_yourself.db.base import Base
-    from find_yourself.services.lsp.service import LSPService
-    from find_yourself.services.lsp.manager import LSPServerManager
-    from find_yourself.api.routes import lsp as lsp_route
 
     eng = create_engine("sqlite://", connect_args={"check_same_thread": False},
                         poolclass=StaticPool, future=True)
@@ -253,8 +249,8 @@ def test_lsp_api_servers_and_not_installed(tmp_path):
     )
     app = create_app(session_maker=sessionmaker(bind=eng, expire_on_commit=False, future=True),
                      settings=settings)
-    from find_yourself.api.routes.lsp import router as _lsp_router
     from find_yourself.api.errors import register_exception_handlers
+    from find_yourself.api.routes.lsp import router as _lsp_router
     app.include_router(_lsp_router)          # 测试内挂载（替身主控统一挂载动作）
     register_exception_handlers(app)
     # 让 API 路由的 allowed_roots 指向 tmp_path（越界拒绝可测）

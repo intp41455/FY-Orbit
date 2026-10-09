@@ -335,9 +335,9 @@ def run_cli_process(
 
     Returns ``{ok, exit_code, stdout, stderr, timed_out, reaped, duration_ms}``。
     """
-    from ...adapters.community_harness_adapter import kill_process_tree
-
     import os
+
+    from ...adapters.community_harness_adapter import kill_process_tree
 
     started = time.perf_counter()
     popen_kw: dict[str, Any] = {}

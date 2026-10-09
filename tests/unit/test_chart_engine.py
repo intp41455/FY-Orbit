@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import pytest
 from find_yourself.charts.engine import ChartImporter, DeterministicChartEngine
-from find_yourself.charts.interpreter import ChartInterpreter, DISCLAIMER_TEXT
+from find_yourself.charts.interpreter import DISCLAIMER_TEXT, ChartInterpreter
 from find_yourself.charts.models import (
     ChartRequest,
     ExternalChartImportRequest,

@@ -111,11 +111,11 @@ def main() -> int:
     args, _ = parser.parse_known_args()
 
     is_sidecar = args.sidecar or (args.port == 0)
-    
+
     # Resolve roots & data dirs
     exe_path = Path(sys.executable).resolve()
     portable_root = exe_path.parent.parent if exe_path.parent.name == "find-yourself-backend" else exe_path.parent
-    
+
     if is_sidecar:
         root = data_root()
         data_dir = root / "data"
@@ -151,7 +151,7 @@ def main() -> int:
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
             candidates.append(Path(meipass) / "web" / "dist")
-        
+
         for cand in candidates:
             if cand.is_dir() and (cand / "index.html").is_file():
                 static_dir = str(cand.resolve())
@@ -197,6 +197,7 @@ def main() -> int:
         threading.Thread(target=_open_window, daemon=True).start()
 
     import uvicorn
+
     from find_yourself.api.app import create_app
 
     config = uvicorn.Config(

@@ -26,7 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from .rng import clamp, pick, weighted_pick, rng_for
+from .rng import clamp, pick, rng_for, weighted_pick
 from .themes import THEME_IDS, get_theme
 
 # ---------------------------------------------------------------------- #

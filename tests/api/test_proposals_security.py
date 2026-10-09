@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
-
-import pytest
 from fastapi.testclient import TestClient
+from helpers import login_owner
 from sqlalchemy.orm import sessionmaker
 
-from find_yourself.db.models import AuthSession, Proposal
-from find_yourself.db.types import utcnow
+from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.auth import AuthService
-from find_yourself.services.actor import Actor
-
-from helpers import login_owner
 
 
 def _make_service_token(session_maker: sessionmaker) -> str:

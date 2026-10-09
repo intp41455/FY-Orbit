@@ -31,18 +31,18 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.hitl_models  # noqa: F401  (需求12：团队审批的状态真相源)
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_approval_models  # noqa: F401  (需求6：本次新增)
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
-import find_yourself.db.hitl_models  # noqa: F401  (需求12：团队审批的状态真相源)
-import find_yourself.db.team_approval_models  # noqa: F401  (需求6：本次新增)
 
 LOCAL_TOKEN = "dev-token-secret-team-approval"
 

@@ -35,7 +35,8 @@ from .base import (
 )
 
 try:  # qdrant_client 缺失不致命：本模块仍可导入，is_available() 会报告 False
-    from qdrant_client import QdrantClient, models as qmodels  # type: ignore[import-not-found]
+    from qdrant_client import QdrantClient  # type: ignore[import-not-found]
+    from qdrant_client import models as qmodels
 
     HAS_QDRANT = True
 except ImportError:  # pragma: no cover - 只有在无依赖环境才会走到

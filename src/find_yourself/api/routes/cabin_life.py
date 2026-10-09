@@ -29,11 +29,11 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
-from ..deps import csrf_protected, get_actor, get_db
 from ...services.actor import Actor
 from ...services.cabin_life import clock as clock_mod
 from ...services.cabin_life import interaction, npcs, themes
 from ...services.cabin_life.service import ACTIONS, WRITABLE_SETTINGS, LifeService
+from ..deps import csrf_protected, get_actor, get_db
 
 router = APIRouter(prefix="/api/cabin/life", tags=["cabin-life"])
 

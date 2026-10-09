@@ -461,6 +461,7 @@ def test_sc_memory_cap_is_listed_as_enforced_only_when_wired(tmp_path: Path):
 def test_sc_module_docstring_makes_no_docker_socket_guarantee():
     """硬判据：模块 docstring 不得再出现「无法访问 docker socket」这种假承诺。"""
     import inspect
+
     from find_yourself.runtime import sandbox as mod
     doc = inspect.getdoc(mod) or ""
     assert "cannot access core DB volume or host Docker socket" not in doc, (

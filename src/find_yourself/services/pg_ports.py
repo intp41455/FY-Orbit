@@ -15,14 +15,18 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from datetime import datetime
 from typing import Any, Callable
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from ..db.models import (
-    AuditEvent, BudgetReservation, Memory, Operation, Proposal, Task, TaskAttempt,
+    BudgetReservation,
+    Memory,
+    Operation,
+    Proposal,
+    Task,
+    TaskAttempt,
 )
 from ..db.types import utcnow
 from .actor import Actor

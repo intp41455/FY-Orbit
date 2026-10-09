@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import itertools
 from datetime import timezone
 from typing import Iterator
 
@@ -27,16 +26,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.canvas_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
+import find_yourself.db.profile_models  # noqa: F401
+import find_yourself.db.sync_models  # noqa: F401
+import find_yourself.db.team_models  # noqa: F401
+import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.types import TZDateTime
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.profile_models  # noqa: F401
-import find_yourself.db.canvas_models  # noqa: F401
-import find_yourself.db.sync_models  # noqa: F401
-import find_yourself.db.workbench_models  # noqa: F401
-import find_yourself.db.team_models  # noqa: F401
 from find_yourself.services import avatar_gen as ag
 from find_yourself.services.errors import ValidationFailed
 
@@ -451,7 +450,7 @@ def test_other_owner_cannot_read_my_avatar(app: FastAPI):
         assert r.json()["error"]["code"] == "avatar_not_found"
 
 
-def test_each_owner_gets_their_own_avatar(app: FastClient):
+def test_each_owner_gets_their_own_avatar(app: FastAPI):
     with TestClient(_force_loopback(app)) as c1, TestClient(_force_loopback(app)) as c2:
         h1 = _login(c1, owner="owner-w11-a")
         h2 = _login(c2, owner="owner-w11-b")
@@ -661,11 +660,13 @@ def test_migration_0020_upgrade_and_downgrade_round_trip():
     用内存 SQLite 直连 alembic 的 op，验证：建表成功 → 表与约束都在 →
     downgrade 删除 → 再 upgrade 可重建（幂等）。
     """
+    import importlib.util
+    from pathlib import Path
+
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
-    from pathlib import Path
-    import importlib.util
-    from sqlalchemy import create_engine, inspect, text as sa_text
+    from sqlalchemy import create_engine, inspect
+    from sqlalchemy import text as sa_text
 
     path = (
         Path(__file__).resolve().parents[2] / "migrations" / "versions" / "0020_avatar_profiles.py"

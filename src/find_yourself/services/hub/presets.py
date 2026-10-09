@@ -12,7 +12,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import KIND_ANTHROPIC, KIND_HTTP_WEBHOOK, KIND_KNOWLEDGE_SOURCE, KIND_MCP_SERVER, KIND_OPENAI_CHAT, KIND_TOOL_PLUGIN
+from . import (
+    KIND_ANTHROPIC,
+    KIND_HTTP_WEBHOOK,
+    KIND_KNOWLEDGE_SOURCE,
+    KIND_MCP_SERVER,
+    KIND_OPENAI_CHAT,
+    KIND_TOOL_PLUGIN,
+)
 
 
 def _preset(

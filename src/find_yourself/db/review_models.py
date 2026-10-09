@@ -26,7 +26,8 @@ TOKEN 优化三项也落在本表：
 
 from datetime import datetime
 
-from sqlalchemy import Index, Integer, JSON, String, Text, text as sa_text
+from sqlalchemy import JSON, Index, Integer, String, Text
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .base import Base

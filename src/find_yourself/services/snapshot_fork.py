@@ -39,14 +39,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.fork_models import ArchiveFork
-from ..db.types import utcnow
 from .actor import Actor
 from .audit import AuditService
 from .errors import Conflict, NotFound

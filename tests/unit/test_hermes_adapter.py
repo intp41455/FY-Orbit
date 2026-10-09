@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock
 
 from find_yourself.adapters.hermes_adapter import HermesAdapter
 

@@ -5,9 +5,6 @@
 
 from __future__ import annotations
 
-import pytest
-from fastapi.testclient import TestClient
-
 from helpers import login_owner
 
 # release_update 路由由 routes/__init__.py 自动发现挂载，无需手动 import。

@@ -22,6 +22,9 @@ import pytest
 #: 仓库根（find_yourself_dsl/ 运行库所在；src 布局回推三级）。
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
+from _dsl_docs import doc_of, lit, out, xf
+
+import find_yourself_dsl as fy
 from find_yourself.services.dsl_canvas import (
     AGGREGATE_OPS,
     CONDITION_OPS,
@@ -30,10 +33,14 @@ from find_yourself.services.dsl_canvas import (
     OUTPUT_FORMATS,
     TRANSFORM_VERBS,
     VERB_REGISTRY,
-    NODE_PARAMS_SCHEMAS as PLATFORM_NODE_SCHEMAS,
     canonical_dsl,
-    dsl_digest as platform_digest,
     run_dsl,
+)
+from find_yourself.services.dsl_canvas import (
+    NODE_PARAMS_SCHEMAS as PLATFORM_NODE_SCHEMAS,
+)
+from find_yourself.services.dsl_canvas import (
+    dsl_digest as platform_digest,
 )
 from find_yourself.services.dsl_code_export import (
     DSL_RUNTIME_PACKAGE,
@@ -41,19 +48,30 @@ from find_yourself.services.dsl_code_export import (
     parse_dsl_code,
     write_export_bundle,
 )
-
-import find_yourself_dsl as fy
-from find_yourself_dsl._schema import (    AGGREGATE_OPS as FY_AGGREGATE_OPS,
+from find_yourself_dsl._schema import (
+    AGGREGATE_OPS as FY_AGGREGATE_OPS,
+)
+from find_yourself_dsl._schema import (
     CONDITION_OPS as FY_CONDITION_OPS,
+)
+from find_yourself_dsl._schema import (
     INPUT_KINDS as FY_INPUT_KINDS,
+)
+from find_yourself_dsl._schema import (
     MERGE_OPS as FY_MERGE_OPS,
+)
+from find_yourself_dsl._schema import (
     NODE_PARAMS_SCHEMAS as FY_NODE_SCHEMAS,
+)
+from find_yourself_dsl._schema import (
     OUTPUT_FORMATS as FY_OUTPUT_FORMATS,
+)
+from find_yourself_dsl._schema import (
     TRANSFORM_PARAMS_SCHEMAS as FY_TRANSFORM_SCHEMAS,
+)
+from find_yourself_dsl._schema import (
     TRANSFORM_VERBS as FY_TRANSFORM_VERBS,
 )
-
-from _dsl_docs import doc_of, lit, out, xf
 
 _RUNNER = """
 import json, sys

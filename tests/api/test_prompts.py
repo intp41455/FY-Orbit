@@ -7,10 +7,10 @@ metadata used by the ``engine`` fixture's ``create_all``.
 
 from __future__ import annotations
 
-import find_yourself.db.prompt_models  # noqa: F401  (register tables on Base.metadata)
 from fastapi.testclient import TestClient
-
 from helpers import login_owner
+
+import find_yourself.db.prompt_models  # noqa: F401  (register tables on Base.metadata)
 
 TEMPLATE = {
     "name": "graph.single_agent.reflection",

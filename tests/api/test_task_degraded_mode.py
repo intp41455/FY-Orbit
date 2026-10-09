@@ -10,15 +10,13 @@ from __future__ import annotations
 from datetime import timedelta
 
 from fastapi.testclient import TestClient
+from helpers import login_owner
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from find_yourself.db.models import Task
 from find_yourself.db.types import utcnow
 from find_yourself.services.task_reaper import reap_stuck_queued_tasks
-
-from helpers import login_owner
-
 
 # --------------------------------------------------------------------------
 # /health/ready：能区分「挂了」与「从未配置」

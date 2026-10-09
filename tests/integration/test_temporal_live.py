@@ -30,7 +30,9 @@ from temporalio.client import Client
 
 from find_yourself.db import models  # noqa: F401
 from find_yourself.db.models import (
-    AuditEvent, BudgetReservation, Operation, Proposal, Task, TaskAttempt,
+    Operation,
+    Proposal,
+    Task,
 )
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor

@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import pytest
+from _dsl_docs import doc_of, lit, out, xf
 
 from find_yourself.services.dsl_canvas import run_dsl
 from find_yourself.services.dsl_code_export import export_dsl_code, parse_dsl_code
@@ -18,7 +19,6 @@ from find_yourself.services.dsl_sdk import (
     CodeWorkflow,
     DslSdkError,
     GraphBuilder,
-    REDUCER_REGISTRY,
     StateField,
     StateSchema,
     get_reducer,
@@ -27,8 +27,6 @@ from find_yourself.services.dsl_sdk import (
     register_mode_entry,
     register_reducer,
 )
-
-from _dsl_docs import doc_of, lit, out, xf
 
 
 # =========================================================================== #

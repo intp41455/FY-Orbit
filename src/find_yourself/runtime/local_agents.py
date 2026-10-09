@@ -14,17 +14,15 @@ Safety and Isolation Rules:
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
 
 from ..db.types import utcnow
 from ..services.actor import Actor
 from ..services.budget import BudgetService
 from ..services.errors import PermissionDenied, ValidationFailed
-from .gateway import CallResult, ModelGateway
+from .gateway import ModelGateway
 
 
 @dataclass

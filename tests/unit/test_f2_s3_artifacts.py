@@ -1,15 +1,15 @@
 """Unit tests for F2: S3 Artifact Store, SigV4 private storage, and tombstone replay (O04)."""
 
-import os
 import socket
 import threading
 import time
 import urllib.error
 import urllib.request
+
 import pytest
 import uvicorn
 
-from find_yourself.adapters.artifacts import LocalArtifactStore, S3ArtifactStore, build_artifact_store
+from find_yourself.adapters.artifacts import LocalArtifactStore, S3ArtifactStore
 from find_yourself.adapters.s3_service import create_s3_app
 from find_yourself.config import Settings
 from find_yourself.services.errors import NotFound, ValidationFailed

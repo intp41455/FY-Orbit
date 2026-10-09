@@ -7,7 +7,8 @@ derived memory being readable never grants access to its raw sources — source
 links are checked independently (BUG-01).
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Callable
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -16,11 +17,9 @@ from sqlalchemy.orm import Session
 from ..db.models import GRANT_DESTINATIONS, Grant, Memory
 from ..db.types import utcnow
 from .actor import Actor
+from .audit import AuditService
 from .errors import NotFound, ValidationFailed
 from .hasher import digest
-from .audit import AuditService
-
-from typing import Callable
 
 MAX_GRANT_SECONDS = 30 * 24 * 3600
 

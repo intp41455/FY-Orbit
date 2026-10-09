@@ -29,13 +29,13 @@ from sqlalchemy.orm import Session
 
 import find_yourself.db.hitl_vote_models  # noqa: F401  （见上）
 from find_yourself.db.base import Base
-from find_yourself.db.types import utcnow
 from find_yourself.db.hitl_models import HitlInterrupt
 from find_yourself.db.hitl_vote_models import (
     HitlVoteBallot,
     HitlVoteCandidate,
     HitlVoteSession,
 )
+from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import (

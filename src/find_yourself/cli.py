@@ -26,8 +26,8 @@ import os
 import socket
 import subprocess
 import sys
-import urllib.request
 import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 
 
@@ -150,8 +150,8 @@ def _build_artifact_store():
     炸出难懂的 ValueError。这里转成带修复指引的人话报错。
     """
     try:
-        from find_yourself.config import settings
         from find_yourself.adapters.artifacts import build_artifact_store
+        from find_yourself.config import settings
         return build_artifact_store(settings())
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(

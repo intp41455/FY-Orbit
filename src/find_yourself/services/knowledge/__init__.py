@@ -27,10 +27,10 @@ from ...db.kb_models import KBDocument
 from ..actor import Actor
 from ..audit import AuditService
 from ..errors import NotFound, ValidationFailed
+from . import hub_bridge
 from .ingest import KnowledgeIngestService, parse_bytes
 from .search import DEFAULT_TOP_K, KnowledgeSearchService, score_chunk, tokenize
 from .sources import KnowledgeSource, build_source, list_source_status, secret_store
-from . import hub_bridge
 
 __all__ = [
     "KnowledgeService",
@@ -303,8 +303,8 @@ def set_kb_session_factory(factory: Callable[[], Session]) -> None:
 def _open_session() -> Session:
     if _KB_SESSION_FACTORY is not None:
         return _KB_SESSION_FACTORY()
-    from ...db.session import engine_from_url, session_factory  # local: avoid import cycle
     from ...config import settings as load_settings
+    from ...db.session import engine_from_url, session_factory  # local: avoid import cycle
 
     return session_factory(engine_from_url(load_settings().database_url))()
 

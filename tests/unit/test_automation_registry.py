@@ -16,11 +16,11 @@ import pytest
 
 from find_yourself.services.actor import Actor
 from find_yourself.services.automation import (
-    FakeAutomationBackend,
     MODE_FULL,
     MODE_READONLY,
-    AutomationPermissionManager,
     VISION_HONESTY_NOTE,
+    AutomationPermissionManager,
+    FakeAutomationBackend,
     register_automation_tools,
 )
 from find_yourself.services.errors import PermissionDenied
@@ -120,7 +120,8 @@ def test_type_text_does_not_leak_original_into_audit(gateway, stack, events) -> 
 
 def test_permission_gate_itself_raises_403_directly() -> None:
     # 绕过 gateway 的异常包装，直接验证权限门本身抛 403 PermissionDenied。
-    import tempfile, pathlib
+    import pathlib
+    import tempfile
 
     p = pathlib.Path(tempfile.mkdtemp()) / "p.json"
     pm = AutomationPermissionManager(persist_path=p)

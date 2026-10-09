@@ -16,11 +16,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import find_yourself.db.kb_models  # noqa: F401
+import find_yourself.db.models  # noqa: F401
 from find_yourself.api.app import create_app
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
-import find_yourself.db.models  # noqa: F401
-import find_yourself.db.kb_models  # noqa: F401
 
 OWNER_EMAIL = "owner-rag6@w6.test"
 PASSWORD = "Rag6-test-pass-12345"

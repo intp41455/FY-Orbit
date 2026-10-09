@@ -21,7 +21,6 @@ from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.hub.adapters import Capability
 from find_yourself.services.hub.router import _matches, tokenize
 
-
 # --------------------------------------------------------------------------- #
 # Capability.aliases 的序列化往返
 # --------------------------------------------------------------------------- #

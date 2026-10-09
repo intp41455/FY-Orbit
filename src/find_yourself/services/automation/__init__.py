@@ -11,11 +11,11 @@ Public surface:
 """
 
 from .backend import (
+    VISION_HONESTY_NOTE,
     AutomationBackend,
     AutomationDepsMissing,
     FakeAutomationBackend,
     SystemAutomationBackend,
-    VISION_HONESTY_NOTE,
 )
 from .permissions import (
     DEFAULT_FULL_TTL_SECONDS,
@@ -28,7 +28,7 @@ from .permissions import (
     AutomationMode,
     AutomationPermissionManager,
 )
-from .registry import register_automation_tools, wire_automation_tools, get_permissions, get_backend
+from .registry import get_backend, get_permissions, register_automation_tools, wire_automation_tools
 
 __all__ = [
     "AutomationBackend",

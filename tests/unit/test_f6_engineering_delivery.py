@@ -17,16 +17,11 @@ from __future__ import annotations
 
 import os
 import tempfile
-from datetime import timedelta
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from find_yourself.db.models import Proposal
-from find_yourself.db.types import utcnow
 from find_yourself.runtime.sandbox import IsolatedScriptRunner, SandboxConfig
 from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService

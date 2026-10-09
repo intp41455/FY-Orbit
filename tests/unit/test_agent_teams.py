@@ -28,13 +28,12 @@ from decimal import Decimal
 import pytest
 
 from find_yourself.db.models import BudgetReservation, Task
-from find_yourself.db.team_models import AgentInstance, ModelBinding, TeamEvent
+from find_yourself.db.team_models import ModelBinding, TeamEvent
 from find_yourself.runtime.gateway import MockModelProvider, ModelGateway, ModelPricing
 from find_yourself.services.agent_teams import AgentTeamService
 from find_yourself.services.budget import BudgetLimits, BudgetService
 from find_yourself.services.errors import Conflict, PermissionDenied, ValidationFailed
 from find_yourself.services.model_catalog import ModelCatalog
-
 
 PRICING = {
     "mock-deterministic": ModelPricing(

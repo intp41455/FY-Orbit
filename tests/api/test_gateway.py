@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import login_owner
 
 from find_yourself.config import Settings
 from find_yourself.runtime.gateway import ModelGateway, ModelNotConfigured, PriceUnknown
 from find_yourself.services.actor import Actor
-
-from helpers import login_owner
 
 
 def test_gateway_unconfigured_reports_model_not_configured():

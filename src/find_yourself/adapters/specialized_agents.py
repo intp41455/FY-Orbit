@@ -15,7 +15,6 @@ Both agents support the full lifecycle:
 from __future__ import annotations
 
 import hashlib
-import json
 import uuid
 from typing import Any
 
@@ -26,12 +25,11 @@ from starlette.routing import Route
 
 from .a2a import (
     AGENT_CARD_PATH,
-    JSONRPC_PATH,
-    PROTOCOL_VERSION,
     ERR_AGENT_DRAINING,
     ERR_INVALID_PARAMS,
     ERR_INVALID_REQUEST,
     ERR_METHOD_NOT_FOUND,
+    JSONRPC_PATH,
     build_agent_card,
 )
 

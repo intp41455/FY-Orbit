@@ -7,12 +7,9 @@
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
-
-from find_yourself.db.workbench_models import HubConnection
-from find_yourself.services.errors import PermissionDenied, ValidationFailed
-from find_yourself.services.hub.connections import HubService
 from helpers import login_owner
+
+from find_yourself.services.hub.connections import HubService
 
 API_KEY = "api-hub-key-0123456789"
 

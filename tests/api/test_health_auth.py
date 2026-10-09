@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from helpers import LOCAL_TOKEN, OWNER_SUB, login_owner
 from itsdangerous import URLSafeTimedSerializer
 
 from find_yourself.config import Settings
 from find_yourself.services.errors import Unauthenticated
-
-from helpers import login_owner, LOCAL_TOKEN, OWNER_SUB, CLIENT_ID, ISSUER
 
 
 def test_health_live_ready(client: TestClient):

@@ -293,9 +293,9 @@ def test_lifespan_wires_mcp_servers_and_skips_dead_server(monkeypatch, tmp_path)
     import find_yourself.db.sync_models  # noqa: F401
     import find_yourself.db.team_models  # noqa: F401
     import find_yourself.db.workbench_models  # noqa: F401
+    import find_yourself.services.tool_registry as tr_module
     from find_yourself.api.app import create_app
     from find_yourself.db.base import Base
-    import find_yourself.services.tool_registry as tr_module
 
     monkeypatch.delenv("FY_MCP_SERVERS", raising=False)
     isolated = ToolRegistryService(persist_dir=tmp_path / "tr")

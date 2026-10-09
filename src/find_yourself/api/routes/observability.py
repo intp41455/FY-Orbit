@@ -41,8 +41,8 @@ from fastapi.responses import StreamingResponse
 
 from ...services.actor import Actor
 from ...services.observability import (
-    MAX_STREAM_IDLE_POLLS,
     MAX_STREAM_FRAMES,
+    MAX_STREAM_IDLE_POLLS,
     ObservabilityService,
 )
 from ..deps import Services, get_actor, get_services
@@ -60,7 +60,6 @@ def _svc(svc: Services) -> ObservabilityService:
     ``ObservabilityService`` 都只需要已有的 ``session`` / ``audit`` / ``budget``，
     所以就地构造即可——三个端点共用同一实例，避免同一请求里两次装配两个 audit 视图。
     """
-    from ...services.quality.logs import LogService
 
     return ObservabilityService(
         svc.session, audit=svc.audit, budget=svc.budget

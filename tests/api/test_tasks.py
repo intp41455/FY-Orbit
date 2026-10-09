@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import time
 
-import pytest
 from fastapi.testclient import TestClient
-
 from helpers import login_owner
 
 
@@ -50,6 +47,7 @@ def test_task_unauthorized_read_returns_404(client: TestClient, session_maker):
 def test_sse_event_stream_real_listening_port(app):
     """Real ASGI listening socket: SSE auth + stage event delivery (§5.2)."""
     import threading
+
     import httpx
     import uvicorn
 
@@ -61,10 +59,10 @@ def test_sse_event_stream_real_listening_port(app):
         return wrapper
 
     s = app.state.session_maker()
-    from find_yourself.services.audit import AuditService
-    from find_yourself.services.auth import AuthService
     from find_yourself.db.models import Task
     from find_yourself.db.types import utcnow
+    from find_yourself.services.audit import AuditService
+    from find_yourself.services.auth import AuthService
     auth = AuthService(s, AuditService(s), environment="test", local_token="x")
     sess = auth.create_owner_session("owner")
     s.commit()

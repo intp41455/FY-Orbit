@@ -13,21 +13,22 @@ run on an isolated in-memory SQLite database without touching env/network.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from ..config import Settings, settings as load_settings
+from ..config import Settings
+from ..config import settings as load_settings
 from ..db.session import engine_from_url, session_factory
+from ..runtime.temporal import TemporalRuntime
 from .errors import register_exception_handlers
 from .oidc import OIDCClient
 from .routes import api_router
-from ..runtime.temporal import TemporalRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -57,27 +58,28 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
     if session_maker is None:
         engine = engine_from_url(settings.database_url)
         if engine.dialect.name == "sqlite":
-            from ..db.base import Base
+            import find_yourself.db.artifact_gate_models  # noqa: F401  (需求7 产物版本门禁)
+            import find_yourself.db.canvas_models  # noqa: F401
+            import find_yourself.db.claim_models  # noqa: F401  (P5 共享任务板 task_claims)
+            import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
+            import find_yourself.db.collaboration_models  # noqa: F401  (需求15 评论/@人/通知/角色)
+            import find_yourself.db.fork_models  # noqa: F401  (P4 存档分叉 archive_forks)
+            import find_yourself.db.hitl_models  # noqa: F401  (需求12 HITL 执行中断)
+            import find_yourself.db.kb_models  # noqa: F401  (W3 本地知识库 kb_documents/kb_chunks)
             import find_yourself.db.models  # noqa: F401
             import find_yourself.db.profile_models  # noqa: F401
-            import find_yourself.db.canvas_models  # noqa: F401
-            import find_yourself.db.sync_models  # noqa: F401
-            import find_yourself.db.workbench_models  # noqa: F401
-            import find_yourself.db.team_models  # noqa: F401
             import find_yourself.db.prompt_models  # noqa: F401  (P1-06 prompt template library)
-            import find_yourself.db.staging_models  # noqa: F401  (P1-04 work stash)
             import find_yourself.db.resilience_models  # noqa: F401  (T6 抗中断台账+流式落盘)
-            import find_yourself.db.claw_models  # noqa: F401  (Claw 治理域：把关/冲突/事实基线)
-            import find_yourself.db.fork_models  # noqa: F401  (P4 存档分叉 archive_forks)
             import find_yourself.db.review_models  # noqa: F401  (P9 点哪评哪评审意见)
-            import find_yourself.db.claim_models  # noqa: F401  (P5 共享任务板 task_claims)
             import find_yourself.db.session_state_models  # noqa: F401  (P1-21 session-state snapshots)
-            import find_yourself.db.kb_models  # noqa: F401  (W3 本地知识库 kb_documents/kb_chunks)
-            import find_yourself.db.hitl_models  # noqa: F401  (需求12 HITL 执行中断)
+            import find_yourself.db.staging_models  # noqa: F401  (P1-04 work stash)
+            import find_yourself.db.sync_models  # noqa: F401
             import find_yourself.db.team_approval_models  # noqa: F401  (需求6 团队级审批)
-            import find_yourself.db.artifact_gate_models  # noqa: F401  (需求7 产物版本门禁)
-            import find_yourself.db.collaboration_models  # noqa: F401  (需求15 评论/@人/通知/角色)
+            import find_yourself.db.team_models  # noqa: F401
+            import find_yourself.db.workbench_models  # noqa: F401
             import find_yourself.services.assets  # noqa: F401  (W9 个人资产库 assets 表)
+
+            from ..db.base import Base
             Base.metadata.create_all(engine)
         session_maker = session_factory(engine)
 
@@ -92,7 +94,7 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
         from ..services.automation.registry import wire_automation_tools
         wire_automation_tools()
         # E1/E2: Auto-discover bundled skill packages and prompt templates.
-        from ..skills.discovery import discover_and_stage_skills, discover_and_create_prompts
+        from ..skills.discovery import discover_and_create_prompts, discover_and_stage_skills
 
         await asyncio.to_thread(discover_and_stage_skills, session_maker=app.state.session_maker)
         await asyncio.to_thread(discover_and_create_prompts, session_maker=app.state.session_maker)
@@ -186,8 +188,8 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             static_dir = str(repo_dist)
 
     if static_dir and Path(static_dir).is_dir():
-        from starlette.staticfiles import StaticFiles
         from starlette.responses import FileResponse, PlainTextResponse
+        from starlette.staticfiles import StaticFiles
 
         s_path = Path(static_dir).resolve()
 

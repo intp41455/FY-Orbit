@@ -22,13 +22,13 @@ from sqlalchemy import select
 from starlette.concurrency import run_in_threadpool
 
 from ...adapters.artifacts import build_artifact_store
-from ...db.models import Agent, Artifact, Skill
-from ..deps import get_actor, get_services, get_settings, Services, csrf_protected
 from ...config import Settings
+from ...db.models import Agent, Artifact, Skill
+from ...db.types import utcnow
 from ...services.actor import Actor
 from ...services.errors import NotFound
 from ...services.model_catalog import ModelCatalog
-from ...db.types import utcnow
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 log = logging.getLogger("find_yourself.api.catalog")
 

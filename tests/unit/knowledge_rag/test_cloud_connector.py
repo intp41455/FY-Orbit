@@ -10,15 +10,14 @@ import httpx
 import pytest
 
 from find_yourself.services.errors import ValidationFailed
-from find_yourself.services.knowledge.sources.base import UnsupportedCapability
+from find_yourself.services.knowledge.sources import build_source, secret_store
 from find_yourself.services.knowledge.sources.baidu_pan import BaiduPanSource
-from find_yourself.services.knowledge.sources.base import SourceRef, ensure_capability
+from find_yourself.services.knowledge.sources.base import SourceRef, UnsupportedCapability, ensure_capability
 from find_yourself.services.knowledge.sources.connector import (
     DriveProfile,
     DriveRoute,
     UniversalCloudDriveConnector,
 )
-from find_yourself.services.knowledge.sources import build_source, secret_store
 
 TOKEN_URL = "/oauth/2.0/token"
 USERINFO_URL = "/rest/2.0/passport/users/getInfo"

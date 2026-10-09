@@ -25,7 +25,6 @@ from find_yourself.services.scheduler import (
     TaskRecord,
     UnifiedScheduler,
     UnknownTaskError,
-    WorkerSpec,
 )
 
 

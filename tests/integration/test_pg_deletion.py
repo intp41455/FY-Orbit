@@ -14,8 +14,14 @@ from sqlalchemy.orm import sessionmaker
 
 from find_yourself.db import models  # noqa: F401
 from find_yourself.db.models import (
-    Artifact, AuditEvent, Memory, MemoryRevision, SearchDocument, SourceRelation,
-    Task, Tombstone,
+    Artifact,
+    AuditEvent,
+    Memory,
+    MemoryRevision,
+    SearchDocument,
+    SourceRelation,
+    Task,
+    Tombstone,
 )
 from find_yourself.db.types import utcnow
 from find_yourself.services.actor import Actor

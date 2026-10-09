@@ -14,9 +14,9 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from helpers import login_owner
 
 from find_yourself.api.routes import dsl_canvas
-from helpers import login_owner
 
 
 def _modes(client: TestClient, headers: dict) -> list[dict]:

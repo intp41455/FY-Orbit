@@ -37,7 +37,6 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 from ...services.actor import Actor
 from ...services.dsl_canvas import DslValidationError, compile_dsl
 from ...services.workflow_gen import (
@@ -51,6 +50,7 @@ from ...services.workflow_gen import (
     graph_to_dsl,
 )
 from ...services.workflow_gen import _explain_validation_error as _explain
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/workflow", tags=["workflow"])
 

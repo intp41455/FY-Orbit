@@ -27,10 +27,11 @@ point of the feature).
 
 from __future__ import annotations
 
+import threading
 from datetime import timedelta
 from uuid import uuid4
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db.models import (
@@ -39,23 +40,20 @@ from ..db.models import (
     MemoryRevision,
     MemoryTierSession,
     Message,
-    SearchDocument,
     SourceRelation,
 )
 from ..db.types import utcnow
 from .actor import Actor
-from .errors import NotFound, PermissionDenied, ValidationFailed
-from .grant import GrantService
-from .hasher import content_hash, digest
 from .audit import AuditService
+from .errors import NotFound, ValidationFailed
+from .grant import GrantService
+from .hasher import content_hash
 from .memory_tiers import (
     MEDIUM_MAX_IDLE_DAYS,
     SHORT_TTL,
     MemoryTierPolicy,
     TierTransition,
 )
-
-import threading
 
 CROSS_DOMAIN = {"shared"}
 SAME_DOMAIN_CATEGORIES = {"self_report", "tool_fact", "assessment_result", "preference"}

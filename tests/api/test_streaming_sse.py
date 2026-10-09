@@ -5,11 +5,10 @@ from __future__ import annotations
 import json
 
 import pytest
-
-from find_yourself.services.streaming import StreamingService, stub_text
-from find_yourself.runtime.gateway import MockModelProvider, ModelGateway
-
 from helpers import login_owner
+
+from find_yourself.runtime.gateway import MockModelProvider, ModelGateway
+from find_yourself.services.streaming import StreamingService, stub_text
 
 
 def parse_sse(raw: str) -> list[dict]:

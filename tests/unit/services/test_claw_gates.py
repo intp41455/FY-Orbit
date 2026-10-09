@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 import find_yourself.db.claw_models  # noqa: F401
-from find_yourself.db.claw_models import ClawFactBaseline, ClawGateDecision
+from find_yourself.db.claw_models import ClawGateDecision
 from find_yourself.db.models import AuditEvent
 from find_yourself.services.claw import (
     CrossValidationGate,
@@ -16,7 +16,6 @@ from find_yourself.services.claw import (
     ThreeLayerPipeline,
     upsert_fact,
 )
-
 
 # ---------------------------------------------------------------------------
 # 事实基线库（机制-02）

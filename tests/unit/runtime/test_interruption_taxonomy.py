@@ -11,8 +11,8 @@ from find_yourself.db.models import AuditEvent
 from find_yourself.db.resilience_models import InterruptionEvent
 from find_yourself.runtime.interruption import (
     INTERRUPTION_PLAYBOOK,
-    InterruptionClass,
     RESUME_POLICIES,
+    InterruptionClass,
     classify_provider_error,
     classify_stream_exception,
     mark_resumed,
@@ -21,7 +21,6 @@ from find_yourself.runtime.interruption import (
     record_interruption,
 )
 from find_yourself.runtime.providers.base import ProviderError
-
 
 # ---------------------------------------------------------------------------
 # 处置矩阵完整性（T6.1：六类场景逐条覆盖，缺一条即未交付）

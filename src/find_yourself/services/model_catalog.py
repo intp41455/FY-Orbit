@@ -28,12 +28,12 @@ from ..runtime.gateway import STANDARD_PRICING, ModelGateway
 from ..runtime.providers import (
     PROVIDER_IDS,
     ProviderEndpoint,
+    UnsupportedProvider,
     endpoint_ref,
     normalize_provider_id,
     probe_provider,
     provider_descriptor,
 )
-from ..runtime.providers import UnsupportedProvider
 from ..runtime.providers.base import sanitize_message
 
 #: Provider identifier used for the deterministic local provider.
