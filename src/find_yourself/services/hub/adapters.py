@@ -54,6 +54,26 @@ from . import (
 # --------------------------------------------------------------------------- #
 
 
+#: ``chat`` 能力的默认中文别名。分三组：
+#: - 通用动作：写、算、查、改、译、总结…
+#: - 常见领域：技术、成本、风险、评估、方案、设计…
+#: - 产出形态：报告、方案、草稿、清单、总结…
+#: 单字别名是刻意的——「查」「写」「算」在中文里单字就能表达意图，
+#: 而 ``_matches`` 对别名走子串匹配，允许长度 1。
+_CHAT_ALIASES: tuple[str, ...] = (
+    # 通用动作
+    "对话", "聊天", "问答", "答疑", "写", "算", "查", "改", "译", "翻译",
+    "润色", "改写", "总结", "分析", "评估", "评价", "比较", "对比",
+    "解释", "说明", "描述", "设计", "规划", "计划", "生成", "起草",
+    # 领域名词
+    "技术", "工程", "架构", "代码", "实现", "方案", "成本", "价格", "预算",
+    "风险", "隐患", "合规", "法律", "市场", "需求", "功能", "性能", "优化",
+    "文档", "资料", "报告", "清单", "步骤", "教程", "建议", "决策",
+    # 常见提问式
+    "什么是", "为什么", "怎么", "如何", "哪些", "区别",
+)
+
+
 @dataclass(frozen=True)
 class Capability:
     """One thing a connection can do.
@@ -380,8 +400,11 @@ class ChatModelAdapter:
         tags = ("chat", "llm", "text")
         tags = tags + ("local", "free") if local else tags + ("cloud",)
         declared = [Capability.from_public(c) for c in (self.config.get("capabilities") or [])]
+        # 别名不是随手写的：实测中文路由漏匹配的主因就是这张表太窄
+        # （'技术可行性'、'成本'、'风险'、'评估' 一个都没命中，hint 越长候选越少）。
+        # 所以按「任务动词 + 常见领域名词」两类铺开，而不是只收泛化词。
         base = [Capability(name="chat", tags=tags, description=f"对话补全（{provider_id}）",
-                            aliases=("对话", "聊天", "问答", "答疑", "写东西", "润色"))]
+                            aliases=_CHAT_ALIASES)]
         return _merge_capabilities(base, declared)
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
