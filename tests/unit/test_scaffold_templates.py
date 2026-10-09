@@ -53,7 +53,10 @@ def test_schema_is_frozen_and_complete():
     assert schema["schema_version"] == S.TEMPLATE_SCHEMA_VERSION == "1.0.0"
     assert schema["entity"] == "system_scaffold_template"
     assert schema["min_members"] == 3
-    assert schema["controller_id"] == "controller"
+    # 规范 id 是 coordinator（与运行时 TeamDefinition.coordinator_role 对齐）；
+    # 这里引常量而非写字面量，免得下次改名又全体飘红。字面量另行钉死在下方。
+    assert schema["controller_id"] == S.CONTROLLER_ID == "coordinator"
+    # 字段名 controller 不改：它是已入库模板 JSON 的键
     assert set(schema["essential_keys"]) == set(ESSENTIAL_KEYS)
     assert len(schema["essential_keys"]) == 8          # 八类，不多不少
     assert len(schema["config_items"]) == 7            # 七项配置
@@ -140,6 +143,78 @@ example_task: {}
     assert "members_too_few" in joined
     assert "essential_missing" in joined
     assert "example_task_missing" in joined
+
+
+# --------------------------------------------------------------------------- #
+# 命名契约：规范 id = coordinator，别名 controller 读侧兼容
+# --------------------------------------------------------------------------- #
+def test_controller_id_is_coordinator_not_controller():
+    """命名契约的两端必须对上：模板层的总控 id 就是运行时 ``coordinator_role``。
+
+    钉死这一点是因为它曾经是 ``controller``：模板下发 → 建团队 → 派单这条链
+    在 id 上对不上，用户看到的总控和实际调度中枢成了两个角色。
+    """
+    assert S.CONTROLLER_ID == "coordinator"
+    assert "coordinator" not in S.CONTROLLER_ID_ALIASES or \
+        S.CONTROLLER_ID_ALIASES["coordinator"] == S.CONTROLLER_ID
+    assert S.normalize_controller_id("controller") == S.CONTROLLER_ID
+    assert S.normalize_controller_id("  Controller  ") == S.CONTROLLER_ID
+    assert S.normalize_controller_id("COORDINATOR") == S.CONTROLLER_ID
+
+
+def test_legacy_controller_id_still_passes_validation():
+    """存量模板写 ``id: controller`` 必须仍能通过校验。
+
+    否则这次改名等于用一次「统一命名」把用户已存的模板全判成非法 —— 存量数据
+    不是命名不一致的受害者，不该由改名来买单。
+    """
+    problems = validate_template({
+        "schema_version": "1.0.0",
+        "template_id": "legacy",
+        "name": "旧模板",
+        "scenario": "writing",
+        "layer": "novice_default",
+        "quality_tier": "novice",
+        "topology": {"controller": "controller", "members": ["a", "b"]},
+        "controller": {
+            "id": "controller",
+            "role": "总控",
+            "system_prompt": (
+                f"你负责{CONTROLLER_FORBIDDEN_RULE}；"
+                "职责：任务分配、调度跟进、信息同步"
+            ),
+            "forbidden_rules": [CONTROLLER_FORBIDDEN_RULE],
+        },
+        "members": [
+            {"id": "a", "system_prompt": "写", "responsibilities": ["起草"],
+             "tool_allowlist": []},
+            {"id": "b", "system_prompt": "审", "responsibilities": ["审校"],
+             "tool_allowlist": []},
+        ],
+        "communication_protocol": {"mode": "bus"},
+        "dispatch_rules": {},
+        "acceptance": {},
+        "essentials": {},
+        "example_task": {},
+    })
+    assert "controller_id_invalid" not in " ".join(problems), problems
+
+
+def test_unknown_controller_id_still_rejected():
+    """别名只认 controller/coordinator；别的一律拒，不能放宽成「随便什么都行」。"""
+    problems = validate_template({
+        "schema_version": "1.0.0", "template_id": "bad", "name": "坏模板",
+        "scenario": "writing", "layer": "novice_default", "quality_tier": "novice",
+        "topology": {"controller": "boss", "members": ["a", "b"]},
+        "controller": {"id": "boss", "system_prompt": "x", "forbidden_rules": ["y"]},
+        "members": [
+            {"id": "a", "system_prompt": "写", "responsibilities": ["起草"], "tool_allowlist": []},
+            {"id": "b", "system_prompt": "审", "responsibilities": ["审校"], "tool_allowlist": []},
+        ],
+        "communication_protocol": {}, "dispatch_rules": {}, "acceptance": {},
+        "essentials": {}, "example_task": {},
+    })
+    assert "controller_id_invalid" in " ".join(problems), problems
 
 
 # --------------------------------------------------------------------------- #
@@ -265,7 +340,7 @@ def test_overview_shows_composition_and_labels_estimates(service, owner):
     doc = service.get_template(owner, "development-pipeline")
     ov = doc["overview"]
     assert ov["member_count"] == 4
-    assert ov["controller"]["id"] == "controller"
+    assert ov["controller"]["id"] == S.CONTROLLER_ID
     assert {m["id"] for m in ov["members"]} == {"requirements", "implementer", "tester", "reviewer"}
     est = ov["estimate"]
     assert est["estimated"] is True                  # 绝不冒充实测

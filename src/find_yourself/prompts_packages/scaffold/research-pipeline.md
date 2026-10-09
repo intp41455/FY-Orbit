@@ -15,10 +15,10 @@ layer: advanced_swappable
 quality_tier: novice
 summary: 总控 + 检索/分析/综述三成员，把一个问题收敛成带出处的结论。
 topology:
-  controller: controller
+  controller: coordinator
   members: [retriever, analyst, summarizer]
 controller:
-  id: controller
+  id: coordinator
   role: 总控
   duties: [任务分配, 路由划分, 调度跟进, 信息同步, 状态更新]
   forbidden_rules:

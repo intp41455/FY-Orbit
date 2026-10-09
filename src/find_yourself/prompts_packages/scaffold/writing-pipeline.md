@@ -41,10 +41,10 @@ layer: novice_default
 quality_tier: novice
 summary: 总控 + 选题/写作/校对/排版四成员，产出可直接发布的成稿。
 topology:
-  controller: controller
+  controller: coordinator
   members: [topic, drafter, polisher, formatter]
 controller:
-  id: controller
+  id: coordinator
   role: 总控
   duties: [任务分配, 路由划分, 调度跟进, 信息同步, 状态更新]
   forbidden_rules:

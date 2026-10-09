@@ -60,7 +60,31 @@ TEMPLATE_SCHEMA_VERSION = "1.0.0"
 MIN_MEMBERS = 3
 
 #: 总控成员的固定 id（模板内唯一；运行时留痕据此区分「总控分配」与「成员执行」）。
-CONTROLLER_ID = "controller"
+#:
+#: **值是 ``coordinator`` 而不是 ``controller``** —— 运行时早就统一叫 coordinator
+#: （``db/team_models.py`` 的 ``TeamDefinition.coordinator_role`` 默认值、
+#: ``services/agent_teams.py`` 的三个预置团队都用它），模板层自称 controller
+#: 会让「模板下发 → 建团队 → 派单」这条链在 id 上对不上，用户看到的总控
+#: 和实际调度中枢成了两个不同角色。
+#:
+#: 字段名 ``controller`` 保持不变：它是已入库模板 JSON 的键，改名等于破坏性
+#: schema 变更。本处只对齐**值**，即命名契约的两端在此收敛。
+CONTROLLER_ID = "coordinator"
+
+#: 历史 id 别名表 —— 读侧兼容，别名 → 规范 id。
+#:
+#: 为什么需要：用户手写或旧版本下发的模板可能写 ``"id": "controller"``。
+#: 直接按规范 id 硬校验会把它们全判成 ``controller_id_invalid``，等于用一次
+#: 改名否掉存量数据。读侧一律先过 :func:`normalize_controller_id`。
+CONTROLLER_ID_ALIASES: dict[str, str] = {
+    "controller": CONTROLLER_ID,
+    "coordinator": CONTROLLER_ID,
+}
+
+
+def normalize_controller_id(raw: object) -> str:
+    """把总控 id 归一到规范值；无法识别时原样返回（由调用方决定是否报错）。"""
+    return CONTROLLER_ID_ALIASES.get(str(raw or "").strip().lower(), str(raw or "").strip())
 
 #: 总控禁行规则（需求 -02①）。提示词里必须出现这条，否则 ``check_controller_prompt``
 #: 给出警告（**不阻断保存**——技术用户有权自行决定，需求 -02③）。
@@ -279,8 +303,12 @@ def validate_template(doc: dict[str, Any]) -> list[str]:
     if not isinstance(controller, dict):
         problems.append("controller_missing: 每套模板必须带一个总控成员")
     else:
-        if controller.get("id") != CONTROLLER_ID:
-            problems.append(f"controller_id_invalid: 总控 id 必须是 {CONTROLLER_ID!r}")
+        # 兼容存量模板写 "controller"：别名归一后再比，而不是硬拒。
+        if normalize_controller_id(controller.get("id")) != CONTROLLER_ID:
+            problems.append(
+                f"controller_id_invalid: 总控 id 必须是 {CONTROLLER_ID!r}"
+                f"（兼容别名 {sorted(set(CONTROLLER_ID_ALIASES) - {CONTROLLER_ID})}）"
+            )
         if not str(controller.get("system_prompt") or "").strip():
             problems.append("controller_prompt_missing: 总控系统提示词出厂必须有值")
         if not controller.get("forbidden_rules"):

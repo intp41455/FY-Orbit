@@ -54,7 +54,7 @@ def test_schema_endpoint_publishes_the_frozen_contract(client: TestClient):
     body = client.get("/api/templates/schema", headers=auth).json()
     assert body["schema_version"] == "1.0.0"
     assert len(body["essential_keys"]) == 8
-    assert body["controller_id"] == "controller"
+    assert body["controller_id"] == "coordinator"
 
 
 def test_listing_returns_factory_templates_with_overview(client: TestClient):
