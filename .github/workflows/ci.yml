@@ -42,19 +42,70 @@ jobs:
         with:
           version: "latest"
 
-      - name: Install Dependencies
+      - name: Install Dependencies (锁定安装)
         run: |
-          uv pip install --system -e .
-          uv pip install --system pytest pytest-asyncio ruff
+          # 用 `uv sync --frozen` 按 uv.lock 精确还原 —— 不再 `uv pip install -e .`
+          # 让解析器每次重新选版本。历史事故：一次 `uv lock` 重解析把传递依赖从
+          # 120 个推到 193 个，本地「1 条红」在CI 上放大成「50 条红」；非锁定安装
+          # 会让「CI 绿 / 本地红」这类不可复现差异成为常态。
+          # --frozen：lock 与 pyproject 不一致时**直接失败**，而不是偷偷改 lock。
+          uv sync --frozen --group dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: HEAD Clean-Tree Gate (migration chain + route import smoke)
         run: |
-          PYTHONPATH=src python -m pytest tests/unit/test_migration_chain_gate.py -q
-          PYTHONPATH=src python -c "import find_yourself.api.routes; print('IMPORT_OK')"
+          python -m pytest tests/unit/test_migration_chain_gate.py -q
+          python -c "import find_yourself.api.routes; print('IMPORT_OK')"
 
       - name: Lint (Ruff)
         run: |
-          ruff check src tests
+          # 配置见 pyproject.toml [tool.ruff.lint]。select 已含 F/E9/I/W，
+          # 覆盖未定义名、未使用导入/变量、重复定义、导入排序、尾随空格。
+          # 含 desktop/（发行链关键脚本，此前被 extend-exclude 排除、无人看门）。
+          ruff check src tests desktop
+
+      - name: PowerShell Script Gate (BOM + 语法解析)
+        shell: pwsh
+        run: |
+          # 发行链的构建/生命周期脚本全是 .ps1。两条硬约束此前无任何门禁：
+          #  ① 含中文的脚本**必须**带 UTF-8 BOM —— Windows PowerShell 5.1 在无 BOM
+          #     时按 CP1252 解析，中文注释/字符串变乱码（build_installer.ps1 历史崩溃根因）。
+          #  ② 语法必须能被解析器静态通过（不执行）—— 用 `??`/`?.` 这类 7.0-only
+          #     语法会让脚本在目标机（Win10/11 自带 5.1）直接报 ParserError，而 CI
+          #     若只跑 pwsh 7 就永远发现不了（PS 双向盲区）。
+          # 本地已实测：17 个脚本全绿。
+          $ErrorActionPreference = 'Stop'
+          $failed = @()
+
+          $scripts = Get-ChildItem -Path . -Filter *.ps1 -Recurse `
+            | Where-Object { $_.FullName -notmatch '\\node_modules\\' -and $_.FullName -notmatch '\\\.runtime\\' -and $_.FullName -notmatch '\\\.venv\\' }
+
+          foreach ($s in $scripts) {
+            $bytes = [System.IO.File]::ReadAllBytes($s.FullName)
+            $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
+            $raw = [System.IO.File]::ReadAllText($s.FullName)
+            $hasCjk = $raw -match '[\u4e00-\u9fff]'
+
+            if ($hasCjk -and -not $hasBom) {
+              $failed += "缺 UTF-8 BOM（含中文）: $($s.FullName)"
+            }
+
+            $errs = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile(
+              $s.FullName, [ref]$null, [ref]$errs)
+            if ($errs -and $errs.Count -gt 0) {
+              foreach ($e in $errs) {
+                $failed += "语法错误: $($s.FullName):$($e.Extent.StartLineNumber): $($e.Message)"
+              }
+            }
+          }
+
+          Write-Host "扫描 .ps1 脚本 $($scripts.Count) 个。"
+          if ($failed.Count -gt 0) {
+            $failed | ForEach-Object { Write-Host "::error::$_" }
+            exit 1
+          }
+          Write-Host "PS 脚本门禁通过（BOM + 语法）。"
 
       - name: Verify Alembic Single Head
         run: |
@@ -66,9 +117,23 @@ jobs:
             exit 1
           fi
 
-      - name: Run Backend Test Suite
+      - name: Run Backend Test Suite (含覆盖率门槛)
         run: |
-          pytest -q
+          # --cov 必须用**包级** `find_yourself`。写成模块级会触发 SQLAlchemy
+          # Cython 层 `TypeError: 'InternalTraversal' object is not callable` 假红。
+          #
+          # --cov-fail-under=82：树 A 实测基线**85%**（40474 stmts / 6272 miss，
+          # 已按 [tool.coverage.report].exclude_lines 摘掉abstractmethod /
+          # TYPE_CHECKING / __main__ 守卫等不可执行分支）。
+          # 取基线下方 3 个点 —— 既能拦下任何覆盖度倒退，又不会因正常新增代码
+          # 而频繁爆红。**频繁爆红的门禁最终一定会被人绕过，等于没有门禁。**
+          #
+          # 插桩代价实测：11 分钟 → 15 分钟（+~35%）。所以 --cov 刻意**不**进
+          # addopts，只在 CI 这一处显式开启（见 pyproject 的注释）。
+          pytest -q \
+            --cov=find_yourself \
+            --cov-report=term-missing:skip-covered \
+            --cov-fail-under=82
 
   frontend:
     name: Frontend Typecheck, Test & Build

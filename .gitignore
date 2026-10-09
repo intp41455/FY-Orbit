@@ -97,3 +97,13 @@ FY-Orbit-Windows-v1.0.0.zip
 # 写入的真实业务产物（history.jsonl 还是追加式不可变账本），必须保持跟踪。
 /evidence/finalization/F9-unified-evaluations.json
 /evidence/process-traces/07-orchestrator-rework-verification-cycle.json
+
+# 覆盖率数据文件（`pytest --cov` 生成）。二进制、每次跑都变，属测试副产物。
+# 历史教训：树 B 的 `af2f038`把这个 151KB 的 `.coverage` **提交进了仓库** ——
+# 它既不含任何信息量，又会在每次 CI 跑覆盖率时把工作区搅脏（表现为
+# `git status` 永远不干净、并行 `git am`/`apply` 随机失败）。
+# 同理 htmlcov/ 与 junitxml/ 也一并排除。
+/.coverage
+/.coverage.*
+/htmlcov/
+/junitxml/
