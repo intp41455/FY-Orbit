@@ -197,6 +197,93 @@ def test_production_wiring_is_the_only_correct_entry() -> None:
     assert inner == {"actor": "owner-1", "conn_id": "conn-1"}
 
 
+def test_real_route_capability_shape_is_readable_by_pick(session, owner) -> None:
+    """**契约守卫**：真实 ``route()`` 返回的 capability 是 dict，``_pick`` 必须能取到 name。
+
+    这是本文件最该补的一条——它守的是一个真实发生、且被本文件 20 条绿灯**掩盖**
+    的 P0：
+
+    * ``CapabilityRouter.route`` 返回 ``capability: capability.to_public()``，
+      即 **dict** ``{"name":..., "tags":..., "aliases":...}``（router.py 的
+      ``entry["capability"]``）。
+    * 而 ``Orchestrator._pick`` 原先写的是 ``getattr(cap, "name", "")``——dict
+      没有 ``.name``，``getattr`` 恒返回 ``""``，紧接着 ``if not cap_name: continue``
+      就把**全部候选丢弃**，最终必然抛「没有 Agent 能处理」。编排器因此永远派
+      不出单，``run_sequential`` / ``run_parallel`` 100% 失败。
+    * 本文件的 ``_cand`` 造的是 ``type("C", (), {"name": cap})()`` —— **对象**形态，
+      与真实 ``route()`` 的 dict 形态不一致。mock 自己定义了协议，于是双方永远
+      「一致」，20 条测试全绿却证明不了任何真实集成。
+
+    所以这里**不用 mock**：真 HubService 建连接 + 真 CapabilityRouter 路由 +
+    真 ``Orchestrator.bind`` 接线，把形状差异钉死。真实形状一旦再变，这里立刻红。
+    """
+    hub = HubService(session)
+    created = hub.create_connection(owner, {
+        "name": "设计Agent",
+        "kind": "http_webhook",
+        "config": {"url": "https://agent.example.invalid/hook"},
+        "capabilities": [{
+            "name": "tech_design",
+            "tags": ["tech", "design"],
+            "aliases": ["技术方案"],
+            "description": "写技术方案",
+        }],
+    })
+    session.flush()
+
+    router = CapabilityRouter(session, owner.owner_id)
+    ranked = router.route("写一份技术方案", top_k=5, kind=None)
+    assert ranked, "真实路由必须命中刚建的连接（否则这条守卫证明不了任何东西）"
+
+    # 1) 形状契约：是 dict，不是 Capability 实例
+    cap = ranked[0]["capability"]
+    assert isinstance(cap, dict), (
+        f"route() 的 capability 必须是 dict，实际是 {type(cap).__name__}；"
+        "若这里红了，说明 route() 的返回形状变了，_pick 必须同步改"
+    )
+    assert cap.get("name") == "tech_design"
+    # 反证：`getattr(cap, "name", "")` 对 dict 恒为空——这正是那个 P0 的根因
+    assert getattr(cap, "name", "") == ""
+
+    # 2) 消费端契约：_pick 能从真实（dict）形态里取到 name
+    orch = Orchestrator.bind(hub, actor=owner, session=session,
+                             owner_id=owner.owner_id, router=router)
+    conn_id, cap_name, conn_name = orch._pick("写一份技术方案", kind=None)
+    assert conn_id == created["id"]
+    assert cap_name == "tech_design", "_pick 必须能从 dict 形态的 capability 里取到 name"
+    assert conn_name == "设计Agent"
+
+
+def test_pick_never_discards_real_candidates(session, owner) -> None:
+    """端到端反证：真路由有候选时，编排器必须真的派得出单。
+
+    上一条守的是「形状」，这一条守的是「后果」——形状一旦错位，症状就是
+    ``run_parallel`` 每一步都变成「没有 Agent 能处理」。这里用一个必然失败的
+    端点（``.invalid`` 顶级域保留不可解析）来触发真实派单，断言报错**不是**
+    「没有 Agent 能处理」。超时压到 2s，免得 DNS 慢的时候把测试拖住。
+    """
+    hub = HubService(session)
+    hub.create_connection(owner, {
+        "name": "设计Agent",
+        "kind": "http_webhook",
+        "config": {"url": "https://agent.example.invalid/hook"},
+        "capabilities": [{
+            "name": "tech_design", "tags": ["tech"], "aliases": ["技术方案"],
+        }],
+    })
+    session.flush()
+
+    orch = Orchestrator.bind(hub, actor=owner, session=session,
+                             owner_id=owner.owner_id)
+    res = orch.run_parallel("写一份技术方案", ["技术角度"],
+                            max_workers=1, timeout_seconds=2.0)
+    assert res.steps, "至少要有一步"
+    for step in res.steps:
+        assert "没有 Agent 能处理" not in step.error, (
+            f"路由明明有候选却被丢弃了——_pick 又没读懂 capability 的形状：{step.error}")
+        assert step.connection_id, "派单必须落到具体连接上"
+
+
 class _FakeRouter:
     """按 hint 里的关键词返回固定候选，模拟确定性路由。
 

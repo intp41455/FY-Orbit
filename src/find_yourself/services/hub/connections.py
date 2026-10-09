@@ -19,7 +19,7 @@ import asyncio
 import re
 import threading
 import uuid
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy import select as sa_select
 
@@ -187,10 +187,17 @@ class HubService:
             sleep=sleep,
         )
 
-    def _remember_mcp(self, conn: HubConnection, adapter: Any) -> None:
-        if conn.kind == "mcp_server" and getattr(adapter, "_client", None) is not None:
+    @staticmethod
+    def _remember_mcp(conn_id: str, kind: str, adapter: Any) -> None:
+        """记住 mcp 客户端（模块级 dict + 锁，**不碰 Session**）。
+
+        收的是标量而不是 ORM 对象：这个登记动作可能发生在工作线程里
+        （见 :meth:`prepare_invoke`），碰 ORM 实例就有触发惰性加载、进而跨线程
+        用 Session 的风险。标量是纯内存操作，线程里绝对安全。
+        """
+        if kind == "mcp_server" and getattr(adapter, "_client", None) is not None:
             with _MCP_LOCK:
-                _MCP_CLIENTS[conn.id] = adapter._client
+                _MCP_CLIENTS[conn_id] = adapter._client
 
     @staticmethod
     def _forget_mcp(conn_id: str) -> None:
@@ -435,7 +442,7 @@ class HubService:
         if report.ok:
             discovered: list[dict[str, Any]] = []
             if conn.kind == "mcp_server":
-                self._remember_mcp(conn, adapter)
+                self._remember_mcp(conn.id, conn.kind, adapter)
                 try:
                     registered = adapter.register_tools()
                 except Exception:  # noqa: BLE001
@@ -480,9 +487,27 @@ class HubService:
         return out
 
     # -- invoke -------------------------------------------------------------- #
-    def invoke(self, actor: Actor, conn_id: str, *, action: str,
-               params: dict[str, Any] | None = None, timeout_seconds: float = 15.0,
-               transport: Any = None, sleep: Any = None) -> dict[str, Any]:
+    def prepare_invoke(self, actor: Actor, conn_id: str, *,
+                       transport: Any = None, sleep: Any = None
+                       ) -> Callable[..., dict[str, Any]]:
+        """把一次调用**准备**好：取连接、校验状态、解密凭证、造适配器。
+
+        返回 ``call(action, *, params, timeout_seconds)`` —— 一个**不再碰 DB**
+        的可调用对象，因此可以在**任意线程**里执行。
+
+        为什么要有它（并行编排的 P0）：:class:`~sqlalchemy.orm.Session` 不是线程
+        安全的。``run_parallel`` 把派单丢进线程池，而 ``invoke`` 内部要用
+        ``self.s`` 读一次 ``hub_connections``；共用主线程那个 Session 就是跨线程
+        共用一个 DBAPI 连接，实测（SQLite 单一共享连接）直接硬崩
+        ``sqlite3.ProgrammingError: SQLite objects created in a thread ...``。
+
+        所以把「读 DB」与「真正调 Agent」切成两半：前者留在本方法（调用方在主
+        线程调），后者放进返回的闭包。闭包里只做网络/本地调用——``_remember_mcp``
+        也只是往模块级 dict 里写（带锁），不碰 Session。
+
+        注意：这里**不是**给编排器另写一份调用逻辑。:meth:`invoke` 已改为委托给
+        本方法，鉴权、状态校验、凭证解密、SSRF 防护仍然只有一份实现。
+        """
         conn = self._get(actor, conn_id)
         if conn.state == "disabled":
             raise ValidationFailed("hub_connection_disabled", "连接已停用，拒绝调用")
@@ -490,13 +515,31 @@ class HubService:
             raise ValidationFailed(
                 "hub_connection_needs_credentials", "连接缺少必填凭证，请先补全再调用"
             )
+        # ⚠️ 以下全部在主线程完成：适配器配置里含解密后的凭证，构造完就不再读 DB。
         adapter = self.build_adapter(conn, transport=transport, sleep=sleep)
-        result = adapter.invoke(
-            InvokeCall(action=action, params=dict(params or {}), timeout_seconds=timeout_seconds)
-        )
-        if conn.kind == "mcp_server":
-            self._remember_mcp(conn, adapter)
-        return {"connection_id": conn.id, "action": action, "result": result.to_public()}
+        kind = conn.kind
+        resolved_id = conn.id
+
+        def _call(*, action: str, params: dict[str, Any] | None = None,
+                  timeout_seconds: float = 15.0) -> dict[str, Any]:
+            result = adapter.invoke(
+                InvokeCall(action=action, params=dict(params or {}),
+                           timeout_seconds=timeout_seconds)
+            )
+            if kind == "mcp_server":
+                # 只传标量——闭包可能在工作线程里跑，不能碰 ORM 实例。
+                self._remember_mcp(resolved_id, kind, adapter)
+            return {"connection_id": resolved_id, "action": action,
+                    "result": result.to_public()}
+
+        return _call
+
+    def invoke(self, actor: Actor, conn_id: str, *, action: str,
+               params: dict[str, Any] | None = None, timeout_seconds: float = 15.0,
+               transport: Any = None, sleep: Any = None) -> dict[str, Any]:
+        return self.prepare_invoke(
+            actor, conn_id, transport=transport, sleep=sleep
+        )(action=action, params=params, timeout_seconds=timeout_seconds)
 
     # -- manifest ------------------------------------------------------------ #
     def import_manifest_connection(self, actor: Actor, *, text: str, filename: str = "",

@@ -122,6 +122,62 @@ def _bind_invoke(hub: Any, actor: Any) -> Callable[..., dict[str, Any]]:
     return _invoke
 
 
+def _capability_name(cap: Any) -> str:
+    """从路由候选的 ``capability`` 字段里取出能力名——**必须兼容 dict 与对象**。
+
+    为什么需要这个函数（一个真实踩过、被单测全绿掩盖的 P0）：
+    ``CapabilityRouter.route`` 返回的是 ``capability: capability.to_public()``
+    —— **dict**（``{"name":..., "tags":..., "aliases":...}``），不是
+    :class:`Capability` 实例。而这里原先写的是
+    ``getattr(cap, "name", "")``，dict 没有 ``.name`` 属性，``getattr`` 恒返回
+    空串 ``""``，紧接着的 ``if not cap_name: continue`` 就把**全部候选丢弃**，
+    最终必然走到 ``raise ValueError("没有 Agent 能处理")``——编排器永远派不出单，
+    ``run_sequential`` / ``run_parallel`` 100% 失败。
+
+    这里**不去改** ``route()`` 的返回形状（那是公开 API，牵动路由试算 UI），
+    只在消费端做形状兼容：dict 取 ``["name"]``，对象取 ``.name``，字符串直接用。
+
+    顺带说明为什么单测没抓到：``tests/unit/hub/test_orchestrator.py::_cand``
+    构造的是 ``{"capability": type("C", (), {"name": cap})()}``——**对象形态**，
+    与真实 ``route()`` 的 dict 形态不一致。mock 自己定义了协议，于是双方永远
+    「一致」。本文件末尾的契约守卫专门为这个洞而设。
+    """
+    if isinstance(cap, dict):
+        return str(cap.get("name") or "")
+    if isinstance(cap, str):
+        return cap
+    return str(getattr(cap, "name", "") or "")
+
+
+def _bind_prepare(hub: Any, actor: Any) -> Callable[[str], Callable[..., dict[str, Any]]]:
+    """把 ``HubService.prepare_invoke`` 绑成 ``(conn_id) -> 可跨线程调用的 invoke``。
+
+    与 :func:`_bind_invoke` 同理：真实签名 ``prepare_invoke(actor, conn_id, ...)``
+    的 actor 在第一位，这里闭包把它预先绑掉。
+
+    返回的可调用对象**已经完成了全部 DB 读取**（连接行、凭证解密、适配器构造），
+    因此可以在任何线程里安全执行——见 :func:`_as_invoke_shim`。
+    """
+    def _prepare(conn_id: str) -> Callable[..., dict[str, Any]]:
+        return hub.prepare_invoke(actor, conn_id)
+    return _prepare
+
+
+def _as_invoke_shim(prepared: Callable[..., dict[str, Any]]) -> Callable[..., dict[str, Any]]:
+    """把「已就绪的单连接调用器」包装成 :meth:`Orchestrator._run_step` 的调用面。
+
+    ``prepare_invoke`` 返回的是 ``call(action, *, params, timeout_seconds)``
+    （连接已定，不需要 conn_id）；``_run_step`` 按
+    ``invoke(conn_id, *, action, params, timeout_seconds)`` 调用。这里补上被
+    忽略的 conn_id 位，让 :meth:`Orchestrator._dispatch_step` 能直接把它当
+    invoke 传下去。
+    """
+    def _invoke(_conn_id: str, *, action: str, params: dict[str, Any] | None = None,
+                timeout_seconds: float = 15.0) -> dict[str, Any]:
+        return prepared(action=action, params=params or {}, timeout_seconds=timeout_seconds)
+    return _invoke
+
+
 class Orchestrator:
     """把一个任务派给多个 Agent 执行并汇总。
 
@@ -136,10 +192,17 @@ class Orchestrator:
         invoke: Callable[..., dict[str, Any]],
         route: Callable[..., list[dict[str, Any]]],
         max_workers: int = DEFAULT_MAX_WORKERS,
+        prepare: Callable[[str], Callable[..., dict[str, Any]]] | None = None,
     ) -> None:
+        """``prepare`` 是并行派单的**线程安全开关**，见 :meth:`_prepare_invoke`。
+
+        缺省为 ``None``——直接构造的编排器（单测里的 mock）不涉及 DB，线程里
+        没有 Session 可争，不需要它。只有 :meth:`bind` 接了真实 HubService 才建。
+        """
         self._invoke = invoke
         self._route = route
         self._max_workers = max(1, min(int(max_workers), 8))
+        self._prepare = prepare
 
     # ------------------------------------------------------------------ #
     # 接线
@@ -194,7 +257,51 @@ class Orchestrator:
             invoke=_bind_invoke(hub, actor),
             route=router.route,
             max_workers=max_workers,
+            prepare=_bind_prepare(hub, actor) if hasattr(hub, "prepare_invoke") else None,
         )
+
+    # ------------------------------------------------------------------ #
+    # 线程安全：并行派单不能在工作线程里碰 Session
+    # ------------------------------------------------------------------ #
+
+    def _prepare_invoke(self, conn_id: str) -> Callable[..., dict[str, Any]] | None:
+        """在**主线程**把这一步的 DB 读取做完，返回可跨线程调用的执行器。
+
+        SQLAlchemy 的 :class:`~sqlalchemy.orm.Session` **不是线程安全的**——它是
+        单个「工作单元」，内部持有 DBAPI 连接与身份映射。``run_parallel`` 把派单
+        丢进 ThreadPoolExecutor，而 ``HubService.invoke`` 内部要用 ``self.s`` 查
+        ``hub_connections``；共用主线程那个 Session 就是跨线程共用一个连接，实测
+        （SQLite，单一共享连接）直接硬崩：
+
+            ProgrammingError: (sqlite3.ProgrammingError) SQLite objects created
+            in a thread can only be used in that same thread. The object was
+            created in thread id 74584 and this is thread id 84768.
+
+        实测还见过同一根因的第二副面孔：换成独立连接后，新连接看不到主线程**未
+        提交**的写入，于是 ``NotFound: 连接不存在``。可见「给每个线程发一条新
+        Session」也不够——只要线程里还在读 DB，就仍在赌连接与事务的可见性。
+
+        所以这里采用**更彻底**的分工：DB 读取（取连接行、校验归属与状态、解密
+        凭证、构造适配器）全部留在**主线程**（本方法里）做完，工作线程只拿到一个
+        已经就绪、不碰 DB 的调用器，纯粹做网络/本地调用。好处有三：
+
+        * 线程里零 DB 访问 —— 与连接池策略、``check_same_thread`` 设置都无关；
+        * 仍看得见主线程未提交的写入（读取发生在同一个工作单元里）；
+        * 真正的网络调用仍在线程池里并发，没有退化成串行。
+
+        校验与凭证解密仍然走 ``HubService.prepare_invoke``（真实链路），**不在
+        编排器里另写一份**——另写一份就会与真实链路分叉，那正是 P0-1 那类事故的
+        温床。 ``invoke`` 本身也已改为委托给它，两处共用同一份逻辑。
+
+        返回 ``None`` 表示没有 prepare 通道（直接构造的编排器 / 假 hub），
+        调用方退回 ``self._invoke``——至少与修复前一致，且 :meth:`_run_step`
+        仍会如实记录失败，不吞异常。
+        """
+        if self._prepare is None:
+            return None
+        # 异常不在这里吞：取不到 / 被停用 / 缺凭证都是「派不出单」，由调用方
+        # 如实记进 planning_errors，而不是悄悄退化成别的行为。
+        return self._prepare(conn_id)
 
     # ------------------------------------------------------------------ #
     # 派单
@@ -218,7 +325,7 @@ class Orchestrator:
             if not conn_id:
                 continue
             cap = cand.get("capability")
-            cap_name = getattr(cap, "name", "") or (cap if isinstance(cap, str) else "")
+            cap_name = _capability_name(cap)
             if not cap_name:
                 continue
             if conn_id in skip:
@@ -242,20 +349,29 @@ class Orchestrator:
         hint: str,
         *,
         connection_id: str = "",
+        connection_name: str = "",
         capability: str = "",
         tool: str = "",
         kind: str | None = None,
         context: list[dict[str, str]] | None = None,
         timeout_seconds: float = 60.0,
         params_extra: dict[str, Any] | None = None,
+        invoke: Callable[..., dict[str, Any]] | None = None,
     ) -> StepResult:
         """执行一步。失败**如实记录**而不抛出——编排需要看到部分成功。
+
+        ``invoke`` 是并行派单时注入的**已就绪、不碰 DB**的调用器（见
+        :meth:`_prepare_invoke`）；缺省用 ``self._invoke``。它只换「怎么调到
+        Agent」，调用面与鉴权链路完全一致。
+
+        ``connection_name`` 由调用方在显式指定连接时一并给出：路由选出的名字
+        否则会丢，结果里就看不出「这一问到底派给了谁」。
 
         ``tool`` 是给「必须指名工具」的适配器（``mcp_server``）用的：它的
         ``call_tool`` 读``params["name"]``，收到自然语言 hint 会诚实报
         ``hub_missing_tool``。所以显式指定这类连接时必须给出工具名。
         """
-        name = ""
+        name = connection_name
         if connection_id:
             # 显式指定：能力名可省（交给适配器默认动作）。但不能无脑兜底成
             # "invoke" —— 对需要工具名的适配器那样必失败，且失败信息误导。
@@ -280,8 +396,9 @@ class Orchestrator:
 
         started = time.perf_counter()
         try:
-            raw = self._invoke(connection_id, action=cap_name, params=params,
-                               timeout_seconds=timeout_seconds)
+            call = invoke or self._invoke
+            raw = call(connection_id, action=cap_name, params=params,
+                       timeout_seconds=timeout_seconds)
         except Exception as exc:  # noqa: BLE001 — 编排不该被单步异常打断
             return StepResult(index=index, step=step, connection_id=connection_id,
                               capability=cap_name, ok=False,
@@ -342,6 +459,32 @@ class Orchestrator:
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
 
+    def _dispatch_step(
+        self,
+        index: int,
+        aspect: str,
+        hint: str,
+        connection_id: str,
+        connection_name: str,
+        capability: str,
+        kind: str | None,
+        timeout_seconds: float,
+        invoke: Callable[..., dict[str, Any]] | None = None,
+    ) -> StepResult:
+        """ThreadPoolExecutor 的任务体：只做「调一个已经就绪的 Agent」。
+
+        路由（``_pick``）与 DB 读取（``_prepare_invoke``）都已在**主线程**完成，
+        线程里拿到的 ``invoke`` 是个不碰 Session 的闭包——所以这里可以安全地
+        并发，不会碰上跨线程共用 Session 的那两个实测崩溃（见
+        :meth:`_prepare_invoke`）。
+        """
+        return self._run_step(
+            index, aspect, hint,
+            connection_id=connection_id, connection_name=connection_name,
+            capability=capability, tool=_tool_name(capability), kind=kind,
+            timeout_seconds=timeout_seconds, invoke=invoke,
+        )
+
     def run_parallel(
         self,
         task: str,
@@ -361,10 +504,12 @@ class Orchestrator:
                                       error="没有指定任何侧面", duration_ms=0)
 
         workers = max_workers or self._max_workers
-        # 串行地「先路由后派单」：每步避开前面已用的连接，否则打平的分数会让
-        # 多个侧面全落同一个 Agent（实测三个候选同为 4.5）。
-        # 派单本身仍在线程里并行，所以耗时不叠加。
+        # 串行地「先路由，再在主线程把 DB 读取做完」：每步避开前面已用的连接，
+        # 否则打平的分数会让多个侧面全落同一个 Agent（实测三个候选同为 4.5）。
+        # 真正的网络调用仍在线程里并行，所以耗时不叠加。
         picked: list[tuple[str, str, str]] = []
+        # 每个侧面一个「已就绪、不碰 DB」的执行器；为 None 表示退回共享 invoke。
+        prepared: list[Callable[..., dict[str, Any]] | None] = []
         used: set[str] = set()
         planning_errors: list[tuple[int, str, str]] = []
         for i, aspect in enumerate(aspects):
@@ -374,8 +519,17 @@ class Orchestrator:
             except ValueError as exc:
                 planning_errors.append((i, aspect, str(exc)))
                 continue
+            try:
+                # ⚠️ 必须在主线程做：连接行、凭证解密、适配器构造都在这里读 DB。
+                # 放到工作线程里就会跨线程共用 Session（见 _prepare_invoke）。
+                ready = self._prepare_invoke(choice[0])
+            except Exception as exc:  # noqa: BLE001 — 取不到/被停用/缺凭证都如实记
+                planning_errors.append(
+                    (i, aspect, f"{type(exc).__name__}: {exc}"))
+                continue
             used.add(choice[0])
             picked.append((i, aspect, choice))
+            prepared.append(_as_invoke_shim(ready) if ready is not None else None)
 
         results: list[StepResult] = [
             StepResult(index=i, step=aspect, ok=False, error=err)
@@ -384,11 +538,9 @@ class Orchestrator:
         if picked:
             with ThreadPoolExecutor(max_workers=min(workers, len(picked))) as pool:
                 futures = [
-                    pool.submit(self._run_step, i, aspect, f"{task}\n\n{aspect}",
-                                connection_id=cid, capability=cap,
-                                tool=_tool_name(cap),
-                                kind=kind, timeout_seconds=timeout_seconds)
-                    for i, aspect, (cid, cap, _n) in picked
+                    pool.submit(self._dispatch_step, i, aspect, f"{task}\n\n{aspect}",
+                                cid, name, cap, kind, timeout_seconds, ready)
+                    for (i, aspect, (cid, cap, name)), ready in zip(picked, prepared)
                 ]
                 results.extend(f.result() for f in futures)
 
