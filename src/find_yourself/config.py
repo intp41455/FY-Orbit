@@ -78,6 +78,11 @@ class Settings(BaseSettings):
     # confirm/manual 策略的事件永不自动续作；FY_RECOVERY_AUTORESUME=0 可整体关闭。
     recovery_autoresume: bool = True
 
+    # 调度器周期回收节拍（秒）。此前 reclaim_stale() 只有测试调用、生产零调用者，
+    # 超时任务永远占着并发名额。10 秒的取舍：太短空转烧 CPU，太长则名额迟迟不释放。
+    # 设为 0 可关闭周期回收（仍可在测试里手动调 reclaim_once）。
+    scheduler_reclaim_interval: float = 10.0
+
     # ---- B1 · ima 公共知识库通道（B-IMA-01 MCP 优先 / B-IMA-02 REST 兜底）----
     # 2026-10-07 主控实测库：八字紫微奇门印度占星塔罗排盘算命｜天地玄黄
     # （type 1004，陛下自有库，B-IMA-03 自建库全量访问）。

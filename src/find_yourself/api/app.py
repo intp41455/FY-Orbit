@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import asyncio
+import logging
 import os
 from pathlib import Path
 
@@ -27,6 +28,8 @@ from .errors import register_exception_handlers
 from .oidc import OIDCClient
 from .routes import api_router
 from ..runtime.temporal import TemporalRuntime
+
+logger = logging.getLogger(__name__)
 
 
 def build_oidc(settings: Settings) -> OIDCClient | None:
@@ -123,7 +126,27 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             app.state.recovery_summary = {
                 "enabled": True, "error": f"{type(exc).__name__}: {exc}"[:300],
             }
+        # 调度器周期回收 + 状态桥：此前 reclaim_stale()/subscribe() 只有测试调，
+        # 生产零调用者 —— 超时任务永远占着并发名额，用户在总控那头也看不到进展。
+        # 桥接失败不阻断 boot：回收是运维兜底，不是启动前置条件。
+        try:
+            from ..runtime.agent_bus import bus as agent_bus
+            from ..runtime.scheduler_bridge import SchedulerBusBridge
+            from ..services.scheduler.core import scheduler
+
+            app.state.scheduler_bridge = SchedulerBusBridge.attach(
+                scheduler, agent_bus, interval=settings.scheduler_reclaim_interval,
+            )
+        except Exception as exc:  # noqa: BLE001
+            app.state.scheduler_bridge = None
+            logger.warning("scheduler bus bridge not attached: %s", exc, exc_info=True)
         yield
+        bridge = getattr(app.state, "scheduler_bridge", None)
+        if bridge is not None:
+            try:
+                bridge.close()
+            except Exception:  # noqa: BLE001 —— 关停韧性：桥接清理失败不阻断
+                logger.warning("scheduler bus bridge close failed", exc_info=True)
         try:
             await app.state.temporal.close()
         except Exception:
