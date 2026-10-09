@@ -208,6 +208,25 @@ class TestPeriodicReclaim:
 
 
 # --------------------------------------------------------------------------- #
+# 命名契约：三处总控 id 必须同值
+# --------------------------------------------------------------------------- #
+class TestCoordinatorIdConsistency:
+    def test_three_sources_agree(self):
+        """运行时桥接 / 模板层 / DB 默认值必须是同一个 id。
+
+        三处各写各的曾是这个项目的真实病灶：模板层叫 controller、运行时叫
+        coordinator，导致「模板下发 → 建团队 → 派单」在 id 上断开。它们不能
+        互相 import（runtime 反向 import services/templates 会成环），所以
+        只能靠这条测试钉住。
+        """
+        from find_yourself.db.team_models import TeamDefinition
+        from find_yourself.services.templates.scaffold import CONTROLLER_ID
+
+        db_default = TeamDefinition.__table__.c.coordinator_role.default.arg
+        assert COORDINATOR_ROLE == CONTROLLER_ID == db_default == "coordinator"
+
+
+# --------------------------------------------------------------------------- #
 # 终态状态桥
 # --------------------------------------------------------------------------- #
 class TestTerminalBridge:

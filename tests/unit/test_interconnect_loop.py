@@ -282,18 +282,47 @@ class TestOrchestrateEndpointsWired:
         assert "/api/hub/orchestrate/capabilities" in paths
 
     def test_orchestrate_is_write_protected(self):
-        """编排会真的调外部 Agent（花钱），必须走 CSRF 保护，不能是裸 GET/POST。"""
+        """编排会真的调外部 Agent（花钱），必须走 CSRF 保护。
+
+        断言的是 ``Depends.dependency`` **就是** ``deps.csrf_protected`` 本尊。
+        早先这里写的是 ``isinstance(dep, Depends) or dep is not Parameter.empty``
+        —— 那个断言几乎必然为真（凡有默认值都满足第二支），等于形同虚设：
+        把 csrf_protected 换成裸 get_actor 它照样绿。
+        """
         import inspect
 
-        from find_yourself.api.routes import hub as hub_routes
         from fastapi.params import Depends
+
+        from find_yourself.api.deps import csrf_protected
+        from find_yourself.api.routes import hub as hub_routes
 
         by_path = {r.path: r for r in hub_routes.router.routes}
         for path in ("/api/hub/orchestrate", "/api/hub/orchestrate/pipeline"):
-            sig = inspect.signature(by_path[path].endpoint)
-            dep = sig.parameters["actor"].default
-            # csrf_protected 内部是 get_actor + CSRF 校验，签名上表现为一个 Depends
-            assert isinstance(dep, Depends) or dep is not inspect.Parameter.empty
+            dep = inspect.signature(by_path[path].endpoint).parameters["actor"].default
+            assert isinstance(dep, Depends), f"{path} 的 actor 依赖不是 Depends"
+            assert dep.dependency is csrf_protected, (
+                f"{path} 的 actor 依赖是 {dep.dependency!r}，不是 csrf_protected；"
+                f"裸 get_actor 意味着无 CSRF 防护"
+            )
+
+    def test_capabilities_endpoint_is_read_only(self):
+        """前置体检是只读的，用 get_actor 即可 —— 它不该要 CSRF token。"""
+        import inspect
+
+        from fastapi.params import Depends
+
+        from find_yourself.api.deps import csrf_protected, get_actor
+        from find_yourself.api.routes import hub as hub_routes
+
+        by_path = {r.path: r for r in hub_routes.router.routes}
+        dep = inspect.signature(
+            by_path["/api/hub/orchestrate/capabilities"].endpoint
+        ).parameters["actor"].default
+        assert isinstance(dep, Depends)
+        assert dep.dependency is get_actor, (
+            f"只读端点应直接用 get_actor，实际 {dep.dependency!r}"
+        )
+        assert dep.dependency is not csrf_protected
 
     def test_pipeline_stages_required(self):
         from pydantic import ValidationError
@@ -322,6 +351,53 @@ class TestOrchestrateEndpointsWired:
         assert got["agent_count"] == 0
         assert got["capability_count"] == 0
         assert got["max_workers"] == 3
+
+    def test_capabilities_endpoint_counts_real_agents(self, hub_client, session):
+        """反向分支：真有一个 Agent 时必须报 true —— 否则前置体检是死的。
+
+        只测「空库报 false」是不够的：一个无论有没有 Agent 都返回 false 的
+        实现同样能通过上一条用例，那这个体检对用户毫无价值。
+        """
+        from find_yourself.db.workbench_models import HubConnection
+
+        session.add(HubConnection(
+            id="conn-1",
+            owner_id=OWNER,
+            name="我的云端 Agent",
+            kind="openai_chat",
+            capabilities=[
+                {"name": "chat", "tags": ["write"], "aliases": ["写作"]},
+                {"name": "review", "tags": ["audit"]},
+            ],
+            state="active",
+        ))
+        session.commit()
+
+        got = hub_client.get("/api/hub/orchestrate/capabilities").json()
+
+        assert got["can_orchestrate"] is True
+        assert got["agent_count"] == 1, "两条能力属同一连接，连接数应去重为 1"
+        assert got["capability_count"] == 2
+        assert got["kinds"] == ["openai_chat"]
+
+    def test_capabilities_endpoint_excludes_other_owners(self, hub_client, session):
+        """别人的连接不算我的可编排资源 —— 越权是 403，此处是「不可见」。"""
+        from find_yourself.db.workbench_models import HubConnection
+
+        session.add(HubConnection(
+            id="conn-x",
+            owner_id="o-someone-else",
+            name="他人的 Agent",
+            kind="openai_chat",
+            capabilities=[{"name": "chat", "tags": []}],
+            state="active",
+        ))
+        session.commit()
+
+        got = hub_client.get("/api/hub/orchestrate/capabilities").json()
+
+        assert got["agent_count"] == 0
+        assert got["can_orchestrate"] is False
 
     def test_orchestrate_rejects_empty_steps(self, hub_client):
         """mode=parallel 却没给 aspects → 服务层拒。
