@@ -108,7 +108,7 @@ export function SkillsPage() {
   const openSkill = (s: SkillInfo) => setDetail({ kind: 'skill', item: s });
 
   return (
-    <BaseBound surface="skills">
+    <BaseBound surface="skills" state="idle">
       <div className="kn-root">
         <div className="page-head">
           <h2>能力目录</h2>

@@ -320,7 +320,7 @@ export function WorkbenchPage() {
   ) : undefined;
 
   return (
-    <BaseBound surface="workbench">
+    <BaseBound surface="workbench" state="idle">
       <div className="wb-shell">
         {/* ---------------------------------------------------------- 页首 */}
         <div className="page-head wb-page-head">

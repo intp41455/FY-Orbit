@@ -143,7 +143,7 @@ export function ApprovalsPage() {
   }
 
   return (
-    <BaseBound surface="approvals">
+    <BaseBound surface="approvals" state="idle">
       <div className="appr-shell">
         <div className="page-head appr-page-head">
           <h2>审批中心</h2>

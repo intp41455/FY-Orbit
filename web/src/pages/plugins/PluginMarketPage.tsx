@@ -312,7 +312,7 @@ export function PluginMarketPage() {
     : null;
 
   return (
-    <BaseBound surface="plugin-market">
+    <BaseBound surface="plugin-market" state="idle">
       <div className="page" data-testid="plugin-market-page">
         <div className="page-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 'var(--ui-s-3)' }}>
           <div>

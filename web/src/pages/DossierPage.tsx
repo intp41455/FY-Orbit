@@ -78,7 +78,7 @@ export function DossierPage() {
   }
 
   return (
-    <BaseBound surface="dossier">
+    <BaseBound surface="dossier" state="idle">
       <div className="fy-ds-page">
         <header className="fy-ds-head">
           <div>

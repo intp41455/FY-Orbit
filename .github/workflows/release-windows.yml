@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  # 演练通道：不污染 tag 空间即可验证整条发行链。
+  # 注意：dispatch 触发时 HEAD 可能不在任何 tag 上，detect_version()
+  # 会返回显眼的 0.0.0-dev（见 deploy/build_release_package.py:88），
+  # 因此必须在 workflow_dispatch 下显式传 version，不得依赖自动探测。
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '构建版本号（不含 v 前缀）。留空则自动探测 tag，无 tag 时得到 0.0.0-dev。'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +32,10 @@ jobs:
     steps:
       - name: Checkout the tagged commit
         uses: actions/checkout@v4
+        with:
+          # workflow_dispatch 演练时 HEAD 不在 tag 上，需完整历史才能让
+          # `git describe --tags --exact-match` 正常工作。
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -47,18 +61,44 @@ jobs:
 
       - name: Build PyInstaller sidecar
         run: |
-          powershell -NoProfile -ExecutionPolicy Bypass -File desktop\sidecar\build.ps1 -SkipWebBuild
+          pwsh -NoProfile -File desktop\sidecar\build.ps1 -SkipWebBuild
 
       - name: Assemble deterministic release package
-        run: python deploy/build_release_package.py --keep-stage
+        shell: pwsh
+        run: |
+          $args = @('deploy/build_release_package.py', '--keep-stage')
+          $v = "${{ github.event.inputs.version }}"
+          if ($v) {
+            Write-Host "[release] 显式版本号：$v"
+            $args += @('--version', $v)
+          } else {
+            Write-Host "[release] 未指定版本号，由 detect_version() 自动探测（无 tag 时为 0.0.0-dev）"
+          }
+          python @args
 
       - name: Install Inno Setup 6 (CI runner has no ISCC)
+        continue-on-error: true
         run: choco install innosetup -y --no-progress
 
+      # 安装器是**可选**产物：它失败不得拖垮必需的绿色 ZIP。
+      # 历史事故（v1.1.2）：本步无 continue-on-error，失败后上传步被 skipped，
+      # 已打好的 75.66 MB ZIP 随 runner 销毁 → 发行链 0/5。
+      # 因此：本步允许失败，后续上传步一律 if: always()。
       - name: Build Inno Setup installer (when ISCC is available)
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File deploy\installer\build_installer.ps1
+        id: installer
+        continue-on-error: true
+        run: pwsh -NoProfile -File deploy\installer\build_installer.ps1
 
+      - name: Report installer outcome
+        if: always()
+        run: |
+          if ("${{ steps.installer.outcome }}" -ne "success") {
+            Write-Warning "[release] 安装器构建未成功（${{ steps.installer.outcome }}）。绿色 ZIP 不受影响，仍将上传。"
+          }
+
+      # 上传步必须 if: always()，否则上游任一步失败都会让制品随 runner 一起丢失。
       - name: Upload ZIP + SHA256 sidecar to the Release
+        if: always()
         uses: softprops/action-gh-release@v2
         with:
           files: |

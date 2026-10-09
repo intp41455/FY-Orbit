@@ -26,7 +26,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // --------------------------------------------------------------------------- //
 // 四态与结构化回执
 // --------------------------------------------------------------------------- //
-export type SaveState = 'saving' | 'saved' | 'dirty' | 'error';
+/**
+ * 保存状态。
+ *
+ * `idle` 是**未接入自动保存**的界面应取的态：该界面既没有草稿、也没有
+ * 排队改动，因此**无法声称"已保存"**——只能说"无待保存内容"。
+ *
+ * 历史缺陷：`BaseBound` 的 `state` 曾默认 `'saved'`，导致 21 处未传该 prop
+ * 的页面恒显「已保存」，用户会据此做数据保全决策（关页面 / 不备份）。
+ * 现在 `state` 在 `BaseBound` 上是**必传**，且本态文案明确不含"已保存"字样。
+ */
+export type SaveState = 'saving' | 'saved' | 'dirty' | 'error' | 'idle';
 export type StorageState = 'ok' | 'degraded';
 
 export type StorageErrorCode =
@@ -81,12 +91,14 @@ export interface SaveRecord {
   label: string;
 }
 
-/** 四态文案（全界面统一，不得各页自拟 —— W2 验收 ①）。 */
+/** 五态文案（全界面统一，不得各页自拟 —— W2 验收 ①）。 */
 export const SAVE_STATE_LABELS: Record<SaveState, string> = {
   saving: '保存中…',
   saved: '已保存',
   dirty: '未保存改动',
   error: '保存失败',
+  // 刻意不含"已保存"字样：本界面没有接自动保存，不得给出任何保存承诺。
+  idle: '无待保存内容',
 };
 
 /** 每类 IO 故障的**可照做**提示（W4 验收 ②③：明确提示而不是静默丢失）。 */

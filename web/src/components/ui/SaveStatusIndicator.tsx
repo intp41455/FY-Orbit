@@ -150,22 +150,28 @@ export interface BaseBoundProps extends Omit<SaveStatusIndicatorProps, 'state'> 
   /** 声明的能力子集；省略 = 全部四项（与后端扫描口径一致）。 */
   capabilities?: readonly string[];
   /**
-   * 保存状态；省略时与 `useAutosave` 的初始态一致取 `'saved'`
-   * （尚无草稿、也没有排队改动的界面就该是这个语义）。
+   * 保存状态。**必传**。
    *
-   * 接了真实草稿的界面必须**显式传入** `useAutosave` 的状态，
-   * 别让指示器永远停在「已保存」。
+   * 历史缺陷：本 prop 曾可选且默认 `'saved'` → 21 处未传的页面恒显
+   * 「已保存」，而它们**根本没有接自动保存**。用户据此认为改动已落盘，
+   * 进而关页面 / 不做备份 —— 属可证伪的假绿灯，构成真实数据丢失风险。
+   *
+   * 接了 `useAutosave` 的界面传真实状态；**没接的传 `'idle'`**，
+   * 不要在无保存语义的界面上给出任何保存承诺。
    */
-  state?: SaveState;
+  state: SaveState;
   children: ReactNode;
 }
 
 /**
- * 基座接入壳：页面用 `<BaseBound surface="…">…</BaseBound>` 包住内容，
+ * 基座接入壳：页面用 `<BaseBound surface="…" state={…}>…</BaseBound>` 包住内容，
  * 即完成「接入声明 + 统一状态指示器」两件事（后端按这个标记判定已接入）。
+ *
+ * `state` 为必传：TypeScript 会在编译期拦下"忘记传状态"的页面，
+ * 避免再次出现整片界面共享同一个假「已保存」。
  */
 export function BaseBound({
-  surface, capabilities, children, className, state = 'saved', ...status
+  surface, capabilities, children, className, state, ...status
 }: BaseBoundProps) {
   const base = useBase({ surface, capabilities });
   const classes = ['ui-base-bound', className].filter(Boolean).join(' ');

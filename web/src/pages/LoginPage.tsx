@@ -53,7 +53,7 @@ export function LoginPage() {
   }
 
   return (
-    <BaseBound surface="login">
+    <BaseBound surface="login" state="idle">
       <div className="login-stage">
         {/* 装饰背景：纯 SVG，透明度 .35，aria-hidden 不进无障碍树 */}
         <div className="login-backdrop" aria-hidden="true">

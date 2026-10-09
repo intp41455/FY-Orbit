@@ -155,7 +155,7 @@ export function ObservabilityPage() {
   };
 
   return (
-    <BaseBound surface="web/src/pages/ObservabilityPage">
+    <BaseBound surface="observability" state="idle">
       <div className="page-container observability-page" style={{ padding: '24px 32px' }}>
         <header className="page-header" style={{ marginBottom: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>

@@ -1,4 +1,4 @@
-# Find Yourself Desktop Prototype Uninstaller (uninstall.ps1)
+﻿# Find Yourself Desktop Prototype Uninstaller (uninstall.ps1)
 [CmdletBinding()]
 param (
     [string]$InstallDir = "$env:LOCALAPPDATA\FindYourself",

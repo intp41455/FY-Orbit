@@ -657,7 +657,7 @@ export function CabinPage() {
 
 
   return (
-    <BaseBound surface="cabin">
+    <BaseBound surface="cabin" state="idle">
       <div className="cabin-root" data-testid="cabin-root">
         {view === 'outdoor' ? (
           <CabinStage

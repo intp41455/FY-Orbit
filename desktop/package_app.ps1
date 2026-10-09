@@ -1,4 +1,4 @@
-# Find Yourself Desktop Packaging Script (package_app.ps1)
+﻿# Find Yourself Desktop Packaging Script (package_app.ps1)
 [CmdletBinding()]
 param (
     [string]$OutputDir = "",

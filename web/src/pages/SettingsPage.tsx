@@ -153,7 +153,7 @@ export function SettingsPage() {
   }
 
   return (
-    <BaseBound surface="settings">
+    <BaseBound surface="settings" state="idle">
     <>
       <div className="page-head"><h2>设置与数据</h2></div>
       <div className="st-sections">

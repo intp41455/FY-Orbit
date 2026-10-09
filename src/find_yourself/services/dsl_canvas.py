@@ -829,14 +829,28 @@ def _exec_node_http(node_id: str, params: dict[str, Any], payload: Any,
     if not url.lower().startswith(("http://", "https://")):
         raise DslValidationError(
             f"节点 {node_id} http_request.url 只允许 http/https，实际是 {url[:60]!r}")
+    # ---- fail-closed 出网白名单校验（对 resolver 路径同样生效） ----
+    # 设计意图：allow_domains 是**执行期强制的准入闸门**，与走真实网络还是
+    # 注入解析器无关 —— 后者只是替代传输，不应绕过准入判断。
     allow = params.get("allow_domains")
-    if allow:
-        host = urllib.parse.urlparse(url).hostname or ""
-        allowed = [str(d) for d in allow if isinstance(d, str) and d]
-        if not any(host == d or host.endswith("." + d) for d in allowed):
-            raise DslValidationError(
-                f"节点 {node_id} http_request 出网 host {host!r} 不在 "
-                "allow_domains 白名单内（权限面板配置，执行期强制）")
+    # fail-closed：未配置出网白名单时**拒绝**，而不是放行任意 host。
+    # 历史行为是 `if allow:` 包裹校验 → 未配置即静默放行全部目标，
+    # 对一个可由画布编排触达的节点而言等同于 SSRF 全开。
+    # 若确需出网，请在权限面板显式配置 allow_domains。
+    if not allow:
+        raise DslValidationError(
+            f"节点 {node_id} http_request 未配置 allow_domains 出网白名单，"
+            "已拒绝出网（安全策略 fail-closed）。请在权限面板配置允许的域名后重试。")
+    allowed = [str(d) for d in allow if isinstance(d, str) and d]
+    if not allowed:
+        raise DslValidationError(
+            f"节点 {node_id} http_request 的 allow_domains 为空列表，"
+            "已拒绝出网（安全策略 fail-closed）。")
+    host = urllib.parse.urlparse(url).hostname or ""
+    if not any(host == d or host.endswith("." + d) for d in allowed):
+        raise DslValidationError(
+            f"节点 {node_id} http_request 出网 host {host!r} 不在 "
+            "allow_domains 白名单内（权限面板配置，执行期强制）")
     if http_resolver is not None:
         # 注入解析器时**替代**内置直连（单测 / 离线环境挂钩）。
         return http_resolver(dict(params), payload)
@@ -855,7 +869,8 @@ def _exec_node_http(node_id: str, params: dict[str, Any], payload: Any,
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         # 出网是 http_request 节点的**既定职责**（对标 Dify HTTP 节点）；
-        # SSRF 面由 allow_domains 白名单约束（提供时强制）。
+        # SSRF 面由 allow_domains 白名单约束——**未配置即拒绝**（fail-closed），
+        # 校验已在函数开头完成，此处仅执行已放行的请求。
         with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310
             status = int(resp.status)
             raw = resp.read(max_bytes + 1)

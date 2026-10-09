@@ -1,4 +1,4 @@
-# Find Yourself Desktop Launcher (start.ps1)
+﻿# Find Yourself Desktop Launcher (start.ps1)
 [CmdletBinding()]
 param (
     [int]$Port = 8088,

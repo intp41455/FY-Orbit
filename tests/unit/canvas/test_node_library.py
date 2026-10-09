@@ -377,9 +377,14 @@ def test_trigger_node_kinds() -> None:
 # --------------------------------------------------------------------------- #
 
 def test_http_request_via_injected_resolver() -> None:
+    """resolver 路径在**显式配置白名单**时正常执行。
+
+    未配置 allow_domains 时一律拒绝（fail-closed，见下一条用例）。
+    """
     doc = _flow([_literal("x"),
                  {"id": "h1", "type": "http_request",
-                  "params": {"url": "https://api.example.com/v1/ping", "method": "GET"}},
+                  "params": {"url": "https://api.example.com/v1/ping", "method": "GET",
+                             "allow_domains": ["example.com"]}},
                  _output()])
 
     def resolver(params: dict, payload):
@@ -388,6 +393,30 @@ def test_http_request_via_injected_resolver() -> None:
     status, output = _status_and_output(doc, http_resolver=resolver)
     assert status == "succeeded"
     assert output["status"] == 200 and output["body"] == "pong"
+
+
+def test_http_request_without_allow_domains_is_denied() -> None:
+    """fail-closed：未配置 allow_domains 时拒绝出网（而非放行任意 host）。
+
+    回归历史缺陷：校验曾被 `if allow:` 包裹，未配置即静默放行 → SSRF 全开。
+    """
+    doc = _flow([{"id": "h1", "type": "http_request",
+                  "params": {"url": "https://api.example.com/v1/ping", "method": "GET"}},
+                 _output()])
+    status, _ = _status_and_output(doc, http_resolver=lambda p, x: {"status": 200})
+    assert status == "failed"
+    assert "allow_domains" in (_latest_error(doc) or "")
+
+
+def test_http_request_empty_allow_domains_is_denied() -> None:
+    """fail-closed：allow_domains 为空列表同样拒绝（不得退化为放行）。"""
+    doc = _flow([{"id": "h1", "type": "http_request",
+                  "params": {"url": "https://api.example.com/v1/ping",
+                             "allow_domains": []}},
+                 _output()])
+    status, _ = _status_and_output(doc, http_resolver=lambda p, x: {"status": 200})
+    assert status == "failed"
+    assert "allow_domains" in (_latest_error(doc) or "")
 
 
 def test_http_request_allow_domains_is_enforced() -> None:

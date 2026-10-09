@@ -74,7 +74,7 @@ export function AssessmentsPage() {
   }
 
   return (
-    <BaseBound surface="assessments">
+    <BaseBound surface="assessments" state="idle">
       <div className="assess-shell">
         <div className="page-head">
           <h2>测评</h2>
