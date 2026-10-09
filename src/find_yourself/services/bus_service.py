@@ -110,6 +110,60 @@ class AgentBusService:
         self._pending: list[Any] = []
 
     # ------------------------------------------------------------------ rooms
+    def publish_as_role(
+        self,
+        room: str,
+        role: str,
+        *,
+        kind: str,
+        content: str,
+        mention: str | None = None,
+        refs: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """以团队成员 role 身份在服务端内部发布一条消息。
+
+        这是「总控 Agent 主动向用户对话窗口发消息」的**唯一**正当入口。
+
+        为什么需要它：:func:`identity_of` 的输入是 :class:`Actor`，而 Actor 只有
+        owner / service 两种主体 —— **team member role 不是登录主体**，把 role 塞进
+        ``identity_of`` 会污染「from_identity 只由服务端从 Actor 推导」这条安全不变量
+        （见模块 docstring 硬规则 1）。
+
+        因此本方法与 ``_run_reply``（:meth:`_run_reply` 内 ``bus.publish(...,
+        from_identity=f"{AGENT_PREFIX}{role}")``）**同模式**：由服务端在内部通道
+        显式给出身份，不构造假 Actor，也不接受任何请求体输入。
+
+        读侧仍走 :meth:`resolve_room` 做可见性校验 —— **写绕过、读不绕过**，
+        所以用户只能收到自己有权看到的房间里的消息。
+        """
+        room = str(room or "").strip()
+        if not room:
+            raise ValidationFailed("bus_room_required", "Room is required")
+        role = str(role or "").strip()
+        if not role:
+            raise ValidationFailed("bus_role_required", "Role is required")
+        if kind not in MESSAGE_KINDS:
+            raise ValidationFailed(
+                "bus_kind_invalid", f"kind must be one of {sorted(MESSAGE_KINDS)}"
+            )
+        body = str(content or "")
+        if not body.strip():
+            raise ValidationFailed("bus_content_required", "Content is required")
+        if len(body) > MAX_CONTENT_LEN:
+            raise ValidationFailed(
+                "bus_content_too_long",
+                f"Content exceeds {MAX_CONTENT_LEN} characters",
+            )
+        msg = self.bus.publish(
+            room,
+            from_identity=f"{AGENT_PREFIX}{role}",
+            kind=kind,
+            content=body[:MAX_CONTENT_LEN],
+            refs=list(refs) if refs else None,
+            mention=mention,
+        )
+        return msg.to_dict()
+
     def resolve_room(self, actor: Actor, room: str) -> RoomRef:
         """解析房间并校验可见性。越权一律 ``NotFound``/``PermissionDenied``。"""
         actor.require_authenticated()

@@ -19,8 +19,10 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from ...services.actor import Actor
+from ...services.errors import ValidationFailed
 from ...services.hub.connections import HubService, public_connection
 from ...services.hub.manifest import EXAMPLE_MANIFEST, MANIFEST_SCHEMA
+from ...services.hub.orchestrator import DEFAULT_MAX_WORKERS, Orchestrator
 from ...services.hub.presets import public_presets
 from ...services.hub.router import CapabilityRouter
 from ..deps import Services, csrf_protected, get_actor, get_services
@@ -98,6 +100,58 @@ class ManifestImportRequest(BaseModel):
     filename: str = Field(default="", max_length=200)
     name: str | None = Field(default=None, max_length=120)
     credentials: dict[str, Any] = Field(default_factory=dict)
+
+
+# --------------------------------------------------------------------------- #
+# 编排请求体
+# --------------------------------------------------------------------------- #
+
+class OrchestrateRequest(BaseModel):
+    """多 Agent 协同编排（自动派单）。
+
+    ``mode`` 三选一：
+    ``sequential``  顺序执行，前一步输出拼进后一步上下文（写作/审校类）
+    ``parallel``    并行执行同一任务的不同侧面，互不知情（多角度调研类）
+
+    ``steps`` 是步骤描述列表；``aspects`` 是并行侧面列表。二者按 ``mode`` 取用。
+    """
+
+    task: str = Field(min_length=1, max_length=4_000)
+    mode: str = Field(default="sequential", pattern=r"^(sequential|parallel)$")
+    steps: list[str] = Field(default_factory=list, max_length=20)
+    aspects: list[str] = Field(default_factory=list, max_length=20)
+    kind: str | None = Field(default=None, max_length=32)
+    max_workers: int = Field(default=DEFAULT_MAX_WORKERS, ge=1, le=8)
+    timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    summarize: bool = False
+    summary_instruction: str = Field(default="把这些结果整合成一份结论。", max_length=500)
+
+
+class PipelineRequest(BaseModel):
+    """显式指定每步用哪个连接的编排。
+
+    ``stages`` 每项可含 ``connection_id`` / ``capability`` / ``tool`` /
+    ``instruction`` / ``params_extra``。``tool`` 只有「必须指名工具」的适配器
+    （如 ``mcp_server``）需要——它只认 ``params["name"]``。
+    """
+
+    stages: list[dict[str, Any]] = Field(min_length=1, max_length=20)
+    timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
+    summarize: bool = False
+    summary_instruction: str = Field(default="把这些结果整合成一份结论。", max_length=500)
+
+
+def _orchestrator(actor: Actor, hub: HubService, svc: Services, max_workers: int) -> Orchestrator:
+    """构造**生产接线唯一正确入口**的编排器。
+
+    必须走 :meth:`Orchestrator.bind` 而不是直接 ``Orchestrator(invoke=hub.invoke,...)``：
+    真实签名是 ``invoke(actor, conn_id, ...)``，actor 在第一位，直接注入会让
+    ``conn_id`` 错位到 ``actor`` 上，运行时必抛 ``TypeError``。
+    """
+    return Orchestrator.bind(
+        hub, actor=actor, session=svc.session, owner_id=actor.owner_id,
+        max_workers=max_workers,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -308,6 +362,94 @@ async def route(
         include_unhealthy=body.include_unhealthy,
     )
     return {"hint": body.hint, "candidates": ranked, "count": len(ranked)}
+
+
+# --------------------------------------------------------------------------- #
+# 多 Agent 协同编排
+# --------------------------------------------------------------------------- #
+
+@router.post("/orchestrate")
+async def orchestrate(
+    body: OrchestrateRequest,
+    actor: Actor = Depends(csrf_protected),
+    hub: HubService = Depends(hub_service),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """自动派单的多 Agent 协同编排。
+
+    诚实约定：某步失败**如实**返回在 ``steps`` 里并置 ``ok=false``，不吞掉、不
+    伪造成功；匹配不上能力就不派单（``step.error`` 说明原因）。
+    """
+    _owner(actor)
+    orch = _orchestrator(actor, hub, svc, body.max_workers)
+    items = body.aspects if body.mode == "parallel" else body.steps
+    if not items:
+        raise ValidationFailed(
+            "hub_orchestrate_empty",
+            f"mode={body.mode} 需要提供对应的 "
+            f"{'aspects' if body.mode == 'parallel' else 'steps'} 列表",
+        )
+    if body.mode == "parallel":
+        result = orch.run_parallel(
+            body.task, items, kind=body.kind, max_workers=body.max_workers,
+            timeout_seconds=body.timeout_seconds,
+        )
+    else:
+        result = orch.run_sequential(
+            body.task, items, kind=body.kind or "openai_chat",
+            timeout_seconds=body.timeout_seconds,
+        )
+    if body.summarize:
+        result = orch.summarize(
+            result, instruction=body.summary_instruction, timeout_seconds=body.timeout_seconds,
+        )
+    hub.s.commit()
+    return {"orchestration": result.to_public()}
+
+
+@router.post("/orchestrate/pipeline")
+async def orchestrate_pipeline(
+    body: PipelineRequest,
+    actor: Actor = Depends(csrf_protected),
+    hub: HubService = Depends(hub_service),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """显式指定每步用哪个连接的编排（需要精确控制时用这个）。"""
+    _owner(actor)
+    orch = _orchestrator(actor, hub, svc, DEFAULT_MAX_WORKERS)
+    result = orch.run_pipeline(body.stages, timeout_seconds=body.timeout_seconds)
+    if body.summarize:
+        result = orch.summarize(result, instruction=body.summary_instruction,
+                                timeout_seconds=body.timeout_seconds)
+    hub.s.commit()
+    return {"orchestration": result.to_public()}
+
+
+@router.get("/orchestrate/capabilities")
+async def orchestrate_capabilities(
+    actor: Actor = Depends(get_actor),
+    svc: Services = Depends(get_services),
+) -> dict:
+    """编排前置体检：当前有几条连接、几项能力可选。
+
+    编排要靠路由打分派单，一个 Agent 都没有时必然每步都失败。让前端先自查，
+    比让用户跑完一轮拿到满屏 ``hub_no_agent`` 报错更诚实。
+    """
+    _owner(actor)
+    # candidates() 返回的是「能力项」列表（一条连接可能有多项能力），
+    # 所以连接数要去重；kind 同理。
+    items = CapabilityRouter(svc.session, actor.owner_id).candidates(
+        include_unhealthy=True,
+    )
+    conn_ids = {str(i.get("connection_id") or "") for i in items if i.get("connection_id")}
+    kinds = sorted({str(i.get("kind") or "") for i in items if i.get("kind")})
+    return {
+        "agent_count": len(conn_ids),
+        "capability_count": len(items),
+        "kinds": kinds,
+        "can_orchestrate": len(conn_ids) > 0,
+        "max_workers": DEFAULT_MAX_WORKERS,
+    }
 
 
 __all__ = ["public_connection", "router"]

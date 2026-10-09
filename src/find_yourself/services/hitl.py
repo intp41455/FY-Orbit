@@ -40,16 +40,24 @@ from ..db.hitl_models import (
     HitlInterrupt,
 )
 from ..db.types import utcnow
+from ..runtime.agent_bus import OWNER_PREFIX, SYSTEM_IDENTITY
 from .actor import Actor
 from .errors import Conflict, NotFound, ValidationFailed
 
 
 class HitlInterruptService:
-    """暂停 / 查询 / 恢复。刻意保持小而完整——不是一个框架。"""
+    """暂停 / 查询 / 恢复。刻意保持小而完整——不是一个框架。
 
-    def __init__(self, session: Session, audit: Any | None = None):
+    **闭环接线**：审批产生与审批落定都会向 :class:`AgentBus` 播报一条消息，
+    这样用户的对话窗口能实时看到「有审批待办」/「审批已决」，而不必轮询。
+    bus 是**可选依赖**（与 :paramref:`audit` 同一注入模式），未注入时行为与
+    此前完全一致 —— 单元测试与只走 HTTP 的场景不受影响。
+    """
+
+    def __init__(self, session: Session, audit: Any | None = None, *, bus: Any | None = None):
         self.session = session
         self.audit = audit
+        self.bus = bus
 
     # ------------------------------------------------------------------
     # 暂停
@@ -64,11 +72,16 @@ class HitlInterruptService:
         options: list[dict] | list[str] | None = None,
         reason: str = "",
         timeout_seconds: int | None = None,
+        room: str | None = None,
     ) -> dict[str, Any]:
         """在 ``checkpoint`` 处暂停 ``execution_id``，返回一个中断 id。
 
         同一执行同时只允许一个待决中断——两次暂停意味着调用方在同一个执行上
         搞出了两条并行的等待路径，那不是HITL 该容忍的形状，直接 Conflict。
+
+        ``room`` 是**闭环接线**用的可选总线房间（如 ``dm:owner:<id>:agent:coordinator``）。
+        :class:`HitlInterrupt` 表没有 room 列，服务自己推不出房间名，所以由调用方
+        指明；不传则不向总线播报（保持与此前完全一致的行为）。
         """
         actor.require_authenticated()
         if not execution_id:
@@ -112,6 +125,8 @@ class HitlInterruptService:
         self.session.flush()
         self._audit(actor, "hitl.interrupted", row.id,
                     {"execution_id": execution_id, "checkpoint": checkpoint})
+        self._publish_pending(room, row, owner_id=actor.owner_id or actor.service_id,
+                              checkpoint=checkpoint)
         return self._view(row)
 
     # ------------------------------------------------------------------
@@ -172,6 +187,7 @@ class HitlInterruptService:
         *,
         resolution: dict | None = None,
         expected_version: int | None = None,
+        room: str | None = None,
     ) -> dict[str, Any]:
         """按人的决策把中断落定，返回更新后的中断视图。
 
@@ -183,6 +199,8 @@ class HitlInterruptService:
         ``expected_version`` 是给「人看过一版上下文之后才拍板」用的乐观锁：
         传入时若行已不是该version（暂停后上下文被改过），报 Conflict 而不是
         基于**人没看过的那份上下文**拍板。省略则不做该检查。
+
+        ``room`` 与 :meth:`interrupt` 同义：闭环接线的可选总线房间，不传则不播报。
         """
         actor.require_owner()
         row = self._row(interrupt_id)
@@ -265,11 +283,77 @@ class HitlInterruptService:
         self.session.flush()
         self._audit(actor, "hitl.decided", interrupt_id,
                     {"decision": decision, "status": self._status_for(decision)})
-        return self._view(self._row(interrupt_id))
+        decided = self._row(interrupt_id)
+        self._publish_decided(room, decided, owner_id=actor.owner_id or actor.service_id,
+                              decision=decision)
+        return self._view(decided)
 
     # ------------------------------------------------------------------
     # 内部
     # ------------------------------------------------------------------
+    def _publish_pending(
+        self,
+        room: str | None,
+        row: Any,
+        *,
+        owner_id: str | None,
+        checkpoint: str,
+    ) -> None:
+        """把「有审批待办」播报到总线房间。
+
+        走**服务端内部** ``bus.publish``（与 ``bus_service._run_reply`` 同模式），
+        而不是 ``AgentBusService.send()`` —— 后者要 Actor + resolve_room 可见性
+        校验，而 system 消息按硬规则 3 只允许服务身份发（``bus_service.py:181-185``），
+        owner 冒充 system 会被拒。这里由服务端显式给出 SYSTEM_IDENTITY，天然安全。
+
+        播报失败**不得影响审批本身的成败** —— 总线是通知通道，不是权威账本，
+        权威状态在 ``hitl_interrupts`` 表里。所以异常被吞掉并留痕。
+        """
+        if not room or self.bus is None:
+            return
+        options = [self._option_value(o) for o in (row.options or [])]
+        content = (
+            f"[审批待办] 执行 {row.execution_id} 在检查点 {checkpoint!r} 暂停，"
+            f"等待你的决定。可选：{'、'.join(options) or '(无)'}。"
+            f"（中断 id：{row.id}）"
+        )
+        self._publish_system(room, content, owner_id=owner_id, ref_id=row.id)
+
+    def _publish_decided(
+        self,
+        room: str | None,
+        row: Any,
+        *,
+        owner_id: str | None,
+        decision: str,
+    ) -> None:
+        """把「审批已决」播报到总线房间，让对话窗口闭环。"""
+        if not room or self.bus is None:
+            return
+        content = (
+            f"[审批已决] 执行 {row.execution_id} 的中断 {row.id} "
+            f"已按决定 {decision!r} 落定（状态：{row.status}）。"
+        )
+        self._publish_system(room, content, owner_id=owner_id, ref_id=row.id)
+
+    def _publish_system(
+        self, room: str, content: str, *, owner_id: str | None, ref_id: str
+    ) -> None:
+        """真正落一条 system 消息；失败只留痕，不影响审批本身。"""
+        try:
+            self.bus.publish(
+                room,
+                from_identity=SYSTEM_IDENTITY,
+                kind="system",
+                content=content,
+                mention=f"{OWNER_PREFIX}{owner_id}" if owner_id else None,
+            )
+        except Exception as exc:  # pragma: no cover - 通知失败不阻塞审批
+            self._audit(
+                None, "hitl.bus_publish_failed", ref_id,
+                {"room": room, "error": f"{type(exc).__name__}: {exc}"},
+            )
+
     @staticmethod
     def _status_for(decision: str) -> str:
         """决策值 → 终态。未显式取消/批准的一律记为 rejected（保守默认）。
@@ -372,10 +456,19 @@ class HitlInterruptService:
         return True
 
     def _audit(
-        self, actor: Actor, action: str, target: str, details: dict | None
+        self, actor: Actor | None, action: str, target: str, details: dict | None
     ) -> None:
+        # actor 允许为 None：总线播报失败这类**没有登录主体**的内部事件
+        # 也要留痕，否则异常被吞掉后就是无痕故障。
         if self.audit is not None:
             self.audit.append(actor, action, target, details or {})
+
+    @staticmethod
+    def _option_value(opt: Any) -> str:
+        """取选项的 ``value``；已归一化的 dict 与裸字符串都能吃。"""
+        if isinstance(opt, dict):
+            return str(opt.get("value") or "").strip()
+        return str(opt or "").strip()
 
     @staticmethod
     def _view(row: HitlInterrupt) -> dict[str, Any]:

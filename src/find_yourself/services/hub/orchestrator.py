@@ -36,6 +36,8 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from ..errors import ValidationFailed
+
 #: 并行派单默认并发上限。上游免费额度才是真瓶颈（实测 429），不宜再高。
 DEFAULT_MAX_WORKERS = 3
 
@@ -101,6 +103,25 @@ class OrchestrationResult:
         }
 
 
+def _bind_invoke(hub: Any, actor: Any) -> Callable[..., dict[str, Any]]:
+    """把 ``HubService.invoke`` 绑成编排器期望的 ``(conn_id, *, action, ...)`` 形状。
+
+    这是签名错位的**唯一修复点**。真实签名是
+    ``invoke(actor, conn_id, *, action, params, timeout_seconds, ...)``，
+    编排器按 ``invoke(conn_id, *, action, params, timeout_seconds)`` 调用；
+    直接传 ``hub.invoke`` 会把 ``conn_id`` 错位到 ``actor`` 上。
+
+    这里用闭包把 actor 预先绑好，并**只透传编排器真正用到的关键字参数**
+    （多余的 transport/sleep 不给默认值，保持与 :meth:`Orchestrator._run_step`
+    的调用面一致）。
+    """
+    def _invoke(conn_id: str, *, action: str, params: dict[str, Any] | None = None,
+                timeout_seconds: float = 15.0) -> dict[str, Any]:
+        return hub.invoke(actor, conn_id, action=action, params=params,
+                          timeout_seconds=timeout_seconds)
+    return _invoke
+
+
 class Orchestrator:
     """把一个任务派给多个 Agent 执行并汇总。
 
@@ -119,6 +140,61 @@ class Orchestrator:
         self._invoke = invoke
         self._route = route
         self._max_workers = max(1, min(int(max_workers), 8))
+
+    # ------------------------------------------------------------------ #
+    # 接线
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def bind(
+        hub: Any,
+        *,
+        actor: Any = None,
+        session: Any = None,
+        owner_id: str | None = None,
+        router: Any = None,
+        max_workers: int = DEFAULT_MAX_WORKERS,
+    ) -> "Orchestrator":
+        """用真实的 :class:`HubService` 造一个编排器 —— **生产接线唯一正确入口**。
+
+        为什么必须有这个工厂：``HubService.invoke`` 的真实签名是
+        ``invoke(self, actor, conn_id, *, action, ...)`` —— **actor 是第一个位置参数**。
+        而 :class:`Orchestrator` 内部按 ``invoke(conn_id, *, action, ...)`` 调用
+        （见 :meth:`_run_step`）。直接把 ``hub.invoke`` 注入 Orchestrator 会让
+        ``conn_id`` 落到 ``actor`` 形参上，真实调用必抛
+        ``TypeError: invoke() missing 1 required positional argument: 'conn_id'``。
+
+        历史真相：单测里的 ``_FakeInvoke.__call__(self, conn_id, *, action, ...)``
+        是**按调用方期望伪造**的签名，所以 43 条编排测试全绿却掩盖了错位 ——
+        这是「假绿测试」的典型。真实接线必须经本工厂把 actor 绑进去。
+
+        参数：
+            hub:      真实的 ``HubService``。
+            actor:    发起编排的 :class:`Actor`（owner 身份）。
+            session:  DB session —— 仅在未显式传 ``router`` 且需要自建
+                      :class:`CapabilityRouter` 时使用。
+            owner_id: 同上；``CapabilityRouter(session, owner_id)`` 需要它。
+            router:   可选的路由试算器；缺省时按 ``session`` + ``owner_id`` 自建。
+
+        用法::
+
+            orch = Orchestrator.bind(hub, actor=owner_actor,
+                                     session=session, owner_id=owner_id)
+            report = orch.run_pipeline(steps, user_intent="...")
+        """
+        if router is None:
+            if session is None:
+                raise ValidationFailed(
+                    "hub_orchestrator_router_required",
+                    "构造编排器需要 router，或同时提供 session 与 owner_id 以自建路由",
+                )
+            from .router import CapabilityRouter  # 局部导入：避免 hub 包初始化时的循环依赖
+
+            router = CapabilityRouter(session, owner_id or getattr(actor, "owner_id", None))
+        return Orchestrator(
+            invoke=_bind_invoke(hub, actor),
+            route=router.route,
+            max_workers=max_workers,
+        )
 
     # ------------------------------------------------------------------ #
     # 派单
