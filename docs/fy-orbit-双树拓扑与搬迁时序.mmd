@@ -1,0 +1,62 @@
+%%{init: {'theme':'base','themeVariables':{'fontSize':'14px','fontFamily':'Segoe UI, Microsoft YaHei, sans-serif'}}}%%
+%% FY-Orbit 双工作树拓扑 + 补丁搬迁时序
+%% 生成日期：2026-10-09
+%% 用途：说明「两棵树为什么推不上去」「修复是怎么搬过来的」
+%% 可贴 https://mermaid.live 直接渲染
+
+flowchart TB
+    subgraph S1["阶段一 · 两棵工作树的真实拓扑（无共同祖先）"]
+        direction LR
+        A["<b>树 A · 远端真源</b><br/>2026-10-07/a-md/work/FY-Orbit<br/><code>HEAD 2906ff9</code> · 294 提交<br/>远端 origin/main 就是它<br/>✅ 已在 GitHub 上 · 本轮施工树"]
+        B["<b>树 B · 平行工作树</b><br/>2026-09-29/repo-sync/FY-Orbit<br/><code>HEAD af2f038</code> · 37 提交<br/>浅历史 · 自有新根 9e504ce<br/>❌ 5 提交未推送 · 另一条亲缘线"]
+
+        A -. "❌ 无共同血缘<br/>git cat-file 互查 fatal" .- B
+    end
+
+    R["<b>共同远端</b>：git@github.com:intp41455/FY-Orbit.git<br/>⚠️ 两树无法 merge / 无法 cherry-pick<br/>树 B 强推会抹掉远端 294 条历史"]
+    A ==> R
+
+    subgraph S2["阶段二 · 补丁搬迁时序"]
+        direction LR
+        P1["树 B 导出<br/><code>git format-patch</code> ×4"] --> P2["树 A 建分支<br/><code>port/tree-b-fixes</code>"]
+        P2 --> P3["<code>git am</code><br/>逐个应用补丁"]
+        P3 --> P4["独立验证<br/>pytest + tsc + vitest"]
+        P4 --> P5["合并回 main<br/>推送 GitHub"]
+    end
+
+    R --> P1
+
+    subgraph S3["四个补丁 · 逐条状态"]
+        direction TB
+        F1["🔴 <b>2a58b86</b> SSRF fail-closed<br/>未配白名单即拒绝出网<br/>（原 <code>if allow</code> 可出网任意 host）· <b>高危</b>"]
+        F2["🟠 <b>dd910b9</b> Release CI 解 B12 硬门禁<br/>加 workflow_dispatch / continue-on-error / if: always()"]
+        F3["🔵 <b>ca69ad7</b> PS1 UTF-8 BOM ×13<br/>PowerShell 5.1 中文乱码（零风险）"]
+        F4["🟢 <b>e0876ce</b> web 假「已保存」绿灯<br/>BaseBound.state 改必传 + 新增 idle 态"]
+        F5["⚪ <b>af2f038</b> lint 门禁 522→0 · 352 文件<br/>⏸ 推迟到本轮闭环后单独一轮（拆三件搬）"]
+    end
+
+    P3 -. 已应用 .-> F1
+    P3 -. 已应用 .-> F2
+    P3 -. 已应用 .-> F3
+    P3 -. 已应用 .-> F4
+    P3 -. 暂缓 .-> F5
+
+    classDef treeA fill:#EEEDFE,stroke:#534AB7,stroke-width:1px,color:#26215C
+    classDef treeB fill:#FAEEDA,stroke:#BA7517,stroke-width:1px,color:#412402
+    classDef remote fill:#FCEBEB,stroke:#A32D2D,stroke-width:1px,color:#501313
+    classDef step fill:#E6F1FB,stroke:#185FA5,stroke-width:1px,color:#042C53
+    classDef high fill:#FCEBEB,stroke:#A32D2D,stroke-width:1px,color:#501313
+    classDef mid fill:#FAEEDA,stroke:#BA7517,stroke-width:1px,color:#412402
+    classDef low fill:#E6F1FB,stroke:#185FA5,stroke-width:1px,color:#042C53
+    classDef zero fill:#E1F5EE,stroke:#0F6E56,stroke-width:1px,color:#04342C
+    classDef hold fill:#F1EFE8,stroke:#888780,stroke-width:1px,color:#444441
+
+    class A treeA
+    class B treeB
+    class R remote
+    class P1,P2,P3,P4,P5 step
+    class F1 high
+    class F2 mid
+    class F3 low
+    class F4 zero
+    class F5 hold

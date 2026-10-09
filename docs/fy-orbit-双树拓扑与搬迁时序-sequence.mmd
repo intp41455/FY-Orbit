@@ -1,0 +1,54 @@
+%%{init: {'theme':'base','themeVariables':{'fontSize':'14px','fontFamily':'Segoe UI, Microsoft YaHei, sans-serif'}}}%%
+%% FY-Orbit 补丁搬迁时序图（sequenceDiagram 版）
+%% 生成日期：2026-10-09
+%% 用途：按时间顺序展示「谁在什么时候对哪个仓库做了什么」
+%% 可贴 https://mermaid.live 直接渲染
+
+sequenceDiagram
+    autonumber
+    participant U as 陛下
+    participant L as 主理人（甄宇航）
+    participant WB as 树 B repo-sync
+    participant WA as 树 A 主线
+    participant GH as GitHub origin/main
+    participant V as 验证者
+
+    Note over WA,GH: 【起点】远端 HEAD = 2906ff9（树 A 已推送）
+
+    U->>L: 那两个 Agent 弄错仓库了吗？
+    L->>WA: git cat-file 探两树血缘
+    L->>WB: git cat-file 反向探测
+    Note over WA,WB: 双向 fatal → 无共同祖先<br/>共享同一 remote，但历史互不达
+
+    L-->>U: 没弄错文件，是「同一项目被分成两棵树」<br/>树 B 的 5 提交推不上远端
+
+    U->>L: 按团队建议执行 + 画图
+
+    rect rgb(230,241,251)
+    Note over L,WB: 【阶段二】搬迁 4 个已验证补丁
+    L->>WB: git format-patch -1 ×4
+    WB-->>L: 4 个 .patch 文件
+    L->>WA: git checkout -b port/tree-b-fixes
+    L->>WA: git am ×4（SSRF/CI/BOM/web）
+    Note over WA: 全部 APPLIES CLEAN<br/>40 文件 +176/-55
+    end
+
+    rect rgb(234,243,222)
+    Note over L,V: 【阶段三】独立并行验证
+    par 后端验证
+        L->>V: pytest tests/unit/canvas/ + 全量
+        V-->>L: SSRF 实证：未配白名单确实抛错
+    and 前端验证
+        L->>V: npm ci + tsc --noEmit + vitest
+        V-->>L: BaseBound 调用点覆盖检查
+    end
+    end
+
+    rect rgb(241,239,232)
+    Note over L,WA: 【阶段四】af2f038 lint 暂缓
+    L->>WA: 推迟到本轮闭环之后<br/>拆三件搬（配置/6真bug/机械清理）
+    end
+
+    L->>WA: 验证通过后合并回 main
+    WA->>GH: git push origin main
+    GH-->>U: 远端更新
