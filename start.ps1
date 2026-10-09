@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     One-command launcher for Find Yourself (local, single-port).
 

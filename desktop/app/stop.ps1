@@ -1,4 +1,4 @@
-# Find Yourself Desktop Stopper (stop.ps1)
+﻿# Find Yourself Desktop Stopper (stop.ps1)
 [CmdletBinding()]
 param (
     [int]$Port = 8088,

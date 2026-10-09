@@ -1,4 +1,4 @@
-# Find Yourself Web Deployment Automation Script
+﻿# Find Yourself Web Deployment Automation Script
 [CmdletBinding()]
 param (
     [int]$Port = 8000,

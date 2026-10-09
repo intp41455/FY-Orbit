@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Find Yourself API 健康探针（Infra 运维脚本）。
 

@@ -1,4 +1,4 @@
-# Find Yourself Desktop Lifecycle Verification Script (verify_lifecycle.ps1)
+﻿# Find Yourself Desktop Lifecycle Verification Script (verify_lifecycle.ps1)
 [CmdletBinding()]
 param (
     [int]$TestPort = 8099,

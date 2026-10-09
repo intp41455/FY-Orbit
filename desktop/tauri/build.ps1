@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     一键出包：sidecar exe + Tauri NSIS 安装包 -> dist-desktop\FindYourself-Setup.exe
 

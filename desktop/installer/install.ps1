@@ -1,4 +1,4 @@
-# Find Yourself Desktop Prototype Installer (install.ps1)
+﻿# Find Yourself Desktop Prototype Installer (install.ps1)
 [CmdletBinding()]
 param (
     [string]$InstallDir = "$env:LOCALAPPDATA\FindYourself",

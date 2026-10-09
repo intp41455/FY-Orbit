@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$ProjectName = "find-yourself",
     [string]$Branch = "feat/package-a",
