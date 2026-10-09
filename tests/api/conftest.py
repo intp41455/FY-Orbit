@@ -65,6 +65,9 @@ def engine():
     )
     Base.metadata.create_all(eng)
     yield eng
+    # 同 tests/conftest.py 的 engine fixture：不 dispose 会留下
+    # `ResourceWarning: unclosed database`（实测这一处贡献 58 条）。
+    eng.dispose()
 
 
 @pytest.fixture()

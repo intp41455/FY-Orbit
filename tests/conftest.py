@@ -38,6 +38,11 @@ def engine():
     )
     Base.metadata.create_all(eng)
     yield eng
+    # 必须 dispose：sqlite 连接不显式关闭会在 GC 时抛
+    # `ResourceWarning: unclosed database`，全量回归里刷了 59 条。
+    # 实测（tests/conftest.py + tests/api/conftest.py + test_kanban_board.py
+    # 三处一起补）告警 70 -> 0。少补任何一处都会留下残余。
+    eng.dispose()
 
 
 @pytest.fixture()

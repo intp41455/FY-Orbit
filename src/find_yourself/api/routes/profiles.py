@@ -135,7 +135,21 @@ async def import_document(
 
 
 @router.post("/imports/{id}/confirm-speakers", status_code=status.HTTP_200_OK)
-@router.post("/imports/{id}/confirm_speakers", status_code=status.HTTP_200_OK)
+# 下划线别名与连字符版**指向同一个函数**，FastAPI 会据函数名生成同一个
+# operationId，于是每次生成 OpenAPI schema 都抛
+# `Duplicate Operation ID confirm_speakers_...`（全量回归里持续刷的唯一一条）。
+#
+# 为何是 include_in_schema=False 而不是删掉别名：
+#   - `web/src/api/profiles.ts:99` 用连字符版；
+#   - `tests/api/test_profiles_api.py:53` 用下划线版；
+#   两条路径都必须留。include_in_schema=False 只把它从**文档**里摘掉，
+# 运行时路由照旧注册（实测两条路径的 HTTP 响应完全一致）。
+# 若哪天统一了前端与测试的写法，直接删掉这一行别名即可。
+@router.post(
+    "/imports/{id}/confirm_speakers",
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
 async def confirm_speakers(
     id: str,
     body: ConfirmSpeakersRequest,

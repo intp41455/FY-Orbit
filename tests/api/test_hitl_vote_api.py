@@ -27,7 +27,12 @@ from fastapi.testclient import TestClient
 from helpers import login_owner
 
 import find_yourself.db.hitl_vote_models  # noqa: F401  （把三张表注册进 metadata）
-from find_yourself.api.routes import hitl_vote as hitl_vote_routes
+
+# ⚠️ 这行导入**只为了副作用**，不能删（ruff 会报 F401，忽略它）。
+# `find_yourself.api.routes.hitl_vote` 被导入时，会把它的 `router` 对象
+# 登记进 `api/routes/__init__.py` 的自动发现流程；删掉后本文件依赖的
+# 7 个端点就可能不再出现在 app 里。同类案例见 `db/models.py` 的再导出枢纽。
+from find_yourself.api.routes import hitl_vote as hitl_vote_routes  # noqa: F401
 from find_yourself.db.hitl_models import HitlInterrupt
 from find_yourself.db.types import utcnow
 
@@ -44,7 +49,21 @@ _CANDIDATES = [
 
 @pytest.fixture()
 def app(app):
-    app.include_router(hitl_vote_routes.router)
+    # ⚠️ 不要再 `app.include_router(hitl_vote_routes.router)`。
+    #
+    # `api/routes/__init__.py` 的 `discover_local_routes()` 已经把
+    # hitl_vote.router 自动挂进 api_router 了（实测
+    # `id(hv.router) in routes._mounted_router_ids` 为 True）。这里再挂一遍，
+    # 同一个 router 里的 7 个端点各自被注册两次 ->
+    # 7 条 `Duplicate Operation ID`（list_votes / get_vote / vote_tally /
+    # open_vote / cast_ballot / close_vote / cancel_vote 全中）。
+    #
+    # 判据用 `app.openapi()` 而非 `app.routes`：`create_app()` 把路由挂在嵌套的
+    # `api_router` 上，`app.routes` 只有 5 条（不含任何业务路由），
+    # 按 routes 查会永远判「未挂载」（我第一版就踩了这个，得到 41 个 error）。
+    if "/api/hitl/votes" in app.openapi()["paths"]:
+        return app
+    pytest.fail("hitl_vote 路由未挂载 —— api/routes 的自动发现可能失效了")
     return app
 
 

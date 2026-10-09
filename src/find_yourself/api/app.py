@@ -57,6 +57,11 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
 
     if session_maker is None:
         engine = engine_from_url(settings.database_url)
+        # 只有**自己建**的引擎才归我关。调用方注入 session_maker 时
+        # （测试、CLI、嵌入部署）引擎所有权在对方手里，代dispose 会毁掉
+        # 别人的连接池。实测：不加这个标记时，单跑一次 create_app() 就会
+        # 留下 `ResourceWarning: unclosed database`。
+        owns_engine = True
         if engine.dialect.name == "sqlite":
             import find_yourself.db.artifact_gate_models  # noqa: F401  (需求7 产物版本门禁)
             import find_yourself.db.canvas_models  # noqa: F401
@@ -82,6 +87,8 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             from ..db.base import Base
             Base.metadata.create_all(engine)
         session_maker = session_factory(engine)
+    else:
+        owns_engine = False
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -153,6 +160,14 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
             await app.state.temporal.close()
         except Exception:
             pass
+        # 只关自己建的引擎（见上文 owns_engine 的注释）。
+        # 放在 lifespan 收尾：进程被强杀时到不了这里，但正常退出/热重载
+        # 能把连接池干净还回 OS。dispose 本身不抛，仍兜一层以免关停被它带崩。
+        if owns_engine:
+            try:
+                engine.dispose()
+            except Exception:  # noqa: BLE001
+                logger.warning("engine dispose failed", exc_info=True)
 
     app = FastAPI(
         title="Find Yourself API",

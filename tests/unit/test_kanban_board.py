@@ -47,7 +47,11 @@ def engine():
         dbapi_conn.execute("PRAGMA foreign_keys=ON")
 
     Base.metadata.create_all(bind=eng)
-    return eng
+    # 原为 `return eng` —— fixture 没有 teardown 时机，sqlite 连接直到 GC
+    # 才关闭，实测贡献最后 1 条 `ResourceWarning: unclosed database`。
+    # 改成 yield + dispose，与 tests/conftest.py 的 engine fixture 口径一致。
+    yield eng
+    eng.dispose()
 
 
 @pytest.fixture()
