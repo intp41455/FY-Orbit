@@ -698,7 +698,7 @@ export function ChatPage() {
   const activeConv = conversations.find((c) => c.id === activeId) ?? null;
 
   return (
-    <BaseBound surface="chat">
+    <BaseBound surface="chat" state="idle">
       <div className="chat-shell">
         <div className="page-head chat-page-head">
           <h2>对话</h2>

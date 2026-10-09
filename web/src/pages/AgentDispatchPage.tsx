@@ -51,7 +51,7 @@ export function AgentDispatchPage() {
   }
 
   return (
-    <BaseBound surface="agent-dispatch">
+    <BaseBound surface="agent-dispatch" state="idle">
       <div className="disp-shell">
         <div className="page-head">
           <h2>子 Agent 派发验证</h2>

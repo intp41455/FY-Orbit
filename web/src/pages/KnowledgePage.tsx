@@ -364,7 +364,7 @@ export function KnowledgePage() {
   };
 
   return (
-    <BaseBound surface="knowledge">
+    <BaseBound surface="knowledge" state="idle">
     <div className="kn-root">
       <div className="page-head">
         <h2>本地知识库</h2>

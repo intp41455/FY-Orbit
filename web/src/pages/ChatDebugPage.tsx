@@ -242,7 +242,7 @@ export function ChatDebugPage() {
   }, [tools, boundTools, schemaEntries]);
 
   return (
-    <BaseBound surface="chat-debug">
+    <BaseBound surface="chat-debug" state="idle">
       <div className="cdbg-shell" data-testid="chat-debug-root">
         <div className="page-head cdbg-page-head">
           <h2>Chat 调试预览</h2>

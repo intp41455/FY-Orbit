@@ -189,7 +189,7 @@ export function LegacyCanvas() {
   const activeTemplate = templates.find((t) => t.id === activeInstance?.template_id);
 
   return (
-    <BaseBound surface="legacy-canvas">
+    <BaseBound surface="legacy-canvas" state="idle">
       <div className="page-container">
         <header className="page-header">
           <div>

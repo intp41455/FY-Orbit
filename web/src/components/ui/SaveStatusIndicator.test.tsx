@@ -49,6 +49,25 @@ describe('SaveStatusIndicator（W2）', () => {
     }
   });
 
+  it('idle 态不得给出任何「已保存」承诺（回归：曾默认 saved 导致 21 页假绿灯）', () => {
+    const { container } = render(<SaveStatusIndicator state="idle" now={AT} />);
+    const label = screen.getByRole('status');
+    expect(label).toHaveTextContent(SAVE_STATE_LABELS.idle);
+    expect(label).not.toHaveTextContent('已保存');
+    expect(container.querySelector('.ui-save-status')?.getAttribute('data-state')).toBe('idle');
+  });
+
+  it('BaseBound 在 idle 下也不得显示「已保存」', () => {
+    render(
+      <BaseBound surface="kanban" state="idle">
+        <div>body</div>
+      </BaseBound>,
+    );
+    const label = screen.getByRole('status');
+    expect(label).toHaveTextContent(SAVE_STATE_LABELS.idle);
+    expect(label).not.toHaveTextContent('已保存');
+  });
+
   it('saved 态显示「已保存到 X 时刻」', () => {
     const { container } = render(
       <SaveStatusIndicator state="saved" savedAt={AT} now={AT} />,

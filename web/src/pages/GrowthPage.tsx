@@ -45,7 +45,7 @@ export function GrowthPage() {
   }
 
   return (
-    <BaseBound surface="growth">
+    <BaseBound surface="growth" state="idle">
       <div className="growth-shell">
         <div className="page-head">
           <h2>成长记录</h2>

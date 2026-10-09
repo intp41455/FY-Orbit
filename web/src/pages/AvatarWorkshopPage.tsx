@@ -491,7 +491,7 @@ export function AvatarWorkshopPage() {
     (tuning[key] as string) ?? (avatar ? String(avatar.params[key] ?? '') : '');
 
   return (
-    <BaseBound surface="avatar-workshop">
+    <BaseBound surface="avatar-workshop" state="idle">
       <div className="avatar-workshop">
         <div className="page-head">
           <div>

@@ -218,7 +218,7 @@ export function ProfilesPage() {
   const metrics: ProfileMetric[] = activeRevision?.metrics ?? [];
 
   return (
-    <BaseBound surface="profiles">
+    <BaseBound surface="profiles" state="idle">
       <div className="cabin-ni-profiles">
         <header className="page-header">
           <div>

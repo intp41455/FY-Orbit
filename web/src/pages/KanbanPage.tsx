@@ -218,7 +218,7 @@ export function KanbanPage() {
   const { summary } = data;
 
   return (
-    <BaseBound surface="kanban">
+    <BaseBound surface="kanban" state="idle">
       <div className="kb-page" data-testid="kb-page">
         <header className="kb-top">
           <h1 className="kb-title">任务看板</h1>

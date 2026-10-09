@@ -280,7 +280,7 @@ export function HistoryPage() {
   }
 
   return (
-    <BaseBound surface="history">
+    <BaseBound surface="history" state="idle">
       <div className="hist-shell">
         <div className="page-head">
           <h2>历史会话</h2>

@@ -104,7 +104,7 @@ export function TemplatesPage() {
   }
 
   return (
-    <BaseBound surface="templates">
+    <BaseBound surface="templates" state="idle">
       <div className="fy-tpl-page">
         <header className="fy-tpl-page-head">
           <div>
