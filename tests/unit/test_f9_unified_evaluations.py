@@ -39,10 +39,11 @@ def test_f9_evaluator_executes_matrix_and_measures_variance(tmp_path: Path):
         assert "cost_stddev_usd" in detail
         assert detail["runs"] == 2
 
-    # Save artifact for finalization evidence
-    evidence_dir = Path("evidence/finalization")
-    evidence_dir.mkdir(parents=True, exist_ok=True)
-    out_file = evidence_dir / "F9-unified-evaluations.json"
+    # 落盘到 pytest 的 tmp_path，**不写仓库路径**。
+    # 历史行为是直接写 `evidence/finalization/F9-unified-evaluations.json`（被 git 跟踪），
+    # 导致每次跑测试都污染工作区、并与并行会话/`git am` 冲突。
+    # 本断言只验证"报告可被序列化落盘"这一能力，不需要真实写入仓库。
+    out_file = tmp_path / "F9-unified-evaluations.json"
     out_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
     assert out_file.exists()
 

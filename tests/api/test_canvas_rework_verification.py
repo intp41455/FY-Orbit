@@ -29,7 +29,9 @@ from helpers import login_owner
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClient) -> None:
+def test_full_orchestrator_rework_verification_acceptance_cycle(
+    client: TestClient, tmp_path: Path,
+) -> None:
     headers = login_owner(client)
     trace_events: list[dict[str, Any]] = []
 
@@ -266,9 +268,10 @@ def test_full_orchestrator_rework_verification_acceptance_cycle(client: TestClie
     # -------------------------------------------------------------------------
     # Step 10: 导出真实机器审计 Trace
     # -------------------------------------------------------------------------
-    trace_dir = REPO_ROOT / "evidence" / "process-traces"
-    trace_dir.mkdir(parents=True, exist_ok=True)
-    trace_file = trace_dir / "07-orchestrator-rework-verification-cycle.json"
+    # 落盘到 pytest 的 tmp_path，**不写仓库路径**（见 test_f9_unified_evaluations.py 同类说明）。
+    # 历史行为是写 REPO_ROOT/evidence/process-traces/...（被 git 跟踪），
+    # 导致每次跑测试污染工作区、并与并行会话/git am 冲突。
+    trace_file = tmp_path / "07-orchestrator-rework-verification-cycle.json"
 
     export_payload = {
         "lifecycle_type": "orchestrator_rework_independent_verification_cycle",
