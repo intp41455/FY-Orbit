@@ -15,6 +15,8 @@ import httpx
 from .base import (
     CallResult,
     ProviderEndpoint,
+    approx_tokens,
+    normalize_messages,
     ProviderMalformedResponse,
     ProviderTransportError,
     classify_status,
@@ -78,15 +80,24 @@ class AnthropicProvider:
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int = 1024,
         timeout_seconds: float = 30.0,
+        messages: list[dict[str, Any]] | None = None,
     ) -> CallResult:
+        # Anthropic 与 OpenAI 的消息形态不同：system 是顶层参数，不进messages；
+        # messages 只接受 user / assistant 交替。直接透传 OpenAI 形态会被拒。
+        conversation = normalize_messages(messages, prompt)
+        system_chunks = [m["content"] for m in conversation if m["role"] == "system"]
+        turns = [m for m in conversation if m["role"] != "system"]
+
         payload: dict[str, Any] = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": turns,
         }
+        if system_chunks:
+            payload["system"] = "\n\n".join(system_chunks)
         data = self._request("POST", "/v1/messages", payload, timeout_seconds)
         if not isinstance(data, dict):
             raise ProviderMalformedResponse("Anthropic response was not an object")
@@ -99,7 +110,7 @@ class AnthropicProvider:
         text = "".join(texts)
 
         usage = data.get("usage") or {}
-        p_tokens = _as_int(usage.get("input_tokens"), len(prompt.split()))
+        p_tokens = _as_int(usage.get("input_tokens"), approx_tokens(conversation))
         c_tokens = _as_int(usage.get("output_tokens"), len(text.split()))
         return CallResult(
             text=text,

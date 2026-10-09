@@ -386,9 +386,17 @@ class ChatModelAdapter:
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
         from ...runtime.providers import ProviderError, build_provider
+        # 延迟导入同本文件其它 runtime.providers 引用：services.hub <-> runtime.providers
+        # 存在循环依赖，模块顶部导入会炸。名字在调用时才解析，所以漏导入不会在
+        # 导入期暴露 —— 只有真正调用时才发现（这正是它一度藏住的原因）。
+        from ...runtime.providers.base import normalize_messages
 
         started = time.perf_counter()
+        # action 别名：调用方必须先知道 kind 才能猜对action 名（openai_chat 是
+        # complete、mcp_server 是 call_tool），这让「统一接入层」名不副实。
+        # 这里只加别名不改名，既有调用继续工作。
         action = (call.action or "complete").strip().lower()
+        action = {"invoke": "complete", "chat": "complete"}.get(action, action)
         try:
             if not self.is_configured():
                 raise ValidationFailed("hub_not_configured", "连接未配置凭证，拒绝调用")
@@ -401,14 +409,20 @@ class ChatModelAdapter:
                     "hub_unsupported_action",
                     f"chat 适配器不支持 action='{action}'（支持 complete / models）",
                 )
+            # 多轮优先：协同编排需要把上文传给 Agent，而单轮 prompt 只能表达
+            # 一句话。两者都空才报错 —— normalize_messages 负责校验并给出清晰错误。
+            raw_messages = call.params.get("messages")
             prompt = str(call.params.get("prompt") or "")
-            if not prompt.strip():
-                raise ValidationFailed("hub_missing_prompt", "缺少 prompt 参数")
+            try:
+                conversation = normalize_messages(raw_messages, prompt)
+            except ValueError as exc:
+                raise ValidationFailed("hub_missing_prompt", str(exc)) from exc
             result = provider.complete(
                 model=str(call.params.get("model") or self.model()),
                 prompt=prompt,
                 max_tokens=int(call.params.get("max_tokens") or 1024),
                 timeout_seconds=call.timeout_seconds,
+                messages=conversation,
             )
         except ValidationFailed as exc:
             return InvokeResult(ok=False, error=f"{exc.code}: {exc.message}", latency_ms=_elapsed_ms(started))
@@ -623,12 +637,16 @@ class McpServerAdapter:
 
     def invoke(self, call: InvokeCall) -> InvokeResult:
         started = time.perf_counter()
+        # 与 openai_chat 对称：调用方不该需要先知道 kind 才能猜对 action 名。
+        # `invoke` 作为通用动作名映射到 call_tool；既有 call_tool/tools 不变。
         action = (call.action or "call_tool").strip().lower()
+        action = {"invoke": "call_tool", "call": "call_tool",
+                  "tool_call": "call_tool"}.get(action, action)
         if action not in {"call_tool", "tools"}:
             return InvokeResult(
                 ok=False, latency_ms=_elapsed_ms(started),
                 error=f"hub_unsupported_action: mcp 适配器不支持 action='{action}'"
-                      "（支持 call_tool）",
+                      "（支持 call_tool / tools / invoke / call）",
             )
         name = str(call.params.get("name") or "")
         if not name:

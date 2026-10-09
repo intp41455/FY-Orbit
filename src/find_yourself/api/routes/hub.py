@@ -147,7 +147,9 @@ async def list_connections(
 ) -> dict:
     _owner(actor)
     rows = hub.list_connections(actor, kind=kind, group=group)
-    return {"connections": rows, "count": len(rows)}
+    # 两个键指向同一份数据：既有按 `connections` 读的调用方继续工作，按 `items`
+    # 读的也不必再判空。改名会静默打断前者，所以宁可冗余。
+    return {"connections": rows, "items": rows, "count": len(rows)}
 
 
 @router.post("/connections")

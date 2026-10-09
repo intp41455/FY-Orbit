@@ -80,6 +80,71 @@ def sanitize_message(message: str, limit: int = 240) -> str:
     return text
 
 
+#: Roles accepted in a multi-turn ``messages`` array. Anything else is dropped
+#: rather than forwarded — an unknown role is either a typo or an injection
+#: attempt, and silently passing it through would send it verbatim to the vendor.
+_ALLOWED_ROLES = frozenset({"system", "user", "assistant"})
+
+
+def normalize_messages(
+    messages: list[dict[str, Any]] | None,
+    prompt: str = "",
+) -> list[dict[str, str]]:
+    """Turn ``messages`` / ``prompt`` into one valid OpenAI-style conversation.
+
+    Single source of truth for every provider so a conversation built for one
+    vendor is not silently reshaped for another.
+
+    * ``messages`` wins when present and non-empty; otherwise ``prompt`` becomes
+      a one-message conversation (the pre-existing behaviour).
+    * Non-dict entries, entries without a string ``content``, and entries whose
+      ``role`` is outside {system, user, assistant} are dropped.
+    * System messages are hoisted to the front — several vendors reject a system
+      message that appears mid-conversation.
+    * An empty result raises :class:`ValueError`: sending an empty ``messages``
+      array upstream would burn a billed call that can only come back as an
+      opaque 400.
+    """
+    items: list[dict[str, Any]] = []
+    if isinstance(messages, (list, tuple)):
+        items = [m for m in messages if isinstance(m, dict)]
+    if not items and isinstance(prompt, str) and prompt.strip():
+        return [{"role": "user", "content": prompt}]
+
+    system: list[dict[str, str]] = []
+    turns: list[dict[str, str]] = []
+    for item in items:
+        role = str(item.get("role") or "").strip().lower()
+        content = item.get("content")
+        if role not in _ALLOWED_ROLES:
+            continue
+        if not isinstance(content, str) or not content.strip():
+            continue
+        (system if role == "system" else turns).append({"role": role, "content": content})
+
+    conversation = system + turns
+    if not conversation:
+        raise ValueError("messages 与 prompt 不能同时为空：没有任何可发送的内容")
+    return conversation
+
+
+def approx_tokens(messages: list[dict[str, Any]]) -> int:
+    """Cheap token estimate when the vendor omits ``usage``.
+
+    Deliberately crude — it only feeds a display field. CJK is counted per
+    character, Latin per~4 chars, so a Chinese conversation does not report a
+    10x-too-small estimate the way ``len(text.split())`` would.
+    """
+    total = 0
+    for item in messages:
+        content = item.get("content") if isinstance(item, dict) else ""
+        if not isinstance(content, str):
+            continue
+        cjk = sum(1 for ch in content if "\u4e00" <= ch <= "\u9fff")
+        total += cjk + (len(content) - cjk) // 4
+    return total
+
+
 class ProviderError(Exception):
     """Base failure raised by a provider adapter."""
 
@@ -189,10 +254,21 @@ class ModelProvider(Protocol):
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int = 1024,
         timeout_seconds: float = 30.0,
-    ) -> CallResult: ...
+        messages: list[dict[str, Any]] | None = None,
+    ) -> CallResult:
+        """单轮或多轮补全。
+
+        ``prompt`` 与 ``messages`` 二选一。``messages`` 是多轮形态
+        （``[{"role": "user"|"assistant"|"system", "content": str}]``），
+        供多 Agent 协同编排使用——协同的本质就是把上文传给下一个 Agent，
+        只支持单轮 prompt 时编排无从谈起。
+
+        传 ``prompt`` 的既有调用保持原样工作（向后兼容）。
+        """
+        ...
 
     def probe_models(self, *, timeout_seconds: float = 5.0) -> list[str]:
         """Live health probe. Raises :class:`ProviderError` when unreachable."""

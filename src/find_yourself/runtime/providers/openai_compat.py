@@ -18,6 +18,8 @@ from .base import (
     ProviderMalformedResponse,
     ProviderTransportError,
     classify_status,
+    normalize_messages,
+    approx_tokens as _approx_tokens,
     sanitize_message,
 )
 
@@ -86,13 +88,15 @@ class OpenAICompatibleProvider:
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int = 1024,
         timeout_seconds: float = 30.0,
+        messages: list[dict[str, Any]] | None = None,
     ) -> CallResult:
+        conversation = normalize_messages(messages, prompt)
         payload = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": conversation,
             "max_tokens": max_tokens,
         }
         data = self._post("/chat/completions", payload, timeout_seconds)
@@ -105,7 +109,7 @@ class OpenAICompatibleProvider:
 
         usage = data.get("usage") or {}
         try:
-            p_tokens = int(usage.get("prompt_tokens") or len(prompt.split()))
+            p_tokens = int(usage.get("prompt_tokens") or _approx_tokens(conversation))
             c_tokens = int(usage.get("completion_tokens") or len(text.split()))
         except (TypeError, ValueError) as exc:
             raise ProviderMalformedResponse("Usage block was not numeric") from exc

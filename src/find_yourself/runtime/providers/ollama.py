@@ -19,6 +19,7 @@ import httpx
 
 from .base import (
     CallResult,
+    normalize_messages,
     ProviderEndpoint,
     ProviderMalformedResponse,
     ProviderTransportError,
@@ -79,13 +80,16 @@ class OllamaProvider:
         self,
         *,
         model: str,
-        prompt: str,
+        prompt: str = "",
         max_tokens: int = 1024,
         timeout_seconds: float = 30.0,
+        messages: list[dict[str, Any]] | None = None,
     ) -> CallResult:
+        # /api/chat 的 messages 与 OpenAI 同形，归一化后可直接透传。
+        conversation = normalize_messages(messages, prompt)
         payload: dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": conversation,
             "stream": False,
             "options": {"num_predict": max_tokens},
         }
