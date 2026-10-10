@@ -291,7 +291,12 @@ class PostgresCorePorts:
         def work(s: Session):
             audit = AuditService(s)
             ob = OutboxService(s, audit)
-            op = s.execute(select(Operation).where(Operation.proposal_id == proposal_id)).scalar_one_or_none()
+            # Use .limit(1) as defensive measure to prevent MultipleResultsFound
+            op = s.execute(
+                select(Operation)
+                .where(Operation.proposal_id == proposal_id)
+                .limit(1)
+            ).scalars().first()
             if op is None:
                 return
             if external_state in ("executed", "succeeded"):

@@ -27,27 +27,23 @@ class OutboxService:
         """Atomically claim the oldest pending operation. Returns None if empty.
 
         The conditional UPDATE guarantees a single consumer wins even under
-        concurrency (S09/T04). Uses ORDER BY + LIMIT 1 to ensure deterministic
-        selection and prevent MultipleResultsFound when multiple rows match.
+        concurrency (S09/T04). Uses a SELECT subquery to deterministically
+        select exactly one pending row to prevent MultipleResultsFound.
         """
-        from sqlalchemy import update as sql_update
+        from sqlalchemy import select, update as sql_update
 
-        # Use a subquery to select exactly one pending row deterministically,
-        # then update only that row to prevent MultipleResultsFound
-        subq = (
-            sql_update(Operation)
+        # First, get the ID of the oldest pending operation using a SELECT
+        # This ensures deterministic ordering and prevents MultipleResultsFound
+        id_subq = (
+            select(Operation.id)
             .where(Operation.state == "pending")
             .order_by(Operation.created_at.asc())
             .limit(1)
-            .returning(Operation.id)
-            .subquery()
+            .scalar_subquery()
         )
         row = self.s.execute(
             sql_update(Operation)
-            .where(
-                Operation.id.in_(self.s.select(subq)),
-                Operation.state == "pending",
-            )
+            .where(Operation.id == id_subq, Operation.state == "pending")
             .values(state="claimed", attempt=Operation.attempt + 1, updated_at=utcnow())
             .returning(Operation)
         ).fetchone()

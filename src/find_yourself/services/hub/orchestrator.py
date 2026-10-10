@@ -620,6 +620,9 @@ class Orchestrator:
         context: list[dict[str, str]] = []
         results: list[StepResult] = []
 
+        # 开始工作前检查是否有待处理的 HITL 中断
+        self._maybe_interrupt()
+
         for i, stage in enumerate(stages):
             instruction = str(stage.get("instruction") or "")
             res = self._run_step(
@@ -636,6 +639,7 @@ class Orchestrator:
                     ok=False, mode="pipeline", steps=results, final_output=None,
                     error=f"第 {i + 1} 步失败：{res.error}",
                     duration_ms=int((time.perf_counter() - started) * 1000),
+                    pending_interrupts=self._pending_interrupts,
                 )
             text = _as_text(res.output)
             if text:
@@ -645,6 +649,7 @@ class Orchestrator:
             ok=True, mode="pipeline", steps=results,
             final_output=_as_text(results[-1].output) if results else None,
             duration_ms=int((time.perf_counter() - started) * 1000),
+            pending_interrupts=self._pending_interrupts,
         )
 
     # ------------------------------------------------------------------ #
