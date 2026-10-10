@@ -80,6 +80,8 @@ class OrchestrationResult:
     final_output: Any = None
     error: str = ""
     duration_ms: int = 0
+    # HITL 中断标记：若有待处理的中断则为 True，调用方据此决定是否暂停 UI
+    pending_interrupts: bool = False
 
     @property
     def succeeded(self) -> list[StepResult]:
@@ -100,6 +102,7 @@ class OrchestrationResult:
             "final_output": self.final_output,
             "error": self.error,
             "duration_ms": self.duration_ms,
+            "pending_interrupts": self.pending_interrupts,
         }
 
 
@@ -193,16 +196,23 @@ class Orchestrator:
         route: Callable[..., list[dict[str, Any]]],
         max_workers: int = DEFAULT_MAX_WORKERS,
         prepare: Callable[[str], Callable[..., dict[str, Any]]] | None = None,
+        hitl_svc: Any | None = None,
     ) -> None:
         """``prepare`` 是并行派单的**线程安全开关**，见 :meth:`_prepare_invoke`。
 
         缺省为 ``None``——直接构造的编排器（单测里的 mock）不涉及 DB，线程里
         没有 Session 可争，不需要它。只有 :meth:`bind` 接了真实 HubService 才建。
+
+        ``hitl_svc`` 是可选的 HITL 中断服务（:class:`HitlInterruptService`）；
+        未注入时编排器正常工作，只是没有 HITL 中断检查。
         """
         self._invoke = invoke
         self._route = route
         self._max_workers = max(1, min(int(max_workers), 8))
         self._prepare = prepare
+        self._hitl_svc = hitl_svc
+        # 非阻塞 HITL 检查标记：_maybe_interrupt() 设置，run_* 方法返回时检查
+        self._pending_interrupts: bool = False
 
     # ------------------------------------------------------------------ #
     # 接线
@@ -302,6 +312,25 @@ class Orchestrator:
         # 异常不在这里吞：取不到 / 被停用 / 缺凭证都是「派不出单」，由调用方
         # 如实记进 planning_errors，而不是悄悄退化成别的行为。
         return self._prepare(conn_id)
+
+    # ------------------------------------------------------------------ #
+    # HITL 中断检查（非阻塞）
+    # ------------------------------------------------------------------ #
+
+    def _maybe_interrupt(self) -> None:
+        """检查是否有待处理的 HITL 中断，如有则设置待决标记。
+
+        这是**非阻塞**检查：只设置 ``self._pending_interrupts`` 标记，
+        不暂停当前线程。真正的阻塞中断只在用户显式请求查看决策时才触发。
+
+        调用方在返回 OrchestrationResult 时应检查并传入 pending_interrupts。
+        """
+        if self._hitl_svc is None:
+            self._pending_interrupts = False
+            return
+        # hitl_svc 已注入时，可在此处扩展更具体的 pending 检查逻辑
+        # 当前为占位：待后续集成完整的 execution_id → pending 映射
+        self._pending_interrupts = False
 
     # ------------------------------------------------------------------ #
     # 派单
@@ -442,6 +471,9 @@ class Orchestrator:
         context: list[dict[str, str]] = []
         results: list[StepResult] = []
 
+        # 开始工作前检查是否有待处理的 HITL 中断
+        self._maybe_interrupt()
+
         for i, step in enumerate(steps):
             res = self._run_step(i, step, f"{task}\n\n{step}", kind=kind,
                                  context=context or None,
@@ -453,6 +485,7 @@ class Orchestrator:
                     ok=False, mode="sequential", steps=results, final_output=None,
                     error=f"第 {i + 1} 步「{step}」失败：{res.error}",
                     duration_ms=int((time.perf_counter() - started) * 1000),
+                    pending_interrupts=self._pending_interrupts,
                 )
             text = _as_text(res.output)
             if text:
@@ -462,6 +495,7 @@ class Orchestrator:
             ok=True, mode="sequential", steps=results,
             final_output=_as_text(results[-1].output) if results else None,
             duration_ms=int((time.perf_counter() - started) * 1000),
+            pending_interrupts=self._pending_interrupts,
         )
 
     def _dispatch_step(
@@ -507,6 +541,9 @@ class Orchestrator:
         if not aspects:
             return OrchestrationResult(ok=False, mode="parallel", steps=[],
                                       error="没有指定任何侧面", duration_ms=0)
+
+        # 派单前检查是否有待处理的 HITL 中断
+        self._maybe_interrupt()
 
         workers = max_workers or self._max_workers
         # 串行地「先路由，再在主线程把 DB 读取做完」：每步避开前面已用的连接，
@@ -557,6 +594,7 @@ class Orchestrator:
             error="" if ok_count == len(results)
             else f"{len(results) - ok_count}/{len(results)} 个侧面失败",
             duration_ms=int((time.perf_counter() - started) * 1000),
+            pending_interrupts=self._pending_interrupts,
         )
 
     def run_pipeline(

@@ -172,10 +172,11 @@ class ChatOrchestrationService:
     """SSE orchestration for Chat 调试预览: template + tools + streaming."""
 
     def __init__(self, settings, budget=None, gateway: ModelGateway | None = None,
-                 registry: ToolRegistryService | None = None):
+                 registry: ToolRegistryService | None = None, bus_svc=None):
         self.settings = settings
         self.streaming = StreamingService(settings, budget=budget, gateway=gateway)
         self.registry = registry if registry is not None else tool_registry
+        self.bus_svc = bus_svc
 
     @property
     def gateway(self) -> ModelGateway:
@@ -323,6 +324,17 @@ class ChatOrchestrationService:
             if tools:
                 end_payload["tools_used"] = tools_used
             yield _sse("message_end", end_payload)
+            # Broken Chain #2 修复：向用户的 DM 房间推送 Agent 响应，实现 Controller → 用户窗口的实时通知。
+            if self.bus_svc is not None and text.strip():
+                owner_id = getattr(actor, "owner_id", None)
+                if owner_id:
+                    room = f"dm:owner:{owner_id}:agent:coordinator"
+                    self.bus_svc.publish_as_role(
+                        room=room,
+                        role="coordinator",
+                        kind="text",
+                        content=text[:8000],
+                    )
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # mid-stream failure -> error frame, then close

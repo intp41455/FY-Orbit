@@ -248,7 +248,13 @@ class PostgresCorePorts:
     # -- Outbox ------------------------------------------------------------
     async def claim_outbox_operation(self, proposal_id: str, idempotency_key: str) -> dict:
         def work(s: Session) -> dict:
-            op = s.execute(select(Operation).where(Operation.proposal_id == proposal_id)).scalar_one_or_none()
+            # Use .limit(1) as defensive measure to prevent MultipleResultsFound
+            # even if unique constraint is somehow bypassed
+            op = s.execute(
+                select(Operation)
+                .where(Operation.proposal_id == proposal_id)
+                .limit(1)
+            ).scalars().first()
             if op is None:
                 return {"claimed": False, "code": "not_found", "operation_id": None}
             if op.state != "pending":

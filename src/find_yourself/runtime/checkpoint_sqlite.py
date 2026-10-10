@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     checkpoint_ns TEXT NOT NULL DEFAULT '',
     checkpoint_id TEXT NOT NULL,
     parent_checkpoint_id TEXT,
+    step_index INTEGER,              -- NEW: atomic step number within this checkpoint
+    idempotency_key TEXT,           -- NEW: hash(task_id + step_id + op) for deduplication
+    resume_count INTEGER DEFAULT 0, -- NEW: how many times this checkpoint was resumed
     type TEXT,
     checkpoint BLOB NOT NULL,
     mtype TEXT,
@@ -49,6 +52,9 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 CREATE INDEX IF NOT EXISTS ix_ckp_thread
     ON checkpoints (thread_id, checkpoint_ns);
+CREATE INDEX IF NOT EXISTS ix_ckp_idem
+    ON checkpoints (thread_id, checkpoint_ns, idempotency_key)
+    WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS checkpoint_writes (
     thread_id TEXT NOT NULL,
     checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -128,6 +134,24 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                      ck_type, ck_blob, md_type, md_blob, time.time()),
                 )
                 conn.commit()
+                # Update new columns if present in configurable
+                cfg = (config or {}).get("configurable", {})
+                updates = []
+                params = []
+                if "step_index" in cfg and cfg["step_index"] is not None:
+                    updates.append("step_index = ?")
+                    params.append(cfg["step_index"])
+                if "idempotency_key" in cfg and cfg["idempotency_key"] is not None:
+                    updates.append("idempotency_key = ?")
+                    params.append(cfg["idempotency_key"])
+                if updates:
+                    params.extend([thread_id, ns, checkpoint["id"]])
+                    conn.execute(
+                        f"UPDATE checkpoints SET {', '.join(updates)} "
+                        "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
+                        params,
+                    )
+                    conn.commit()
             finally:
                 conn.close()
         return {
@@ -174,21 +198,22 @@ class SqliteCheckpointer(BaseCheckpointSaver):
             if checkpoint_id is not None:
                 row = conn.execute(
                     "SELECT rowid, checkpoint_id, parent_checkpoint_id, type, checkpoint, "
-                    "mtype, metadata FROM checkpoints "
+                    "mtype, metadata, step_index, idempotency_key, resume_count FROM checkpoints "
                     "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
                     (thread_id, ns, checkpoint_id),
                 ).fetchone()
             else:
                 row = conn.execute(
                     "SELECT rowid, checkpoint_id, parent_checkpoint_id, type, checkpoint, "
-                    "mtype, metadata FROM checkpoints "
+                    "mtype, metadata, step_index, idempotency_key, resume_count FROM checkpoints "
                     "WHERE thread_id=? AND checkpoint_ns=? "
                     "ORDER BY rowid DESC LIMIT 1",
                     (thread_id, ns),
                 ).fetchone()
             if row is None:
                 return None
-            rowid, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob = row
+            (rowid, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob,
+             step_index, idempotency_key, resume_count) = row
             pending_rows = conn.execute(
                 "SELECT task_id, channel, type, blob FROM checkpoint_writes "
                 "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=? ORDER BY idx",
@@ -208,9 +233,16 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                               "checkpoint_id": parent_id}}
             if parent_id else None
         )
+        # Build extensible config with new checkpoint fields
+        cfg = {"thread_id": thread_id, "checkpoint_ns": ns, "checkpoint_id": ck_id}
+        if step_index is not None:
+            cfg["step_index"] = step_index
+        if idempotency_key is not None:
+            cfg["idempotency_key"] = idempotency_key
+        if resume_count is not None:
+            cfg["resume_count"] = resume_count
         return CheckpointTuple(
-            config={"configurable": {"thread_id": thread_id, "checkpoint_ns": ns,
-                                     "checkpoint_id": ck_id}},
+            config={"configurable": cfg},
             checkpoint=checkpoint,
             metadata=metadata,
             parent_config=parent_config,
@@ -238,7 +270,8 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                     "thread_id=? AND checkpoint_ns=? AND checkpoint_id=?), 0)"
                 params += [b_thread, b_ns, b_id]
         sql = ("SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, "
-               "type, checkpoint, mtype, metadata, rowid FROM checkpoints "
+               "type, checkpoint, mtype, metadata, step_index, idempotency_key, "
+               "resume_count, rowid FROM checkpoints "
                f"{where} ORDER BY rowid DESC")
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
@@ -248,13 +281,19 @@ class SqliteCheckpointer(BaseCheckpointSaver):
         finally:
             conn.close()
         for (t_id, t_ns, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob,
-             _rowid) in rows:
+             step_index, idempotency_key, resume_count, _rowid) in rows:
             metadata = self.serde.loads_typed((md_type, md_blob)) if md_blob is not None else {}
             if filter and any(metadata.get(k) != v for k, v in filter.items()):
                 continue
+            cfg = {"thread_id": t_id, "checkpoint_ns": t_ns, "checkpoint_id": ck_id}
+            if step_index is not None:
+                cfg["step_index"] = step_index
+            if idempotency_key is not None:
+                cfg["idempotency_key"] = idempotency_key
+            if resume_count is not None:
+                cfg["resume_count"] = resume_count
             yield CheckpointTuple(
-                config={"configurable": {"thread_id": t_id, "checkpoint_ns": t_ns,
-                                         "checkpoint_id": ck_id}},
+                config={"configurable": cfg},
                 checkpoint=self.serde.loads_typed((ck_type, ck_blob)),
                 metadata=metadata,
                 parent_config=(
@@ -278,6 +317,23 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                 conn.execute(
                     "DELETE FROM checkpoint_writes WHERE thread_id=? AND checkpoint_ns=?",
                     (thread_id, checkpoint_ns),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+    def record_resume(self, config: dict, note: str = "") -> None:
+        """Increment resume_count when checkpoint is used for resumption."""
+        thread_id, ns, ck_id = self._cfg_parts(config)
+        if ck_id is None:
+            return
+        with self._lock:
+            conn = self._connect()
+            try:
+                conn.execute(
+                    "UPDATE checkpoints SET resume_count = resume_count + 1 "
+                    "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
+                    (thread_id, ns, ck_id),
                 )
                 conn.commit()
             finally:

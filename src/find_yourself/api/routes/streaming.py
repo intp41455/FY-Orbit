@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from ...config import Settings
 from ...runtime.sse import stamp_stream
 from ...services.actor import Actor
+from ...services.bus_service import AgentBusService
 from ...services.chat_orchestration import ChatOrchestrationService
 from ...services.prompt import PromptService
 from ...services.stream_persistence import get_segments, persist_stream
@@ -96,9 +97,12 @@ async def stream_chat(body: StreamChatRequest,
                 "content_hash": rendered.content_hash,
                 "variables_hash": rendered.variables_hash,
             }
-        service = ChatOrchestrationService(settings, budget=svc.budget)
+        bus_svc = AgentBusService(svc.session)
+        service = ChatOrchestrationService(settings, budget=svc.budget, bus_svc=bus_svc)
         service.resolve_mode()
-        tools = service.bind_tools(body.tools)
+        # P0-2 修复：当 body.tools 为空时，自动从工具注册中心填充可用工具。
+        tool_names = body.tools if body.tools else [t["name"] for t in service.registry.list_tools()]
+        tools = service.bind_tools(tool_names)
         gen = service.stream_chat(
             actor,
             prompt=system_prefix,
