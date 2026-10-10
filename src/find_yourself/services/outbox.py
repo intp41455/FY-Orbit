@@ -41,12 +41,13 @@ class OutboxService:
             .limit(1)
             .scalar_subquery()
         )
+        # Use scalars().first() to get the Operation object, not a Row
         row = self.s.execute(
             sql_update(Operation)
             .where(Operation.id == id_subq, Operation.state == "pending")
             .values(state="claimed", attempt=Operation.attempt + 1, updated_at=utcnow())
             .returning(Operation)
-        ).fetchone()
+        ).scalars().first()
         if row is not None:
             self.audit.append(actor, "outbox.claimed", row.id, {"proposal_id": row.proposal_id})
         return row
