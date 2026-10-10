@@ -1,0 +1,228 @@
+/* HITL 决策面板样式 */
+
+.hitl-decision-panel__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.hitl-decision-panel {
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hitl-decision-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+}
+
+.hitl-decision-panel__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.hitl-decision-panel__close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+  color: #666;
+  border-radius: 4px;
+}
+
+.hitl-decision-panel__close:hover {
+  background: #e0e0e0;
+}
+
+.hitl-decision-panel__meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+}
+
+.hitl-decision-panel__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hitl-decision-panel__meta-label {
+  font-size: 12px;
+  color: #999;
+}
+
+.hitl-decision-panel__meta-value {
+  font-size: 14px;
+  color: #333;
+}
+
+.hitl-decision-panel__meta-value code {
+  font-family: monospace;
+  font-size: 12px;
+  background: #f0f0f0;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.hitl-decision-panel__meta-value--warning {
+  color: #ff9800;
+  font-weight: 600;
+}
+
+.hitl-decision-panel__reason,
+.hitl-decision-panel__context,
+.hitl-decision-panel__options,
+.hitl-decision-panel__resolution {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.hitl-decision-panel__section-title {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.hitl-decision-panel__reason-text {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.hitl-decision-panel__context-json {
+  margin: 0;
+  padding: 12px;
+  background: #f5f5f5;
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: monospace;
+  overflow-x: auto;
+  max-height: 200px;
+}
+
+.hitl-decision-panel__options-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hitl-decision-panel__option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: #f9f9f9;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hitl-decision-panel__option:hover {
+  background: #f0f0f0;
+}
+
+.hitl-decision-panel__option--selected {
+  border-color: #4caf50;
+  background: #e8f5e9;
+}
+
+.hitl-decision-panel__option-input {
+  width: 18px;
+  height: 18px;
+}
+
+.hitl-decision-panel__option-label {
+  font-size: 14px;
+  color: #333;
+}
+
+.hitl-decision-panel__resolution-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.hitl-decision-panel__error {
+  padding: 12px 20px;
+  background: #fff3f3;
+  color: #d32f2f;
+  font-size: 14px;
+}
+
+.hitl-decision-panel__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fafafa;
+}
+
+.hitl-decision-panel__btn {
+  padding: 10px 24px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.hitl-decision-panel__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.hitl-decision-panel__btn--cancel {
+  background: #e0e0e0;
+  color: #666;
+}
+
+.hitl-decision-panel__btn--cancel:hover:not(:disabled) {
+  background: #d0d0d0;
+}
+
+.hitl-decision-panel__btn--reject {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.hitl-decision-panel__btn--reject:hover:not(:disabled) {
+  background: #ffcdd2;
+}
+
+.hitl-decision-panel__btn--approve {
+  background: #4caf50;
+  color: #fff;
+}
+
+.hitl-decision-panel__btn--approve:hover:not(:disabled) {
+  background: #43a047;
+}

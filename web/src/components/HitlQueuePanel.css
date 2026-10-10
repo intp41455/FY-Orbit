@@ -1,0 +1,179 @@
+/* HITL 待决队列面板样式 */
+
+.hitl-queue-panel {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.hitl-queue-panel__loading,
+.hitl-queue-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: #666;
+}
+
+.hitl-queue-panel__empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  color: #4caf50;
+}
+
+.hitl-queue-panel__empty-text {
+  font-size: 16px;
+  color: #999;
+}
+
+.hitl-queue-panel__error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  background: #fff3f3;
+  color: #d32f2f;
+}
+
+.hitl-queue-panel__error button {
+  padding: 4px 12px;
+  border: 1px solid #d32f2f;
+  background: transparent;
+  color: #d32f2f;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.hitl-queue-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.hitl-queue-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.hitl-queue-panel__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 8px;
+  background: #ff9800;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 12px;
+}
+
+.hitl-queue-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hitl-queue-panel__status {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ccc;
+}
+
+.hitl-queue-panel__status--connected {
+  background: #4caf50;
+}
+
+.hitl-queue-panel__refresh {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+  color: #666;
+  border-radius: 4px;
+}
+
+.hitl-queue-panel__refresh:hover {
+  background: #f5f5f5;
+}
+
+.hitl-queue-panel__list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.hitl-queue-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.hitl-queue-item:hover {
+  background: #f9f9f9;
+}
+
+.hitl-queue-item--expiring {
+  background: #fff8e1;
+}
+
+.hitl-queue-item--expiring:hover {
+  background: #ffecb3;
+}
+
+.hitl-queue-item__header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.hitl-queue-item__checkpoint {
+  font-weight: 600;
+  color: #333;
+}
+
+.hitl-queue-item__time {
+  font-size: 12px;
+  color: #999;
+}
+
+.hitl-queue-item__context {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hitl-queue-item__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hitl-queue-item__option {
+  padding: 2px 8px;
+  background: #e3f2fd;
+  color: #1976d2;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.hitl-queue-item__expiry {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #ff9800;
+}

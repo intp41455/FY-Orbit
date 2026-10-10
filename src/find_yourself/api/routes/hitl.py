@@ -18,11 +18,14 @@
 
 from __future__ import annotations
 
-from typing import Any
+import asyncio
+import json
+from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from ...db.types import utcnow
 from ...services.actor import Actor
 from ...services.errors import DomainError
 from ..deps import Services, csrf_protected, get_actor, get_services
@@ -137,4 +140,57 @@ async def decide_interrupt(
     except DomainError as exc:
         svc.session.rollback()
         raise _translate(exc) from exc
+
+    # SSE 广播：通知所有订阅者该中断已决策（前端据此从待决队列移除）。
+    _broadcast_event("interrupt_decided", {"id": interrupt_id})
+
     return view
+
+
+# --------------------------------------------------------------------------- #
+# SSE 实时推送（HITL 前端 UI 配套：待决队列的实时刷新面）
+# --------------------------------------------------------------------------- #
+#: 进程内 SSE 订阅注册表。单进程部署够用；多副本部署应换 Redis Pub/Sub，
+#: 换的时候只需要动 _broadcast_event 与本表，端点契约不变。
+_sse_subscribers: dict[str, asyncio.Queue] = {}
+
+
+def _broadcast_event(event_type: str, data: dict) -> None:
+    """向所有 SSE 订阅者广播一条事件。连接已断的订阅者静默丢弃。"""
+    for queue in list(_sse_subscribers.values()):
+        try:
+            queue.put_nowait({"event": event_type, "data": json.dumps(data)})
+        except Exception:  # pragma: no cover - 队列满/连接死，下轮心跳清理
+            pass
+
+
+@router.get("/events")
+async def hitl_events(
+    request: Request,
+    actor: Actor = Depends(get_actor),
+) -> AsyncGenerator[dict, None]:
+    """SSE 端点：订阅 HITL 中断的实时更新。
+
+    事件类型：
+    - ``connected``          —— 连接建立确认
+    - ``interrupt_decided``  —— 中断已被决策（``{"id": ...}``）
+    - ``heartbeat``          —— 每 30s 一次，保持连接活跃
+
+    前端（``web/src/hooks/useHitlQueue.ts``）据此实时增删待决队列，不必轮询。
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+    connection_id = f"{actor.owner_id or actor.service_id}:{id(request)}"
+    _sse_subscribers[connection_id] = queue
+
+    try:
+        yield {"event": "connected", "data": json.dumps({"connection_id": connection_id})}
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30)
+                yield {"event": event["event"], "data": event["data"]}
+            except asyncio.TimeoutError:
+                yield {"event": "heartbeat", "data": json.dumps({"ts": utcnow().isoformat()})}
+            if await request.is_disconnected():
+                break
+    finally:
+        _sse_subscribers.pop(connection_id, None)
