@@ -52,9 +52,6 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 );
 CREATE INDEX IF NOT EXISTS ix_ckp_thread
     ON checkpoints (thread_id, checkpoint_ns);
-CREATE INDEX IF NOT EXISTS ix_ckp_idem
-    ON checkpoints (thread_id, checkpoint_ns, idempotency_key)
-    WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS checkpoint_writes (
     thread_id TEXT NOT NULL,
     checkpoint_ns TEXT NOT NULL DEFAULT '',
@@ -95,8 +92,43 @@ class SqliteCheckpointer(BaseCheckpointSaver):
         conn = self._connect()
         try:
             conn.executescript(_SCHEMA)
+            # Migration: add new columns if they don't exist in old databases
+            self._migrate_add_columns(conn)
+            # Create idempotency index separately (may fail if columns missing)
+            self._create_idem_index(conn)
         finally:
             conn.close()
+
+    def _migrate_add_columns(self, conn: sqlite3.Connection) -> None:
+        """Add new columns to existing checkpoints table if they don't exist."""
+        # Check which columns exist
+        cursor = conn.execute("PRAGMA table_info(checkpoints)")
+        existing_cols = {row[1] for row in cursor.fetchall()}
+
+        migrations = [
+            ("step_index", "INTEGER"),
+            ("idempotency_key", "TEXT"),
+            ("resume_count", "INTEGER DEFAULT 0"),
+        ]
+        for col_name, col_def in migrations:
+            if col_name not in existing_cols:
+                try:
+                    conn.execute(f"ALTER TABLE checkpoints ADD COLUMN {col_name} {col_def}")
+                    conn.commit()
+                except sqlite3.OperationalError:
+                    pass  # Column already exists or other issue
+
+    def _create_idem_index(self, conn: sqlite3.Connection) -> None:
+        """Create idempotency index, handling cases where column doesn't exist."""
+        try:
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS ix_ckp_idem
+                ON checkpoints (thread_id, checkpoint_ns, idempotency_key)
+                WHERE idempotency_key IS NOT NULL
+            """)
+            conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Index already exists or columns missing
 
     @staticmethod
     def _cfg_parts(config: dict | None) -> tuple[str, str, str | None]:
