@@ -336,7 +336,12 @@ class Orchestrator:
         if picked:
             # 全部候选都被排除了 —— 如实说明是「都用过了」，而不是「没匹配上」
             raise ValueError(f"候选 Agent 都已被本轮其它步骤占用：{hint!r}")
-        raise ValueError(f"没有 Agent 能处理：{hint!r}（不硬凑）")
+        # 只说「没有 Agent 能处理」是不够诚实的：很多时候 Agent 明明存在，是被
+        # kind 过滤掉了（run_sequential 默认 kind="openai_chat"，会把
+        # http_webhook / mcp_server 的连接整个滤掉）。把过滤条件一并说出来，
+        # 用户才知道该改什么，而不是去怀疑自己的路由声明。
+        detail = f"；当前 kind 过滤为 {kind!r}（显式传 kind=None 可放开）" if kind else ""
+        raise ValueError(f"没有 Agent 能处理：{hint!r}（不硬凑）{detail}")
 
     # ------------------------------------------------------------------ #
     # 单步

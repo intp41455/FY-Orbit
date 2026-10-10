@@ -519,6 +519,11 @@ class HubService:
         adapter = self.build_adapter(conn, transport=transport, sleep=sleep)
         kind = conn.kind
         resolved_id = conn.id
+        # 刻意显式取类上的静态方法，而不是闭包捕获 ``self``：self 是 HubService、
+        # 带着 ``self.s``（Session）。留着它，将来谁在 _call 里顺手加一句
+        # ``self.s.…`` 就能悄悄把跨线程用 Session 的老毛病请回来。断掉这条引用，
+        # 闭包就只捕获标量 + adapter，物理上不可能碰到 DB。
+        remember_mcp = HubService._remember_mcp
 
         def _call(*, action: str, params: dict[str, Any] | None = None,
                   timeout_seconds: float = 15.0) -> dict[str, Any]:
@@ -528,7 +533,7 @@ class HubService:
             )
             if kind == "mcp_server":
                 # 只传标量——闭包可能在工作线程里跑，不能碰 ORM 实例。
-                self._remember_mcp(resolved_id, kind, adapter)
+                remember_mcp(resolved_id, kind, adapter)
             return {"connection_id": resolved_id, "action": action,
                     "result": result.to_public()}
 

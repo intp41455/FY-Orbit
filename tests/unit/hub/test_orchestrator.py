@@ -7,16 +7,19 @@
 3. **并行**：各侧面互不知情（不共享上下文）
 4. **汇总**：汇总器不是 Agent 时如实返回原结果，不硬造「总结」
 5. **显式指定**：pipeline 能绕过路由直接指定连接
+6. **线程安全**：``run_parallel`` 的工作线程**一次都不许碰 Session**
 """
 
 from __future__ import annotations
 
 import ast
 import inspect
+import threading
 from pathlib import Path
 from typing import Any
 
 import pytest
+from sqlalchemy import event
 
 from find_yourself.services.hub.connections import HubService
 from find_yourself.services.hub.orchestrator import (
@@ -282,6 +285,111 @@ def test_pick_never_discards_real_candidates(session, owner) -> None:
         assert "没有 Agent 能处理" not in step.error, (
             f"路由明明有候选却被丢弃了——_pick 又没读懂 capability 的形状：{step.error}")
         assert step.connection_id, "派单必须落到具体连接上"
+
+
+# --------------------------------------------------------------------------- #
+# P0-2 守卫：并行派单不许在工作线程里碰 Session
+# --------------------------------------------------------------------------- #
+# 这条契约此前只有一次性 TEMP 脚本验过，`tests/` 下一次都没有。也就是说谁把
+# `prepare_invoke` 那条主线程 prepare 的链路改坏，一条测试都不会红——修复会在
+# 无人察觉中退化回跨线程共用 Session。
+#
+# 这里用 SQLAlchemy 的 before_cursor_execute 事件把**每条 SQL 的执行线程**记下
+# 来，直接断言「非主线程的 SQL 数 == 0」。它守的是**结果**（线程里到底有没有
+# 碰 DB），而不是守实现细节，所以将来换任何修法都照样有效。
+
+
+def test_run_parallel_executes_no_sql_in_worker_threads(engine, session, owner) -> None:
+    """``run_parallel`` 的工作线程里一条 SQL 都不能执行。
+
+    背景见 orchestrator._prepare_invoke 的 docstring：会话(Session)不是线程安全
+    的，修复前工作线程会用主线程的 Session 查 hub_connections，实测两种下场——
+    单一共享连接时硬崩 ProgrammingError，独立连接时看不到未提交写入而报
+    NotFound。修法是主线程 prepare、线程里只做网络调用，本用例把这条钉死。
+
+    注意断言对象是「线程」而不是「有没有报异常」：配了 check_same_thread=False
+    的引擎不崩但照样是错的，那种 Silent Corruption 只有看线程才抓得到。
+    """
+    hub = HubService(session)
+    for number, (name, cap_name, alias) in enumerate([
+        ("研发Agent", "tech_design", "技术"),
+        ("市场Agent", "market_analysis", "经济"),
+    ], start=1):
+        hub.create_connection(owner, {
+            "name": name,
+            "kind": "http_webhook",
+            "config": {"url": f"https://agent{number}.example.invalid/hook"},
+            "capabilities": [{
+                "name": cap_name, "tags": ["analysis"], "aliases": [alias],
+            }],
+        })
+    session.flush()
+
+    executed: list[tuple[str, str]] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _record(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001
+        thread = threading.current_thread()
+        executed.append((thread.name, thread.ident, statement))
+
+    orch = Orchestrator.bind(hub, actor=owner, session=session,
+                             owner_id=owner.owner_id)
+    try:
+        res = orch.run_parallel("评估这个产品", ["技术角度", "经济角度"],
+                                max_workers=2, timeout_seconds=2.0)
+    finally:
+        event.remove(engine, "before_cursor_execute", _record)
+
+    # 前置条件：两个侧面真的都被派单了。否则「零 SQL」可能是因为压根没跑起来，
+    # 这条守卫就成了空转。
+    assert len(res.steps) == 2, f"应有两个侧面，实际 {len(res.steps)}"
+    assert all(s.connection_id for s in res.steps), (
+        f"每个侧面都必须落到具体连接上，否则守卫是空转的：{[s.error for s in res.steps]}")
+
+    main_ident = threading.main_thread().ident
+    offenders = [(name, stmt) for name, ident, stmt in executed if ident != main_ident]
+    assert offenders == [], (
+        "并行派单的工作线程执行了 SQL —— 又回到跨线程共用 Session 了：\n"
+        + "\n".join(f"  线程 {name}: {stmt.splitlines()[0] if stmt else ''}"
+                    for name, _stmt in offenders)
+        + "\n修法：DB 读取留在主线程（HubService.prepare_invoke），"
+          "线程里只允许做网络调用。"
+    )
+
+
+def test_prepare_channel_is_wired_for_real_hubs(session, owner) -> None:
+    """接了真 HubService 的编排器必须有 prepare 通道，否则上一条的保证不成立。
+
+    这是上一条的**前置契约**：`Orchestrator.bind` 若没把 `prepare_invoke` 绑进
+    去（比如有人重构时漏了），`run_parallel` 会静默退回共享 invoke —— 而那个
+    退回路径正是 P0-2 本身。这里直接断言通道存在且能产出可用执行器。
+    """
+    hub = HubService(session)
+    created = hub.create_connection(owner, {
+        "name": "研发Agent",
+        "kind": "http_webhook",
+        "config": {"url": "https://agent.example.invalid/hook"},
+        "capabilities": [{
+            "name": "tech_design", "tags": ["tech"], "aliases": ["技术"],
+        }],
+    })
+    session.flush()
+
+    orch = Orchestrator.bind(hub, actor=owner, session=session,
+                             owner_id=owner.owner_id)
+    assert orch._prepare is not None, "bind 必须把 prepare_invoke 通道绑进编排器"
+
+    ready = orch._prepare(created["id"])
+    assert callable(ready), "prepare 通道要给出可执行器"
+    # 执行器不得捕获 HubService —— 它带着 self.s（Session）。闭包里一旦有它，
+    # 将来在本体里加一句 self.s… 就能悄悄跨线程读库。
+    # 不能用 __self__ 判断：嵌套函数是纯 function，__self__ 恒为 None，
+    # 那样断言会空转成真。要看闭包单元里到底抓了什么对象。
+    captured = [cell.cell_contents for cell in (ready.__closure__ or ())]
+    assert not any(isinstance(obj, HubService) for obj in captured), (
+        "执行器的闭包捕获了 HubService（带着 self.s）；"
+        "必须只抓标量与 adapter，否则留着跨线程用 Session 的口子"
+    )
 
 
 class _FakeRouter:
