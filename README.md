@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">
-    <img src="https://img.shields.io/badge/Release-Windows%20v1.0.0-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
+  <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.1.4/FY-Orbit-Windows-v1.1.4.zip">
+    <img src="https://img.shields.io/badge/Release-Windows%20v1.1.4-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
   </a>
   <img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue?logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />

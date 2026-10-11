@@ -96,6 +96,13 @@ class ExecuteRequest(BaseModel):
     run_batch: int | None = None
 
 
+class DispatchAllRequest(BaseModel):
+    goal: str = Field(min_length=1, max_length=4000)
+    prompts: dict[str, str] = Field(default_factory=dict)
+    max_tokens: int = Field(default=512, ge=1, le=8192)
+    auto_report: bool = True
+
+
 class ResultRequest(BaseModel):
     role: str = Field(min_length=1, max_length=64)
     run_batch: int = Field(ge=1)
@@ -396,6 +403,26 @@ async def report_result(
     result = svc.teams.report_member_result(
         actor, team_id, body.role, run_batch=body.run_batch,
         output=body.output, status=body.status, evidence_refs=body.evidence_refs,
+    )
+    svc.session.commit()
+    return result
+
+
+@router.post("/{team_id}/dispatch-all")
+async def dispatch_all(
+    team_id: str,
+    body: DispatchAllRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """中央统一调度：按 depends_on 拓扑序自动扇出全员执行并回流。
+
+    单成员失败不中断全队（结果里 ok=false 如实标注）；auto_report=True 时
+    每成员输出自动回填 Task，中央看板实时可见。
+    """
+    result = svc.teams.dispatch_all(
+        actor, team_id, goal=body.goal, prompts=body.prompts,
+        max_tokens=body.max_tokens, auto_report=body.auto_report,
     )
     svc.session.commit()
     return result

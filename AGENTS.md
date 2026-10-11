@@ -47,9 +47,9 @@ web/src/
 ## 3. 常用命令
 
 ```bash
-# 安装
-uv sync --all-extras
-npm --prefix web install
+# 安装（与 CI 一致：锁定安装，禁止重解析；--all-extras 会额外拉 4 个向量后端，默认不装）
+uv sync --frozen --group dev
+npm --prefix web ci
 
 # 后端启动（开发）
 uv run uvicorn find_yourself.api.app:create_app --factory --host 127.0.0.1 --port 8000
@@ -77,7 +77,7 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 
 1. **诚实优先，零假数据**：未配置 / 未实现必须如实标注（503 / 「未接入」/「施工中」），严禁用 alert、mock 数据或硬编码状态冒充运行成功。
 2. **不许假按钮**：后端无对应端点时，UI 必须 `disabled` + 说明，不得留「点了没反应」或假成功的按钮。
-3. **UI 基准**：淡天蓝 / 薄荷冰蓝 / 乳白磨砂玻璃；**禁止绿色**（含 diff 新增绿等任何绿色语义）。状态不得只靠颜色传达，须同时有文字 / 图标 / 动作 / 时长。
+3. **UI 基准**：淡天蓝 / 薄荷冰蓝 / 乳白磨砂玻璃（绿色不做禁用色，按常规语义色使用）。状态不得只靠颜色传达，须同时有文字 / 图标 / 动作 / 时长。
 4. **验收分层**：分别记录「视觉符合 / 接口接通 / 真实交互 / 可访问性 / 运行证据」；演示费用与测试数字不得用于宣传或验收。
 5. **中文优先**：代码注释、文档与 UI 文案使用中文；提交信息沿用仓库风格。
 6. **数据隔离**：记忆库 / 知识库 / 资产按 `owner_id` 强制隔离，跨 owner 物理不可见。
@@ -93,6 +93,7 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 1. 开工前先跑一次全量基线（后端 + 前端 + tsc），确认起点是绿的，再动手。
 2. 一个任务 = 一份交付说明，含：改动清单、判据逐条验证（可复现命令 + 真实输出）、**如实记录的未尽事项与剩余风险**。
 3. 未跑过的验证不得写「已通过」；没验证的写「需核实」，不背书。
+4. **版本真源是 git tag**：`pyproject.toml` / `web/package.json` / README 徽章必须与最新 tag 对齐；发版后跑 `python scripts/sync_version.py` 同步四处（pyproject → package.json → tauri.conf.json → version.json）。禁止手写版本号。
 
 ---
 

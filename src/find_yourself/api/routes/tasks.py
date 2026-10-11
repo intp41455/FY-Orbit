@@ -56,6 +56,7 @@ def _serialize(t: Task) -> dict:
         "id": t.id, "owner_id": t.owner_id, "goal": t.goal, "domain": t.domain,
         "mode": t.mode, "strategy": t.strategy, "status": t.status, "stage": t.stage,
         "depth": t.depth, "steps": t.steps, "max_steps": t.max_steps,
+        "team_id": t.team_id, "assignee_role": t.assignee_role,
         "idempotency_key": t.idempotency_key,
         "deadline": t.deadline.isoformat() if t.deadline else None,
         "created_at": t.created_at.isoformat() if t.created_at else None,
@@ -86,7 +87,8 @@ async def create_task(body: TaskCreate, request: Request,
     deadline = body.deadline or (utcnow() + timedelta(hours=1))
     t = Task(id=uuid4().hex, owner_id=actor.owner_id, goal=body.goal, domain=body.domain,
              mode=body.mode, strategy=body.strategy, status="queued", stage="requirements",
-             deadline=deadline, idempotency_key=key)
+             deadline=deadline, idempotency_key=key,
+             team_id=body.team_id, assignee_role=body.assignee_role)
     svc.session.add(t)
     svc.session.flush()
     svc.audit.append(actor, "task.created", t.id, {"mode": t.mode})

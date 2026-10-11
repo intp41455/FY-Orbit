@@ -1,4 +1,4 @@
 """Find Yourself: evidence, consent, and durable work."""
 
-__version__ = "0.1.0"
-__commit__ = "74a9667"
+__version__ = "1.1.4"
+__commit__ = "c9aa14b"

@@ -121,6 +121,8 @@ class MemoryService:
         tier: str = "medium",
         session_id: str | None = None,
         ttl_seconds: int | None = None,
+        team_id: str | None = None,
+        agent_role: str | None = None,
         now=None,
     ) -> Memory:
         """Write a memory, optionally onto a specific retention tier (需求10).
@@ -181,6 +183,7 @@ class MemoryService:
                 content=content, content_hash=chash, active=active, endorsed=False,
                 hypothesis_status=hypothesis_status,
                 tier=tier,
+                team_id=team_id, agent_role=agent_role,
                 session_id=session_id,
                 tier_expires_at=MemoryTierPolicy.deadline_for(tier, now=moment, ttl=ttl),
                 tier_changed_at=moment,
@@ -547,6 +550,8 @@ class MemoryService:
                tiers: list[str] | tuple[str, ...] | None = None,
                session_id: str | None = None,
                include_evicted: bool = False,
+               team_id: str | None = None,
+               agent_role: str | None = None,
                now=None) -> list[dict]:
         """Authorization-first retrieval (BUG-11) with cache invalidation (M04).
 
@@ -588,7 +593,7 @@ class MemoryService:
         tier_key = tuple(tiers) if tiers is not None else None
         moment = now or utcnow()
         cache_key = (owner_id, consumer_domain, norm_query, limit, self._cache_version,
-                     tier_key, session_id, include_evicted)
+                     tier_key, session_id, include_evicted, team_id, agent_role)
         with self._cache_lock:
             cached = self._cache.get(cache_key)
             if cached is not None:
@@ -638,6 +643,15 @@ class MemoryService:
                 if (session_id is not None and m.tier == MemoryTierPolicy.short
                         and m.session_id != session_id):
                     continue
+                # Team/agent scoping（0050 分区，与 tier 正交）：
+                # team_id 指定时只看该团队（含个人记忆？不——指定团队即只看团队，
+                # 个人记忆 team_id 为空，不在团队视图里）；
+                # agent_role 指定时再滤掉其它成员的私有记忆（全队共享的保留）。
+                if team_id is not None and m.team_id != team_id:
+                    continue
+                if (agent_role is not None and m.team_id is not None
+                        and m.agent_role is not None and m.agent_role != agent_role):
+                    continue
                 text = m.content.lower()
                 score = sum(1 for t in terms if t in text)
                 if score or not query.strip():
@@ -650,6 +664,7 @@ class MemoryService:
                     "id": m.id, "version": m.version, "kind": "memory", "domain": m.domain,
                     "category": m.category, "content": m.content, "hypothesis_status": m.hypothesis_status,
                     "score": score, "tier": m.tier,
+                    "team_id": m.team_id, "agent_role": m.agent_role,
                     # Internal only — stripped before the caller sees it.
                     "tier_expires_at": m.tier_expires_at,
                 })

@@ -158,3 +158,86 @@ class TestExecutor:
         assert len(payload["logs"]) == 3
         assert {"node_id", "node_type", "status", "input", "output"} <= set(
             payload["logs"][0].keys())
+
+
+class TestCodeHttpGuards:
+    """code 沙箱解释器发现 + http_request SSRF 防护回归。"""
+
+    def test_code_interpreter_resolves(self):
+        import sys
+
+        from find_yourself.services.dsl_canvas import _code_interpreter
+        exe = _code_interpreter()
+        assert exe and isinstance(exe, str)
+        if not getattr(sys, "frozen", False):
+            assert exe == sys.executable
+
+    def test_code_node_runs_arithmetic(self):
+        doc = {
+            "version": "1",
+            "nodes": [
+                {"id": "in", "type": "input", "params": {"kind": "literal", "value": None}},
+                {"id": "c", "type": "code", "params": {"language": "python", "code": "print(6*7)"}},
+                {"id": "out", "type": "output", "params": {}},
+            ],
+            "edges": [{"from": "in", "to": "c"}, {"from": "c", "to": "out"}],
+        }
+        result = run_dsl(doc)
+        assert result.status == "succeeded", result.error
+        assert result.output["stdout"] == "42\n"
+
+    def test_code_node_blocks_shell(self):
+        doc = {
+            "version": "1",
+            "nodes": [
+                {"id": "in", "type": "input", "params": {"kind": "literal", "value": None}},
+                {"id": "c", "type": "code",
+                 "params": {"language": "python", "code": "import os\nos.system(\"echo pwned\")"}},
+                {"id": "out", "type": "output", "params": {}},
+            ],
+            "edges": [{"from": "in", "to": "c"}, {"from": "c", "to": "out"}],
+        }
+        result = run_dsl(doc)
+        assert result.status == "failed"
+        assert "非零退出" in (result.error or "")
+
+    def test_metadata_host_rejected(self):
+        from find_yourself.services.dsl_canvas import _reject_cloud_metadata
+        for bad in ("169.254.169.254", "metadata.google.internal", "metadata.goog"):
+            try:
+                _reject_cloud_metadata(bad)
+            except DslValidationError as exc:
+                assert "元数据" in str(exc)
+            else:
+                raise AssertionError(f"{bad} was not rejected")
+
+    def test_http_without_allowlist_rejected(self):
+        doc = {
+            "version": "1",
+            "nodes": [
+                {"id": "in", "type": "input", "params": {"kind": "literal", "value": None}},
+                {"id": "h", "type": "http_request",
+                 "params": {"url": "http://127.0.0.1:9/", "method": "GET"}},
+                {"id": "out", "type": "output", "params": {}},
+            ],
+            "edges": [{"from": "in", "to": "h"}, {"from": "h", "to": "out"}],
+        }
+        result = run_dsl(doc)
+        assert result.status == "failed"
+        assert "allow_domains" in (result.error or "")
+
+    def test_http_metadata_even_with_allowlist_rejected(self):
+        doc = {
+            "version": "1",
+            "nodes": [
+                {"id": "in", "type": "input", "params": {"kind": "literal", "value": None}},
+                {"id": "h", "type": "http_request",
+                 "params": {"url": "http://169.254.169.254/latest/",
+                            "method": "GET", "allow_domains": ["169.254.169.254"]}},
+                {"id": "out", "type": "output", "params": {}},
+            ],
+            "edges": [{"from": "in", "to": "h"}, {"from": "h", "to": "out"}],
+        }
+        result = run_dsl(doc)
+        assert result.status == "failed"
+        assert "元数据" in (result.error or "")

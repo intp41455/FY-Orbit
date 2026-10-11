@@ -18,14 +18,16 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
+from ...config import Settings
+from ...runtime.gateway import ModelGateway
 from ...services.actor import Actor
 from ...services.errors import ValidationFailed
 from ...services.hub.connections import HubService, public_connection
 from ...services.hub.manifest import EXAMPLE_MANIFEST, MANIFEST_SCHEMA
 from ...services.hub.orchestrator import DEFAULT_MAX_WORKERS, Orchestrator
 from ...services.hub.presets import public_presets
-from ...services.hub.router import CapabilityRouter
-from ..deps import Services, csrf_protected, get_actor, get_services
+from ...services.hub.router import CapabilityRouter, rerank_candidates_with_llm
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/hub", tags=["hub"])
 
@@ -93,6 +95,10 @@ class RouteRequest(BaseModel):
     top_k: int = Field(default=5, ge=1, le=20)
     kind: str | None = Field(default=None, max_length=32)
     include_unhealthy: bool = False
+    # 可选 LLM 智能重排：默认 False（确定性打分，离线可用、零费用）。
+    # 设 True 时用已配置模型对候选做语义重排；无模型/失败时自动回退确定性顺序。
+    llm_rerank: bool = False
+    llm_model: str = Field(default="", max_length=160)
 
 
 class ManifestImportRequest(BaseModel):
@@ -125,6 +131,9 @@ class OrchestrateRequest(BaseModel):
     timeout_seconds: float = Field(default=60.0, ge=1.0, le=300.0)
     summarize: bool = False
     summary_instruction: str = Field(default="把这些结果整合成一份结论。", max_length=500)
+    # 可选 LLM 智能重排派单（默认 False 走确定性路由）。
+    llm_rerank: bool = False
+    llm_model: str = Field(default="", max_length=160)
 
 
 class PipelineRequest(BaseModel):
@@ -354,19 +363,53 @@ async def route(
     body: RouteRequest,
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
-    """路由试算：标签匹配 + 健康优先 + 用户偏好权重（v1 确定性，非 LLM 路由）。"""
+    """路由试算：标签匹配 + 健康优先 + 用户偏好权重（默认确定性）。
+
+    ``llm_rerank=True`` 时追加一轮 LLM 语义重排（需已配置模型；
+    无模型或失败时回退确定性顺序并如实标注）。
+    """
     _owner(actor)
     ranked = CapabilityRouter(svc.session, actor.owner_id).route(
         body.hint, top_k=body.top_k, kind=body.kind,
         include_unhealthy=body.include_unhealthy,
     )
-    return {"hint": body.hint, "candidates": ranked, "count": len(ranked)}
+    rerank_note = "deterministic"
+    if body.llm_rerank and ranked:
+        gateway = ModelGateway(settings=settings, budget=svc.budget)
+        ranked, rerank_note = rerank_candidates_with_llm(
+            body.hint, ranked, gateway=gateway, actor=actor,
+            task_id="hub-route", model=body.llm_model,
+        )
+    return {"hint": body.hint, "candidates": ranked, "count": len(ranked),
+            "rerank": rerank_note}
 
 
 # --------------------------------------------------------------------------- #
 # 多 Agent 协同编排
 # --------------------------------------------------------------------------- #
+
+class _RerankingRouter:
+    """给编排器用的路由包装：确定性 route + 可选 LLM 重排。"""
+
+    def __init__(self, base, gateway=None, actor=None, model="", task_id="hub-orchestrate"):
+        self._base = base
+        self._gateway = gateway
+        self._actor = actor
+        self._model = model
+        self._task_id = task_id
+
+    def route(self, hint, top_k=10, kind=None, **kw):
+        ranked = self._base.route(hint, top_k=top_k, kind=kind, **kw)
+        if self._gateway is None or not ranked:
+            return ranked
+        ranked, _note = rerank_candidates_with_llm(
+            hint, ranked, gateway=self._gateway, actor=self._actor,
+            task_id=self._task_id, model=self._model,
+        )
+        return ranked
+
 
 @router.post("/orchestrate")
 async def orchestrate(
@@ -374,14 +417,27 @@ async def orchestrate(
     actor: Actor = Depends(csrf_protected),
     hub: HubService = Depends(hub_service),
     svc: Services = Depends(get_services),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     """自动派单的多 Agent 协同编排。
 
     诚实约定：某步失败**如实**返回在 ``steps`` 里并置 ``ok=false``，不吞掉、不
     伪造成功；匹配不上能力就不派单（``step.error`` 说明原因）。
+    ``llm_rerank=True`` 时派单前加一轮 LLM 语义重排（需已配置模型）。
     """
     _owner(actor)
-    orch = _orchestrator(actor, hub, svc, body.max_workers)
+    if body.llm_rerank:
+        from ...services.hub.router import CapabilityRouter as _CR
+        gateway = ModelGateway(settings=settings, budget=svc.budget)
+        base = _CR(svc.session, actor.owner_id)
+        wrapper = _RerankingRouter(base, gateway=gateway, actor=actor,
+                                   model=body.llm_model)
+        from ...services.hub.orchestrator import Orchestrator as _Orch
+        orch = _Orch.bind(hub, actor=actor, session=svc.session,
+                          owner_id=actor.owner_id, router=wrapper,
+                          max_workers=body.max_workers)
+    else:
+        orch = _orchestrator(actor, hub, svc, body.max_workers)
     items = body.aspects if body.mode == "parallel" else body.steps
     if not items:
         raise ValidationFailed(

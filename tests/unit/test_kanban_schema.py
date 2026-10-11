@@ -63,6 +63,9 @@ NEW_TASK_COLUMNS = {
     "blocked_reason", "blocked_since", "planned_start", "planned_end",
 }
 
+#: 0049 团队归属列（中央共享板 + per-agent 子视图）。
+TEAM_COLUMNS = {"team_id", "assignee_role"}
+
 _DEP_INDEXES = {
     "ix_task_dependencies_owner_id",
     "ix_task_dependencies_depends_on_task_id",
@@ -149,22 +152,26 @@ def _add_task(session: Session, task_id: str, *, owner: str = "o1", **kw) -> Tas
 def test_fresh_create_all_db_and_migrated_db_agree():
     """全新安装（0001 的 create_all 抢先建好）与升级安装必须得到同一个 schema。"""
     mod = _migration_0041()
+    mod0049 = importlib.import_module("migrations.versions.0049_kanban_team")
 
     fresh = sa.create_engine("sqlite://")
     with fresh.begin() as conn:
         Base.metadata.create_all(bind=conn)   # what 0001 does
         _run(conn, mod)
+        _run(conn, mod0049)  # 0049 团队列：create_all 已有，幂等跳过
         fresh_snap = _snapshot(conn)
 
     legacy = sa.create_engine("sqlite://")
     with legacy.begin() as conn:
         _create_legacy_tasks(conn)   # pre-0041 shape
         _run(conn, mod)
+        _run(conn, mod0049)  # 0049 团队列：真实加列
         legacy_snap = _snapshot(conn)
 
     assert fresh_snap == legacy_snap
     for snap in (fresh_snap, legacy_snap):
         assert NEW_TASK_COLUMNS <= set(snap["task_cols"])
+        assert TEAM_COLUMNS <= set(snap["task_cols"])
         assert _DEP_INDEXES <= set(snap["task_dependencies"]["idx"])
 
 

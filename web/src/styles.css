@@ -1418,7 +1418,7 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 }
 
 /* ---- W1 小屋室内（室内场景 / 布置模式） ---- */
-/* 归属：W1 数码小屋室内与家具布置。冰蓝玻璃风，禁绿色（UI_BASELINE）。 */
+/* 归属：W1 数码小屋室内与家具布置。冰蓝玻璃风（UI_BASELINE）。 */
 
 .cabin-canvas-interior {
   image-rendering: pixelated;
@@ -2085,7 +2085,7 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 }
 
 /* ---- W2 玩法（探险 / 任务 / 背包 / 制造） ---- */
-/* 归属：W2 数码小屋玩法循环与背景探险。冰蓝玻璃风，禁绿色（UI_BASELINE）。 */
+/* 归属：W2 数码小屋玩法循环与背景探险。冰蓝玻璃风（UI_BASELINE）。 */
 /* 状态色沿用基线：--rose 错误/锁、--amber 警告/冷却、--sky 主操作。 */
 
 .w2-toggle {
@@ -2790,7 +2790,7 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 
 /* ---- W9 资产 ---- */
 /* 个人资产库（图片/音频/音乐）+ 小屋挂画/BGM 联动。
-   配色沿用 UI_BASELINE 的冰蓝玻璃语汇，禁绿色；状态色只用既有变量。 */
+   配色沿用 UI_BASELINE 的冰蓝玻璃语汇；状态色只用既有变量。 */
 
 .asset-grid {
   display: grid;
@@ -3004,7 +3004,7 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 
 /* ---- W6 超级中台适配器中心 —— 冰蓝玻璃，追加段，不动他人段 ---- */
 /* 归属：W6 统一万能适配层。状态三态：可用(--sky) / 不可用(--rose) / 未探活(灰)。 */
-/* UI_BASELINE：全套状态禁止绿色；颜色不作为唯一信息，徽标同时给图标 + 文案。 */
+/* UI_BASELINE：颜色不作为唯一信息，徽标同时给图标 + 文案。 */
 
 .hub-toolbar {
   display: flex;

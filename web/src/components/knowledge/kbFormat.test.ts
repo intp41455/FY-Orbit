@@ -74,7 +74,7 @@ describe('kbFormat · 文件校验与文案', () => {
     expect(describeDocument(doc({ status: 'failed', error: '' }))).toContain('后端未返回原因');
   });
 
-  it('状态 → 文案 + 色调（禁绿色）', () => {
+  it('状态 → 文案 + 色调', () => {
     expect(documentStatus('ready')).toEqual({ label: 'ready · 已索引', tone: 'ok' });
     expect(documentStatus('failed').tone).toBe('danger');
     expect(documentStatus('indexing').tone).toBe('warn');

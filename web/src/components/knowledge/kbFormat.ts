@@ -37,7 +37,7 @@ export function formatBytes(bytes: number): string {
 
 export type DocumentStatusTone = 'ok' | 'warn' | 'danger';
 
-/** 状态 → 中文文案 + 徽章色调。禁绿色：ready 用冰蓝 ok，indexing 用琥珀 warn。 */
+/** 状态 → 中文文案 + 徽章色调：ready 用冰蓝 ok，indexing 用琥珀 warn。 */
 export function documentStatus(status: KBDocument['status']): {
   label: string;
   tone: DocumentStatusTone;

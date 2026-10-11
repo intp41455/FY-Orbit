@@ -65,6 +65,17 @@ def _migration_0026():
     return importlib.import_module("migrations.versions.0026_memory_tiers")
 
 
+def _migration_0050():
+    return importlib.import_module("migrations.versions.0050_memory_partitions")
+
+
+def _run_migration(conn, mod):
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    mod.op = Operations(MigrationContext.configure(conn))
+    mod.upgrade()
+
+
 def _svc(session):
     audit = AuditService(session)
     grants = GrantService(session, audit)
@@ -843,17 +854,20 @@ def test_fresh_create_all_db_and_migrated_db_agree():
     missing forever on every fresh install. This test pins that invariant.
     """
     mod = _migration_0026()
+    mod0050 = _migration_0050()
 
     fresh = sa.create_engine("sqlite://")
     with fresh.begin() as conn:
         Base.metadata.create_all(bind=conn)   # what 0001 does
         _run_0026(conn, mod)
+        _run_migration(conn, mod0050)  # 0050 分区列：create_all 已有，幂等跳过
         fresh_snap = _snapshot(conn)
 
     legacy = sa.create_engine("sqlite://")
     with legacy.begin() as conn:
         conn.execute(sa.text(_LEGACY_MEMORIES_DDL))  # pre-0026 shape
         _run_0026(conn, mod)
+        _run_migration(conn, mod0050)  # 0050 分区列：真实加列
         legacy_snap = _snapshot(conn)
 
     assert fresh_snap["cols"] == legacy_snap["cols"]
@@ -896,3 +910,32 @@ def test_orm_metadata_declares_the_tier_index():
     """create_all must produce the index, or fresh installs silently lack it."""
     idx = {i.name for i in Memory.__table__.indexes}
     assert "ix_memories_owner_tier" in idx
+
+
+class TestTeamPartitions:
+    """0050 分区：team 共享 vs 成员私有，与 tier 正交。"""
+
+    def test_team_shared_visible_to_all_members(self, session, owner):
+        mem, _ = _svc(session)
+        _write(mem, owner, content="团队约定：每日站会", team_id="t1")
+        _write(mem, owner, content="成员私事", team_id="t1", agent_role="writer")
+        _write(mem, owner, content="个人备忘")
+        # 不指定 team：全可见（向后兼容）。
+        assert len(mem.search("personal", "", owner_id=OWNER)) == 3
+        # 指定团队：只看团队（含共享+本角色私有，不含个人）。
+        got = mem.search("personal", "", owner_id=OWNER, team_id="t1")
+        assert {h["content"] for h in got} == {"团队约定：每日站会", "成员私事"}
+        # 指定角色：过滤掉其它成员私有。
+        got = mem.search("personal", "", owner_id=OWNER, team_id="t1", agent_role="reviewer")
+        assert {h["content"] for h in got} == {"团队约定：每日站会"}
+        got = mem.search("personal", "", owner_id=OWNER, team_id="t1", agent_role="writer")
+        assert {h["content"] for h in got} == {"团队约定：每日站会", "成员私事"}
+
+    def test_partition_orthogonal_to_tier(self, session, owner):
+        mem, _ = _svc(session)
+        _write(mem, owner, content="久共享", team_id="t1", tier="long")
+        _write(mem, owner, content="暂私有", team_id="t1", agent_role="w",
+               tier="short", session_id="s1")
+        got = mem.search("personal", "", owner_id=OWNER, team_id="t1",
+                         tiers=["long", "short"], session_id="s1")
+        assert {h["content"] for h in got} == {"久共享", "暂私有"}

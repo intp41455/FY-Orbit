@@ -1491,3 +1491,91 @@ class AgentTeamService:
             "settled_usd": str(result.settled_amount),
             "run_batch": inst.run_batch,
         }
+
+    def dispatch_all(
+        self,
+        actor: Actor,
+        team_id: str,
+        *,
+        goal: str,
+        prompts: dict[str, str] | None = None,
+        max_tokens: int = 512,
+        auto_report: bool = True,
+    ) -> dict[str, Any]:
+        """按 depends_on 拓扑序自动扇出全员执行并回流（中央统一调度）。
+
+        - ``goal`` 是中央任务目标，每个成员的 prompt = 角色说明 + goal +
+          已完成上游成员的输出（上游结果拼进下游上下文）；
+        - ``prompts`` 可按 role 覆盖默认 prompt；
+        - 单成员失败**不中断全队**：记 failed 并继续下游（下游 prompt 如实
+          标注上游失败），最后汇总里一眼看到哪环断了；
+        - ``auto_report=True`` 时每成员执行完自动调 report_member_result
+          回填 Task（中央看板实时可见）。
+        """
+        from .errors import Conflict as _Conflict
+
+        actor.require_owner()
+        team = self.get_team(actor, team_id)
+        if team.state != "running":
+            raise _Conflict(
+                "team_not_running",
+                f"Team {team_id} is {team.state}; dispatch-all 需要先 start",
+            )
+        members = [{"role": m["role"], "depends_on": list(m.get("depends_on") or [])}
+                   for m in (team.members or [])]
+        self._assert_no_cycle(
+            [{"role": m["role"], "depends_on": m["depends_on"]} for m in members],
+            "dispatch-all",
+        )
+        # Kahn 拓扑序（稳定：按 members 原顺序）。
+        order: list[str] = []
+        deps = {m["role"]: set(m["depends_on"]) for m in members}
+        avail = [m["role"] for m in members]
+        while avail:
+            progressed = False
+            for role in list(avail):
+                if deps[role] <= set(order):
+                    order.append(role)
+                    avail.remove(role)
+                    progressed = True
+            if not progressed:
+                raise _Conflict("dispatch_cycle",
+                                "成员依赖成环，无法确定执行顺序")
+        prompts = dict(prompts or {})
+        outputs: dict[str, str] = {}
+        results: dict[str, Any] = {}
+        for role in order:
+            upstream = {r: outputs[r] for r in
+                        [m["depends_on"] for m in members if m["role"] == role][0]
+                        if r in outputs}
+            ctx = ""
+            if upstream:
+                ctx = "\n\n上游成员输出：\n" + "\n".join(
+                    f"【{r}】{outputs[r][:1500]}" for r in upstream)
+            prompt = prompts.get(role) or (
+                f"你是团队里的 {role}。中央任务：{goal}{ctx}\n\n"
+                f"请输出你负责的部分（只输出实质内容）。")
+            try:
+                out = self.execute_member(
+                    actor, team_id, role, prompt=prompt, max_tokens=max_tokens)
+                text = str(out.get("text") or "")
+                outputs[role] = text
+                entry: dict[str, Any] = {"ok": True, "text": text,
+                                         "run_batch": out.get("run_batch"),
+                                         "settled_usd": out.get("settled_usd")}
+                if auto_report and text:
+                    rep = self.report_member_result(
+                        actor, team_id, role, run_batch=int(out.get("run_batch") or 1),
+                        output=text, status="completed")
+                    entry["reported"] = rep.get("state")
+                results[role] = entry
+            except Exception as exc:  # noqa: BLE001 — 单成员失败记账，不中断全队
+                results[role] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+                outputs[role] = f"（{role} 执行失败，未产出）"
+        self._emit_event(actor, team, "team.dispatch_all",
+                         details={"goal": goal[:200], "order": order,
+                                  "ok": [r for r, v in results.items() if v.get("ok")],
+                                  "failed": [r for r, v in results.items() if not v.get("ok")]})
+        return {"team_id": team_id, "goal": goal, "order": order, "results": results,
+                "ok_count": sum(1 for v in results.values() if v.get("ok")),
+                "fail_count": sum(1 for v in results.values() if not v.get("ok"))}

@@ -58,6 +58,10 @@ class TaskCreate(Strict):
     strategy: Literal["auto", "single", "delegate", "workflow", "parallel"] = "auto"
     idempotency_key: str = Field(min_length=8, max_length=100)
     deadline: datetime | None = None
+    # 团队看板归属（0049）：空 = 个人任务；team_id 非空 = 归属团队，
+    # assignee_role 非空 = 该成员个人分板。
+    team_id: str | None = Field(default=None, max_length=64)
+    assignee_role: str | None = Field(default=None, max_length=64)
 
 
 # --- proposals ---------------------------------------------------------------

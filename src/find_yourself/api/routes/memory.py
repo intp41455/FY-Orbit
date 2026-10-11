@@ -28,10 +28,14 @@ async def search_memory(
     domain: str = Query(default="personal", pattern="^(personal|work|shared)$"),
     limit: int = Query(default=8, ge=1, le=50),
     cursor: str = Query(default=""),
+    team_id: str | None = Query(default=None, max_length=64),
+    agent_role: str | None = Query(default=None, max_length=64),
     actor: Actor = Depends(get_actor),
     svc: Services = Depends(get_services),
 ) -> dict:
-    results = svc.memory.search(consumer_domain=domain, query=q, limit=limit, owner_id=actor.owner_id)
+    results = svc.memory.search(consumer_domain=domain, query=q, limit=limit,
+                                owner_id=actor.owner_id,
+                                team_id=team_id, agent_role=agent_role)
     return {"results": results, "consumer_domain": domain, "count": len(results)}
 
 

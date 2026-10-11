@@ -264,6 +264,11 @@ class Task(Base):
     # 前端据此诚实显示「未排期」，不编造日期。
     planned_start: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     planned_end: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    # --- 团队看板归属（迁移 0049）：中央共享板 + per-agent 子视图躯干 ---
+    # team_id 为空 = 个人任务；非空 = 归属该团队。assignee_role 为空 = 全队可见；
+    # 非空 = 该成员的个人分板。查询一律先按 owner_id 隔离，再按 team 做分组。
+    team_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    assignee_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow, onupdate=utcnow)
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -488,6 +493,12 @@ class Memory(Base):
     #: Decay clock for the medium tier: last time the record was actually used.
     last_used_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     tier_changed_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
+    # --- 团队/成员记忆分区（迁移 0050）：三 tier 之外的归属轴 ---
+    # team_id 为空 = 个人记忆；非空 = 团队共享记忆。agent_role 为空 = 全队可见；
+    # 非空 = 该成员私有（只有同 team 同 role 可读）。与 tier 正交：
+    # 一条记忆可以是 "team 共享 + long 久" 或 "某成员私有 + short 暂存"。
+    team_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    agent_role: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TZDateTime, default=utcnow)
     deleted_at: Mapped[datetime | None] = mapped_column(TZDateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1)

@@ -702,7 +702,7 @@
    ========================================================================== */
 .wb-midsec-title { margin: 0; font-size: var(--ui-fs-sm); font-weight: 700; color: var(--ui-ink-2); }
 
-/* 既有 green 违规覆盖（§12.6：只能在 workbench.css 里带作用域覆盖，不改冻结文件） */
+/* 作用域语义色覆盖（只在 workbench.css 里带作用域覆盖，不改冻结文件） */
 .wb-shell .diff-stat-add { color: var(--ui-st-complete); }
 .wb-shell .diff-stat-del { color: var(--ui-st-failed); }
 .wb-shell .diff-add {

@@ -1,7 +1,7 @@
 {
   "name": "find-yourself-web",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.1.4",
   "type": "module",
   "description": "Find Yourself React + TypeScript + Vite PWA frontend (Web slice). Talks only to the real backend API per FROZEN_CONTRACT v1.0.",
   "scripts": {

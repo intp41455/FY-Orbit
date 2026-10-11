@@ -349,11 +349,25 @@ class KanbanService:
         else:
             overall = 0
 
+        # 团队分组：team_id → 卡片 id 列表（中央共享板一眼看到各队；
+        # per-agent 子视图由前端按 assignee_role 再滤一层）。
+        teams: dict[str, list[str]] = {}
+        personal: list[str] = []
+        for cards in columns.values():
+            for card in cards:
+                if card.get("team_id"):
+                    teams.setdefault(card["team_id"], []).append(card["id"])
+                else:
+                    personal.append(card["id"])
+
         return {
             "columns": [
                 {"id": cid, "cards": columns[cid], "count": len(columns[cid])}
                 for cid in KANBAN_COLUMNS
             ],
+            "teams": [{"team_id": tid, "card_ids": ids, "count": len(ids)}
+                      for tid, ids in sorted(teams.items())],
+            "personal_card_ids": sorted(personal),
             "summary": {
                 "total_cards": sum(len(c) for c in columns.values()),
                 "weighted_progress": overall,
@@ -383,6 +397,8 @@ class KanbanService:
             "stage": task.stage,
             "domain": task.domain,
             "mode": task.mode,
+            "team_id": task.team_id,
+            "assignee_role": task.assignee_role,
             "critical": bool(task.critical),
             "weight": int(task.weight or 1),
             "own_progress": self._effective_progress(task),

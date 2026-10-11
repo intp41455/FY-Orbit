@@ -11,8 +11,8 @@
 执行记录只落内存与归档目录（env ``FY_DSL_ARCHIVE_DIR``），不写数据库迁移。
 提交即同步返回完整结果。``llm`` / ``knowledge_retrieval`` / ``tool``
 三类节点经生产 resolver 真执行（未配置模型/空库/未知工具时诚实失败，
-见 ``_build_production_resolvers``）；``code`` / ``http_request`` 在受控
-沙箱与出站授权就绪前仍由 ``_require_safe_execution`` 拒绝（503）。
+见 ``_build_production_resolvers``）；``code`` 走子进程沙箱真执行，
+``http_request`` 走 allow_domains 白名单真出网（云元数据硬禁区）。
 """
 
 from __future__ import annotations
@@ -54,21 +54,17 @@ _store = DslRunStore(archive_dir=os.environ.get("FY_DSL_ARCHIVE_DIR") or None)
 
 
 def _require_safe_execution(doc: dict) -> None:
-    """HTTP 执行面尚无受控沙箱/出站 resolver，拒绝直接执行高危节点。"""
-    def visit(value):
-        if isinstance(value, dict):
-            if "nodes" in value and isinstance(value["nodes"], list):
-                for node in value["nodes"]:
-                    if isinstance(node, dict) and node.get("type") in {"code", "http_request"}:
-                        raise HTTPException(
-                            status_code=503,
-                            detail="code/http_request 尚未接入受控沙箱与服务端出站授权，HTTP 执行已禁用")
-            for child in value.values():
-                visit(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit(child)
-    visit(doc)
+    """执行面安全策略钩子（当前为通过态）。
+
+    高危节点的真实强制点已下沉到执行器层（单一真源，不在路由层各写一遍）：
+    - ``http_request``：allow_domains fail-closed + 云元数据硬禁区 + 超时/体积上限
+      （见 services/dsl_canvas.py::_exec_node_http）；
+    - ``code``：子进程沙箱（解释器发现 + -I 隔离 + 禁网络/禁 shell + 15s 上限）
+      （见 _exec_node_code）。
+    保留此函数签名供调试路由复用；未来若需路由层前置拒绝（如多租户强隔离），
+    在此一处收紧即可。
+    """
+    return None
 
 
 @router.get("/schema")

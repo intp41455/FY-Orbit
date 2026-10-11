@@ -345,7 +345,7 @@ export interface ShareCardInput {
   excludedCount: number;
 }
 
-/** 分享卡配色：冰蓝玻璃风（与 UI_BASELINE 一致，禁绿色系）。 */
+/** 分享卡配色：冰蓝玻璃风（与 UI_BASELINE 一致）。 */
 export const CARD_THEME = {
   background: '#eaf1fb',
   panel: '#f7fbff',

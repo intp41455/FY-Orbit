@@ -1,6 +1,6 @@
 [project]
 name = "find-yourself"
-version = "0.1.0"
+version = "1.1.4"
 description = "Private companion and governed agent runtime"
 requires-python = ">=3.12,<3.14"
 dependencies = [

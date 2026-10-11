@@ -46,6 +46,8 @@ import hashlib
 import json
 import os
 import re
+import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -851,6 +853,8 @@ def _exec_node_http(node_id: str, params: dict[str, Any], payload: Any,
         raise DslValidationError(
             f"节点 {node_id} http_request 出网 host {host!r} 不在 "
             "allow_domains 白名单内（权限面板配置，执行期强制）")
+    # 云元数据硬禁区（白名单也放行不了它）。
+    _reject_cloud_metadata(host)
     if http_resolver is not None:
         # 注入解析器时**替代**内置直连（单测 / 离线环境挂钩）。
         return http_resolver(dict(params), payload)
@@ -881,6 +885,54 @@ def _exec_node_http(node_id: str, params: dict[str, Any], payload: Any,
     return {"status": status, "url": url,
             "body": raw[:max_bytes].decode("utf-8", errors="replace"),
             "truncated": truncated}
+
+
+#: 云元数据端点（SSRF 绝对禁区，任何 allow_domains 都不得放行）。
+_CLOUD_METADATA_HOSTS = frozenset({
+    "metadata.google.internal", "metadata.goog",
+    "metadata.azure.com", "metadata.aws.internal",
+})
+_CLOUD_METADATA_IPS = frozenset({"169.254.169.254"})
+
+
+def _reject_cloud_metadata(host: str) -> None:
+    """拒绝云元数据端点（SSRF 硬禁区）。
+
+    内网/回环地址是本产品的合法目标（内网优先），不拦；
+    只拦云厂商元数据服务（169.254.169.254 及等价域名）。
+    """
+    h = (host or "").strip().lower().rstrip(".")
+    if h in _CLOUD_METADATA_HOSTS or h in _CLOUD_METADATA_IPS:
+        raise DslValidationError(
+            f"http_request 目标 {host!r} 是云元数据端点，已拒绝（SSRF 防护）")
+    try:
+        infos = socket.getaddrinfo(h, None)
+    except OSError:
+        return  # 解析失败交给 urlopen 报传输错误，不在这里拦
+    for info in infos:
+        ip = info[4][0] if info[4] else ""
+        if ip in _CLOUD_METADATA_IPS:
+            raise DslValidationError(
+                f"http_request 目标 {host!r} 解析到云元数据 IP，已拒绝（SSRF 防护）")
+
+
+def _code_interpreter() -> str:
+    """code 节点子进程解释器（P0 沙箱修复）。
+
+    - 源码/开发模式：``sys.executable``（当前 venv Python）；
+    - PyInstaller 冻结包：``sys.executable`` 是 exe 自身，不能执行 Python
+      代码——此时找系统 PATH 里的 ``python3``/``python``；
+    - 都找不到：诚实失败（不在冻结包里假装能跑）。
+    """
+    if not getattr(sys, "frozen", False):
+        return sys.executable
+    for cand in ("python3", "python"):
+        found = shutil.which(cand)
+        if found:
+            return found
+    raise DslValidationError(
+        "code 节点需要 Python 解释器：当前为绿色免安装包且系统 PATH 里没有 "
+        "python，请安装 Python 3.12+ 或用源码模式运行")
 
 
 def _code_sandbox_env() -> dict[str, str]:
@@ -918,10 +970,11 @@ def _exec_node_code(node_id: str, params: dict[str, Any], payload: Any) -> Any:
     script = code
     if payload is not None:
         script = f"_fy_payload = {payload!r}\n" + script
+    interpreter = _code_interpreter()
     with tempfile.TemporaryDirectory(prefix="fy-dsl-code-") as tmpdir:
         try:
             proc = subprocess.Popen(  # noqa: S603 - 固定 argv，无 shell，代码走 stdin
-                [sys.executable, "-I", "-c", _CODE_SANDBOX_BOOTSTRAP],
+                [interpreter, "-I", "-c", _CODE_SANDBOX_BOOTSTRAP],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE, env=_code_sandbox_env(), cwd=tmpdir,
                 text=True, encoding="utf-8", errors="replace")

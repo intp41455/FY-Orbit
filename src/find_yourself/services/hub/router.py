@@ -35,6 +35,11 @@ _CJK_RE = re.compile(r"[㐀-鿿぀-ヿ]")
 #: 中文提示词没有空格分词：退化为「整串 + 二元组」，命中即算。
 _CJK_NGRAM = 2
 
+#: 通用标签：几乎每条 chat 连接都有，命中它们不提供区分度。
+#: 路由打分时通用标签命中只给 0.5，专有标签（如 写作/评审）给 2.0，
+#: 否则"写作"经同义词展开成 chat 后所有连接同分，派单退化成按名排序。
+GENERIC_TAGS = frozenset({"chat", "llm", "text"})
+
 #: 同义标签兜底（v1 手写表，v2 由 LLM 接管）。
 SYNONYMS: dict[str, tuple[str, ...]] = {
     "聊天": ("chat", "llm"),
@@ -180,7 +185,12 @@ class CapabilityRouter:
             tag_hits = [h for h in hits if h in capability.tags]
             alias_hits = [h for h in hits if h in capability.aliases]
             reasons = [f"标签命中：{', '.join(tag_hits)}"] if tag_hits else []
-            score = 2.0 * len(tag_hits)
+            # 通用标签不区分连接：降权，让专有标签决定胜负。
+            specific = [h for h in tag_hits if h not in GENERIC_TAGS]
+            generic = [h for h in tag_hits if h in GENERIC_TAGS]
+            score = 2.0 * len(specific) + 0.5 * len(generic)
+            if generic and not specific:
+                reasons.append(f"仅通用标签命中（{', '.join(generic)}），区分度低")
             if alias_hits:
                 # 别名是用户显式声明的精确意图，权重高于品类标签。
                 reasons.append(f"中文别名命中：{', '.join(alias_hits)}")
@@ -228,4 +238,89 @@ def route_for_owner(session, owner_id: str, hint: str, *, top_k: int = 5,
     return CapabilityRouter(session, owner_id).route(hint, top_k=top_k, kind=kind)
 
 
-__all__ = ["CapabilityRouter", "HubService", "SYNONYMS", "route_for_owner", "tokenize"]
+#: LLM 重排最多输入的候选数（控制 prompt 体积与费用）。
+LLM_RERANK_MAX_CANDIDATES = 10
+
+
+def rerank_candidates_with_llm(
+    hint: str,
+    candidates: list[dict[str, Any]],
+    *,
+    gateway: Any,
+    actor: Any,
+    task_id: str = "hub-route",
+    model: str = "",
+) -> tuple[list[dict[str, Any]], str]:
+    """用 LLM 对确定性候选做语义重排（可选智能路由）。
+
+    - 输入是确定性 ``route()`` 的结果（已按标签/健康/偏好打分）；
+    - LLM 只做**重排**，不做提名：返回的 connection_id 必须在输入里出现过，
+      否则丢弃该条（防幻觉编造连接）；
+    - 任何失败（无模型/离线/解析失败/超时）都**原样返回输入顺序**并给出原因，
+      绝不因重排失败而让路由整体失败；
+    - 返回 ``(reordered, reason)``，调用方把 reason 记进候选的 reasons。
+    """
+    import json as _json
+
+    if not candidates:
+        return candidates, "无候选，不重排"
+    pool = list(candidates[:LLM_RERANK_MAX_CANDIDATES])
+    by_id = {str(c.get("connection_id")): c for c in pool}
+    lines = []
+    for c in pool:
+        cap = c.get("capability") or {}
+        lines.append(
+            f"- id={c.get('connection_id')} name={c.get('connection_name')} "
+            f"kind={c.get('kind')} capability={cap.get('name')} "
+            f"tags={','.join(cap.get('tags') or [])} "
+            f"desc={str(cap.get('description') or '')[:120]} "
+            f"deterministic_score={c.get('score')}"
+        )
+    prompt = (
+        "你是智能体路由助手。根据任务描述，从候选连接里按最合适排序，"
+        "只返回 JSON 数组，每项 {\"id\": 连接id, \"reason\": 一句话理由}。"
+        "只能选下面列表里的 id，禁止编造。\n"
+        f"任务：{hint[:500]}\n候选：\n" + "\n".join(lines)
+    )
+    try:
+        result = gateway.complete(
+            actor, task_id=task_id, model=model,
+            prompt=prompt, target_domain="personal",
+            max_tokens=512, timeout_seconds=20.0,
+        )
+        text = result.text if hasattr(result, "text") else str(result)
+        order = _json.loads(text[text.find("["): text.rfind("]") + 1])
+        if not isinstance(order, list):
+            raise ValueError("LLM 未返回数组")
+        seen: set[str] = set()
+        ranked: list[dict[str, Any]] = []
+        reasons: dict[str, str] = {}
+        for item in order:
+            cid = str((item or {}).get("id") or "")
+            if cid in by_id and cid not in seen:
+                seen.add(cid)
+                ranked.append(by_id[cid])
+                reasons[cid] = str((item or {}).get("reason") or "")
+        # LLM 没提到的候选按原顺序缀在后面（不丢失）。
+        for c in pool:
+            if str(c.get("connection_id")) not in seen:
+                ranked.append(c)
+        ranked.extend([c for c in candidates if str(c.get("connection_id")) not in
+                       {str(x.get("connection_id")) for x in ranked}])
+        for c in ranked:
+            cid = str(c.get("connection_id"))
+            if cid in reasons and reasons[cid]:
+                rs = list(c.get("reasons") or [])
+                rs.append(f"LLM 重排：{reasons[cid]}")
+                c["reasons"] = rs
+        for c in ranked:
+            c["reranked_by"] = "llm"
+        return ranked, "LLM 语义重排完成"
+    except Exception as exc:  # noqa: BLE001 — 重排失败降级为确定性顺序
+        for c in candidates:
+            c["reranked_by"] = "deterministic-fallback"
+        return candidates, f"LLM 重排失败，已回退确定性顺序：{type(exc).__name__}"
+
+
+__all__ = ["CapabilityRouter", "HubService", "SYNONYMS", "route_for_owner",
+           "tokenize", "rerank_candidates_with_llm", "LLM_RERANK_MAX_CANDIDATES"]

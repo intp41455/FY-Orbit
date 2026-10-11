@@ -700,7 +700,7 @@
   border: 1px solid transparent;
 }
 .fy-plugin-risk-low {
-  /* 低风险 = 完成语义深蓝（禁绿色） */
+  /* 低风险 = 完成语义深蓝 */
   background: var(--ui-st-complete-bg);
   color: var(--ui-st-complete);
   border-color: var(--kn-a-complete-28);
@@ -990,7 +990,7 @@
 }
 .hub-state-ok,
 .hub-health-ok {
-  /* 可用 = 完成语义深蓝（禁绿色） */
+  /* 可用 = 完成语义深蓝 */
   background: var(--ui-st-complete-bg);
   color: var(--ui-st-complete);
   border-color: var(--kn-a-complete-28);
