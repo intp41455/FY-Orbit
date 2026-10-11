@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -89,7 +90,8 @@ print(json.dumps({"status": r.status, "output": r.output, "error": r.error},
 
 def _run_subprocess(cwd: Path) -> dict:
     proc = subprocess.run([sys.executable, "-c", _RUNNER], cwd=cwd,
-                          capture_output=True, text=True, timeout=120)
+                          capture_output=True, text=True, encoding="utf-8", timeout=120,
+                          env={**os.environ, "PYTHONIOENCODING": "utf-8"})
     assert proc.returncode == 0, f"子进程失败: {proc.stderr}"
     return json.loads(proc.stdout)
 

@@ -26,6 +26,19 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_SCRIPT = REPO_ROOT / "desktop" / "app" / "run_desktop.py"
+WINDOWS_SYSTEM32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+POWERSHELL_EXE = WINDOWS_SYSTEM32 / "WindowsPowerShell" / "v1.0" / "powershell.exe"
+TASKKILL_EXE = WINDOWS_SYSTEM32 / "taskkill.exe"
+
+
+def test_windows_lifecycle_helpers_are_absolute_and_available():
+    """裁剪PATH不应阻断测试的查询/清理命令；本用例不打开窗口。"""
+    if sys.platform != "win32":
+        pytest.skip("Windows helper paths only")
+    assert POWERSHELL_EXE.is_absolute()
+    assert POWERSHELL_EXE.is_file()
+    assert TASKKILL_EXE.is_absolute()
+    assert TASKKILL_EXE.is_file()
 
 
 def find_test_port() -> int:
@@ -154,7 +167,7 @@ def test_desktop_no_window_terminate_frees_port(tmp_path: Path) -> None:
 
         # Terminate runner process tree (simulating Stop-Process -Tree / desktop stop)
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
+            subprocess.run([str(TASKKILL_EXE), "/F", "/T", "/PID", str(proc.pid)], capture_output=True, check=False)
         else:
             # SIGTERM 只打直接子进程；工作子进程持有监听套接字 → 端口不释放。
             # 因上面用了 start_new_session，子进程自成进程组，故对**整组**发信号。
@@ -239,17 +252,17 @@ def test_actual_edge_window_launch_and_close_lifecycle(tmp_path: Path) -> None:
 
         if win_pid:
             # Terminate ONLY the test's Edge window process tree, preserving any unrelated user browser processes
-            subprocess.run(["taskkill", "/F", "/T", "/PID", str(win_pid)], capture_output=True, check=False)
+            subprocess.run([str(TASKKILL_EXE), "/F", "/T", "/PID", str(win_pid)], capture_output=True, check=False)
         else:
             # Fallback: query Edge process bound specifically to this test port
             res = subprocess.run(
-                ["powershell", "-NoProfile", "-Command",
+                [str(POWERSHELL_EXE), "-NoProfile", "-Command",
                  f'Get-CimInstance Win32_Process | Where-Object {{ $_.Name -eq "msedge.exe" -and $_.CommandLine -like "*127.0.0.1:{port}*" }} | Select-Object -ExpandProperty ProcessId'],
                 capture_output=True, text=True, check=False,
             )
             pids = [int(p.strip()) for p in res.stdout.strip().splitlines() if p.strip().isdigit()]
             for p in pids:
-                subprocess.run(["taskkill", "/F", "/PID", str(p)], capture_output=True, check=False)
+                subprocess.run([str(TASKKILL_EXE), "/F", "/PID", str(p)], capture_output=True, check=False)
 
         # Step 3: Verify runner detects window closure and shuts down backend within 10s
         exit_code = proc.wait(timeout=10.0)

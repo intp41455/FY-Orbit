@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import re
 import subprocess
 import sys
@@ -155,7 +156,8 @@ def test_scaffold_writes_to_disk_and_runs(tmp_path):
         dest.write_text(content, encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(tmp_path / "src" / "run.py")],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     assert proc.returncode == 0, proc.stderr
     assert proc.stdout.strip().splitlines() == ["你好，张三！你今年 34 岁。"]
@@ -179,7 +181,8 @@ def test_runner_fails_loudly_on_platform_only_verb(tmp_path):
         dest.write_text(content, encoding="utf-8")
     proc = subprocess.run(
         [sys.executable, str(tmp_path / "src" / "run.py")],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
     )
     assert proc.returncode == 2
     assert "agent" in (proc.stderr or "")
