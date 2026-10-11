@@ -225,6 +225,8 @@ def find_asset_sha256(release: RemoteRelease, asset: ReleaseAsset, *,
 def download_release_zip(asset: ReleaseAsset, dest: Path, *,
                          expected_sha256: str = "", timeout: float = 300.0) -> dict:
     """下载 ZIP 资产；存在期望 SHA-256 时先下载后校验，不匹配即**拒绝使用**。"""
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", expected_sha256):
+        raise ValidationFailed("update_sha256_missing", "缺少有效的发布校验和，拒绝下载更新包", 422)
     req = urllib.request.Request(asset.download_url, headers={"User-Agent": "FY-Orbit-Updater"})
     with urllib.request.urlopen(req, timeout=timeout) as resp, open(dest, "wb") as fh:
         shutil.copyfileobj(resp, fh, length=1 << 20)
@@ -335,6 +337,8 @@ def apply_staged_update(install_dir: Path) -> dict:
     if not pending.is_file():
         raise UpdatePendingMissing()
     meta = json.loads(pending.read_text(encoding="utf-8"))
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", str(meta.get("expected_sha256") or "")):
+        raise ValidationFailed("update_sha256_missing", "缺少有效发布校验和，拒绝应用更新", 422)
     zip_path = Path(meta["zip_path"])
     if not zip_path.is_file():
         raise UpdatePendingMissing()
@@ -358,7 +362,7 @@ def apply_staged_update(install_dir: Path) -> dict:
         "status": "staged_for_next_launch",
         "zip_path": str(staged_zip),
         "sha256": actual,
-        "note": "下次启动 FY-Orbit.bat 时将自动替换程序目录；启动后请核对新版本号。",
+        "note": "已准备更新文件；自动替换启动器尚未接线，请从 Releases 手动解压到新目录并迁移备份。",
     }
 
 

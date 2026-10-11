@@ -2078,8 +2078,10 @@ class DslRunStore:
         if self.archive_dir:
             self.archive_dir.mkdir(parents=True, exist_ok=True)
 
-    def save(self, result: RunResult) -> dict[str, Any]:
+    def save(self, result: RunResult, *, owner_id: str | None = None) -> dict[str, Any]:
         payload = result.to_dict()
+        if owner_id is not None:
+            payload["owner_id"] = owner_id
         self._runs[result.run_id] = payload
         self._order.append(result.run_id)
         if len(self._order) > self._max:

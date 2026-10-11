@@ -9,7 +9,10 @@
 * ``GET  /api/dsl-canvas/runs/{run_id}`` — 取回运行结果与逐步日志
 
 执行记录只落内存与归档目录（env ``FY_DSL_ARCHIVE_DIR``），不写数据库迁移。
-执行器是确定性的（无外部 LLM 调用），因此提交即同步返回完整结果。
+提交即同步返回完整结果。``llm`` / ``knowledge_retrieval`` / ``tool``
+三类节点经生产 resolver 真执行（未配置模型/空库/未知工具时诚实失败，
+见 ``_build_production_resolvers``）；``code`` / ``http_request`` 在受控
+沙箱与出站授权就绪前仍由 ``_require_safe_execution`` 拒绝（503）。
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
 
+from ...config import Settings
+from ...runtime.gateway import ModelGateway
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
     AGGREGATE_OPS,
@@ -38,12 +43,32 @@ from ...services.dsl_canvas import (
 )
 from ...services.dsl_code_export import export_dsl_code, parse_dsl_code
 from ...services.dsl_ir import validate_ir  # P1 · 收集式 IR 校验（只读调用，禁改 dsl_ir）
-from ..deps import csrf_protected, get_actor
+from ...services.knowledge.search import KnowledgeSearchService
+from ...services.tool_registry import ToolRegistryService
+from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(prefix="/api/dsl-canvas", tags=["dsl-canvas"])
 
 # 进程内运行存档；归档目录可通过 env 打开（evidence 归档用）。
 _store = DslRunStore(archive_dir=os.environ.get("FY_DSL_ARCHIVE_DIR") or None)
+
+
+def _require_safe_execution(doc: dict) -> None:
+    """HTTP 执行面尚无受控沙箱/出站 resolver，拒绝直接执行高危节点。"""
+    def visit(value):
+        if isinstance(value, dict):
+            if "nodes" in value and isinstance(value["nodes"], list):
+                for node in value["nodes"]:
+                    if isinstance(node, dict) and node.get("type") in {"code", "http_request"}:
+                        raise HTTPException(
+                            status_code=503,
+                            detail="code/http_request 尚未接入受控沙箱与服务端出站授权，HTTP 执行已禁用")
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+    visit(doc)
 
 
 @router.get("/schema")
@@ -112,19 +137,90 @@ async def validate_ir_route(request: Request, actor: Actor = Depends(get_actor))
             "diagnostics": [d.to_dict() for d in diagnostics]}
 
 
+def _build_production_resolvers(
+    actor: Actor,
+    svc: Services,
+    settings: Settings,
+    execution_id: str | None,
+) -> dict[str, Any]:
+    """构造生产 HTTP 路径的 DSL resolver（P0 修复：此前全为 None）。
+
+    - ``llm``：经 ``ModelGateway.complete``。未配置 provider 时抛
+      ``ModelNotConfigured``，离线默认拦截远程路由（``OfflineUnavailable``），
+      均由 ``run_dsl`` 记为节点 ``failed`` 并透出原因——绝不假装调用成功。
+    - ``knowledge_retrieval``：经 ``KnowledgeSearchService.search``（owner 隔离）。
+      空库返回空列表，即诚实结果。
+    - ``tool``：经 ``ToolRegistryService.invoke``（先 JSON-Schema 校验再真执行）。
+    - ``agent`` / ``http`` / ``human_input`` / ``confirm`` / ``approval``：
+      本轮仍为 ``None``（保持诚实失败/挂起语义），待沙箱与出站授权就绪后再接。
+    """
+    gateway = ModelGateway(settings=settings, budget=svc.budget)
+    knowledge = KnowledgeSearchService(svc.session)
+    tools = ToolRegistryService()
+    task_id = execution_id or "dsl-run"
+
+    def llm_resolver(model: str, prompt: str, params: dict[str, Any]) -> Any:
+        try:
+            max_tokens = int(params.get("max_tokens", 512))
+        except (TypeError, ValueError):
+            max_tokens = 512
+        try:
+            timeout = float(params.get("timeout_seconds", 30.0))
+        except (TypeError, ValueError):
+            timeout = 30.0
+        return gateway.complete(
+            actor,
+            task_id=task_id,
+            model=model,
+            prompt=prompt,
+            target_domain="personal",
+            max_tokens=max(1, min(max_tokens, 4096)),
+            timeout_seconds=max(1.0, min(timeout, 120.0)),
+        )
+
+    def knowledge_resolver(query: str, params: dict[str, Any]) -> Any:
+        try:
+            top_k = int(params.get("top_k", 5))
+        except (TypeError, ValueError):
+            top_k = 5
+        return knowledge.search(
+            actor,
+            owner_id=actor.owner_id,
+            query=query,
+            top_k=max(1, min(top_k, 50)),
+            mode=params.get("mode"),
+        )
+
+    def tool_resolver(name: str, arguments: dict[str, Any], params: dict[str, Any]) -> Any:
+        return tools.invoke(name, dict(arguments or {}))
+
+    return {
+        "llm_resolver": llm_resolver,
+        "knowledge_resolver": knowledge_resolver,
+        "tool_resolver": tool_resolver,
+    }
+
+
 @router.post("/runs")
-async def submit_run(request: Request, actor: Actor = Depends(csrf_protected)):
+async def submit_run(
+    request: Request,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+    settings: Settings = Depends(get_settings),
+):
     try:
         payload = await request.json()
     except Exception as exc:
         raise HTTPException(status_code=422, detail="请求体不是合法 JSON") from exc
     doc = _extract_doc(payload)
+    _require_safe_execution(doc)
     # execution_id 由调用方显式传入（不要用 run_id：重启即断链）。
     execution_id = payload.get("execution_id") if isinstance(payload, dict) else None
     if execution_id is not None and not isinstance(execution_id, str):
         raise HTTPException(status_code=422, detail="execution_id 必须是字符串")
+    resolvers = _build_production_resolvers(actor, svc, settings, execution_id)
     try:
-        result = run_dsl(doc, execution_id=execution_id)
+        result = run_dsl(doc, execution_id=execution_id, **resolvers)
     except DslSuspended as susp:
         # 挂起**不是失败**（见 DslSuspended）。返回 202 + 挂起载荷，让上层建
         # HITL interrupt；人工裁决后带execution_id 重开一轮即可续跑。
@@ -134,7 +230,7 @@ async def submit_run(request: Request, actor: Actor = Depends(csrf_protected)):
             "status": "suspended", "suspended": susp.to_dict()})
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return _store.save(result)
+    return _store.save(result, owner_id=actor.capability_subject())
 
 
 @router.post("/export-code")
@@ -173,14 +269,15 @@ async def import_code(request: Request, actor: Actor = Depends(get_actor)) -> di
 @router.get("/runs/{run_id}")
 async def get_run(run_id: str, actor: Actor = Depends(get_actor)) -> dict:
     payload = _store.get(run_id)
-    if payload is None:
-        raise HTTPException(status_code=404, detail=f"run 不存在: {run_id}")
+    if payload is None or payload.get("owner_id") != actor.capability_subject():
+        raise HTTPException(status_code=404, detail="run 不存在")
     return payload
 
 
 @router.get("/runs")
 async def list_runs(actor: Actor = Depends(get_actor)) -> dict:
-    return {"items": [{"run_id": rid} for rid in _store.list_ids()]}
+    return {"items": [{"run_id": rid} for rid in _store.list_ids()
+                      if (_store.get(rid) or {}).get("owner_id") == actor.capability_subject()]}
 
 
 def reset_store_for_tests(archive_dir: str | None = None) -> None:

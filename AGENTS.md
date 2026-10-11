@@ -20,8 +20,8 @@
 
 | 层 | 技术 | 位置 |
 |---|---|---|
-| 后端 | Python 3.11/3.12 · FastAPI · SQLAlchemy · Alembic · Temporal · LangGraph · OTel | `src/find_yourself/` |
-| 前端 | React 18 · TypeScript · Vite · PixiJS 8 · Three.js · Monaco | `web/` |
+| 后端 | Python 3.12/3.13 · FastAPI · SQLAlchemy · Alembic · Temporal · LangGraph · OTel | `src/find_yourself/` |
+| 前端 | React 19.3 · TypeScript · Vite · PixiJS 8 · Three.js · textarea 代码区 | `web/` |
 | 桌面 | Tauri + sidecar 端口握手 | `desktop/` |
 | 数据 | SQLite（本地优先）· 可选 PostgreSQL · FTS5 + `sqlite-vec` | `src/find_yourself/db/`、`migrations/` |
 | 测试 | pytest（后端）· vitest + Playwright（前端） | `tests/`、`web/src/**/*.test.*`、`web/e2e/` |
@@ -98,10 +98,10 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 
 ## 6. 当前限制（如实记录）
 
-- 界面级自动保存已落地（`web/src/components/ui/SaveStatusIndicator.tsx` + `web/src/hooks/useAutosave.ts`）；自动保存点 + 手动里程碑、多端同步仍在研发。
+- 部分界面已有保存状态机（`web/src/components/ui/SaveStatusIndicator.tsx` + `web/src/hooks/useAutosave.ts`）；本轮 autosave API 已改数据库快照与 owner 隔离，但全界面自动保存、完整历史回滚、多端同步仍需接线和验收。
 - 总控（coordinator）系统提示词、隐性条件自动预填：研发中（当前需用户自填）。
 - 自定义云盘接入与多端同步：研发中（当前仅本地）。
-- 企业模式审批「裁决 → 续跑」链路：仅显示挂起，尚未接线。
+- HITL 服务有裁决与部分恢复路径；新待决 UI 组件仍未挂到页面，跨执行面端到端恢复需分别验证。
 - 插件市场 / 强沙箱 / 包签名 / 自动扫描：部分实现。
 - 桌面出包：发行构建链已可用（`deploy/build_release_package.py`，PyInstaller onedir + Vite + 完整性自检 verify.bat + SHA256SUMS），正式 Inno Setup 安装器脚本（`deploy/installer/FY-Orbit.iss`）已落地但需安装 Inno Setup 6 才能出 setup.exe。
 - 代码签名证书：尚未采购，签名脚本 `deploy/sign_windows.ps1` 在未配置证书时如实跳过；拿到证书后无需改链即可签名。
@@ -115,3 +115,13 @@ make install | test | lint | typecheck | build | build-docker | up | down | depl
 - 不得提交 `.env`、凭证、`personal_history`、`credentials` 等敏感内容（见 `.gitignore`）。
 - 公开发布前核对：许可证文件、依赖许可证清单、宣传文案与实际能力是否一致。
 - 许可证语义：顶层 `LICENSE` 为 BSL 1.1（变更日 4 年后自动转 Apache-2.0），README 徽章、正文与末尾声明必须与它保持一致，不得再出现「全文 Apache-2.0」的表述。
+
+## 8. 本轮审计补充（2026-10-11）
+
+- 公开基线 5055327 的 autosave Query 声明导致应用导入失败；本轮修复不能算作该公开提交已经可用。
+- autosave 只保存最新完整快照与最近 100 个版本元数据，不宣称完整历史内容回滚。
+- 所有画布运行和调试访问按服务端主体检查；旧记录若没有 owner 信息，默认拒绝，不能自动认领。
+- HITL SSE 必须按主体过滤事件；单进程注册表不是多副本持久消息总线。
+- 源码公开不等于 OSI 开源；宣传以 LICENSE 的 BSL 1.1 商用限制为准，不改许可证授权范围。
+- 发布包必须记录 source commit；main 的修复不自动进入已有 Release。详见 deliverables/engineering-assurance/audit-2026-10-11.md。
+

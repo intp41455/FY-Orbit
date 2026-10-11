@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -24,16 +23,16 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
     DslSuspended,
     DslValidationError,
     compile_dsl,
-    dsl_digest,
     execute_node,
 )
+from ..deps import csrf_protected, get_actor
 from . import dsl_canvas as _canvas_routes
+from .dsl_debug import _load_run
 
 router = APIRouter(prefix="/api/dsl/debug", tags=["dsl-debug-internal"])
 
@@ -85,7 +84,8 @@ class NodeStepContext:
 _step_contexts: dict[str, NodeStepContext] = {}
 
 
-def _get_step_context(run_id: str, node_id: str) -> NodeStepContext:
+def _get_step_context(run_id: str, node_id: str, actor: Actor) -> NodeStepContext:
+    _load_run(run_id, actor)
     key = f"{run_id}:{node_id}"
     if key not in _step_contexts:
         _step_contexts[key] = NodeStepContext(run_id=run_id, node_id=node_id)
@@ -203,7 +203,7 @@ async def step_into(
     - current_step: 当前步骤
     - state: 执行状态
     """
-    run = _canvas_routes._store.get(run_id)
+    run = _load_run(run_id, actor)
     if run is None:
         raise HTTPException(status_code=404, detail=f"run 不存在: {run_id}")
 
@@ -219,7 +219,8 @@ async def step_into(
     node = plan.nodes[node_id]
 
     # 获取或创建执行上下文
-    ctx = _get_step_context(run_id, node_id)
+    _load_run(run_id, actor)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     # 解析子步骤
     logs = run.get("logs") or []
@@ -267,11 +268,11 @@ async def step_over(
     如果当前在节点内单步模式，直接执行完整个节点；
     如果不在节点内模式，创建草稿运行并执行完整节点。
     """
-    ctx = _get_step_context(run_id, node_id)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     if ctx.state == StepState.PAUSED:
         # 节点内单步模式：执行完所有剩余子步骤
-        run = _canvas_routes._store.get(run_id)
+        run = _load_run(run_id, actor)
         doc = run["dsl"]
         plan = compile_dsl(doc)
         node = plan.nodes[node_id]
@@ -353,7 +354,7 @@ async def step_next(
     actor: Actor = Depends(csrf_protected),
 ) -> dict[str, Any]:
     """执行到下一个子步骤（单步前进）"""
-    ctx = _get_step_context(run_id, node_id)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     if ctx.state not in (StepState.PAUSED, StepState.STEPPING):
         raise HTTPException(
@@ -361,7 +362,7 @@ async def step_next(
             detail="Not in internal stepping mode. Call step-into first."
         )
 
-    run = _canvas_routes._store.get(run_id)
+    run = _load_run(run_id, actor)
     doc = run["dsl"]
     plan = compile_dsl(doc)
     node = plan.nodes[node_id]
@@ -421,7 +422,7 @@ async def set_breakpoint(
     actor: Actor = Depends(csrf_protected),
 ) -> dict[str, Any]:
     """设置/取消断点"""
-    ctx = _get_step_context(run_id, node_id)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     if step_id in ctx.breakpoints:
         ctx.breakpoints.remove(step_id)
@@ -446,7 +447,7 @@ async def get_debug_state(
     actor: Actor = Depends(get_actor),
 ) -> dict[str, Any]:
     """获取节点内调试状态"""
-    ctx = _get_step_context(run_id, node_id)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     return {
         "run_id": run_id,
@@ -469,12 +470,12 @@ async def debug_continue(
     actor: Actor = Depends(csrf_protected),
 ) -> dict[str, Any]:
     """继续执行（从断点或暂停处）"""
-    ctx = _get_step_context(run_id, node_id)
+    ctx = _get_step_context(run_id, node_id, actor)
 
     if ctx.state not in (StepState.PAUSED, StepState.STEPPING):
         raise HTTPException(status_code=400, detail="Not in debug mode")
 
-    run = _canvas_routes._store.get(run_id)
+    run = _load_run(run_id, actor)
     doc = run["dsl"]
     plan = compile_dsl(doc)
     node = plan.nodes[node_id]
@@ -530,6 +531,7 @@ async def reset_debug(
     actor: Actor = Depends(csrf_protected),
 ) -> dict[str, Any]:
     """重置节点内调试状态"""
+    _load_run(run_id, actor)
     _delete_step_context(run_id, node_id)
 
     return {

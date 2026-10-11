@@ -517,6 +517,10 @@ class MemoryService:
         mem = self.s.get(Memory, memory_id)
         if mem is None:
             raise NotFound("memory_not_found", "Memory not found")
+        # P0 owner 隔离：owner 只能读自己的记忆修订历史。
+        # 「不存在」与「无权」统一按不存在处理，不泄露他人数据的存在性。
+        if actor.subject_type == "owner" and mem.owner_id != actor.owner_id:
+            raise NotFound("memory_not_found", "Memory not found")
         revs = list(self.s.execute(
             select(MemoryRevision).where(MemoryRevision.memory_id == memory_id).order_by(MemoryRevision.version.asc())
         ).scalars())

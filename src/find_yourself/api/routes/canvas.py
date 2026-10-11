@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel, Field
 
 from ...services.actor import Actor
-from ..deps import Services, csrf_protected, get_actor, get_services
+from ..deps import Services, csrf_protected, get_actor, get_services, require_local_runtime
 
 router = APIRouter(prefix="/api/canvas", tags=["canvas"])
 
@@ -72,7 +72,9 @@ class VerifySubtaskRequest(BaseModel):
 
 
 class ExecuteVerificationRequest(BaseModel):
-    workspace_dir: str
+    # P0 安全修复：cwd 不再由客户端指定。调用方传已注册的 workspace_id，
+    # 服务端经 WorkspaceService 推导 authorized_root（owner 隔离）。
+    workspace_id: str = Field(min_length=1, max_length=128)
     command: list[str] = Field(default_factory=list)
     target_files: list[str] = Field(default_factory=list)
     timeout_seconds: float = 30.0
@@ -419,7 +421,10 @@ async def verify_subtask(
     }
 
 
-@router.post("/instances/{id}/subtasks/{subtask_id}/execute-verification")
+@router.post(
+    "/instances/{id}/subtasks/{subtask_id}/execute-verification",
+    dependencies=[Depends(require_local_runtime)],
+)
 async def execute_verification(
     id: str,
     subtask_id: str,
@@ -427,12 +432,16 @@ async def execute_verification(
     actor: Actor = Depends(csrf_protected),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
-    """Execute actual test command on workspace code artifacts via TrustedVerificationRunner."""
+    """Execute actual test command on workspace code artifacts via TrustedVerificationRunner.
+
+    P0 安全修复：宿主进程执行能力仅限 local 回环（production 直接 403）；
+    cwd 由 workspace_id 服务端推导；command 走测试运行器白名单。
+    """
     rec = svc.canvas.execute_trusted_verification(
         actor,
         instance_id=id,
         subtask_id=subtask_id,
-        workspace_dir=body.workspace_dir,
+        workspace_id=body.workspace_id,
         command=body.command,
         target_files=body.target_files,
         timeout_seconds=body.timeout_seconds,

@@ -142,7 +142,7 @@ async def decide_interrupt(
         raise _translate(exc) from exc
 
     # SSE 广播：通知所有订阅者该中断已决策（前端据此从待决队列移除）。
-    _broadcast_event("interrupt_decided", {"id": interrupt_id})
+    _broadcast_event("interrupt_decided", {"id": interrupt_id}, actor.capability_subject())
 
     return view
 
@@ -152,12 +152,14 @@ async def decide_interrupt(
 # --------------------------------------------------------------------------- #
 #: 进程内 SSE 订阅注册表。单进程部署够用；多副本部署应换 Redis Pub/Sub，
 #: 换的时候只需要动 _broadcast_event 与本表，端点契约不变。
-_sse_subscribers: dict[str, asyncio.Queue] = {}
+_sse_subscribers: dict[str, tuple[str, asyncio.Queue]] = {}
 
 
-def _broadcast_event(event_type: str, data: dict) -> None:
+def _broadcast_event(event_type: str, data: dict, subject: str) -> None:
     """向所有 SSE 订阅者广播一条事件。连接已断的订阅者静默丢弃。"""
-    for queue in list(_sse_subscribers.values()):
+    for subscriber, queue in list(_sse_subscribers.values()):
+        if subscriber != subject:
+            continue
         try:
             queue.put_nowait({"event": event_type, "data": json.dumps(data)})
         except Exception:  # pragma: no cover - 队列满/连接死，下轮心跳清理
@@ -178,9 +180,9 @@ async def hitl_events(
 
     前端（``web/src/hooks/useHitlQueue.ts``）据此实时增删待决队列，不必轮询。
     """
-    queue: asyncio.Queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue(maxsize=100)
     connection_id = f"{actor.owner_id or actor.service_id}:{id(request)}"
-    _sse_subscribers[connection_id] = queue
+    _sse_subscribers[connection_id] = (actor.capability_subject(), queue)
 
     try:
         yield {"event": "connected", "data": json.dumps({"connection_id": connection_id})}

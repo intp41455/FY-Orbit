@@ -172,7 +172,7 @@ def _satisfy(
     service, _db = svc
     root = str(workspace)
     list(files)
-    digests, composite = TrustedVerificationRunner.compute_artifact_digests(root, list(files))
+    digests, composite, _skipped = TrustedVerificationRunner.compute_artifact_digests(root, list(files))
 
     service.record_check(
         _actor("alice"), version_id, "content_digest",
@@ -212,7 +212,7 @@ def test_register_freezes_digest_from_real_bytes(svc, workspace):
 
     service, db = svc
     v = _register(svc, workspace)
-    _digests, expected = TrustedVerificationRunner.compute_artifact_digests(
+    _digests, expected, _skipped = TrustedVerificationRunner.compute_artifact_digests(
         str(workspace), None
     )
     assert v["content_digest"] == expected
@@ -827,7 +827,7 @@ def test_re_recorded_check_cannot_resurrect_a_changed_version(svc, workspace):
     assert service.evaluate(_actor("alice"), v["id"])["usable"] is False
 
     # 按「当前字节」重跑全部摘要类检查
-    _d, new_composite = TrustedVerificationRunner.compute_artifact_digests(
+    _d, new_composite, _skipped = TrustedVerificationRunner.compute_artifact_digests(
         str(workspace), None
     )
     assert new_composite != v["content_digest"], "本用例依赖内容确实变了"
@@ -1236,7 +1236,7 @@ def test_http_full_gate_flow(client: TestClient, headers: dict, workspace):
 
     from find_yourself.services.verification import TrustedVerificationRunner
 
-    _d, composite = TrustedVerificationRunner.compute_artifact_digests(
+    _d, composite, _skipped = TrustedVerificationRunner.compute_artifact_digests(
         workspace.as_posix(), None
     )
     r = client.post(
@@ -1309,7 +1309,7 @@ def test_http_failing_independent_test_leads_to_rejected(
 
     from find_yourself.services.verification import TrustedVerificationRunner
 
-    _d, composite = TrustedVerificationRunner.compute_artifact_digests(
+    _d, composite, _skipped = TrustedVerificationRunner.compute_artifact_digests(
         workspace.as_posix(), None
     )
     for name in ("content_digest", "syntax_valid"):

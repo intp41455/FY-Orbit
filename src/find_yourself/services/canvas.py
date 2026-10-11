@@ -1622,11 +1622,23 @@ class CanvasService:
         actor: Actor,
         instance_id: str,
         subtask_id: str,
-        workspace_dir: str,
-        command: list[str] | str,
+        workspace_id: str,
+        command: list[str],
         target_files: list[str] | None = None,
         timeout_seconds: float = 30.0,
     ) -> DispatchRecord:
+        """在已鉴权的工作区内执行可信验证（P0 安全修复）。
+
+        安全边界：
+        - ``workspace_id`` 必须是一个已注册工作区，cwd 由服务端经
+          ``WorkspaceService.get_workspace`` 推导，**禁止客户端直传路径**；
+          owner 只能用自己的工作区（service 身份须绑定任务）；
+        - ``command`` 必须过测试运行器白名单（见 verification 模块），永不 shell；
+        - 超时与 target_files 同样在 verification 模块内钳制/校验。
+        """
+        from find_yourself.services.verification import VerificationBoundaryError
+        from find_yourself.services.workspace import WorkspaceService
+
         actor.require_owner()
         self.get_instance(actor, instance_id)
         stmt = select(DispatchRecord).where(
@@ -1637,15 +1649,22 @@ class CanvasService:
         if not rec:
             raise NotFound(f"Subtask dispatch record not found: {subtask_id}")
 
+        # cwd 唯一真源：服务端查表，客户端无权指定。
+        ws = WorkspaceService(self.session, self.audit).get_workspace(actor, workspace_id)
+        ws_root = WorkspaceService(self.session, self.audit)._root(ws)
+
         verifier_identity = f"service/{actor.service_id}" if actor.service_id else f"owner/{actor.owner_id}"
 
         # Run TrustedVerificationRunner on actual workspace files
-        receipt = TrustedVerificationRunner.execute_test(
-            workspace_dir=workspace_dir,
-            command=command,
-            timeout_seconds=timeout_seconds,
-            target_files=target_files,
-        )
+        try:
+            receipt = TrustedVerificationRunner.execute_test(
+                workspace_dir=str(ws_root),
+                command=command,
+                timeout_seconds=timeout_seconds,
+                target_files=target_files,
+            )
+        except VerificationBoundaryError as exc:
+            raise ValidationFailed("verification_boundary", str(exc))
         receipt["verifier_id"] = verifier_identity
 
         ref = dict(rec.input_ref or {})

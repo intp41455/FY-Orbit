@@ -108,6 +108,16 @@ def test_trusted_verification_orchestrator_rework_flow(client: TestClient, tmp_p
     assert r_create.status_code == 201
     inst_id = r_create.json()["id"]
 
+    # P0 安全修复：验证 cwd 不再由客户端直传。先注册工作区，
+    # 后续 execute-verification 只传 workspace_id，服务端推导 root。
+    r_ws = client.post(
+        "/api/workbench/workspaces",
+        json={"project_name": "trusted-verification-ws", "authorized_root": str(tmp_path)},
+        headers=headers,
+    )
+    assert r_ws.status_code == 201, r_ws.text
+    workspace_id = r_ws.json()["id"]
+
     dispatch_payload = {
         "root_task_id": f"root-{inst_id}",
         "worker_id": "EngineeringAgent",
@@ -131,7 +141,7 @@ def test_trusted_verification_orchestrator_rework_flow(client: TestClient, tmp_p
     r_verif_1 = client.post(
         f"/api/canvas/instances/{inst_id}/subtasks/{subtask_id}/execute-verification",
         json={
-            "workspace_dir": str(tmp_path),
+            "workspace_id": workspace_id,
             "command": cmd,
             "timeout_seconds": 20.0,
         },
@@ -186,7 +196,7 @@ def test_trusted_verification_orchestrator_rework_flow(client: TestClient, tmp_p
     r_verif_2 = client.post(
         f"/api/canvas/instances/{inst_id}/subtasks/{subtask_id}/execute-verification",
         json={
-            "workspace_dir": str(tmp_path),
+            "workspace_id": workspace_id,
             "command": cmd,
             "timeout_seconds": 20.0,
         },

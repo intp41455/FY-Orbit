@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from ...runtime.hooks import HOOK_EVENTS, WIRED_EVENTS, get_default_hook_bus
 from ...runtime.kernel import SingleLoopKernel
 from ...services.actor import Actor
-from ..deps import Services, csrf_protected, get_services
+from ..deps import Services, csrf_protected, get_actor, get_services
 
 router = APIRouter(prefix="/api/runtime", tags=["runtime-kernel"])
 
@@ -33,8 +33,11 @@ class KernelRunBody(BaseModel):
 
 
 @router.get("/hooks/events")
-def list_hook_events() -> dict:
-    """生命周期事件权威清单——wired=True 才是已真实接线的事件。"""
+def list_hook_events(actor: Actor = Depends(get_actor)) -> dict:
+    """生命周期事件权威清单——wired=True 才是已真实接线的事件。
+
+    P0：此前未鉴权即可枚举运行时 hook 注册表（信息泄露），现要求登录。
+    """
     return {
         "count": len(HOOK_EVENTS),
         "events": [
@@ -44,8 +47,11 @@ def list_hook_events() -> dict:
 
 
 @router.get("/hooks")
-def list_registered_hooks() -> dict:
-    """当前进程内注册的 hook（诚实边界：重启即清空，持久化注册表是后续切片）。"""
+def list_registered_hooks(actor: Actor = Depends(get_actor)) -> dict:
+    """当前进程内注册的 hook（诚实边界：重启即清空，持久化注册表是后续切片）。
+
+    P0：此前未鉴权即可枚举，要求登录。
+    """
     bus = get_default_hook_bus()
     registered = [
         listener

@@ -19,9 +19,10 @@ from pydantic import BaseModel, Field, model_validator
 
 from ...services.mcp_dynamic import mcp_dynamic
 from ...services.tool_registry import tool_registry
-from ..deps import csrf_protected, get_actor
+from ..deps import csrf_protected, get_actor, require_local_runtime
 
-router = APIRouter(prefix="/api/tools", tags=["tool-calling"])
+router = APIRouter(prefix="/api/tools", tags=["tool-calling"],
+                   dependencies=[Depends(require_local_runtime)])
 
 
 class ToolEntryIn(BaseModel):

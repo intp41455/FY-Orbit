@@ -27,6 +27,7 @@ from ..deps import (
     get_actor,
     get_services,
     get_settings,
+    require_local_runtime,
 )
 from ..oidc import OIDCClient, OIDCSession
 from ..schemas import AuthMe, LocalDevTokenRequest
@@ -157,7 +158,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else ""
 
 
-@router.post("/auth/register")
+@router.post("/auth/register", dependencies=[Depends(require_local_runtime)])
 async def register(body: dict, request: Request,
                    svc: Services = Depends(get_services),
                    settings: Settings = Depends(get_settings)) -> Response:

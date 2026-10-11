@@ -1,0 +1,26 @@
+{
+  "views": [
+    {
+      "width": 1440,
+      "scrollWidth": 1440,
+      "rendered": true,
+      "fallback": false,
+      "deadLinks": 0,
+      "missingImages": []
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "rendered": true,
+      "fallback": false,
+      "deadLinks": 0,
+      "missingImages": []
+    }
+  ],
+  "errors": [],
+  "workbench": {
+    "url": "http://127.0.0.1:8137/workbench",
+    "title": "多智能体搭建台 · Find Yourself",
+    "body": "FY\n多智能体搭建台\n本地多智能体搭建与调度平台\n工作台空间\n个人空间\n工作台功能导航\n任务工作台\n协作画布\n工作流工坊\n任务看板\nChat 调试\n子 Agent 派发\nAgent 与技能\n超级中台\n审批中心\n插件市场\n开箱模板\n任务档案库\n存档回溯\n统一可观测\n设置与数据\n权限与沙箱隔离\n受控\n预算与用量\n查看\nac8361c7…\n🔔\n−\n100%\n+\nCtrl+滚轮调字号\n登出\n无待保存内容\n详情\n工作台空间\n›\n任务工作台\n任务工作台\n搜索文件与命令\n⌘K\n工作区\n注册工作区\n尚无已注册工作区。\n任务目标\n创建任务（幂等）\n\n还没有任务\n\n写下目标，点「创建任务」即可跑一次；重复点击不会重复执行（幂等键保护）。\n\n还没有工作区\n\n注册一个受信任目录，工作台才能读文件、起终端、连 git。\n\n1\n编辑器 · 预览\n1\n\n还没打开文件\n\n从左侧文件树选一个文件，编辑器会在这里打开。\n\n2\n差异审查\n2\nDiff 可视化（两次 commit 对照）\n图例：新增行 / 删除行 / 成对修改标记\ngit 工作区名称\n加载提交历史\n3\nGit 工作区\n3\n\n还没有工作区\n\n注册并选择工作区后，可查看分支、暂存与提交。\n\n证据未齐\n缺少一项或多项证据，不作任何通过结论\nTRUSTED BUILD · 未达成\n退出码\n暂无数据 · 来源不可得\n制品哈希\n暂无数据 · 来源不可得\n制品版本\n暂无数据 · 来源不可得\n取数时间\n暂无数据 · 来源不可得\n任务步数\n暂无数据 · 来源不可得\n\n构建时间取自「上一次真实读盘时刻」，不是渲染时刻；哈希取自服务端返回的 FileContent.sh"
+  }
+}

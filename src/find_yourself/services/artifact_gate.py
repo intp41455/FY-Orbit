@@ -308,7 +308,7 @@ class ArtifactGateService:
         核对出来。
         """
         actor.require_authenticated()
-        from .verification import TrustedVerificationRunner
+        from .verification import TrustedVerificationRunner, VerificationBoundaryError
 
         row = self._row(version_id)
         self._require_visible(actor, row)
@@ -327,13 +327,17 @@ class ArtifactGateService:
             )
         files = (row.workspace_ref or {}).get("files") or None
 
-        receipt = TrustedVerificationRunner.execute_test(
-            workdir,
-            command,
-            env=env,
-            timeout_seconds=timeout_seconds,
-            target_files=files,
-        )
+        try:
+            receipt = TrustedVerificationRunner.execute_test(
+                workdir,
+                command,
+                env=env,
+                timeout_seconds=timeout_seconds,
+                target_files=files,
+            )
+        except VerificationBoundaryError as exc:
+            # 白名单/超时/路径越界一律转 422，不泄露服务端路径细节。
+            raise ValidationFailed("verification_boundary", str(exc))
         # 观测摘要取自本子进程重算的结果，而不是抄版本上的 content_digest。
         # 抄上去就等于「自己判自己及格」——那样内容被改后依然会显示通过。
         observed = receipt.get("composite_artifact_hash") or None
@@ -599,7 +603,7 @@ class ArtifactGateService:
         """
         from .verification import TrustedVerificationRunner
 
-        digests, composite = TrustedVerificationRunner.compute_artifact_digests(
+        digests, composite, _skipped = TrustedVerificationRunner.compute_artifact_digests(
             workspace_dir, target_files
         )
         return composite, sorted(digests)

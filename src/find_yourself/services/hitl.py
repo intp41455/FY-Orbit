@@ -160,9 +160,19 @@ class HitlInterruptService:
     def list_pending(
         self, actor: Actor, *, execution_id: str | None = None
     ) -> list[dict[str, Any]]:
-        """列出待决中断——人的工作台「等我拍板」列表。"""
+        """列出待决中断——人的工作台「等我拍板」列表。
+
+        P0：owner 条件下推到 SQL（此前全表拉回内存再逐行丢弃，
+        既慢又经时延泄露他人 pending 量）。
+        """
         actor.require_authenticated()
         stmt = select(HitlInterrupt).where(HitlInterrupt.status == "pending")
+        caller = actor.owner_id or actor.service_id
+        if caller:
+            stmt = stmt.where(HitlInterrupt.owner_id == caller)
+        else:
+            # 无身份标识：fail-closed，直接返回空（不扫表）。
+            return []
         if execution_id is not None:
             stmt = stmt.where(HitlInterrupt.execution_id == execution_id)
         rows = list(self.session.execute(stmt.order_by(HitlInterrupt.created_at)).scalars())
@@ -421,9 +431,13 @@ class HitlInterruptService:
         ).scalars().first()
 
     def _is_visible(self, actor: Actor, row: HitlInterrupt) -> bool:
-        """owner 只看自己的中断；service 身份看自己创建的那批。"""
+        """owner 只看自己的中断；service 身份看自己创建的那批。
+
+        P0 fail-closed：无身份标识（caller 为空）一律不可见。
+        此前的 ``not caller or ...`` 在 caller 为空时放行全表。
+        """
         caller = actor.owner_id or actor.service_id
-        return not caller or row.owner_id == caller
+        return bool(caller) and row.owner_id == caller
 
     def _require_visible(self, actor: Actor, row: HitlInterrupt) -> None:
         if not self._is_visible(actor, row):

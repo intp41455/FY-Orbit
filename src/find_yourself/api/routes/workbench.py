@@ -17,9 +17,10 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from pydantic import BaseModel, Field
 
 from ...services.actor import Actor
-from ..deps import Services, csrf_protected, get_actor, get_services
+from ..deps import Services, csrf_protected, get_actor, get_services, require_local_runtime
 
-router = APIRouter(prefix="/api/workbench", tags=["workbench"])
+router = APIRouter(prefix="/api/workbench", tags=["workbench"],
+                   dependencies=[Depends(require_local_runtime)])
 
 
 class RegisterWorkspaceRequest(BaseModel):

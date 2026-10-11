@@ -351,7 +351,7 @@ def test_run_parallel_executes_no_sql_in_worker_threads(engine, session, owner) 
     assert offenders == [], (
         "并行派单的工作线程执行了 SQL —— 又回到跨线程共用 Session 了：\n"
         + "\n".join(f"  线程 {name}: {stmt.splitlines()[0] if stmt else ''}"
-                    for name, _stmt in offenders)
+                    for name, stmt in offenders)
         + "\n修法：DB 读取留在主线程（HubService.prepare_invoke），"
           "线程里只允许做网络调用。"
     )

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FY Orbit · 星轨（本地多智能体搭建与统一调度平台）</title>
-<meta name="description" content="FY Orbit 星轨：本地运行、无需联网、可视化与代码实时同源、统一调度外部 Agent。全部开源、完全免费、开箱即用，数据留在本机。">
+<meta name="description" content="FY Orbit 星轨：本地运行、本地能力可离线、可视化与代码受限 DSL 互转、统一调度外部 Agent。源码可用、非商业用途免费、配置后试用，数据留在本机。">
 <style>
 :root{
   --ink:#07080B;
@@ -16,9 +16,9 @@
   --text:#EAECF2;
   --muted:#8A93A8;
   --muted-2:#5F6779;
-  --accent:#35E0C8;
-  --accent-dim:rgba(53,224,200,.12);
-  --accent-line:rgba(53,224,200,.35);
+  --accent:#80C8FF;
+  --accent-dim:rgba(128,200,255,.12);
+  --accent-line:rgba(128,200,255,.35);
   --violet:#8A7BFF;
   --amber:#F5C26B;
   --radius:18px;
@@ -42,7 +42,7 @@ a{color:inherit;text-decoration:none}
 .bg::before{
   content:"";position:absolute;inset:0;
   background:
-    radial-gradient(900px 520px at 50% -8%, rgba(53,224,200,.14), transparent 62%),
+    radial-gradient(900px 520px at 50% -8%, rgba(128,200,255,.14), transparent 62%),
     radial-gradient(760px 480px at 88% 8%, rgba(138,123,255,.10), transparent 60%);
 }
 .bg::after{
@@ -59,7 +59,7 @@ header{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rg
 .nav{display:flex;align-items:center;gap:18px;height:68px}
 .brand{display:flex;align-items:center;gap:11px;font-weight:600;letter-spacing:.4px}
 .mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
-  background:linear-gradient(150deg,var(--accent),#1FA894);color:#04211D;font-weight:800;font-size:14px;letter-spacing:.5px}
+  background:linear-gradient(150deg,var(--accent),#739CED);color:#091424;font-weight:800;font-size:14px;letter-spacing:.5px}
 .nav-links{display:flex;gap:26px;margin-left:auto;font-size:14px;color:var(--muted)}
 .nav-links a:hover{color:var(--text)}
 .nav .btn-dl{font-size:14px;padding:9px 20px}
@@ -71,8 +71,8 @@ header{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rg
   font-weight:600;font-size:15px;padding:14px 30px;border:1px solid transparent;
   transition:.22s ease;cursor:pointer;white-space:nowrap;
 }
-.btn-primary{background:var(--accent);color:#04211D;box-shadow:0 0 0 rgba(53,224,200,0)}
-.btn-primary:hover{box-shadow:0 10px 40px rgba(53,224,200,.28);transform:translateY(-2px)}
+.btn-primary{background:var(--accent);color:#04211D;box-shadow:0 0 0 rgba(128,200,255,0)}
+.btn-primary:hover{box-shadow:0 10px 40px rgba(128,200,255,.28);transform:translateY(-2px)}
 .btn-ghost{border-color:var(--line-2);color:var(--text);background:rgba(255,255,255,.02)}
 .btn-ghost:hover{border-color:var(--accent-line);color:var(--accent);transform:translateY(-2px)}
 .btn-sm{padding:9px 20px;font-size:14px}
@@ -182,7 +182,7 @@ h2 .dim{color:var(--muted-2)}
 
 /* ---------- download ---------- */
 .dl{border:1px solid var(--line-2);border-radius:26px;padding:60px 44px;text-align:center;
-  background:radial-gradient(700px 320px at 50% 0%,rgba(53,224,200,.13),transparent 70%),var(--surface)}
+  background:radial-gradient(700px 320px at 50% 0%,rgba(128,200,255,.13),transparent 70%),var(--surface)}
 .dl h2{margin-bottom:14px}
 .dl .cta{margin-top:34px}
 .meta{margin-top:34px;padding-top:26px;border-top:1px solid var(--line);display:flex;gap:34px;justify-content:center;flex-wrap:wrap;font-size:13px;color:var(--muted-2)}
@@ -218,7 +218,7 @@ h2 .dim{color:var(--muted-2)}
 /* 占位框：真实图就位后，把 .ph 整个换成 <img src="...">，并删掉 .cap 里的「待插入」字样 */
 .ph{display:grid;place-items:center;text-align:center;padding:30px 24px;border-bottom:1px dashed var(--accent-line);
   background:repeating-linear-gradient(45deg,rgba(255,255,255,.022) 0 12px,transparent 12px 24px),
-    linear-gradient(170deg,rgba(53,224,200,.07),rgba(138,123,255,.045))}
+    linear-gradient(170deg,rgba(128,200,255,.07),rgba(138,123,255,.045))}
 .ph b{display:block;font-size:15px;color:var(--muted);font-weight:600;margin-bottom:7px}
 .ph span{font-size:13px;color:var(--muted-2);letter-spacing:.5px}
 .ph-wide{aspect-ratio:21/9}
@@ -233,6 +233,13 @@ h2 .dim{color:var(--muted-2)}
 footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2);font-size:13.5px}
 .foot{display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;align-items:center}
 .foot a:hover{color:var(--accent)}
+</style>
+<style>
+#architecture-graph svg { width:min(100%,900px);height:auto;display:block;margin:0 auto;max-height:none }
+#architecture-source {font-size:13px;padding-top:16px}
+section[id]{scroll-margin-top:90px}
+details summary {cursor:pointer;color:var(--muted);padding-top:16px}
+@media (prefers-reduced-motion:reduce) {html{scroll-behavior:auto}}
 </style>
 </head>
 <body>
@@ -249,7 +256,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <a href="#features">功能</a>
       <a href="#safety">安全与可恢复</a>
       <a href="#autosave">更加强大</a>
-      <a href="#templates">开箱即用</a>
+      <a href="#templates">团队模板</a>
       <a href="#start">上手</a>
     </nav>
     <a class="btn btn-primary btn-sm" href="#download">下载</a>
@@ -262,17 +269,17 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
 <section class="hero wrap">
   <div class="eyebrow"><i></i>FY Orbit · 星轨</div>
   <h1>FY Orbit<br><span class="accent">星轨</span></h1>
-  <p class="hero-sub">本地运行 · 无需联网 · 可视化与代码实时同源 · 统一调度外部 Agent<br>既能搭建你<strong>自己的 AI 团队</strong>，也能统一调度<strong>别人造好的 Agent</strong>。</p>
-  <p class="hero-note">全部开源 · 完全免费 · 开箱即用</p>
+  <p class="hero-sub">本地运行 · 本地能力可离线 · 可视化与代码受限 DSL 互转 · 统一调度外部 Agent<br>既能搭建你<strong>自己的 AI 团队</strong>，也能统一调度<strong>别人造好的 Agent</strong>。</p>
+  <p class="hero-note">源码可用 · 非商业用途免费 · 开发评估</p>
   <p style="font-size:clamp(15px,1.9vw,20px);color:var(--accent);font-weight:600;margin:-22px 0 38px">把智能体编成一张星图</p>
   <div class="cta">
-    <a class="btn btn-primary" href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">一键下载 Windows 版 (v1.0.0)</a>
-    <a class="btn btn-ghost" href="https://github.com/intp41455/FY-Orbit/releases/tag/v1.0.0" target="_blank">GitHub Release 发布页</a>
+    <a class="btn btn-primary" href="https://github.com/intp41455/FY-Orbit/releases">查看 Windows 发行版本</a>
+    <a class="btn btn-ghost" href="https://github.com/intp41455/FY-Orbit/releases" target="_blank">GitHub Release 发布页</a>
   </div>
   <div class="chips">
-    <span class="chip">本地运行 <b>无需联网</b></span>
-    <span class="chip">完全免费 <b>全部开源</b></span>
-    <span class="chip">画布与代码 <b>实时同源</b></span>
+    <span class="chip">本地运行 <b>本地能力可离线</b></span>
+    <span class="chip">非商业用途免费 <b>源码可用（BSL 1.1）</b></span>
+    <span class="chip">画布与代码 <b>受限 DSL 互转</b></span>
     <span class="chip">统一调度 <b>外部成品 Agent</b></span>
   </div>
 </section>
@@ -280,48 +287,77 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
 <!-- STATS -->
 <div class="stats">
   <div class="wrap"><div class="stat-grid" style="margin:0 -32px">
-    <div class="stat"><div class="n">完全免费</div><div class="l">全部开源，无订阅无额度</div></div>
-    <div class="stat"><div class="n">无需联网</div><div class="l">断网也能搭建与运行</div></div>
-    <div class="stat"><div class="n">数据留在本机</div><div class="l">资料不上传第三方服务器</div></div>
+    <div class="stat"><div class="n">非商业用途免费</div><div class="l">源码可用（BSL 1.1），商用和模型费用另计</div></div>
+    <div class="stat"><div class="n">本地能力可离线</div><div class="l">离线能力依赖本地组件</div></div>
+    <div class="stat"><div class="n">数据留在本机</div><div class="l">外发取决于所选模型与连接器</div></div>
     <div class="stat"><div class="n">一套内核</div><div class="l">画布 / 代码 / 企业接口同源</div></div>
   </div></div>
 </div>
+
+<!-- ARCHITECTURE: components are real, dashed paths require wiring/validation -->
+<section id="architecture">
+  <div class="wrap">
+    <div class="sec-head"><div class="sec-kicker">架构与任务流程</div>
+      <h2>从一个目标，<span class="accent">到可以检查的结果</span></h2>
+      <p class="sec-desc">工作台接收输入，服务端检查身份、权限与预算，执行配置好的节点或 Agent，再检查结果。虚线表示需要接线或专项验证的路径。</p>
+    </div>
+    <div class="card" style="padding:24px">
+      <div id="architecture-graph" aria-label="FY Orbit 架构流程图"><svg id="fy-orbit-architecture" width="100%" xmlns="http://www.w3.org/2000/svg" class="flowchart" style="max-width: 676px;" viewBox="4 4 676 1048.148681640625" role="graphics-document document" aria-roledescription="flowchart-v2"><style>#fy-orbit-architecture{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;fill:#ccc;}@keyframes edge-animation-frame{from{stroke-dashoffset:0;}}@keyframes dash{to{stroke-dashoffset:0;}}#fy-orbit-architecture .edge-animation-slow{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 50s linear infinite;stroke-linecap:round;}#fy-orbit-architecture .edge-animation-fast{stroke-dasharray:9,5!important;stroke-dashoffset:900;animation:dash 20s linear infinite;stroke-linecap:round;}#fy-orbit-architecture .error-icon{fill:#a44141;}#fy-orbit-architecture .error-text{fill:#ddd;stroke:#ddd;}#fy-orbit-architecture .edge-thickness-normal{stroke-width:1px;}#fy-orbit-architecture .edge-thickness-thick{stroke-width:3.5px;}#fy-orbit-architecture .edge-pattern-solid{stroke-dasharray:0;}#fy-orbit-architecture .edge-thickness-invisible{stroke-width:0;fill:none;}#fy-orbit-architecture .edge-pattern-dashed{stroke-dasharray:3;}#fy-orbit-architecture .edge-pattern-dotted{stroke-dasharray:2;}#fy-orbit-architecture .marker{fill:#80c8ff;stroke:#80c8ff;}#fy-orbit-architecture .marker.cross{stroke:#80c8ff;}#fy-orbit-architecture svg{font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:16px;}#fy-orbit-architecture p{margin:0;}#fy-orbit-architecture .label{font-family:"trebuchet ms",verdana,arial,sans-serif;color:#ccc;}#fy-orbit-architecture .cluster-label text{fill:#F9FFFE;}#fy-orbit-architecture .cluster-label span{color:#F9FFFE;}#fy-orbit-architecture .cluster-label span p{background-color:transparent;}#fy-orbit-architecture .label text,#fy-orbit-architecture span{fill:#ccc;color:#ccc;}#fy-orbit-architecture .node rect,#fy-orbit-architecture .node circle,#fy-orbit-architecture .node ellipse,#fy-orbit-architecture .node polygon,#fy-orbit-architecture .node path{fill:#1f2020;stroke:#ccc;stroke-width:1px;}#fy-orbit-architecture .rough-node .label text,#fy-orbit-architecture .node .label text,#fy-orbit-architecture .image-shape .label,#fy-orbit-architecture .icon-shape .label{text-anchor:middle;}#fy-orbit-architecture .node .katex path{fill:#000;stroke:#000;stroke-width:1px;}#fy-orbit-architecture .rough-node .label,#fy-orbit-architecture .node .label,#fy-orbit-architecture .image-shape .label,#fy-orbit-architecture .icon-shape .label{text-align:center;}#fy-orbit-architecture .node.clickable{cursor:pointer;}#fy-orbit-architecture .root .anchor path{fill:#80c8ff!important;stroke-width:0;stroke:#80c8ff;}#fy-orbit-architecture .arrowheadPath{fill:lightgrey;}#fy-orbit-architecture .edgePaths .path{stroke:#80c8ff;stroke-width:1px;}#fy-orbit-architecture .flowchart-link{stroke:#80c8ff;fill:none;}#fy-orbit-architecture .edgeLabel{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#fy-orbit-architecture .edgeLabel p{background-color:hsl(0, 0%, 34.4117647059%);}#fy-orbit-architecture .edgeLabel rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#fy-orbit-architecture .labelBkg{background-color:rgba(87.75, 87.75, 87.75, 0.5);}#fy-orbit-architecture .cluster rect{fill:hsl(180, 1.5873015873%, 28.3529411765%);stroke:rgba(255, 255, 255, 0.25);stroke-width:1px;}#fy-orbit-architecture .cluster text{fill:#F9FFFE;}#fy-orbit-architecture .cluster span{color:#F9FFFE;}#fy-orbit-architecture .node .collapsed-indicator{fill:rgba(255, 255, 255, 0.25);stroke:none;opacity:0.6;}#fy-orbit-architecture .node .collapsed-separator{stroke:rgba(255, 255, 255, 0.25);stroke-width:0.75px;}#fy-orbit-architecture div.mermaidTooltip{position:absolute;text-align:center;max-width:200px;padding:2px;font-family:"trebuchet ms",verdana,arial,sans-serif;font-size:12px;background:hsl(20, 1.5873015873%, 12.3529411765%);border:1px solid rgba(255, 255, 255, 0.25);border-radius:2px;pointer-events:none;z-index:100;}#fy-orbit-architecture .flowchartTitleText{text-anchor:middle;font-size:18px;fill:#ccc;}#fy-orbit-architecture rect.text{fill:none;stroke-width:0;}#fy-orbit-architecture .icon-shape,#fy-orbit-architecture .image-shape{background-color:hsl(0, 0%, 34.4117647059%);text-align:center;}#fy-orbit-architecture .icon-shape p,#fy-orbit-architecture .image-shape p{background-color:hsl(0, 0%, 34.4117647059%);padding:2px;}#fy-orbit-architecture .icon-shape .label rect,#fy-orbit-architecture .image-shape .label rect{opacity:0.5;background-color:hsl(0, 0%, 34.4117647059%);fill:hsl(0, 0%, 34.4117647059%);}#fy-orbit-architecture .label-icon{display:inline-block;height:1em;overflow:visible;vertical-align:-0.125em;}#fy-orbit-architecture .node .label-icon path{fill:currentColor;stroke:revert;stroke-width:revert;}#fy-orbit-architecture .node .neo-node{stroke:#ccc;}#fy-orbit-architecture [data-look="neo"].node rect,#fy-orbit-architecture [data-look="neo"].cluster rect,#fy-orbit-architecture [data-look="neo"].node polygon{stroke:url(#fy-orbit-architecture-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#fy-orbit-architecture [data-look="neo"].swimlane.cluster rect{filter:none;}#fy-orbit-architecture [data-look="neo"].node path{stroke:url(#fy-orbit-architecture-gradient);stroke-width:1px;}#fy-orbit-architecture [data-look="neo"].node .outer-path{filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#fy-orbit-architecture [data-look="neo"].node .neo-line path{stroke:#ccc;filter:none;}#fy-orbit-architecture [data-look="neo"].node circle{stroke:url(#fy-orbit-architecture-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#fy-orbit-architecture [data-look="neo"].node circle .state-start{fill:#000000;}#fy-orbit-architecture [data-look="neo"].icon-shape .icon{fill:url(#fy-orbit-architecture-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#fy-orbit-architecture [data-look="neo"].icon-shape .icon-neo path{stroke:url(#fy-orbit-architecture-gradient);filter:drop-shadow( 1px 2px 2px rgba(185,185,185,1));}#fy-orbit-architecture :root{--mermaid-font-family:"trebuchet ms",verdana,arial,sans-serif;}</style><g><marker id="fy-orbit-architecture_flowchart-v2-pointEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-pointStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="4.5" refY="5" markerUnits="userSpaceOnUse" markerWidth="8" markerHeight="8" orient="auto"><path d="M 0 5 L 10 10 L 10 0 z" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-pointEnd-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="11.5" refY="7" markerUnits="userSpaceOnUse" markerWidth="10.5" markerHeight="14" orient="auto"><path d="M 0 0 L 11.5 7 L 0 14 z" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-pointStart-margin" class="marker flowchart-v2" viewBox="0 0 11.5 14" refX="1" refY="7" markerUnits="userSpaceOnUse" markerWidth="11.5" markerHeight="14" orient="auto"><polygon points="0,7 11.5,14 11.5,0" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></polygon></marker><marker id="fy-orbit-architecture_flowchart-v2-circleEnd" class="marker flowchart-v2" viewBox="0 0 10 10" refX="11" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="fy-orbit-architecture_flowchart-v2-circleStart" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-1" refY="5" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 1; stroke-dasharray: 1, 0;"></circle></marker><marker id="fy-orbit-architecture_flowchart-v2-circleEnd-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refY="5" refX="12.25" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="fy-orbit-architecture_flowchart-v2-circleStart-margin" class="marker flowchart-v2" viewBox="0 0 10 10" refX="-2" refY="5" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" orient="auto"><circle cx="5" cy="5" r="5" class="arrowMarkerPath" style="stroke-width: 0; stroke-dasharray: 1, 0;"></circle></marker><marker id="fy-orbit-architecture_flowchart-v2-crossEnd" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="12" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-crossStart" class="marker cross flowchart-v2" viewBox="0 0 11 11" refX="-1" refY="5.2" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="11" orient="auto"><path d="M 1,1 l 9,9 M 10,1 l -9,9" class="arrowMarkerPath" style="stroke-width: 2; stroke-dasharray: 1, 0;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-crossEnd-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="17.7" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5;"></path></marker><marker id="fy-orbit-architecture_flowchart-v2-crossStart-margin" class="marker cross flowchart-v2" viewBox="0 0 15 15" refX="-3.5" refY="7.5" markerUnits="userSpaceOnUse" markerWidth="12" markerHeight="12" orient="auto"><path d="M 1,1 L 14,14 M 1,14 L 14,1" class="arrowMarkerPath" style="stroke-width: 2.5; stroke-dasharray: 1, 0;"></path></marker><g class="root"><g class="clusters"></g><g class="edges edgePaths"><path d="M326.25,60L326.25,96" id="fy-orbit-architecture-L_U_UI_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_U_UI_0" data-points="W3sieCI6MzI2LjI1LCJ5Ijo2MH0seyJ4IjozMjYuMjUsInkiOjEwMH1d" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M304.25,196L304.25,208.92893218813452Q304.25,216 297.1789321881345,216L250.07106781186548,216Q243,216 243,223.07106781186548L243,232" id="fy-orbit-architecture-L_UI_API_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 87.92170715332031 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_UI_API_0" data-points="W3sieCI6MzA0LjI1LCJ5IjoxOTZ9LHsieCI6MzA0LjI1LCJ5IjoyMTZ9LHsieCI6MjQzLCJ5IjoyMTZ9LHsieCI6MjQzLCJ5IjoyMzZ9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M265,308L265,320.9289321881345Q265,328 272.0710678118655,328L458.6789321881345,328Q465.75,328 465.75,335.0710678118655L465.75,344" id="fy-orbit-architecture-L_API_D_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 227.42169189453125 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_API_D_0" data-points="W3sieCI6MjY1LCJ5IjozMDh9LHsieCI6MjY1LCJ5IjozMjh9LHsieCI6NDY1Ljc1LCJ5IjozMjh9LHsieCI6NDY1Ljc1LCJ5IjozNDh9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M465.75,420L465.75,456" id="fy-orbit-architecture-L_D_G_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 32 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_D_G_0" data-points="W3sieCI6NDY1Ljc1LCJ5Ijo0MjB9LHsieCI6NDY1Ljc1LCJ5Ijo0NjB9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M432.75,532L432.75,544.9289321881345Q432.75,552 425.6789321881345,552L226.32106781186548,552Q219.25,552 219.25,559.0710678118655L219.25,568" id="fy-orbit-architecture-L_G_E_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 240.17172241210938 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_G_E_0" data-points="W3sieCI6NDMyLjc1LCJ5Ijo1MzJ9LHsieCI6NDMyLjc1LCJ5Ijo1NTJ9LHsieCI6MjE5LjI1LCJ5Ijo1NTJ9LHsieCI6MjE5LjI1LCJ5Ijo1NzJ9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M241.25,668L241.25,680.9289321881345Q241.25,688 248.32106781186548,688L322.4289321881345,688Q329.5,688 329.5,695.0710678118655L329.5,704" id="fy-orbit-architecture-L_E_R_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 114.92171478271484 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_E_R_0" data-points="W3sieCI6MjQxLjI1LCJ5Ijo2Njh9LHsieCI6MjQxLjI1LCJ5Ijo2ODh9LHsieCI6MzI5LjUsInkiOjY4OH0seyJ4IjozMjkuNSwieSI6NzA4fV0=" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M351.5,780L351.5,792.9289321881345Q351.5,800 358.5710678118655,800L566.9289321881345,800Q574,800 574,807.0710678118655L574,816" id="fy-orbit-architecture-L_R_V_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 249.17172241210938 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_R_V_0" data-points="W3sieCI6MzUxLjUsInkiOjc4MH0seyJ4IjozNTEuNSwieSI6ODAwfSx7IngiOjU3NCwieSI6ODAwfSx7IngiOjU3NCwieSI6ODIwfV0=" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M618,820L618,744L618,620L618,496L618,384L618,272L618,223.07106781186548Q618,216 610.9289321881345,216L355.3210678118655,216Q348.25,216 348.25,208.92893218813452L348.25,200" id="fy-orbit-architecture-L_V_UI_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 880.4217529296875 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_V_UI_0" data-points="W3sieCI6NjE4LCJ5Ijo4MjB9LHsieCI6NjE4LCJ5Ijo3NDR9LHsieCI6NjE4LCJ5Ijo2MjB9LHsieCI6NjE4LCJ5Ijo0OTZ9LHsieCI6NjE4LCJ5IjozODR9LHsieCI6NjE4LCJ5IjoyNzJ9LHsieCI6NjE4LCJ5IjoyMTZ9LHsieCI6MzQ4LjI1LCJ5IjoyMTZ9LHsieCI6MzQ4LjI1LCJ5IjoxOTZ9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M221,308L221,320.9289321881345Q221,328 213.92893218813452,328L19.071067811865476,328Q12,328 12,335.0710678118655L12,384L12,496L12,620L12,744L12,856L12,904.9289321881345Q12,912 19.071067811865476,912L132.01226552146784,912Q139.08333333333331,912 139.08333333333331,919.0710678118655L139.08333333333331,928" id="fy-orbit-architecture-L_API_DB_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 941.4267578125 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_API_DB_0" data-points="W3sieCI6MjIxLCJ5IjozMDh9LHsieCI6MjIxLCJ5IjozMjh9LHsieCI6MTIsInkiOjMyOH0seyJ4IjoxMiwieSI6Mzg0fSx7IngiOjEyLCJ5Ijo0OTZ9LHsieCI6MTIsInkiOjYyMH0seyJ4IjoxMiwieSI6NzQ0fSx7IngiOjEyLCJ5Ijo4NTZ9LHsieCI6MTIsInkiOjkxMn0seyJ4IjoxMzkuMDgzMzMzMzMzMzMzMzEsInkiOjkxMn0seyJ4IjoxMzkuMDgzMzMzMzMzMzMzMzEsInkiOjkzMn1d" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M197.25,668L197.25,680.9289321881345Q197.25,688 190.17893218813452,688L116.07106781186548,688Q109,688 109,695.0710678118655L109,816" id="fy-orbit-architecture-L_E_X_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_E_X_0" data-points="W3sieCI6MTk3LjI1LCJ5Ijo2Njh9LHsieCI6MTk3LjI1LCJ5Ijo2ODh9LHsieCI6MTA5LCJ5Ijo2ODh9LHsieCI6MTA5LCJ5Ijo4MjB9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M307.5,780L307.5,904.9289321881345Q307.5,912 300.4289321881345,912L187.4877344785321,912Q180.41666666666663,912 180.41666666666663,919.0710678118655L180.41666666666663,928" id="fy-orbit-architecture-L_R_DB_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_R_DB_0" data-points="W3sieCI6MzA3LjUsInkiOjc4MH0seyJ4IjozMDcuNSwieSI6OTEyfSx7IngiOjE4MC40MTY2NjY2NjY2NjY2MywieSI6OTEyfSx7IngiOjE4MC40MTY2NjY2NjY2NjY2MywieSI6OTMyfV0=" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M465.75,532L465.75,544.9289321881345Q465.75,552 472.8210678118655,552L492.9289321881345,552Q500,552 500,559.0710678118655L500,704" id="fy-orbit-architecture-L_G_H_0" class="edge-thickness-normal edge-pattern-dotted edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_G_H_0" data-points="W3sieCI6NDY1Ljc1LCJ5Ijo1MzJ9LHsieCI6NDY1Ljc1LCJ5Ijo1NTJ9LHsieCI6NTAwLCJ5Ijo1NTJ9LHsieCI6NTAwLCJ5Ijo3MDh9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path><path d="M544,708L544,620L544,559.0710678118655Q544,552 536.9289321881345,552L505.8210678118655,552Q498.75,552 498.75,544.9289321881345L498.75,536" id="fy-orbit-architecture-L_H_G_0" class="edge-thickness-normal edge-pattern-solid edge-thickness-normal edge-pattern-solid flowchart-link" style="stroke-dasharray: 0 0 207.92172241210938 4; stroke-dashoffset: 0;;" data-edge="true" data-et="edge" data-id="L_H_G_0" data-points="W3sieCI6NTQ0LCJ5Ijo3MDh9LHsieCI6NTQ0LCJ5Ijo2MjB9LHsieCI6NTQ0LCJ5Ijo1NTJ9LHsieCI6NDk4Ljc1LCJ5Ijo1NTJ9LHsieCI6NDk4Ljc1LCJ5Ijo1MzJ9XQ==" data-look="neo" marker-end="url(#fy-orbit-architecture_flowchart-v2-pointEnd-margin)"></path></g><g class="edgeLabels"><g class="edgeLabel" transform="translate(109, 744)"><g class="label" data-id="L_E_X_0" transform="translate(0, -10.5)"><g><rect class="background" style="" x="-66" y="-1" width="132" height="23"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">需逐条接线和联调</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(307.5, 856)"><g class="label" data-id="L_R_DB_0" transform="translate(0.5, -10.5)"><g><rect class="background" style="" x="-83" y="-1" width="165" height="23"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">各执行面恢复能力不同</tspan></tspan></text></g></g></g><g class="edgeLabel" transform="translate(500, 620)"><g class="label" data-id="L_G_H_0" transform="translate(-0.5, -10.5)"><g><rect class="background" style="" x="-50" y="-1" width="101" height="23"></rect><text y="-10.1" text-anchor="middle" style=""><tspan class="text-outer-tspan row" x="0" y="-0.1em" dy="1.1em" text-anchor="middle"><tspan font-style="normal" class="text-inner-tspan" font-weight="normal">高危操作待决</tspan></tspan></text></g></g></g></g><g class="nodes"><g class="node default" id="fy-orbit-architecture-flowchart-U-0" data-look="neo" transform="translate(326.25, 36)"><rect class="basic label-container" style="" x="-76" y="-24" width="152" height="48"></rect><g class="label" style="" transform="translate(-60, -12)"><rect></rect><foreignObject width="120" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: nowrap; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>用户目标与输入</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-UI-1" data-look="neo" transform="translate(326.25, 148)"><rect class="basic label-container" style="" x="-76" y="-48" width="152" height="96"></rect><g class="label" style="" transform="translate(-60, -36)"><rect></rect><foreignObject width="120" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>React 工作台：画布 / DSL / 任务</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-API-3" data-look="neo" transform="translate(243, 272)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>FastAPI：身份验证与 owner 隔离</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-D-5" data-look="neo" transform="translate(465.75, 384)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>流程校验 / 团队定义 / 能力路由</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-G-7" data-look="neo" transform="translate(465.75, 496)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>权限 / 预算 / 人工审批</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-E-9" data-look="neo" transform="translate(219.25, 620)"><rect class="basic label-container" style="" x="-76" y="-48" width="152" height="96"></rect><g class="label" style="" transform="translate(-60, -36)"><rect></rect><foreignObject width="120" height="72"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>执行：本地节点或已配置的 Agent</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-R-11" data-look="neo" transform="translate(329.5, 744)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>结果 / 状态 / 交付物</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-V-13" data-look="neo" transform="translate(596, 856)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>人工检查与测试验收</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-DB-17" data-look="neo" transform="translate(159.75, 988.0743408203125)"><path d="M0,13.382899628252789 a72,13.382899628252789 0,0,0 144,0 a72,13.382899628252789 0,0,0 -144,0 l0,85.38289962825279 a72,13.382899628252789 0,0,0 144,0 l0,-85.38289962825279" class="basic label-container outer-path" style="" transform="translate(-72, -56.07434944237918)"></path><g class="label" style="" transform="translate(-60, -14)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>SQLite：业务记录 / 快照 / 审计</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-X-19" data-look="neo" transform="translate(109, 856)"><rect class="basic label-container" style="" x="-76" y="-36" width="152" height="72"></rect><g class="label" style="" transform="translate(-60, -24)"><rect></rect><foreignObject width="120" height="48"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: break-spaces; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>本地或云端模型 / MCP / A2A</p></span></div></foreignObject></g></g><g class="node default" id="fy-orbit-architecture-flowchart-H-23" data-look="neo" transform="translate(522, 732)"><rect class="basic label-container" style="" x="-76" y="-24" width="152" height="48"></rect><g class="label" style="" transform="translate(-60, -12)"><rect></rect><foreignObject width="120" height="24"><div xmlns="http://www.w3.org/1999/xhtml" style="display: table; white-space: nowrap; line-height: 1.5; max-width: 120px; text-align: center; width: 120px;"><span class="nodeLabel"><p>HITL 裁决</p></span></div></foreignObject></g></g></g></g></g><defs><filter id="fy-orbit-architecture-drop-shadow" height="130%" width="130%"><feDropShadow dx="4" dy="4" stdDeviation="0" flood-opacity="0.06" flood-color="#FFFFFF"></feDropShadow></filter></defs><defs><filter id="fy-orbit-architecture-drop-shadow-small" height="150%" width="150%"><feDropShadow dx="2" dy="2" stdDeviation="0" flood-opacity="0.06" flood-color="#FFFFFF"></feDropShadow></filter></defs><linearGradient id="fy-orbit-architecture-gradient" gradientUnits="objectBoundingBox" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#cccccc" stop-opacity="1"></stop><stop offset="100%" stop-color="hsl(180, 0%, 18.3529411765%)" stop-opacity="1"></stop></linearGradient></svg></div>
+      <p id="architecture-fallback" hidden style="color:var(--text)">用户目标 → 工作台 → 身份与 owner 检查 → 流程校验与路由 → 权限、预算、人工审批 → 已配置节点或 Agent → 结果 → 人工与测试验收。SQLite 保存业务记录、快照和审计；模型和外部 Agent 需逐条配置联调。</p>
+      <details><summary>查看 Mermaid 源码</summary><pre id="architecture-source" style="white-space:pre-wrap;overflow-wrap:anywhere">flowchart TD
+    U["用户目标与输入"] --&gt; UI["React 工作台：画布 / DSL / 任务"]
+    UI --&gt; API["FastAPI：身份验证与 owner 隔离"]
+    API --&gt; D["流程校验 / 团队定义 / 能力路由"]
+    D --&gt; G["权限 / 预算 / 人工审批"]
+    G --&gt; E["执行：本地节点或已配置的 Agent"]
+    E --&gt; R["结果 / 状态 / 交付物"]
+    R --&gt; V["人工检查与测试验收"]
+    V --&gt; UI
+    API --&gt; DB[("SQLite：业务记录 / 快照 / 审计")]
+    E -. "需逐条接线和联调" .-&gt; X["本地或云端模型 / MCP / A2A"]
+    R -. "各执行面恢复能力不同" .-&gt; DB
+    G -. "高危操作待决" .-&gt; H["HITL 裁决"]
+    H --&gt; G</pre></details>
+    </div>
+    <p class="show-note">当前属于受控评估阶段。历史 Release、公开 main 与本地修复的能力不同。<a href="https://github.com/intp41455/FY-Orbit/blob/main/AGENTS.md">查看当前限制</a>；这张图不是全功能验收证明。</p>
+  </div>
+</section>
 
 <!-- MOAT -->
 <section id="moat">
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">核心优势</div>
-      <h2>四项能力，<span class="accent">市面上没有产品同时完整拥有</span></h2>
-      <p class="sec-desc">同类产品通常只做到其中一项，甚至一项都做不到位。我们把四项做进同一套内核——而且<b>全部开源、完全免费</b>。</p>
+      <h2>四项能力，<span class="accent">集中在一个本地工作台</span></h2>
+      <p class="sec-desc">星轨围绕本地工作台整合这些能力，各模块的接线和验证范围不同。授权范围为<b>源码可用，非商业用途免费</b>。</p>
     </div>
 
     <div class="moat">
       <div class="card">
         <div class="idx">优势 01 · 本地运行</div>
-        <h3>全部跑在<span class="accent">你自己的电脑</span>上</h3>
-        <p>不需要注册账号，不需要联网，也没有在线额度限制。你的资料、模型配置、工作流与知识库，<b>全部存在本机</b>，不上传任何第三方服务器。</p>
+        <h3>工作台运行在<span class="accent">你自己的电脑</span>上</h3>
+        <p>支持本地使用；远程模型、Agent 和云盘需要网络、凭证及授权。你的资料、模型配置、工作流与知识库，<b>全部存在本机</b>，默认本地保存；调用云模型或远程连接器可能向所选服务发送数据。</p>
         <span class="tag">数据主权在你手上</span>
       </div>
 
       <div class="card">
-        <div class="idx">优势 02 · 完全免费</div>
-        <h3>全部开源，<span class="accent">完全免费</span></h3>
-        <p>整套产品开源、永久免费，<b>没有订阅、没有付费墙、没有隐藏额度</b>。下载即用，不强绑任何账号与云服务，你拥有完整的掌控权。</p>
-        <span class="tag">开源 · 免费 · 无订阅</span>
+        <div class="idx">优势 02 · 非商业用途免费</div>
+        <h3>源码可用（BSL 1.1），<span class="accent">非商业用途免费</span></h3>
+        <p>源码按 BSL 1.1 提供，允许范围内的非商业用途免费；商用需另行授权。模型 API、硬件和外部服务可能收费。</p>
+        <span class="tag">BSL 1.1 · 商用另行授权</span>
       </div>
 
       <div class="card">
         <div class="idx">优势 03 · 画布与代码同源</div>
         <h3>小白拖拽，高手写码，<span class="accent">同一张图</span></h3>
-        <p>拖拽就能搭出可运行的多智能体流程；需要精调时，直接写代码定义状态、节点与逻辑——<b>画布与代码实时同步、双向转换</b>，不是两套系统。</p>
+        <p>可通过拖拽编辑受支持的流程；实际执行取决于节点接线与连接配置；需要精调时，直接写代码定义状态、节点与逻辑——<b>受限 DSL 可导入导出；不承诺任意代码实时无损互转</b>，不是两套系统。</p>
         <span class="tag">可视化 × 代码，不二选一</span>
       </div>
 
       <div class="card">
         <div class="idx">优势 04 · 统一调度外部 Agent</div>
         <h3>不只是搭建，还能<span class="accent">指挥别人的 Agent</span></h3>
-        <p>把外部成品 agent 与自己搭建的 agent 放进<b>同一个调度中枢</b>：统一路由、统一权限、统一审计、实时同步状态。可连接任意模型 API、MCP 连接器、外部 Agent、你自己的 Agent 助手。</p>
+        <p>把外部成品 agent 与自己搭建的 agent 放进<b>同一个调度中枢</b>：统一路由、统一权限、统一审计、实时同步状态。支持的模型 API、MCP 和外部 Agent 需配置并逐项联调。</p>
         <span class="tag">从工具箱到指挥中枢</span>
       </div>
     </div>
@@ -334,7 +370,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
     <div class="sec-head">
       <div class="sec-kicker">产品实拍</div>
       <h2>它长什么样，<span class="accent">看一眼就明白</span></h2>
-      <p class="sec-desc">不是概念图，是实机画面。下面几张是最能说明问题的。</p>
+      <p class="sec-desc">以下是历史版本截图或设计展示，界面存在不代表每条执行链均已验收。</p>
     </div>
 
     <!-- 主视觉：3D 星空立体知识图谱（全景） -->
@@ -346,7 +382,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
     <div class="show-grid">
       <div class="shot">
         <img src="assets/screenshots/02-workflow-dsl-canvas.webp" alt="画布与代码同源" loading="lazy" style="width:100%;height:auto;object-fit:cover;display:block;" />
-        <div class="cap"><span class="k">核心能力 · 画布与代码同源</span>左边拖拽，右边实时代码。<b>改任意一边，另一边立刻跟着变</b>。</div>
+        <div class="cap"><span class="k">核心能力 · 画布与代码同源</span>左边拖拽，右边实时代码。<b>受限 DSL 可导入导出，任意代码双向实时同步尚未验收</b>。</div>
       </div>
       <div class="shot">
         <img src="assets/screenshots/04-multi-agent-team-canvas.webp" alt="统一调度中心" loading="lazy" style="width:100%;height:auto;object-fit:cover;display:block;" />
@@ -363,7 +399,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
         <div class="art-frame">
           <img src="assets/20-avatar-workshop.webp" alt="角色工坊：生成专属像素小人" loading="lazy" style="width:100%;height:auto;object-fit:cover;border-radius:var(--radius);display:block;" />
         </div>
-        <div class="cap-below"><span class="k">开箱即用 · 免费</span>个人画像、每日运势与塔罗，<b>下载当天就能用</b>。</div>
+        <div class="cap-below"><span class="k">开箱即用 · 免费</span>个人画像、每日运势与塔罗，<b>需按功能提示配置与验证</b>。</div>
       </div>
     </div>
 
@@ -378,7 +414,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       </div>
     </div>
 
-    <p class="show-note">以上均为<b>全套实机运行截图与设计稿</b>。<b>想先看实机效果，可直接下载试用或在本地启动。</b></p>
+    <p class="show-note">以上均为<b>历史实机截图与设计稿</b>。<b>想先看实机效果，可直接下载试用或在本地启动。</b></p>
   </div>
 </section>
 
@@ -400,7 +436,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="cmp-row">
         <div class="pain" data-l="问题">想用 AI 工具，先得注册、登录、实名、绑卡</div>
         <div class="pain" data-l="普遍做法">云端账号制，注册是必经步骤</div>
-        <div class="us" data-l="我们的做法"><b>下载即用，不需要任何账号</b></div>
+        <div class="us" data-l="我们的做法"><b>本地访客模式试用，连接配置按需填写</b></div>
       </div>
       <div class="cmp-row">
         <div class="pain" data-l="问题">断网就用不了，网络一抖任务就断</div>
@@ -445,7 +481,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="cmp-row">
         <div class="pain" data-l="问题">订阅到期、额度用尽，之前搭的东西就用不了</div>
         <div class="pain" data-l="普遍做法">订阅制 + 用量限额</div>
-        <div class="us" data-l="我们的做法"><b>完全免费 · 全部开源 · 无订阅无额度</b></div>
+        <div class="us" data-l="我们的做法"><b>非商业用途免费 · 源码可用 · 商用和模型费用另计</b></div>
       </div>
       <div class="cmp-row">
         <div class="pain" data-l="问题">辛辛苦苦填了半天，一断电 / 一断网全没了</div>
@@ -478,7 +514,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="need">
         <div class="who">零基础用户</div>
         <h4>不懂代码，也想拥有自己的 AI 团队</h4>
-        <p>拖拽即可搭建，不需要注册、不需要配置环境，下载后连上模型即可使用。</p>
+        <p>拖拽即可搭建，发行包启动后需按页面配置模型、工具与权限；具体流程请先做一次小任务验收。</p>
       </div>
       <div class="need">
         <div class="who">技术人员</div>
@@ -488,12 +524,12 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="need">
         <div class="who">隐私敏感用户</div>
         <h4>资料不愿上传，数据必须留在本机</h4>
-        <p>知识库、个人画像、工作流全部本地存储，不经过第三方服务器。</p>
+        <p>知识库、个人画像、工作流全部本地存储，调用云模型或连接器时需检查数据外发范围。</p>
       </div>
       <div class="need">
         <div class="who">长期使用者</div>
         <h4>不想被订阅绑架，要能长期可用</h4>
-        <p>本地化部署，不因订阅到期或平台停服而失效；全部开源、完全免费，无隐藏收费。</p>
+        <p>本地化部署，不因订阅到期或平台停服而失效；源码可用，非商业用途免费，无隐藏收费。</p>
       </div>
     </div>
   </div>
@@ -504,8 +540,8 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">功能全景</div>
-      <h2>开箱即用，<span class="accent">不需要额外付费</span></h2>
-      <p class="sec-desc">全部开源，完全免费，没有任何付费、订阅或额度限制。下面每一项都开箱即用。</p>
+      <h2>模块入口，<span class="accent">按功能配置后试用</span></h2>
+      <p class="sec-desc">源码可用（BSL 1.1），非商业用途免费，没有任何付费、订阅或额度限制。下面列出各模块入口；配置要求与完成度以页面提示和审计为准。</p>
     </div>
 
     <div class="feats">
@@ -531,7 +567,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
     <div class="sec-head">
       <div class="sec-kicker">个人空间</div>
       <h2>你私人的<span class="accent">那片星轨</span></h2>
-      <p class="sec-desc">一个只属于你的空间：存你的设定、连你的资料、记你的进度。免费、本地优先，注册只是为了在换设备时把东西同步回来。</p>
+      <p class="sec-desc">一个只属于你的空间：存你的设定、连你的资料、记你的进度。免费、本地优先，多设备同步仍在研发。</p>
     </div>
 
     <div class="needs">
@@ -543,12 +579,12 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="need">
         <div class="who">RAG 人格画像</div>
         <h4>连上你的 RAG 库，越聊越懂你</h4>
-        <p>把你的笔记、日记、资料接进 RAG，生成会持续读懂你的人格画像。</p>
+        <p>把你的笔记、日记、资料接进 RAG，支持资料检索与画像探索；分析质量需要用户检查。</p>
       </div>
       <div class="need">
         <div class="who">自定义云盘</div>
         <h4>云盘变 RAG，再变 3D 知识图谱</h4>
-        <p>指定一个云盘目录，自动建成 RAG 向量库，并能渲染成可旋转的 3D 立体知识图谱。</p>
+        <p>本地文档可导入知识库；云盘连接器需要配置并联调，不能承诺任意云盘一键同步。</p>
       </div>
       <div class="need">
         <div class="who">保存命理</div>
@@ -558,12 +594,12 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="need">
         <div class="who">专属游戏角色</div>
         <h4>你的角色，带进度一起走</h4>
-        <p>个性化定制的 AI 游戏角色，等级、剧情与装备进度都保存在你的空间里。</p>
+        <p>个性化定制的 AI 游戏角色，现有小屋与角色状态按页面保存；完整跨设备游戏进度迁移尚未验收。</p>
       </div>
       <div class="need">
         <div class="who">云端实时同步</div>
-        <h4>换设备也不丢（注册免费）</h4>
-        <p>注册完全免费，开启后多端实时同步；不注册也能在本机完整使用。</p>
+        <h4>多设备同步（研发中）</h4>
+        <p>多设备实时同步仍在研发；现有本地数据请自行备份。</p>
       </div>
     </div>
   </div>
@@ -580,16 +616,16 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
 
     <div class="feats">
       <div class="feat"><h4>每步都能查到是谁干的<span class="free">免费</span></h4><p>每一条操作记录都带执行者标识（哪个 Agent、还是你本人）和环境标识（哪台机器、哪个进程、哪个工作目录），写进只增不改的哈希链账本。</p></div>
-      <div class="feat"><h4>多久以前都查得到<span class="free">免费</span></h4><p>留痕不按时间裁剪，几个月前的任务也能顺着同一条路径倒查回当时的执行者与环境。</p></div>
+      <div class="feat"><h4>按已保存的记录回溯<span class="free">免费</span></h4><p>可回溯已采集并保留的事件；应确认保留策略、备份和各执行面的覆盖范围。</p></div>
       <div class="feat"><h4>全程留痕，可按任务 / 时间 / 能力检索<span class="free">免费</span></h4><p>执行、调度、读写、调用、审批、输出六类流统一采集进审计流水线，整条过程可回放。</p></div>
       <div class="feat"><h4>改文件前先留快照<span class="free">免费</span></h4><p>写入前比对读取时间戳；如果文件在你之外被改过，先拦下来报给你，不静默覆盖，改动留下可读 diff。</p></div>
-      <div class="feat"><h4>本地实时备份<span class="free">免费</span></h4><p>资料与产出在本机持续留备份副本，误删误改能就地取回。</p></div>
-      <div class="feat"><h4>Git 版本备份<span class="free">免费</span></h4><p>关键节点自动打版本点，可回退到任意历史点。</p></div>
+      <div class="feat"><h4>本地实时备份<span class="free">免费</span></h4><p>部分写操作提供快照；请另行备份数据库和文件，不能把主副本当备份。</p></div>
+      <div class="feat"><h4>Git 版本备份<span class="free">免费</span></h4><p>工程工作台提供 Git 操作与历史；仅已提交且保留的版本可回溯。</p></div>
       <div class="feat"><h4>一键回滚<span class="free">免费</span></h4><p>已发生的可逆动作可回退；重跑时改参数会分叉出新分支，不覆盖原有历史。</p></div>
-      <div class="feat"><h4>限流 / 断流自动接管<span class="free">免费</span></h4><p>遇到模型 API 限流或断流，先退避重试、再换路，已有成果不会被冲掉。</p></div>
-      <div class="feat"><h4>断网 / 中断自动存断点<span class="free">免费</span></h4><p>网络中断、任务被中止、突发退出时，已产出的成品、中间资料和上下文全部暂存，不会凭空消失。</p></div>
-      <div class="feat"><h4>重连后自动接着干<span class="free">免费</span></h4><p>重新接上网络、或换一个模型 API 接进来，它自己找到上次的断点继续开工，不用从头再来。</p></div>
-      <div class="feat"><h4>用量熔断<span class="free">免费</span></h4><p>用量到 80% 预警、95% 强制暂停并保存状态快照，不会跑出意外账单。</p></div>
+      <div class="feat"><h4>限流 / 断流自动接管<span class="free">免费</span></h4><p>部分模型调用有重试和换路机制；需配置候选模型并验证任务级恢复。</p></div>
+      <div class="feat"><h4>断网 / 中断自动存断点<span class="free">免费</span></h4><p>部分业务记录与快照落数据库；DSL 调试记录仍有内存状态，不能保证所有中间资料恢复。</p></div>
+      <div class="feat"><h4>重连后自动接着干<span class="free">免费</span></h4><p>恢复能力因执行面而异；重启后自动续作、换模型续作需要分别测试。</p></div>
+      <div class="feat"><h4>用量熔断<span class="free">免费</span></h4><p>已有预算检查与预警；95% 全执行面暂停和真实费用对账尚需专项验证。</p></div>
     </div>
   </div>
 </section>
@@ -608,7 +644,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="feat"><h4>断电也能原样回来<span class="free">New</span></h4><p>目标是：突然断电、进程被杀、断网、模型 API 断流，重新打开回到中断前的样子——光标位置、视口位置、还没提交的表单，都还在。</p></div>
       <div class="feat"><h4>自动保存点 + 手动里程碑两层<span class="free">New</span></h4><p>目标是：秒级自动保存点可回溯；重要节点自己命名一个里程碑长期保留。能看时间线、能比差异、能回退。</p></div>
       <div class="feat"><h4>每次改动都有记录<span class="free">部分已有</span></h4><p>目前已有：能力调用进哈希链审计账本、文件写入前做快照比对。<b>研发中：</b>把这套留痕覆盖到每一个界面级改动，并能单独回退 Agent 改的部分。</p></div>
-      <div class="feat"><h4>资料默认留在本机<span class="free">已有</span></h4><p>这一条现在就是这样：项目文件、知识库、运行记录全部存本地，不上传第三方服务器。</p></div>
+      <div class="feat"><h4>资料默认留在本机<span class="free">已有</span></h4><p>这一条现在就是这样：项目文件、知识库、运行记录全部存本地，外发按所选服务和配置处理。</p></div>
       <div class="feat"><h4>本地不够了，接自己的云盘<span class="free">New</span></h4><p>目标是：接上你自己的云盘后本地仍是主副本，断网照常用，恢复后自动同步，有冲突时把两边差异摆给你看，由你决定留哪一份。</p></div>
     </div>
   </div>
@@ -640,7 +676,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
   <div class="wrap">
     <div class="sec-head">
       <div class="sec-kicker">快速上手</div>
-      <h2>三步开始，<span class="accent">五分钟用起来</span></h2>
+      <h2>三步开始，<span class="accent">按连接配置开始试用</span></h2>
     </div>
     <div class="steps">
       <div class="step"><div class="num">STEP 01</div><h4>下载安装</h4><p>选择你的系统版本下载，双击安装即可，无需注册或登录。</p></div>
@@ -655,24 +691,24 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
   <div class="wrap">
     <div class="dl">
       <h2>现在下载，<span class="accent">把 AI 团队装进你的电脑</span></h2>
-      <p class="sec-desc">本地运行 · 无需联网 · 全部开源 · 完全免费</p>
+      <p class="sec-desc">本地运行 · 本地能力可离线 · 源码可用 · 非商业用途免费</p>
       <div class="cta">
-        <a class="btn btn-primary" href="https://github.com/intp41455/FY-Orbit/releases/download/v1.0.0/FY-Orbit-Windows-v1.0.0.zip">一键下载 Windows 免安装绿色包 (v1.0.0 .zip)</a>
+        <a class="btn btn-primary" href="https://github.com/intp41455/FY-Orbit/releases">查看发行包、校验值与已知问题</a>
         <a class="btn btn-ghost" href="https://fy-orbit.pages.dev/" target="_blank">查看项目主页与更新日志</a>
       </div>
       <div class="meta">
-        <span>当前版本：<b>v1.0.0</b></span>
+        <span>版本：<b>以 Releases 页面为准</b></span>
         <span>文件校验：<b>SHA256 见更新日志</b></span>
-        <span>系统要求：<b>Windows 10+ / macOS 12+</b></span>
-        <span><a href="#"><b>更新日志</b></a></span>
+        <span>系统要求：<b>Windows 10/11；其他平台尚未发行验收</b></span>
+        <span><a href="https://github.com/intp41455/FY-Orbit/releases"><b>更新日志</b></a></span>
       </div>
 
       <div class="faq">
-        <div class="qa"><h5>需要注册账号吗？</h5><p>不需要。下载安装后可直接使用，全程无需注册、登录或绑定手机。只有当你想开启「个人空间」的多设备实时同步时才需要注册（免费）；不注册也能在本机完整使用。</p></div>
+        <div class="qa"><h5>需要注册账号吗？</h5><p>不需要。下载安装后可直接使用，可通过本地访客模式试用。本地访客模式和账户模式按页面提示使用；多设备同步仍在研发。</p></div>
         <div class="qa"><h5>必须联网才能用吗？</h5><p>核心功能本地运行，断网可用。仅当你调用云端模型 API 时才需要网络。</p></div>
-        <div class="qa"><h5>我的数据会上传吗？</h5><p>不会。知识库、个人画像与工作流均存储在你本机，不上传第三方服务器。</p></div>
-        <div class="qa"><h5>要付费吗？</h5><p>不需要。全部功能完全免费、开源，没有任何付费、订阅或额度限制。</p></div>
-        <div class="qa"><h5>安装时提示"未知发布者"或被杀软拦截？</h5><p>属于本地应用的常见误报。请核对下载页公布的 SHA256 校验值，确认文件完整后再放行。</p></div>
+        <div class="qa"><h5>我的数据会上传吗？</h5><p>默认本地保存。调用云模型、远程 Agent 或云盘时，数据可能发送给你所选的服务。</p></div>
+        <div class="qa"><h5>要付费吗？</h5><p>源码采用 BSL 1.1，非商业用途按许可证允许范围使用；商用另行授权，模型与外部服务费用另计。</p></div>
+        <div class="qa"><h5>安装时提示"未知发布者"或被杀软拦截？</h5><p>当前包可能未做代码签名。请核对来源与 SHA256，并检查系统安全提示；不要自动认定杀软告警为误报。</p></div>
       </div>
     </div>
   </div>
@@ -683,15 +719,15 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
 <footer>
   <div class="wrap" style="border-top:1px solid var(--line);padding-top:34px;margin-bottom:30px">
     <p style="color:var(--text);font-weight:600;margin-bottom:10px;font-size:15px">关于这个项目</p>
-    <p style="color:var(--muted);font-size:14px;line-height:1.85;max-width:880px">做这个产品的初衷不是盈利——开源才是人类创造与创意延绵不绝的根源。你点的一颗星、一条反馈、一个 issue、一个 bug 报告，都是对作者最大的鼓舞。</p>
+    <p style="color:var(--muted);font-size:14px;line-height:1.85;max-width:880px">本项目提供源码供学习、研究与受控评估，商用授权范围见 BSL 1.1 许可证。你点的一颗星、一条反馈、一个 issue、一个 bug 报告，都是对作者最大的鼓舞。</p>
   </div>
   <div class="wrap foot">
     <div class="brand"><span class="mark" style="width:28px;height:28px;font-size:12px">FY</span><span style="color:var(--muted)">FY Orbit · 星轨</span></div>
     <div style="display:flex;gap:22px;flex-wrap:wrap">
-      <a href="#">隐私政策</a>
-      <a href="#">用户协议</a>
-      <a href="#">更新日志</a>
-      <a href="#">联系我们</a>
+      <a href="#download">数据与使用说明</a>
+      <a href="https://github.com/intp41455/FY-Orbit/blob/main/LICENSE">许可证</a>
+      <a href="https://github.com/intp41455/FY-Orbit/releases">更新日志</a>
+      <a href="mailto:intp41455@gmail.com">联系我们</a>
     </div>
   </div>
 </footer>

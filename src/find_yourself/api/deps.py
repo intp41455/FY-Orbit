@@ -88,6 +88,16 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def require_local_runtime(request: Request, settings: Settings = Depends(get_settings)) -> None:
+    """宿主文件/进程和全局动态工具尚无租户沙箱，不对生产网络开放。"""
+    if settings.environment == "production":
+        raise PermissionDenied("local_runtime_only", "此能力尚未提供生产租户隔离，已禁用", 403)
+    if settings.environment == "local" and (
+        request.client is None or request.client.host not in {"127.0.0.1", "::1"}
+    ):
+        raise PermissionDenied("loopback_only", "宿主执行能力仅允许本机回环请求", 403)
+
+
 def get_db(request: Request):
     session = request.app.state.session_maker()
     try:
