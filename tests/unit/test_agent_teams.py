@@ -189,6 +189,30 @@ def test_node_overrides_role_team_and_global_precedence(teams, owner):
     assert teams.resolve_binding(owner, team.id, "reviewer")["inherited_from"] == "team"
 
 
+def test_member_binding_survives_session_reload(teams, owner, session):
+    """P0 回归：members 是普通 JSON 列，原地改 dict 必须标脏落库。
+
+    此前 set_member_binding 只改内存对象：同请求内 resolve 看似成功，
+    下一次请求（新 session / expire 后重载）绑定即丢失，validation 报
+    model_unresolved 且团队永远无法 start。
+    """
+    team = engineering_team(teams, owner)
+    teams.set_member_binding(
+        owner, team.id, "implementer", provider_id="local-synthetic", model_id="sim-encoder"
+    )
+    session.commit()
+    # 模拟下一次 HTTP 请求：丢弃全部内存态，从库重载。
+    session.expire_all()
+    resolved = teams.resolve_binding(owner, team.id, "implementer")
+    assert resolved["inherited_from"] == "node"
+    assert resolved["requested_model"] == "sim-encoder"
+    assert resolved["requested_provider"] == "local-synthetic"
+    # validate_start 也不得再报 model_unresolved。
+    report = teams.validate_start(owner, team.id)
+    codes = {(b.get("role"), b.get("code")) for b in report["blockers"]}
+    assert ("implementer", "model_unresolved") not in codes
+
+
 def test_two_members_on_different_models_route_consistently(teams, owner, session):
     """§8.2 — request, stored binding, gateway call and fee all agree."""
     team = engineering_team(teams, owner)

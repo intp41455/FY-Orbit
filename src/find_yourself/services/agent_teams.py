@@ -25,6 +25,7 @@ from uuid import uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from ..adapters.native_subagents import HostCapabilities, NativeSubAgentAdapter
 from ..config import Settings
@@ -444,6 +445,9 @@ class AgentTeamService:
             member["model_id"] = opt.model_id
             member["params"] = dict(params or {})
 
+        # P0 真 bug 修复：members 是普通 JSON 列，原地改 dict 不会标脏，
+        # 此前 binding PUT 返回 200（读的是内存对象），下一次请求重载即丢失。
+        flag_modified(team, "members")
         team.version += 1
         team.last_change_reason = reason
         team.last_changed_by = actor.owner_id
