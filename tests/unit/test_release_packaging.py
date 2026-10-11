@@ -149,8 +149,10 @@ def test_package_ships_verifier_and_sums(builder, tmp_path):
 def test_verify_bat_checks_all_listed_files_and_fails_loudly(builder):
     """verify.bat 必须逐文件比对并在失败时返回非零（启动器据此中止）。"""
     src = builder.VERIFY_BAT
-    assert "SHA256SUMS.txt" in src
-    assert "Get-FileHash" in src
+    assert "verify_release.ps1" in src
+    verifier = (ROOT / "deploy" / "verify_release.ps1").read_text(encoding="utf-8")
+    assert "SHA256SUMS.txt" in verifier
+    assert "SHA256" in verifier and "ComputeHash" in verifier
     assert "exit /b 1" in src
     assert "exit /b 0" in src
 

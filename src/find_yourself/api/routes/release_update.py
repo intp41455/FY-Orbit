@@ -6,7 +6,7 @@
   （离线模式下直接返回已离线，不联网）。
 * ``POST /api/release/update/stage`` — 下载并校验 ZIP 到 ``.update/pending/``。
 * ``POST /api/release/update/apply`` — 把已暂存更新移入 ``.update/incoming/``，
-  下次启动自动替换；**不**在本请求内替换运行中的 exe。
+  仅准备安装文件；自动替换流程尚未接线。
 * ``POST /api/release/update/rollback`` — 清除暂存状态回退到当前版本。
 """
 
@@ -18,9 +18,10 @@ from fastapi import APIRouter, Depends
 
 from ...services import release_update
 from ...services.actor import Actor
-from ..deps import csrf_protected, get_actor
+from ..deps import csrf_protected, get_actor, require_local_runtime
 
-router = APIRouter(prefix="/api/release/update", tags=["release-update"])
+router = APIRouter(prefix="/api/release/update", tags=["release-update"],
+                   dependencies=[Depends(require_local_runtime)])
 
 
 def _to_payload(verdict: release_update.UpdateVerdict) -> dict:
@@ -53,6 +54,7 @@ def check_for_update(actor: Actor = Depends(get_actor)) -> dict:
 @router.post("/stage")
 def stage_update(actor: Actor = Depends(csrf_protected)) -> dict:
     """下载并校验最新 ZIP 到 ``.update/pending/``。这是重活，会落盘。"""
+    actor.require_owner()
     root = _install_root()
     meta = release_update.stage_update(root)
     return meta
@@ -60,7 +62,8 @@ def stage_update(actor: Actor = Depends(csrf_protected)) -> dict:
 
 @router.post("/apply")
 def apply_update(actor: Actor = Depends(csrf_protected)) -> dict:
-    """把已暂存的更新标记到 ``.update/incoming/``，下次启动自动替换。"""
+    """把已暂存更新准备到 incoming；实际安装仍需手动完成。"""
+    actor.require_owner()
     root = _install_root()
     return release_update.apply_staged_update(root)
 
@@ -68,6 +71,7 @@ def apply_update(actor: Actor = Depends(csrf_protected)) -> dict:
 @router.post("/rollback")
 def rollback(actor: Actor = Depends(csrf_protected)) -> dict:
     """清除已暂存/已下载的更新状态，回退到当前版本。"""
+    actor.require_owner()
     root = _install_root()
     return release_update.rollback_update(root)
 

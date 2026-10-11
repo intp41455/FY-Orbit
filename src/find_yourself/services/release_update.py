@@ -11,12 +11,12 @@ signature → atomic replace → rollback」成熟桌面应用的最小闭环。
   不写死任何"有网"的假象——超时就是超时，如实标注。
 * 校验与替换分两条路： ``check`` 只读网络，**不落盘**；``stage`` 下载并
   验证 SHA-256 后写入 ``.update/pending/``，**不动正在运行的程序目录**；
-  ``apply`` 由用户显式触发，做「备份 → 原子替换 → 校验失败回滚」。
+  ``apply`` 由用户显式触发，复核后复制到 incoming；尚不实现程序替换。
 
 为什么不直接在这里替换运行中的 exe：Windows 上运行中的 exe 无法覆盖。
 ``apply`` 把下载包核对后复制到 ``.update/incoming/``，然后结束本次更新
-请求；用户下次启动时（``FY-Orbit.bat`` 检测到 ``.update/incoming`` 标记）
-替换程序目录并清理。这样文档所述的 atomic replace / rollback 才能真正有意义。
+请求。当前启动器没有消费 incoming 的更新安装流程；请手动解压新版本到新目录，
+先备份再迁移数据。不能宣称自动替换、原子安装或安装失败回滚已实现。
 
 诚实边界：本模块不做代码签名，只校验 SHA-256（与 SHA256SUMS.txt 一致）。
 签名缺失时不宣称「已签名」，只如实报告 ``signature_status=unsigned``。
@@ -293,6 +293,14 @@ def check_update(fetcher: Callable[[str], dict] | None = None) -> UpdateVerdict:
     )
 
 
+def _safe_asset_name(value: str) -> str:
+    """只接受单一 ZIP 文件名，跨平台拒绝目录、盘符与父路径。"""
+    if (not isinstance(value, str) or not value.lower().endswith(".zip")
+            or any(c in value for c in ("/", "\\", ":")) or value in {".", ".."}):
+        raise ValidationFailed("update_asset_path_invalid", "更新资产必须是 ZIP 文件名", 422)
+    return value
+
+
 def stage_update(dest_dir: Path, *, fetcher=None) -> dict:
     """下载并校验最新 ZIP，放到 ``<dest_dir>/.update/pending/``。
 
@@ -305,12 +313,15 @@ def stage_update(dest_dir: Path, *, fetcher=None) -> dict:
     asset = pick_zip_asset(rel)
     if asset is None:
         raise NotFound("update_asset_missing", "最新 Release 中未找到 Windows ZIP 资产。", 404)
+    _safe_asset_name(asset.name)
     # 资产期望 SHA-256 从 SHA256SUMS.txt 取（纯文本资产），单独走真实网络；
     # 不要复用 fetch_latest_release 的 JSON fetcher（它返回 dict，不是文本）。
     expected = find_asset_sha256(rel, asset)
     pending = dest_dir / ".update" / "pending"
     pending.mkdir(parents=True, exist_ok=True)
     target = pending / asset.name
+    if not target.resolve().is_relative_to(dest_dir.resolve()):
+        raise ValidationFailed("update_path_escape", "更新目录不能链接到安装目录之外", 422)
     info = download_release_zip(asset, target, expected_sha256=expected)
     meta = {
         "staged_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -330,8 +341,7 @@ def stage_update(dest_dir: Path, *, fetcher=None) -> dict:
 def apply_staged_update(install_dir: Path) -> dict:
     """把已暂存的更新从 ``.update/pending/`` 复制到 ``.update/incoming/`` 并标记待替换。
 
-    真正替换程序目录发生在下次启动时（由 ``FY-Orbit.bat`` 检测 ``.update/incoming``
-    标记执行）。此函数做：备份清单记录、完整性复核、失败回滚。
+    当前仅完整性复核与准备安装文件；自动替换启动器尚未接线。
     """
     pending = install_dir / ".update" / "pending" / "pending.json"
     if not pending.is_file():
@@ -340,6 +350,11 @@ def apply_staged_update(install_dir: Path) -> dict:
     if not re.fullmatch(r"[0-9a-fA-F]{64}", str(meta.get("expected_sha256") or "")):
         raise ValidationFailed("update_sha256_missing", "缺少有效发布校验和，拒绝应用更新", 422)
     zip_path = Path(meta["zip_path"])
+    name = _safe_asset_name(meta.get("zip_name"))
+    expected_path = install_dir / ".update" / "pending" / name
+    if (zip_path.resolve() != expected_path.resolve()
+            or not zip_path.resolve().is_relative_to(install_dir.resolve())):
+        raise ValidationFailed("update_path_escape", "更新包必须位于该安装目录的 pending 中", 422)
     if not zip_path.is_file():
         raise UpdatePendingMissing()
     # 再次校验，防止 pending 之后被人动过
@@ -351,6 +366,8 @@ def apply_staged_update(install_dir: Path) -> dict:
             422,
         )
     incoming = install_dir / ".update" / "incoming"
+    if not incoming.resolve().is_relative_to(install_dir.resolve()):
+        raise ValidationFailed("update_path_escape", "更新目标目录不能链接到安装目录之外", 422)
     incoming.mkdir(parents=True, exist_ok=True)
     staged_zip = incoming / meta["zip_name"]
     if zip_path.resolve() != staged_zip.resolve():

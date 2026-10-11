@@ -165,12 +165,12 @@ def import_tool_registry(data: dict[str, Any], registry: Any) -> int:
 # ---------------------------------------------------------------------------
 
 
-def export_dsl_store(store: DslRunStore) -> dict[str, Any]:
+def export_dsl_store(store: DslRunStore, *, owner_subject: str | None = None) -> dict[str, Any]:
     """Serialise every archived run via the store's public read APIs."""
     runs = []
     for run_id in store.list_ids():
         payload = store.get(run_id)
-        if payload is not None:
+        if payload is not None and (owner_subject is None or payload.get("owner_id") == owner_subject):
             runs.append(payload)
     return {"runs": runs}
 
@@ -198,10 +198,11 @@ def _run_result_from_dict(d: dict[str, Any]) -> RunResult:
         output=d.get("output"),
         error=d.get("error"),
         created_at=d.get("created_at", ""),
+        execution_id=d.get("execution_id"),
     )
 
 
-def import_dsl_store(data: dict[str, Any], store: DslRunStore) -> int:
+def import_dsl_store(data: dict[str, Any], store: DslRunStore, *, owner_subject: str | None = None) -> int:
     """Replay snapshotted runs back into a (fresh) :class:`DslRunStore`.
 
     Reconstruction uses the public ``RunResult``/``NodeLog`` dataclasses plus
@@ -210,7 +211,12 @@ def import_dsl_store(data: dict[str, Any], store: DslRunStore) -> int:
     """
     count = 0
     for payload in data.get("runs", []):
-        store.save(_run_result_from_dict(payload))
+        if owner_subject is not None and payload.get("owner_id") != owner_subject:
+            continue
+        existing = store.get(payload["run_id"])
+        if owner_subject is not None and existing and existing.get("owner_id") != owner_subject:
+            continue
+        store.save(_run_result_from_dict(payload), owner_id=payload.get("owner_id"))
         count += 1
     return count
 

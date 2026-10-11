@@ -102,8 +102,8 @@ def build_meta(version: str) -> str:
         f"git short    : {short}",
         f"git tag      : {tag or '(none — 非 tag 构建)'}",
         f"git dirty    : {'yes' if dirty else 'no'}",
-        f"builder      : deploy/build_release_package.py",
-        f"packaging    : PyInstaller --onedir (backend) + Vite production build (web/dist)",
+        "builder      : deploy/build_release_package.py",
+        "packaging    : PyInstaller --onedir (backend) + Vite production build (web/dist)",
         "runtime need : 无需预装 Python / Node.js（均已内置或已编译为静态文件）",
         "app shape    : 本地 Web 应用打包为桌面发行物（浏览器 / Edge App 窗口承载 UI）",
         "",
@@ -157,7 +157,8 @@ if exist "%ROOT%verify.bat" (
         exit /b 1
     )
 ) else (
-    echo [3/4] 未找到 verify.bat，跳过完整性校验。
+    echo [ERROR] Missing verify.bat. Refusing to launch.
+    exit /b 1
 )
 
 echo [4/4] 正在启动应用引擎与核心服务 (默认端口 8000)...
@@ -280,48 +281,7 @@ pause
 """
 
 
-VERIFY_BAT = """@echo off
-rem 发行包完整性自检：逐个文件比对 SHA256SUMS.txt
-chcp 65001 >nul
-setlocal enabledelayedexpansion
-set ROOT=%~dp0
-cd /d "%ROOT%"
-
-if not exist "%ROOT%SHA256SUMS.txt" (
-    echo [verify] 未找到 SHA256SUMS.txt，无法校验。
-    exit /b 0
-)
-
-set FAILED=0
-set COUNT=0
-for /f "usebackq tokens=1,2" %%A in ("%ROOT%SHA256SUMS.txt") do (
-    if not "%%A"=="#" (
-        set /a COUNT+=1
-        set EXPECTED=%%A
-        set TARGET=%%B
-        if not exist "%ROOT%!TARGET!" (
-            echo [verify] 缺失文件: !TARGET!
-            set /a FAILED+=1
-        ) else (
-            for /f "usebackq delims=" %%H in (`powershell -NoProfile -Command "(Get-FileHash -LiteralPath '%ROOT%!TARGET!' -Algorithm SHA256).Hash.ToLower()"`) do set ACTUAL=%%H
-            if not "!ACTUAL!"=="!EXPECTED!" (
-                echo [verify] 校验不通过: !TARGET!
-                echo           期望 !EXPECTED!
-                echo           实际 !ACTUAL!
-                set /a FAILED+=1
-            )
-        )
-    )
-)
-
-if %FAILED% gtr 0 (
-    echo.
-    echo [verify] 完整性校验失败：%FAILED% / %COUNT% 个文件不匹配。
-    exit /b 1
-)
-echo [verify] 完整性校验通过：%COUNT% 个文件与 SHA256SUMS.txt 一致。
-exit /b 0
-"""
+VERIFY_BAT = """@echo off\nsetlocal\nif not exist "%~dp0verify_release.ps1" exit /b 1\npowershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0verify_release.ps1"\nif errorlevel 1 exit /b 1\nexit /b 0\n"""
 
 
 def run(cmd, cwd=None) -> None:
@@ -363,7 +323,8 @@ def _zip_write(zf: zipfile.ZipFile, arcname: str, src: Path) -> None:
 
 def _package_filesums(app_dir: Path) -> str:
     """对包内关键文件求 SHA-256，写成 verify.bat 可读的清单。"""
-    targets = ["FY-Orbit.bat", "Install.bat", "使用说明.txt", "BUILD-META.txt", "landing.html"]
+    targets = sorted(p.relative_to(app_dir).as_posix() for p in app_dir.rglob("*")
+                     if p.is_file() and p.name != "SHA256SUMS.txt")
     lines = ["# FY Orbit · 星轨 — 发行包内文件校验和（SHA-256）",
              "# 由 deploy/build_release_package.py 在打包时生成，可与 GitHub Release 的",
              "# 顶层 ZIP 校验和相互印证。"]
@@ -407,6 +368,7 @@ def assemble(version: str, out_dir: Path, *, keep_stage: bool = False) -> tuple[
     write_text(APP / "使用说明.txt", README_TXT.format(version=version), encoding="utf-8")
     write_text(APP / "Install.bat", INSTALL_BAT, encoding="gbk")
     write_text(APP / "verify.bat", VERIFY_BAT, encoding="gbk")
+    shutil.copy2(ROOT / "deploy" / "verify_release.ps1", APP / "verify_release.ps1")
     write_text(APP / "BUILD-META.txt", build_meta(version), encoding="utf-8")
     write_text(APP / "SHA256SUMS.txt", _package_filesums(APP), encoding="utf-8")
 

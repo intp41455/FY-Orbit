@@ -112,6 +112,7 @@ class ArchiveForkService:
         返回 :class:`ForkPlan`——调用方据此以 ``new_thread_id`` 发起重跑。
         ``source_checkpoint_id`` 留空表示从该 thread 的最新检查点分叉。
         """
+        actor.require_owner()
         if not source_thread_id:
             raise ValueError("source_thread_id is required")
 
@@ -158,8 +159,11 @@ class ArchiveForkService:
         *,
         source_thread_id: str | None = None,
         state: str | None = None,
+        owner_id: str | None = None,
     ) -> list[ArchiveFork]:
         stmt = select(ArchiveFork)
+        if owner_id is not None:
+            stmt = stmt.where(ArchiveFork.owner_id == owner_id)
         if source_thread_id is not None:
             stmt = stmt.where(ArchiveFork.source_thread_id == source_thread_id)
         if state is not None:
@@ -169,17 +173,18 @@ class ArchiveForkService:
         stmt = stmt.order_by(ArchiveFork.created_at.asc(), ArchiveFork.id.asc())
         return list(self._session.execute(stmt).scalars().all())
 
-    def get_fork(self, fork_id: str) -> ArchiveFork:
+    def get_fork(self, fork_id: str, actor: Actor | None = None) -> ArchiveFork:
         row = self._session.execute(
             select(ArchiveFork).where(ArchiveFork.id == fork_id)
         ).scalar_one_or_none()
-        if row is None:
+        if row is None or (actor is not None and row.owner_id != actor.owner_id):
             raise NotFound("fork_not_found", f"fork {fork_id} not found", 404)
         return row
 
     def discard(self, actor: Actor, fork_id: str, *, reason: str = "") -> ArchiveFork:
         """弃用分支（留档不删——历史不可抹除，红线）。"""
-        row = self.get_fork(fork_id)
+        actor.require_owner()
+        row = self.get_fork(fork_id, actor)
         if row.state == FORK_DISCARDED:
             raise Conflict("already_discarded", f"fork {fork_id} already discarded")
         row.state = FORK_DISCARDED
@@ -197,6 +202,7 @@ class ArchiveForkService:
         self,
         fork_id: str,
         *,
+        actor: Actor | None = None,
         left_runs: dict[str, Any] | None = None,
         right_runs: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -209,7 +215,7 @@ class ArchiveForkService:
         逐键比对并分类为 ``only_left`` / ``only_right`` / ``changed`` / ``same``。
         这是**真比对**——不回显调用方传入的「预期差异」。
         """
-        fork = self.get_fork(fork_id)
+        fork = self.get_fork(fork_id, actor)
         left = dict(left_runs if left_runs is not None else (fork.left_result or {}))
         right = dict(right_runs if right_runs is not None else (fork.right_result or {}))
         return compare_runs(left, right, left_label=fork.source_thread_id,
@@ -224,13 +230,14 @@ class ArchiveForkService:
         *,
         source_thread_id: str | None = None,
         limit: int = 500,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """按时间升序返回存档点 + 分叉点的完整时间线（有序且不丢点）。
 
         每条 = 一个事件：``fork``（分支创建）/ ``discard``（分支弃用）。
         时间用记录的 ``created_at``；同刻按 id 稳定排序。
         """
-        rows = self.list_forks(source_thread_id=source_thread_id)
+        rows = self.list_forks(source_thread_id=source_thread_id, owner_id=owner_id)
         events: list[dict[str, Any]] = []
         for r in rows:
             events.append({

@@ -25,6 +25,8 @@ post-restart state snapshots diff to empty (field-by-field JSON equality).
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query
@@ -32,7 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ...db.models import Message
+from ...db.models import Conversation, Message
 from ...services.errors import NotFound
 from ...services.short_term_memory import (
     DEFAULT_KEEP_RECENT_TURNS,
@@ -45,12 +47,9 @@ from ...services.state_persistence import (
     cache_window,
     export_dsl_store,
     export_memory_window,
-    export_tool_registry,
     import_dsl_store,
     import_memory_window,
-    import_tool_registry,
 )
-from ...services.tool_registry import tool_registry
 from ..deps import csrf_protected, get_actor, get_db
 from . import dsl_canvas as _dsl_routes
 
@@ -70,7 +69,17 @@ def _current_dsl_store():
     return _dsl_routes._store
 
 
-def _load_conversation_messages(db: Session, conversation_id: str) -> list[Message]:
+def _owner_session_key(actor, session_key: str) -> str:
+    """身份加用户键的确定性命名空间；旧无属主快照不自动认领。"""
+    actor.require_owner()
+    digest = hashlib.sha256(json.dumps([actor.capability_subject(), session_key]).encode()).hexdigest()
+    return f"owner-snapshot:{digest}"
+
+
+def _load_conversation_messages(db: Session, conversation_id: str, actor) -> list[Message]:
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None or conversation.owner_id != actor.owner_id:
+        raise NotFound("conversation_not_found", "Conversation not found", 404)
     return list(
         db.execute(
             select(Message)
@@ -87,6 +96,7 @@ async def create_snapshot(
     db: Session = Depends(get_db),
 ) -> dict:
     """Capture the session state and persist it (upsert on session_key)."""
+    scoped_key = _owner_session_key(actor, body.session_key)
     window_data: dict[str, Any] = {
         "summary": "",
         "summarized_message_ids": [],
@@ -99,7 +109,7 @@ async def create_snapshot(
         "turns_recent": 0,
     }
     if body.conversation_id:
-        messages = _load_conversation_messages(db, body.conversation_id)
+        messages = _load_conversation_messages(db, body.conversation_id, actor)
         window = build_window(
             messages,
             keep_recent_turns=body.keep_recent_turns,
@@ -111,24 +121,26 @@ async def create_snapshot(
         session_key=body.session_key,
         conversation_id=body.conversation_id,
         memory_window=window_data,
-        tool_registry=export_tool_registry(tool_registry),
-        dsl_runs=export_dsl_store(_current_dsl_store()),
+        tool_registry={"tools": [], "excluded": "global_registry_not_owner_scoped"},
+        dsl_runs=export_dsl_store(_current_dsl_store(), owner_subject=actor.capability_subject()),
     )
 
     from ...services.state_persistence import SessionStateService
 
+    payload["owner_subject"] = actor.capability_subject()
     row = SessionStateService(db).save(
-        session_key=body.session_key,
+        session_key=scoped_key,
         conversation_id=body.conversation_id,
         payload=payload,
     )
     return {"status": "ok", "snapshot": row.payload}
 
 
-@router.get("/restore")
+@router.post("/restore")
+@router.get("/restore", include_in_schema=False)
 async def restore_state(
     session_key: str = Query(min_length=1, max_length=200),
-    actor: object = Depends(get_actor),
+    actor: object = Depends(csrf_protected),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rebuild the live runtime from the persisted snapshot.
@@ -139,8 +151,9 @@ async def restore_state(
     """
     from ...services.state_persistence import SessionStateService
 
-    row = SessionStateService(db).load(session_key)
-    if row is None:
+    scoped_key = _owner_session_key(actor, session_key)
+    row = SessionStateService(db).load(scoped_key)
+    if row is None or row.payload.get("owner_subject") != actor.capability_subject():
         raise NotFound(
             "session_state_not_found",
             f"No session-state snapshot for key '{session_key}'",
@@ -150,17 +163,18 @@ async def restore_state(
     state = payload.get("state", {})
 
     window = import_memory_window(state.get("memory_window", {}))
-    cache_window(session_key, window)
+    cache_window(scoped_key, window)
 
-    tools_reloaded = import_tool_registry(state.get("tool_registry", {}), tool_registry)
-    runs_reloaded = import_dsl_store(state.get("dsl_runs", {}), _current_dsl_store())
+    tools_reloaded = 0  # 全局工具不能通过租户快照重放
+    runs_reloaded = import_dsl_store(state.get("dsl_runs", {}), _current_dsl_store(),
+                                     owner_subject=actor.capability_subject())
 
     # Re-export the live runtime right after the replay so the caller can
     # verify snapshot vs restored state field-by-field (P1-21 acceptance).
     live_state = {
         "memory_window": export_memory_window(window),
-        "tool_registry": export_tool_registry(tool_registry),
-        "dsl_runs": export_dsl_store(_current_dsl_store()),
+        "tool_registry": {"tools": [], "excluded": "global_registry_not_owner_scoped"},
+        "dsl_runs": export_dsl_store(_current_dsl_store(), owner_subject=actor.capability_subject()),
     }
     return {
         "restored": True,
@@ -178,7 +192,7 @@ async def read_window(
 ) -> dict:
     from ...services.state_persistence import export_memory_window, get_cached_window
 
-    window = get_cached_window(session_key)
+    window = get_cached_window(_owner_session_key(actor, session_key))
     if window is None:
         raise NotFound(
             "window_not_restored",
@@ -248,7 +262,8 @@ async def list_forks(
     db: Session = Depends(get_db),
 ) -> dict:
     svc = _fork_service(db, actor)
-    rows = svc.list_forks(source_thread_id=source_thread_id, state=state)
+    actor.require_owner()
+    rows = svc.list_forks(source_thread_id=source_thread_id, state=state, owner_id=actor.owner_id)
     return {
         "forks": [
             {
@@ -295,9 +310,10 @@ async def compare_fork(
     两侧结果。这是**真比对**，不回显调用方传入的「预期差异」。
     """
     svc = _fork_service(db, actor)
+    actor.require_owner()
     payload = body or {}
     return svc.compare(
-        fork_id,
+        fork_id, actor=actor,
         left_runs=payload.get("left"),
         right_runs=payload.get("right"),
     )
@@ -312,5 +328,6 @@ async def archive_timeline(
 ) -> dict:
     """存档历史时间线（A-存档回溯-06）：按时间升序返回存档/分叉/弃用事件。"""
     svc = _fork_service(db, actor)
-    events = svc.timeline(source_thread_id=source_thread_id, limit=limit)
+    actor.require_owner()
+    events = svc.timeline(source_thread_id=source_thread_id, limit=limit, owner_id=actor.owner_id)
     return {"events": events, "count": len(events)}

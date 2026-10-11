@@ -155,6 +155,9 @@ def test_parse_sha256sums_accepts_common_formats():
 def _write_pending(root: Path, zip_path: Path, expected: str):
     pending = root / ".update" / "pending"
     pending.mkdir(parents=True)
+    original = zip_path
+    zip_path = pending / original.name
+    zip_path.write_bytes(original.read_bytes())
     meta = {
         "staged_at": "2026-10-08T00:00:00Z",
         "tag": "v9.9.9",
