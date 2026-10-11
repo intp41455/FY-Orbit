@@ -55,12 +55,19 @@ def hub_client(session, owner):
     from find_yourself.api.deps import get_actor, get_services
     from find_yourself.api.errors import register_exception_handlers
     from find_yourself.api.routes import hub as hub_routes
+    from find_yourself.config import Settings
 
     class _Svc:
         def __init__(self, s):
             self.session = s
 
     app = FastAPI()
+    app.state.settings = Settings(
+        _env_file=None,
+        environment="test",
+        database_url="sqlite://",
+        session_secret="interconnect-test-secret-0123456789abcdef",
+    )
     register_exception_handlers(app)
     app.include_router(hub_routes.router)
     app.dependency_overrides[get_actor] = lambda: owner

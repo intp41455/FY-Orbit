@@ -13,10 +13,21 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from helpers import login_owner
 
 from find_yourself.api.routes import dsl_canvas
+
+
+@pytest.fixture(autouse=True)
+def isolated_run_store():
+    """本模块设置临时归档目录，测试结束后必须释放进程级存档。"""
+    dsl_canvas.reset_store_for_tests()
+    try:
+        yield
+    finally:
+        dsl_canvas.reset_store_for_tests()
 
 
 def _modes(client: TestClient, headers: dict) -> list[dict]:

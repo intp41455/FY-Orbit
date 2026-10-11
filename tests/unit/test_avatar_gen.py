@@ -629,28 +629,17 @@ def test_migration_0020_is_reachable_from_the_single_head():
     原先硬编码断言父节点为 0015——多任务并行时会与既有分支撞多 head；
     改为断言拓扑不变量，任何后续新增迁移只要保持单头即可通过。
     """
-    import re
     from pathlib import Path
 
-    versions = Path(__file__).resolve().parents[2] / "migrations" / "versions"
-    graph: dict[str, str | None] = {}
-    for f in versions.glob("0*.py"):
-        text = f.read_text(encoding="utf-8")
-        rev = re.search(r'^revision: str = "([^"]+)"', text, re.M)
-        down = re.search(r'^down_revision: str \| None = "([^"]+)"', text, re.M)
-        if rev:
-            graph[rev.group(1)] = down.group(1) if down else None
+    from alembic.script import ScriptDirectory
 
-    parents = {v for v in graph.values() if v}
-    heads = sorted(r for r in graph if r not in parents)
+    # 用Alembic本身加载元数据：revision有无类型注解都属于合法迁移。
+    scripts = ScriptDirectory(str(Path(__file__).resolve().parents[2] / "migrations"))
+    heads = scripts.get_heads()
     assert len(heads) == 1, f"迁移链必须单头，当前 heads={heads}"
 
     # 0020 必须在 head 的祖先链上
-    chain = []
-    cur: str | None = heads[0]
-    while cur:
-        chain.append(cur)
-        cur = graph.get(cur)
+    chain = [revision.revision for revision in scripts.iterate_revisions(heads[0], "base")]
     assert "0020_avatar_profiles" in chain, f"0020 不在 head 链上: {chain}"
 
 
