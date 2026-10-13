@@ -49,9 +49,11 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.parse
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -78,6 +80,9 @@ NODE_TYPES = (
     "tool",                   # 经 services/tool_registry.py 现有公开接口调工具
     "human_input",            # 挂 services/hitl.py 挂起/恢复语义（DslSuspended）
     "trigger",                # 触发器/入口节点（manual/conversation/schedule/webhook）
+    # -- N5「拓扑结构扩大数量，对标 LangGraph」新增 2 类 --------------------
+    "parallel",               # 并行扇出/汇聚（对标 LangGraph 并行边 + Send API）
+    "subgraph",               # 命名子图节点（对标 LangGraph 子图作为节点）
 )
 #: 除既有三类之外的新增节点类型（A-画布搭建器-01 清单口径）。
 EXTENDED_NODE_TYPES: tuple[str, ...] = NODE_TYPES[3:]
@@ -119,8 +124,21 @@ ITERATION_MAX_ITEMS_CAP = 1000
 #: ``loop`` 默认/上界迭代次数：循环必须有终止上界，绝不静默死循环。
 LOOP_DEFAULT_MAX_ITERATIONS = 10
 LOOP_MAX_ITERATIONS_CAP = 1000
+#: ``parallel`` 分支数上界（并发扇出的规模闸门）。
+PARALLEL_MAX_BRANCHES = 8
+#: N5：图级 ``recursion_limit`` 默认/上界（对标 LangGraph ``recursion_limit``：
+#: 图执行步数硬上限，绝不让画布无限跑）。缺省即生效，无需画布作者显式声明。
+DEFAULT_RECURSION_LIMIT = 100
+RECURSION_LIMIT_CAP = 1000
+#: N5：单图节点数/边数上界（对标大图承载能力；超限即编译错误，绝不静默接受）。
+#: 取值参照 ``services/knowledge/graph.py`` 的知识星图规模闸门同一文化。
+MAX_NODES_PER_GRAPH = 500
+MAX_EDGES_PER_GRAPH = 2000
 #: 入口节点类型（装配完整性 R1 的可达起点）。
 ENTRY_NODE_TYPES = ("input", "trigger")
+#: 携带 ``params.subflow`` 内联子文档的容器型节点（深度检查与 ``_subflow_containers``
+#: 共用同一份清单，避免两处各抄一份后漏改）。
+SUBFLOW_CONTAINER_TYPES = ("iteration", "loop", "parallel", "subgraph")
 
 #: 默认导出文件名（代码导出）。
 CODE_EXPORT_FILENAME = "flow_restricted.py"
@@ -753,8 +771,12 @@ def _run_subflow_once(node_id: str, subflow: dict[str, Any], value: Any,
             f"节点 {node_id} 的 subflow 必须包含一个 input 节点作为入口")
     target = next(n for n in doc["nodes"] if n["id"] == input_ids[0])
     target["params"] = {**(target.get("params") or {}), "value": value}
-    result = run_dsl(doc, run_id=f"{node_id}:{label}",
-                     **{k: v for k, v in resolvers.items() if v is not None})
+    # ``subflows`` 是本运行可见的命名子图库（随调用链显式传递，不用模块级全局：
+    # ``parallel`` 在线程池里并发跑子流程，全局变量必然互相串味）。
+    library = resolvers.get("subflows") or {}
+    result = run_dsl(doc, run_id=f"{node_id}:{label}", subgraphs=library,
+                     **{k: v for k, v in resolvers.items()
+                        if v is not None and k != "subflows"})
     if result.status == "failed":
         raise DslValidationError(f"节点 {node_id} 子流程运行失败: {result.error}")
     return result.output
@@ -798,6 +820,71 @@ def _exec_node_loop(node_id: str, params: dict[str, Any], payload: Any,
             break
         current = last
     return {"iterations": iterations, "output": last, "reason": reason}
+
+
+#: 命名子图库以**调用链显式传参**的方式流转（``run_dsl(subgraphs=...)`` →
+#: ``execute_node(subflows=...)`` → ``resolvers["subflows"]``），
+#: 刻意不使用模块级可变全局：``parallel`` 在线程池里并发跑子流程，全局必然串味。
+
+
+def _exec_node_parallel(node_id: str, params: dict[str, Any], payload: Any,
+                        resolvers: dict[str, Any]) -> Any:
+    """并行扇出/汇聚（对标 LangGraph 的并行边 + ``Send`` 式动态 map 扇出）。
+
+    与 ``iteration`` 的差别是**真并发**：``iteration`` 是串行逐项 map（有序、
+    单线程、便于逐步调试），``parallel`` 把多个命名分支丢进线程池同时跑，
+    再按分支声明顺序 fan-in 汇总（顺序稳定，与完成先后无关）。
+
+    分支失败**如实上抛**：任一分支失败则本节点失败，绝不把失败分支当成
+    「已完成」混进汇聚结果（否则画布作者会拿到一份看起来齐全的假回执）。
+    """
+    branches = params["branches"]
+    workers = int(params.get("max_workers", len(branches)))
+    if workers < 1:
+        raise DslValidationError(f"节点 {node_id} parallel.max_workers 至少为 1")
+    # 扇出：每个分支一份独立深拷贝的子流程文档，避免并发下共享可变状态。
+    library = resolvers.get("subflows") or {}
+    docs: list[tuple[str, dict[str, Any]]] = []
+    for idx, branch in enumerate(branches):
+        docs.append((str(branch["name"]),
+                     _branch_subflow(node_id, branch, idx, library)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [
+            pool.submit(_run_subflow_once, node_id, doc, payload, resolvers,
+                        f"branch{idx}:{name}")
+            for idx, (name, doc) in enumerate(docs)
+        ]
+        # 按声明顺序取结果（future 完成的先后不影响输出顺序）。
+        return [fut.result() for fut in futures]
+
+
+def _branch_subflow(node_id: str, branch: Any, idx: int,
+                    library: dict[str, Any]) -> dict[str, Any]:
+    """取分支声明的子流程文档（``inline`` 或按名引用 ``subgraphs`` 库）。"""
+    if isinstance(branch.get("inline"), dict):
+        return branch["inline"]
+    name = branch.get("ref")
+    sub = library.get(name) if isinstance(name, str) else None
+    if sub is None:
+        raise DslValidationError(
+            f"节点 {node_id} parallel.branches[{idx}] 引用了未定义的子流程 {name!r}；"
+            f"可用子流程: {sorted(library)}")
+    return sub
+
+
+def _exec_node_subgraph(node_id: str, params: dict[str, Any], payload: Any,
+                        resolvers: dict[str, Any]) -> Any:
+    """命名子图节点（对标 LangGraph「把子图作为节点」）。
+
+    与 ``parallel`` 的差别是**单次调用一张被命名的子图**：子图在文档级
+    ``subgraphs`` 里声明一次，可被多个 ``subgraph`` 节点按名复用；输出额外带上
+    ``subgraph`` 名字，让运行日志能看出结果来自哪张子图。
+    """
+    name = str(params["name"])
+    subflow = _branch_subflow(node_id, {"ref": name}, 0,
+                              resolvers.get("subflows") or {})
+    out = _run_subflow_once(node_id, subflow, payload, resolvers, f"subgraph:{name}")
+    return {"subgraph": name, "output": out}
 
 
 def _exec_node_variable_aggregator(node_id: str, params: dict[str, Any],
@@ -1031,27 +1118,35 @@ def _check_approval(node_id: str, params: dict[str, Any]) -> None:
 # -- 节点级跨字段检查（A-画布搭建器-01：非 transform 节点的编译期约束） --------
 
 
-def _check_subflow_doc(node_id: str, subflow: Any, *, depth: int = 0) -> None:
-    """子流程必须是一张**合法 DSL 文档**，且嵌套深度有上界（防编译期深爆炸）。"""
+def _check_subflow_doc(node_id: str, subflow: Any, *, depth: int = 0,
+                       library: dict[str, Any] | None = None) -> None:
+    """子流程必须是一张**合法 DSL 文档**，且嵌套深度有上界（防编译期深爆炸）。
+
+    ``library`` 是**外层可见的子图名表**：嵌套子流程按名引用父图子图是运行期支持的
+    （:func:`run_dsl` 会把父图库合并进子流程），编译期必须同语义下传，否则会出现
+    「编译报错但实际能跑」的双标。**下层声明遮蔽上层同名**（与 run_dsl 的合并顺序一致）。
+    """
     if not isinstance(subflow, dict):
         raise DslValidationError(
             f"节点 {node_id} 的 subflow 必须是一张 DSL 文档对象")
     try:
-        validate_dsl(subflow)
+        validate_dsl(subflow, _visible_subgraphs=library)
     except DslValidationError as exc:
         raise DslValidationError(f"节点 {node_id} 的 subflow 不合法: {exc}") from exc
     if depth >= SUBFLOW_MAX_DEPTH:
         raise DslValidationError(
             f"节点 {node_id} 的子流程嵌套超过 {SUBFLOW_MAX_DEPTH} 层上界")
     for n in subflow.get("nodes", []):
-        if isinstance(n, dict) and n.get("type") in ("iteration", "loop"):
+        if isinstance(n, dict) and n.get("type") in SUBFLOW_CONTAINER_TYPES:
             nested = (n.get("params") or {}).get("subflow")
             if isinstance(nested, dict):
-                _check_subflow_doc(f"{node_id}>{n['id']}", nested, depth=depth + 1)
+                _check_subflow_doc(f"{node_id}>{n['id']}", nested,
+                                   depth=depth + 1, library=library)
 
 
-def _check_iteration(node_id: str, params: dict[str, Any]) -> None:
-    _check_subflow_doc(node_id, params.get("subflow"))
+def _check_iteration(node_id: str, params: dict[str, Any],
+                     library: dict[str, Any] | None = None) -> None:
+    _check_subflow_doc(node_id, params.get("subflow"), library=library)
     subflow = params.get("subflow") or {}
     if not any(isinstance(n, dict) and n.get("type") == "input"
                for n in subflow.get("nodes", [])):
@@ -1068,8 +1163,9 @@ def _check_iteration(node_id: str, params: dict[str, Any]) -> None:
             node_id=node_id, field_path="params.max_items")
 
 
-def _check_loop(node_id: str, params: dict[str, Any]) -> None:
-    _check_subflow_doc(node_id, params.get("subflow"))
+def _check_loop(node_id: str, params: dict[str, Any],
+                library: dict[str, Any] | None = None) -> None:
+    _check_subflow_doc(node_id, params.get("subflow"), library=library)
     max_iter = params.get("max_iterations")
     if max_iter is not None and (isinstance(max_iter, bool) or
                                  not isinstance(max_iter, int) or
@@ -1085,7 +1181,8 @@ def _check_loop(node_id: str, params: dict[str, Any]) -> None:
             node_id=node_id, field_path="params.until_field")
 
 
-def _check_question_classifier(node_id: str, params: dict[str, Any]) -> None:
+def _check_question_classifier(node_id: str, params: dict[str, Any],
+                              library: dict[str, Any] | None = None) -> None:
     classes = params.get("classes")
     if not isinstance(classes, list) or len(classes) < 2 or \
             not all(isinstance(c, str) and c for c in classes):
@@ -1095,7 +1192,8 @@ def _check_question_classifier(node_id: str, params: dict[str, Any]) -> None:
             node_id=node_id, field_path="params.classes")
 
 
-def _check_parameter_extractor(node_id: str, params: dict[str, Any]) -> None:
+def _check_parameter_extractor(node_id: str, params: dict[str, Any],
+                               library: dict[str, Any] | None = None) -> None:
     fields = params.get("fields")
     if not isinstance(fields, list) or not fields or not all(
             isinstance(f, dict) and isinstance(f.get("name"), str) and f["name"]
@@ -1106,12 +1204,101 @@ def _check_parameter_extractor(node_id: str, params: dict[str, Any]) -> None:
             node_id=node_id, field_path="params.fields")
 
 
+# -- N5：并行扇出 与 命名子图的编译期跨字段检查 ------------------------------
+
+
+def _subflow_entry_ok(subflow: Any) -> bool:
+    """子流程是否含一个 ``input`` 节点作为入口（子流程由 payload 喂输入）。"""
+    return isinstance(subflow, dict) and any(
+        isinstance(n, dict) and n.get("type") == "input"
+        for n in subflow.get("nodes", []))
+
+
+def _check_parallel(node_id: str, params: dict[str, Any],
+                    library: dict[str, Any] | None = None) -> None:
+    """``parallel`` 的分支声明逐项校验（**分支数硬闸门**在此生效）。
+
+    每项必须是 ``{name, inline | ref}``：``inline`` 是一张内联子图文档，
+    ``ref`` 引用文档级 ``subgraphs`` 里的名字。二者**有且只有一个**——
+    同时给或都不给都是编译错误，绝不靠运行期猜。
+    """
+    branches = params.get("branches")
+    if not isinstance(branches, list) or not branches:
+        raise DslFieldError(
+            f"节点 {node_id} 的 parallel.branches 必须是非空数组",
+            node_id=node_id, field_path="params.branches")
+    if len(branches) > PARALLEL_MAX_BRANCHES:
+        raise DslFieldError(
+            f"节点 {node_id} 的 parallel.branches 有 {len(branches)} 个分支，"
+            f"超过规模闸门 PARALLEL_MAX_BRANCHES={PARALLEL_MAX_BRANCHES}",
+            node_id=node_id, field_path="params.branches")
+    seen: set[str] = set()
+    for idx, branch in enumerate(branches):
+        if not isinstance(branch, dict):
+            raise DslFieldError(
+                f"节点 {node_id} 的 parallel.branches[{idx}] 必须是对象",
+                node_id=node_id, field_path=f"params.branches.{idx}")
+        name = branch.get("name")
+        if not isinstance(name, str) or not name:
+            raise DslFieldError(
+                f"节点 {node_id} 的 parallel.branches[{idx}].name 必须是非空字符串"
+                "（分支名决定 fan-in 结果的可读顺序）",
+                node_id=node_id, field_path=f"params.branches.{idx}.name")
+        if name in seen:
+            raise DslFieldError(
+                f"节点 {node_id} 的 parallel 分支名 {name!r} 重复",
+                node_id=node_id, field_path=f"params.branches.{idx}.name")
+        seen.add(name)
+        inline, ref = branch.get("inline"), branch.get("ref")
+        if isinstance(inline, dict) and ref is not None:
+            raise DslFieldError(
+                f"节点 {node_id} 的 parallel.branches[{idx}] 同时给了 inline 与 ref，"
+                "二者只能选一个",
+                node_id=node_id, field_path=f"params.branches.{idx}")
+        if isinstance(inline, dict):
+            _check_subflow_doc(f"{node_id}.branches[{idx}]", inline,
+                               library=library)
+            if not _subflow_entry_ok(inline):
+                raise DslFieldError(
+                    f"节点 {node_id} 的 parallel.branches[{idx}].inline 必须包含"
+                    "一个 input 节点作为入口",
+                    node_id=node_id, field_path=f"params.branches.{idx}.inline")
+        elif isinstance(ref, str) and ref:
+            pass  # 按名引用：文档级 ``subgraphs`` 的存在性由 validate_dsl 检查
+        else:
+            raise DslFieldError(
+                f"节点 {node_id} 的 parallel.branches[{idx}] 必须给 inline"
+                "（内联子图文档）或 ref（子图名）之一",
+                node_id=node_id, field_path=f"params.branches.{idx}")
+    workers = params.get("max_workers")
+    if workers is not None and (isinstance(workers, bool) or
+                                not isinstance(workers, int) or
+                                not 1 <= workers <= PARALLEL_MAX_BRANCHES):
+        raise DslFieldError(
+            f"节点 {node_id} 的 parallel.max_workers 必须在 "
+            f"1..{PARALLEL_MAX_BRANCHES} 内，实际是 {workers!r}",
+            node_id=node_id, field_path="params.max_workers")
+
+
+def _check_subgraph(node_id: str, params: dict[str, Any],
+                    library: dict[str, Any] | None = None) -> None:
+    """``subgraph`` 必须按名引用文档级子图；名字本身由 JSON Schema 保证非空。"""
+    name = params.get("name")
+    if not isinstance(name, str) or not name:
+        raise DslFieldError(
+            f"节点 {node_id} 的 subgraph.name 必须是非空子图名",
+            node_id=node_id, field_path="params.name")
+
+
 #: 非 transform 节点类型的编译期跨字段检查（由 validate_dsl 在参数校验后调用）。
-NODE_PARAM_CHECKS: dict[str, Callable[[str, dict[str, Any]], None]] = {
+#: 第三个参数 ``library`` 是当前文档可见的子图名表（外层继承 + 本层声明）。
+NODE_PARAM_CHECKS: dict[str, Callable[[str, dict[str, Any], dict[str, Any]], None]] = {
     "iteration": _check_iteration,
     "loop": _check_loop,
     "question_classifier": _check_question_classifier,
     "parameter_extractor": _check_parameter_extractor,
+    "parallel": _check_parallel,
+    "subgraph": _check_subgraph,
 }
 
 
@@ -1322,6 +1509,22 @@ NODE_PARAMS_SCHEMAS: dict[str, dict[str, Any]] = {
         "kind": {"enum": list(TRIGGER_KINDS)},
         "config": {"type": "object"},
     }, required=("kind",)),
+    # ------------------------------------------------------------------
+    # N5「拓扑结构扩大数量」新增 2 类：并行扇出/汇聚 与 命名子图。
+    # 分支与子图的**元素级结构**由 ``_check_parallel`` / ``_check_subgraph``
+    # 逐项校验（JSON Schema 片段只约束「是数组/是字符串」，逐项语义交这两个
+    # 跨字段检查——与 ``iteration.subflow`` 同一分工口径）。
+    # ------------------------------------------------------------------
+    "parallel": _obj({
+        # [{name: 分支名, inline?: 内联子图文档, ref?: 文档级 subgraphs 里的名字}]
+        "branches": {"type": "array"},
+        # 并发线程数；缺省=分支数。真正生效的闸门在 _check_parallel。
+        "max_workers": {"type": "integer"},
+    }, required=("branches",)),
+    "subgraph": _obj({
+        # 引用文档级 ``subgraphs`` 里的哪一张子图（对标 LangGraph 具名子图）。
+        "name": {"type": "string", "minLength": 1},
+    }, required=("name",)),
 }
 
 
@@ -1361,6 +1564,22 @@ def _node_type_schema_branches() -> list[dict[str, Any]]:
     ]
 
 
+#: 子流程文档的 JSON Schema 片段（文档级 ``subgraphs`` 与内联 ``subflow`` 共用）。
+#: **刻意只约束骨架**：子流程的完整校验由 :func:`validate_dsl` 递归完成（单一
+#: 真源），这里若再抄一份全量 schema 就会与 ``NODE_PARAMS_SCHEMAS`` 漂移——
+#: 递归结构无法在 JSON Schema 里自我引用，故只声明「是一张 DSL 文档」。
+_SUBFLOW_DOC_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["version", "nodes", "edges"],
+    "properties": {
+        "version": {"const": "1"},
+        "flow_type": {"enum": list(FLOW_TYPES)},
+        "nodes": {"type": "array"},
+        "edges": {"type": "array"},
+    },
+}
+
+
 DSL_JSON_SCHEMA: dict[str, Any] = {
     "$id": "find-yourself:dsl-canvas:1",
     "title": "Find Yourself 受限 DSL 画布文档",
@@ -1372,6 +1591,14 @@ DSL_JSON_SCHEMA: dict[str, Any] = {
         # A-画布搭建器-05：Chatflow/Workflow 双形态（可选；缺省 workflow，
         # 与既有文档向后兼容）。
         "flow_type": {"enum": list(FLOW_TYPES)},
+        # N5：文档级命名子图库 ``{名字: 子图文档}``。``subgraph`` 节点与
+        # ``parallel.branches[].ref`` 按名引用这里，一张子图可被多处复用。
+        "subgraphs": {
+            "type": "object",
+            "propertyNames": {"minLength": 1, "maxLength": 64,
+                              "pattern": "^[A-Za-z0-9_-]+$"},
+            "additionalProperties": _SUBFLOW_DOC_SCHEMA,
+        },
         "nodes": {
             "type": "array",
             "items": {
@@ -1438,8 +1665,74 @@ class CompiledPlan:
     nodes: dict[str, dict[str, Any]]
 
 
-def validate_dsl(doc: Any) -> dict[str, Any]:
-    """结构校验（手写轻量校验，覆盖 JSON Schema 中的约束）。"""
+def _validate_subgraph_library(
+        doc: dict[str, Any],
+        outer: dict[str, Any] | None = None) -> dict[str, dict[str, Any]]:
+    """校验文档级 ``subgraphs`` 命名子图库，返回 ``{名字: 子图文档}``。
+
+    每张子图都是一张**完整 DSL 文档**，递归过 :func:`validate_dsl`（单一真源），
+    且必须能作为子流程运行（含 ``input`` 入口节点）。命名重复即编译错误——
+    绝不让「后定义的覆盖前面的」这种静默行为存在。
+
+    ``outer`` 是**外层文档可见的子图名表**：子图文档可以按名引用父图库的子图
+    （与 :func:`run_dsl` 运行期的库合并语义一致），编译期必须同语义，否则会
+    出现「编译期报错 / 运行期能跑」的双标。
+    """
+    library = doc.get("subgraphs")
+    if library is None:
+        return {}
+    if not isinstance(library, dict):
+        raise DslValidationError("subgraphs 必须是对象（名字 -> 子图文档）")
+    declared: dict[str, dict[str, Any]] = {}
+    for name in library:
+        if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", str(name)):
+            raise DslValidationError(f"子图名不合法: {name!r}")
+        declared[str(name)] = library[name]
+    # 先把本层所有名字收齐，再校验每张子图：允许同层子图互相引用。
+    visible: dict[str, Any] = {**(outer or {}), **declared}
+    for name, sub in declared.items():
+        _check_subflow_doc(f"subgraphs[{name}]", sub, library=visible)
+        if not _subflow_entry_ok(sub):
+            raise DslValidationError(
+                f"子图 {name!r} 必须包含一个 input 节点作为入口"
+                "（子流程由上游 payload 喂输入，没有入口就无法运行）")
+    return declared
+
+
+def _check_subgraph_refs(node_id: str, ntype: str, params: dict[str, Any],
+                         library: dict[str, dict[str, Any]]) -> None:
+    """``subgraph.name`` 与 ``parallel.branches[].ref`` 必须在子图库中真实存在。
+
+    编译期就报「引用了未定义的子图」，而不是运行到该节点才失败——否则画布作者
+    会拿到一份「前半段跑通、后半段炸掉」的运行记录，很难定位是引用写错。
+    """
+    if ntype == "subgraph":
+        name = params.get("name")
+        if name not in library:
+            raise DslFieldError(
+                f"节点 {node_id} 引用了未定义的子图 {name!r}；"
+                f"可用子图: {sorted(library) or '（文档未声明 subgraphs）'}",
+                node_id=node_id, field_path="params.name")
+    elif ntype == "parallel":
+        for idx, branch in enumerate(params.get("branches") or []):
+            if not isinstance(branch, dict):
+                continue
+            ref = branch.get("ref")
+            if isinstance(ref, str) and ref and ref not in library:
+                raise DslFieldError(
+                    f"节点 {node_id} 的 parallel.branches[{idx}] 引用了未定义的"
+                    f"子图 {ref!r}；可用子图: {sorted(library) or '（文档未声明 subgraphs）'}",
+                    node_id=node_id, field_path=f"params.branches.{idx}.ref")
+
+
+def validate_dsl(doc: Any, *,
+                 _visible_subgraphs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """结构校验（手写轻量校验，覆盖 JSON Schema 中的约束）。
+
+    ``_visible_subgraphs`` 是**递归内部通道**：校验嵌套子流程时，把外层文档的子图
+    名表传下去，使「子流程按名引用父图子图」在编译期与运行期同语义（下层遮蔽上层，
+    与 :func:`run_dsl` 的库合并顺序一致）。顶层调用不需要传。
+    """
     if not isinstance(doc, dict):
         raise DslValidationError("DSL 文档必须是 JSON 对象")
     if doc.get("version") != "1":
@@ -1454,6 +1747,22 @@ def validate_dsl(doc: Any) -> dict[str, Any]:
         raise DslValidationError("nodes 必须是非空数组")
     if not isinstance(edges, list):
         raise DslValidationError("edges 必须是数组")
+    # N5：图级规模闸门（对标 LangGraph 的大图承载）。不设闸门时一张超大图会把
+    # 拓扑排序/入队排序拖成 O(n²) 乃至更差，且没有任何可解释的失败理由。
+    if len(nodes) > MAX_NODES_PER_GRAPH:
+        raise DslValidationError(
+            f"节点数 {len(nodes)} 超过单图上限 {MAX_NODES_PER_GRAPH}；"
+            "请拆成多张图或用 subgraph 复用")
+    if len(edges) > MAX_EDGES_PER_GRAPH:
+        raise DslValidationError(
+            f"边数 {len(edges)} 超过单图上限 {MAX_EDGES_PER_GRAPH}")
+
+    # N5：文档级命名子图库——先整体校验，再作为 ``ref`` 的唯一可解析来源。
+    # 可见名表 = 外层继承 + 本层声明（本层遮蔽外层，与 run_dsl 合并顺序一致）。
+    library: dict[str, Any] = {
+        **(_visible_subgraphs or {}),
+        **_validate_subgraph_library(doc, outer=_visible_subgraphs),
+    }
 
     ids: set[str] = set()
     for n in nodes:
@@ -1488,10 +1797,13 @@ def validate_dsl(doc: Any) -> dict[str, Any]:
             if not isinstance(params, dict):
                 raise DslValidationError(f"节点 {n['id']} params 必须是对象")
             _validate_params_against(n["id"], NODE_PARAMS_SCHEMAS[n["type"]], params)
-            # 节点级跨字段检查（iteration/loop 子流程、classifier 类别等）。
+            # 节点级跨字段检查（iteration/loop 子流程、parallel 分支、classifier 类别等）。
             node_check = NODE_PARAM_CHECKS.get(n["type"])
             if node_check is not None:
-                node_check(n["id"], params)
+                node_check(n["id"], params, library)
+        # N5：按名引用子图必须在文档级 ``subgraphs`` 库中真实存在（编译期拦，
+        # 不留到运行期才因「找不到子图」失败）。
+        _check_subgraph_refs(n["id"], n["type"], n.get("params") or {}, library)
 
     for e in edges:
         if not isinstance(e, dict):
@@ -1546,13 +1858,21 @@ def _validate_params_against(node_id: str, schema: dict[str, Any],
             raise DslValidationError(f"节点 {node_id} 参数 {key} 必须是对象")
 
 
-def canonical_dsl(doc: Any) -> dict[str, Any]:
+def canonical_dsl(doc: Any, *,
+                  visible_subgraphs: dict[str, Any] | None = None) -> dict[str, Any]:
     """规范化 DSL 文档（省略空params / 非transform 的 verb / 空 condition）。
 
     与既有 :func:`~find_yourself.services.workflow_gen.graph_to_dsl` 的省略规则
     一致，因此规范化结果可以直接当DSL 文档使用（等价于画布的语义层）。
+
+    ``visible_subgraphs`` 是调用方从外部注入的子图名表：子流程里按名引用父图子图时，
+    没有它本校验会误报「引用了未定义的子图」。
+
+    N5：``subgraphs`` **进入摘要**。子图库是语义的一部分——两张主图节点边完全相同
+    但子图库不同，运行结果可以天差地别；若摘要不覆盖它，人所审批的那份 digest
+    就无法代表实际执行的行为（TOCTOU 防护被绕过）。
     """
-    validate_dsl(doc)
+    validate_dsl(doc, _visible_subgraphs=visible_subgraphs)
     nodes: list[dict[str, Any]] = []
     for n in doc["nodes"]:
         entry: dict[str, Any] = {"id": n["id"], "type": n["type"]}
@@ -1573,30 +1893,42 @@ def canonical_dsl(doc: Any) -> dict[str, Any]:
     # flow_type 参与规范化（它改变触发器/入口语义，摘要必须随它变）。
     if doc.get("flow_type") is not None:
         canonical["flow_type"] = doc["flow_type"]
+    # N5：命名子图库同样参与摘要（否则改子图不改 digest，审批失去意义）。
+    library = doc.get("subgraphs")
+    if isinstance(library, dict) and library:
+        canonical["subgraphs"] = {
+            name: canonical_dsl(sub, visible_subgraphs=library)
+            for name, sub in sorted(library.items())
+        }
     return canonical
 
 
-def dsl_digest(doc: Any) -> str:
+def dsl_digest(doc: Any, *,
+               visible_subgraphs: dict[str, Any] | None = None) -> str:
     """DSL 文档的规范化摘要（SHA-256 前16 位）。
 
     基于 :func:`canonical_dsl`（省略规则归一），因此「语义等价的两张画布摘要相同」。
     用途：人工裁决的 TOCTOU 防护——人看的是某个版本的图，裁决时必须确认还是那一版
     （对齐 dev-hitl 的 ``expected_version`` 乐观锁）。
     """
-    canonical = canonical_dsl(doc)
+    canonical = canonical_dsl(doc, visible_subgraphs=visible_subgraphs)
     blob = json.dumps(canonical, ensure_ascii=False, sort_keys=True,
                       separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
-def compile_dsl(doc: Any) -> CompiledPlan:
+def compile_dsl(doc: Any, *,
+                 visible_subgraphs: dict[str, Any] | None = None) -> CompiledPlan:
     """校验 + 拓扑排序（Kahn）+ 环检测。
 
     在既有结构校验之后追加 **ADR-02 的类型化 IR 闸门**（:func:`dsl_ir.assert_ir_valid`）：
     节点/边的强类型契约（``extra="forbid"``）在执行之前就把类型错误拦下，且错误能
     定位到「哪张画布的哪个节点、哪个字段」。既有合法文档全部照常通过。
+
+    ``visible_subgraphs`` 是**调用方从外部注入**的子图名表（如 DSL SDK 场景：库存在
+    编排器里而不在文档里）。不传就等于文档自声明的库，编译期引用校验据此判定。
     """
-    validate_dsl(doc)
+    validate_dsl(doc, _visible_subgraphs=visible_subgraphs)
     # 局部导入：dsl_ir 反向依赖本模块的 VERB_REGISTRY，模块级导入会成环。
     from .dsl_ir import assert_ir_valid
     assert_ir_valid(doc)
@@ -1638,9 +1970,13 @@ def flow_type_of(doc: Any) -> str:
 
 
 def _subflow_containers(doc: dict[str, Any]) -> list[dict[str, Any]]:
-    """主图中所有 iteration/loop 节点（其 subflow 的合法性已由编译期检查保证）。"""
+    """主图中所有携带子流程的容器节点（其 subflow 的合法性已由编译期检查保证）。
+
+    类型集合直接取 :data:`SUBFLOW_CONTAINER_TYPES` —— 单一真源，避免新增容器
+    类型时这里悄悄漏掉（曾硬编码 ``("iteration","loop")`` 而真源已有4 项）。
+    """
     return [n for n in doc.get("nodes", [])
-            if isinstance(n, dict) and n.get("type") in ("iteration", "loop")]
+            if isinstance(n, dict) and n.get("type") in SUBFLOW_CONTAINER_TYPES]
 
 
 def validate_assembly(doc: Any, *, flow_type: str | None = None) -> dict[str, Any]:
@@ -1741,13 +2077,15 @@ def execute_node(node: dict[str, Any], payload: Any, *,
                  http_resolver: HttpResolver | None = None,
                  human_input_provider: HumanInputProvider | None = None,
                  execution_id: str | None = None,
-                 dsl_digest: str = "") -> Any:
+                 dsl_digest: str = "",
+                 subflows: dict[str, Any] | None = None) -> Any:
     """执行单个节点。payload 为所有入边数据的合并（None 表示无输入）。
 
     ``upstreams`` 是全部入边上游的输出列表，供 :verb:`merge` 与
     ``variable_aggregator`` 这类多路节点使用；其余节点只用 ``payload``。
     注入式解析器（llm/knowledge/tool/http/human_input）只被对应新节点类型
     使用，未注入时这些节点**诚实失败**（绝不假装调用成功）。
+    ``subflows`` 是本运行可见的命名子图库（``parallel`` / ``subgraph`` 按名取图）。
     """
     ntype = node["type"]
     params = node.get("params", {}) or {}
@@ -1803,13 +2141,29 @@ def execute_node(node: dict[str, Any], payload: Any, *,
             agent_resolver=agent_resolver, llm_resolver=llm_resolver,
             knowledge_resolver=knowledge_resolver, tool_resolver=tool_resolver,
             http_resolver=http_resolver, human_input_provider=human_input_provider,
-            confirm_decision=confirm_decision, approval_signal=approval_signal))
+            confirm_decision=confirm_decision, approval_signal=approval_signal,
+            subflows=subflows))
     if ntype == "loop":
         return _exec_node_loop(node["id"], params, payload, _resolvers_dict(
             agent_resolver=agent_resolver, llm_resolver=llm_resolver,
             knowledge_resolver=knowledge_resolver, tool_resolver=tool_resolver,
             http_resolver=http_resolver, human_input_provider=human_input_provider,
-            confirm_decision=confirm_decision, approval_signal=approval_signal))
+            confirm_decision=confirm_decision, approval_signal=approval_signal,
+            subflows=subflows))
+    if ntype == "parallel":
+        return _exec_node_parallel(node["id"], params, payload, _resolvers_dict(
+            agent_resolver=agent_resolver, llm_resolver=llm_resolver,
+            knowledge_resolver=knowledge_resolver, tool_resolver=tool_resolver,
+            http_resolver=http_resolver, human_input_provider=human_input_provider,
+            confirm_decision=confirm_decision, approval_signal=approval_signal,
+            subflows=subflows))
+    if ntype == "subgraph":
+        return _exec_node_subgraph(node["id"], params, payload, _resolvers_dict(
+            agent_resolver=agent_resolver, llm_resolver=llm_resolver,
+            knowledge_resolver=knowledge_resolver, tool_resolver=tool_resolver,
+            http_resolver=http_resolver, human_input_provider=human_input_provider,
+            confirm_decision=confirm_decision, approval_signal=approval_signal,
+            subflows=subflows))
     if ntype == "variable_aggregator":
         return _exec_node_variable_aggregator(node["id"], params, payload,
                                               list(upstreams or []))
@@ -1884,6 +2238,21 @@ class RunResult:
         }
 
 
+def _emit(on_event: Callable[[str, dict], None] | None,
+          event_type: str, data: dict) -> None:
+    """观测侧回调的安全出口：``on_event`` 为 None 或抛异常都不影响运行。
+
+    观测通道（G2 实时推送）是**叠加**在确定性执行之上的：任何回调异常都绝不
+    允许污染或中断一次运行。
+    """
+    if on_event is None:
+        return
+    try:
+        on_event(event_type, data)
+    except Exception:  # noqa: BLE001 - 观测侧异常绝不允许中断运行
+        pass
+
+
 def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
             agent_resolver: AgentResolver | None = None,
             confirm_decision: ConfirmDecisionReader | None = None,
@@ -1893,7 +2262,10 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
             tool_resolver: ToolResolver | None = None,
             http_resolver: HttpResolver | None = None,
             human_input_provider: HumanInputProvider | None = None,
-            execution_id: str | None = None) -> RunResult:
+            execution_id: str | None = None,
+            recursion_limit: int | None = None,
+            subgraphs: dict[str, Any] | None = None,
+            on_event: Callable[[str, dict], None] | None = None) -> RunResult:
     """编译并执行一份 DSL 文档，返回带逐步日志的运行结果。
 
     调度采用「节点完成后按后继边条件入队」的动态展开：
@@ -1924,18 +2296,39 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     :param execution_id: **由调用方显式传入**的稳定执行标识（不要用 ``run_id``：
         它每次运行重新生成且只在内存里，重启后恢复链会断）。它进入
         :attr:`DslSuspended.checkpoint`，供上层把 HITL interrupt 与本执行关联。
+    :param recursion_limit: 图执行的步数硬上限（对标 LangGraph 的同名参数）。
+        缺省 :data:`DEFAULT_RECURSION_LIMIT`，超出即裁到
+        :data:`RECURSION_LIMIT_CAP`——绝不接受一个能把服务拖死的无界值。
+    :param subgraphs: 父图传下来的文档级子图库。子流程内部若也要按名引用子图，
+        靠它继承；本图自己声明的 ``subgraphs`` 优先。
 
     :raises DslSuspended: 走到 ``confirm`` / ``approval`` / ``human_input`` 且尚无
         人工输入/裁决时。**该异常穿透本函数**（不被转成
         ``RunResult.status="failed"``），上层编排据此建 interrupt 并在人工裁决后
         重开一轮。
     """
-    plan = compile_dsl(doc)
+    plan = compile_dsl(doc, visible_subgraphs=subgraphs)
     rid = run_id or f"dsl-{uuid.uuid4().hex[:12]}"
     result = RunResult(run_id=rid, status="succeeded", doc=doc,
                        execution_id=execution_id)
+    _emit(on_event, "run_started", {"run_id": rid, "status": "running"})
+    # N5：文档级命名子图库在运行期对 ``parallel.branches[].ref`` / ``subgraph.name``
+    # 可见。子流程继承父图的库（本图自声明的同名key 优先）。**必须先于 digest
+    # 计算**——``canonical_dsl`` 内部会再校验一次文档，库不可见就会把一份合法的
+    # 文档误判成「引用了未定义的子图」。
+    subflows = {**(subgraphs or {}), **(doc.get("subgraphs") or {})}
     # 供confirm 裁决读取器自校验「人所见即所批」的文档摘要。
-    digest = dsl_digest(doc)
+    digest = dsl_digest(doc, visible_subgraphs=subgraphs)
+    # N5：步数硬闸门——被裁到合法区间，不存在「传进来一个 10**9 就真的跑 10**9」。
+    try:
+        limit = int(recursion_limit if recursion_limit is not None
+                    else DEFAULT_RECURSION_LIMIT)
+    except (TypeError, ValueError):
+        limit = DEFAULT_RECURSION_LIMIT
+    limit = max(1, min(limit, RECURSION_LIMIT_CAP))
+    steps = 0
+    #: 步数闸门是否触发（触发后直接收尾，不把剩余节点谎报成 skipped）。
+    step_guard_hit = False
 
     outputs: dict[str, Any] = {}
     # node -> 剩余未满足的入边数（入队闸门）
@@ -1943,6 +2336,8 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     # node -> 已有一 Condition 通过（用于 skipped 判定）
     triggered: dict[str, bool] = {nid: False for nid in plan.nodes}
     queue: list[str] = [nid for nid in plan.order if pending[nid] == 0]
+    # 拓扑序 -> 排名表（稳定出队用，避免每次 O(n) 线性查找）。
+    _rank = {nid: i for i, nid in enumerate(plan.order)}
 
     def now() -> str:
         return datetime.now(timezone.utc).isoformat()
@@ -1957,12 +2352,27 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     try:
         while True:
             while queue:
-                queue.sort(key=lambda nid: plan.order.index(nid))  # 稳定按拓扑序
+                # N5：按拓扑序稳定出队。用预计算的 rank 表替代每次
+                # ``plan.order.index`` —— 后者是 O(n) 线性扫描，整轮下来 O(n²)。
+                queue.sort(key=lambda nid: _rank[nid])
                 nid = queue.pop(0)
+                steps += 1
+                if steps > limit:
+                    # fail-closed：超限即失败，绝不「跑着跑着就没了」。
+                    result.status = "failed"
+                    result.error = (
+                        f"图执行步数超过 recursion_limit={limit}"
+                        f"（已跑 {steps - 1} 步后仍需继续）；"
+                        "请提高上界或拆分流程")
+                    step_guard_hit = True
+                    break
                 node = plan.nodes[nid]
                 log = NodeLog(node_id=nid, node_type=node["type"],
                               verb=node.get("verb"), status="succeeded", started_at=now())
                 result.logs.append(log)
+                _emit(on_event, "node_started", {
+                    "node_id": nid, "node_type": node["type"],
+                    "verb": node.get("verb")})
                 # 合并所有入边上游输出（payload 取第一个非 None，与既有语义一致）；
                 # upstreams 保留全部，供 merge 这类多路动词使用。
                 incoming = [e["from"] for e in doc["edges"] if e["to"] == nid]
@@ -1986,10 +2396,12 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                                        http_resolver=http_resolver,
                                        human_input_provider=human_input_provider,
                                        execution_id=execution_id,
-                                       dsl_digest=digest)
+                                       dsl_digest=digest,
+                                       subflows=subflows)
                     outputs[nid] = out
                     log.output = out
                     log.finished_at = now()
+                    _emit(on_event, "node_finished", log.to_dict())
                 except DslSuspended:
                     # 控制流信号，**不是节点失败**：必须穿透，否则挂起会静默退化成
                     # 「节点 failed + 分支终止」，上层永远等不到 interrupt。
@@ -1997,6 +2409,7 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                     # 供上层看到「跑到哪儿了」）。
                     log.status = "suspended"
                     log.finished_at = now()
+                    _emit(on_event, "node_finished", log.to_dict())
                     result.status = "suspended"
                     result.error = None
                     raise
@@ -2004,6 +2417,7 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                     log.status = "failed"
                     log.error = str(exc)
                     log.finished_at = now()
+                    _emit(on_event, "node_finished", log.to_dict())
                     result.status = "failed"
                     result.error = f"节点 {nid} 执行失败: {exc}"
                     continue
@@ -2020,6 +2434,9 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                                 queue.append(edge["to"])
                     else:
                         enqueue_ready(edge["to"])
+            # 步数闸门触发时直接收尾：既不继续跑，也不把剩余节点谎报成 skipped。
+            if step_guard_hit:
+                break
             # 跳过传播：未被触发的节点按拓扑序标记 skipped，并把其出边按
             # 「条件不满足」向下传播；若某下游已被其他分支触发且计数归零，
             # 则重新进入主循环执行（requeue）。
@@ -2028,9 +2445,11 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                 if _latest_log(result, nid) is not None:
                     continue
                 node = plan.nodes[nid]
-                result.logs.append(NodeLog(
+                skipped_log = NodeLog(
                     node_id=nid, node_type=node["type"], verb=node.get("verb"),
-                    status="skipped", started_at=now(), finished_at=now()))
+                    status="skipped", started_at=now(), finished_at=now())
+                result.logs.append(skipped_log)
+                _emit(on_event, "node_finished", skipped_log.to_dict())
                 for edge in plan.adjacency[nid]:
                     dst = edge["to"]
                     pending[dst] -= 1
@@ -2050,6 +2469,11 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     except Exception as exc:  # 编译期错误等
         result.status = "failed"
         result.error = str(exc)
+    # 收尾事件：``DslSuspended`` 穿透时走 ``raise``，故挂起运行**不发** run_finished
+    # （上层据此另建 interrupt，而不是把它误读成一次跑完）。
+    _emit(on_event, "run_finished", {
+        "run_id": rid, "status": result.status,
+        "output": result.output, "error": result.error})
     return result
 
 
@@ -2067,23 +2491,39 @@ def _latest_log(result: RunResult, node_id: str) -> NodeLog | None:
 
 
 class DslRunStore:
-    """run_id -> RunResult；可选把完整结果 JSON 落到归档目录。"""
+    """run_id -> RunResult；可选把完整结果 JSON 落到归档目录。
+
+    ``_owners`` 记录每条 run 的归属标识（``owner_id or service_id``，与
+    :meth:`DslFlowStore._actor_identity` 同款）；读侧一律走 :meth:`get_owned`。
+    """
 
     def __init__(self, archive_dir: str | os.PathLike[str] | None = None,
                  max_in_memory: int = 200):
         self._runs: dict[str, dict[str, Any]] = {}
+        self._owners: dict[str, str] = {}
         self._order: list[str] = []
         self._max = max_in_memory
         self.archive_dir = Path(archive_dir) if archive_dir else None
         if self.archive_dir:
             self.archive_dir.mkdir(parents=True, exist_ok=True)
+        # G2-i：``_runs``/``_owners``/``_order`` 三个可变容器由同一把锁守护。
+        # 用 RLock 而非 Lock：读侧方法可能被调用方在循环里连续调用，且后续若把
+        # 「先读后写」组合成复合方法会产生自身重入；RLock 对无重入场景无额外
+        # 代价，纯属防御。进程内单线程场景下加锁开销可忽略。
+        self._lock = threading.RLock()
 
-    def save(self, result: RunResult) -> dict[str, Any]:
+    def save(self, result: RunResult, *, owner: str = "") -> dict[str, Any]:
         payload = result.to_dict()
-        self._runs[result.run_id] = payload
-        self._order.append(result.run_id)
-        if len(self._order) > self._max:
-            self._runs.pop(self._order.pop(0), None)
+        with self._lock:
+            self._runs[result.run_id] = payload
+            self._owners[result.run_id] = owner
+            self._order.append(result.run_id)
+            if len(self._order) > self._max:
+                evicted = self._order.pop(0)
+                self._runs.pop(evicted, None)
+                self._owners.pop(evicted, None)
+        # 归档写盘放在锁外（不持锁做慢 I/O）：归档按 run_id 独立成文件，与内存
+        # 中 _order 的排序/淘汰无关，故不会与 _runs/_order 产生不一致。
         if self.archive_dir:
             path = self.archive_dir / f"run-{result.run_id}.json"
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2),
@@ -2091,10 +2531,28 @@ class DslRunStore:
         return payload
 
     def get(self, run_id: str) -> dict[str, Any] | None:
-        return self._runs.get(run_id)
+        with self._lock:
+            return self._runs.get(run_id)
 
-    def list_ids(self) -> list[str]:
-        return list(self._order)
+    def get_owned(self, run_id: str, owner: str) -> dict[str, Any] | None:
+        """属主外一律返回 None：不泄漏「存在但不属于你」。"""
+        with self._lock:
+            payload = self._runs.get(run_id)
+            if payload is None or self._owners.get(run_id, "") != owner:
+                return None
+            return payload
+
+    def owner_of(self, run_id: str) -> str:
+        with self._lock:
+            return self._owners.get(run_id, "")
+
+    def list_ids(self, owner: str | None = None) -> list[str]:
+        """``owner=None`` 返回全部（快照导出用）；否则只列该属主的 run。"""
+        with self._lock:
+            if owner is None:
+                return list(self._order)
+            return [rid for rid in self._order
+                    if self._owners.get(rid, "") == owner]
 
 
 # ---------------------------------------------------------------------------
@@ -2120,6 +2578,7 @@ from find_yourself.db.types import ID as _FlowID  # noqa: E402
 from find_yourself.db.types import TZDateTime as _FlowTZ  # noqa: E402
 from find_yourself.db.types import utcnow as _flow_utcnow  # noqa: E402
 
+from .errors import Conflict as _FlowConflict  # noqa: E402
 from .errors import NotFound as _FlowNotFound  # noqa: E402
 from .errors import ValidationFailed as _FlowValidation  # noqa: E402
 
@@ -2138,6 +2597,9 @@ class DslFlowRow(_FlowBase):
     published_doc: _FlowMapped[dict | None] = _flow_column(_FlowJSON, nullable=True)
     #: 已发布版本号（从 0 起；发布一次 +1，append-only）。
     published_version: _FlowMapped[int] = _flow_column(_FlowInt, default=0)
+    #: 草稿版本号（乐观锁）：保存草稿 +1，回滚取回草稿也 +1；0 = 初始态。
+    #: 与 ``published_version`` 分列——发布线 append-only，草稿线可被回滚改写。
+    draft_version: _FlowMapped[int] = _flow_column(_FlowInt, default=0)
     created_at: _FlowMapped[object] = _flow_column(_FlowTZ, default=_flow_utcnow)
     updated_at: _FlowMapped[object] = _flow_column(
         _FlowTZ, default=_flow_utcnow, onupdate=_flow_utcnow)
@@ -2174,6 +2636,7 @@ def _flow_view(row: DslFlowRow) -> dict[str, Any]:
         "draft_doc": row.draft_doc,
         "published_doc": row.published_doc,
         "published_version": row.published_version,
+        "draft_version": row.draft_version,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
@@ -2249,9 +2712,22 @@ class DslFlowStore:
         return [_flow_view(r) for r in rows]
 
     def save_draft(self, actor: Any, flow_id: str, doc: dict[str, Any], *,
-                   flow_type: str | None = None) -> dict[str, Any]:
-        """保存草稿；``flow_type`` 显式传入时**切换形态**（05：两形态可切换）。"""
+                   flow_type: str | None = None,
+                   expected_version: int | None = None) -> dict[str, Any]:
+        """保存草稿；``flow_type`` 显式传入时**切换形态**（05：两形态可切换）。
+
+        ``expected_version`` 非None 时启用乐观锁（N3 状态同步）：与当前
+        ``draft_version`` 不一致即 Conflict——冲突时**先于任何写入**抛出，
+        因此原草稿与版本号都保持原样，调用方可以直接重读后重试。
+        为 None 时不参与乐观锁（无条件覆盖），供既有调用方保持兼容。
+        """
         row = self._own_flow(actor, flow_id)
+        if expected_version is not None and row.draft_version != expected_version:
+            raise _FlowConflict(
+                "dsl_draft_version_conflict",
+                f"草稿版本冲突：服务端当前版本 {row.draft_version}，"
+                f"客户端送来的版本 {expected_version}。"
+                "草稿已被其他会话修改，请重新读取后再保存。")
         if flow_type is not None:
             if flow_type not in FLOW_TYPES:
                 raise _FlowValidation(
@@ -2260,6 +2736,7 @@ class DslFlowStore:
         validate_dsl(doc)
         self._check_doc_matches_flow_type(doc, row.flow_type)
         row.draft_doc = canonical_dsl(doc)
+        row.draft_version += 1
         self.s.flush()
         return _flow_view(row)
 
@@ -2314,6 +2791,7 @@ class DslFlowStore:
         if snap is None:
             raise _FlowNotFound("dsl_flow_version", f"{flow_id}@{version}")
         row.draft_doc = snap.doc
+        row.draft_version += 1
         self.s.flush()
         view = _flow_view(row)
         view["rolled_back_to"] = version

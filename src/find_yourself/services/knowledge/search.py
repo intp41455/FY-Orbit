@@ -31,9 +31,10 @@ from __future__ import annotations
 import math
 import os
 import re
+from datetime import datetime
 from typing import Any, Iterable
 
-from sqlalchemy import or_, select
+from sqlalchemy import bindparam, or_, select
 from sqlalchemy import text as sql_text
 from sqlalchemy.orm import Session
 
@@ -147,13 +148,71 @@ def delete_chunks_fts(session: Session, chunk_ids: Iterable[str]) -> bool:
         return False
     try:
         with session.begin_nested():
+            # `IN :ids` 传普通 tuple 在 SQLAlchemy 2.x 不会展开成 IN 列表
+            # （语句直接报错，被下面的 except 吞掉 → 删除静默失效）。
+            # 必须用 expanding bindparam 逐个绑定占位符。
             session.execute(
-                sql_text(f"DELETE FROM {FTS_TABLE} WHERE chunk_id IN :ids"),
-                {"ids": tuple(ids)},
+                sql_text(f"DELETE FROM {FTS_TABLE} WHERE chunk_id IN :ids").bindparams(
+                    bindparam("ids", expanding=True)
+                ),
+                {"ids": ids},
             )
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+def _fts_indexed_ids(session: Session, owner_id: str) -> set[str]:
+    """已进 FTS 影子表的 chunk_id（该 owner）。表不存在/查询失败时返回空集。"""
+    try:
+        rows = session.execute(
+            sql_text(f"SELECT chunk_id FROM {FTS_TABLE} WHERE owner_id = :owner"),
+            {"owner": owner_id},
+        ).all()
+    except Exception:  # noqa: BLE001 — 表尚未建好：当作「全缺」触发全量回填
+        return set()
+    return {r[0] for r in rows}
+
+
+def ensure_fts_index(session: Session, owner_id: str) -> dict[str, Any]:
+    """把 owner 的 ready 切片增量灌入 FTS5 影子索引（幂等，缺多少补多少）。
+
+    与 :func:`ensure_vector_index` 同构的**检索期惰性对账**：以
+    ``kb_chunks_fts`` 现有 ``chunk_id`` 对 ``kb_chunks``（owner + ready）做
+    差集——缺的补灌，文档删除/重导后残留的 stale 行清除。FTS5 影子表和向量
+    索引一样是可再生的派生数据，重建零风险。
+
+    入库期已由 ``ingest.py`` 增量写入，故正常情况下这里是空操作；它补的是
+    「历史数据漏写 / 索引被清 / 批量修复」这些缺口——此前 FTS 侧只有写入与
+    单条删除，没有任何**重建入口**，一旦影子表与 ``kb_chunks`` 漂移就只能
+    悄悄退化成 LIKE 扫描。
+
+    返回 ``{"indexed","purged","total"[,"skipped"]}``；非 SQLite 或 FTS5 不可用
+    时返回带 ``skipped`` 原因的空操作结果，**不抛异常**（检索自动回退 LIKE）。
+    """
+    if not owner_id:
+        raise ValidationFailed("owner_required", "fts index requires an owner_id")
+    rows = session.execute(
+        select(KBChunk.id, KBChunk.doc_id, KBChunk.owner_id, KBChunk.content)
+        .join(KBDocument, KBDocument.id == KBChunk.doc_id)
+        .where(KBChunk.owner_id == owner_id, KBDocument.status == "ready")
+    ).all()
+    if not ensure_fts_table(session):
+        return {"indexed": 0, "purged": 0, "total": len(rows),
+                "skipped": "fts5_unavailable"}
+    indexed_ids = _fts_indexed_ids(session, owner_id)
+    wanted_ids = {r.id for r in rows}
+    stale_ids = indexed_ids - wanted_ids
+    if stale_ids:
+        delete_chunks_fts(session, sorted(stale_ids))
+    missing = [r for r in rows if r.id not in indexed_ids]
+    if missing:
+        index_chunks_fts(session, missing)
+    return {
+        "indexed": len(missing),
+        "purged": len(stale_ids),
+        "total": len(rows),
+    }
 
 
 def _fts_candidates(session: Session, owner_id: str, phrase: str) -> set[str] | None:
@@ -173,6 +232,31 @@ def _fts_candidates(session: Session, owner_id: str, phrase: str) -> set[str] | 
     except Exception:  # noqa: BLE001
         return None
     return {r[0] for r in rows}
+
+
+def _apply_metadata_filters(
+    stmt: Any,
+    *,
+    sources: list[str] | None,
+    created_after: datetime | None,
+    created_before: datetime | None,
+) -> Any:
+    """按 ``kb_documents.source`` / ``created_at`` 收窄候选（FastGPT 式 metadata 过滤）。
+
+    复用 ``kb_documents`` 已有列（``source`` 有 ``ix_kb_documents_owner_source``
+    索引，``created_at`` 有 ``ix_kb_documents_owner_created``），**不新增表结构**：
+    「标签体系」需要自定义标签表，属另一件事，这里只做既有 metadata 的过滤。
+
+    空值一律视为「不筛」（``sources=[]`` 表示不过滤，而不是「什么都不匹配」），
+    避免调用方拼出空列表时得到静默空结果。
+    """
+    if sources:
+        stmt = stmt.where(KBDocument.source.in_(list(sources)))
+    if created_after is not None:
+        stmt = stmt.where(KBDocument.created_at >= created_after)
+    if created_before is not None:
+        stmt = stmt.where(KBDocument.created_at <= created_before)
+    return stmt
 
 
 def _like_candidates(session: Session, owner_id: str, terms: list[str]) -> set[str]:
@@ -220,6 +304,9 @@ class KnowledgeSearchService:
         weights: tuple[float, float] | None = None,
         reranker: Reranker | None = None,
         include_debug: bool = False,
+        sources: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> list[dict[str, Any]] | dict[str, Any]:
         """混合检索。
 
@@ -236,7 +323,10 @@ class KnowledgeSearchService:
           默认 noop=不重排）；
         * ``include_debug``：True 时返回 ``{"query","mode","fusion","count",
           "results","debug"}``，``debug`` 含两路命中、融合序、重排前后对比
-          与降级 warnings（A/B 对比与排查用）。
+          与降级 warnings（A/B 对比与排查用）；
+        * ``sources`` / ``created_after`` / ``created_before``：metadata 过滤
+          （按 ``kb_documents.source`` 与 ``created_at`` 预筛），三者在**候选
+          召回阶段**就与 owner 谓词一起下推到 SQL，向量命中后再复核一次。
         """
         actor.require_authenticated()
         if not owner_id:
@@ -275,7 +365,8 @@ class KnowledgeSearchService:
 
         # 1) 词法召回（v1 逻辑原样：owner 谓词先行 → FTS5/LIKE → 词法打分）。
         lexical_items = self._lexical_recall(
-            owner_id=owner_id, norm=norm, terms=terms, document_ids=document_ids
+            owner_id=owner_id, norm=norm, terms=terms, document_ids=document_ids,
+            sources=sources, created_after=created_after, created_before=created_before,
         )
         debug["lexical_hits"] = [h["chunk_id"] for h in lexical_items]
 
@@ -297,6 +388,9 @@ class KnowledgeSearchService:
                     embedding=embedding,
                     top_k=top_k,
                     document_ids=document_ids,
+                    sources=sources,
+                    created_after=created_after,
+                    created_before=created_before,
                 )
                 debug["warnings"].extend(vec_warnings)
             debug["vector_hits"] = [h["chunk_id"] for h in vector_items]
@@ -341,11 +435,17 @@ class KnowledgeSearchService:
     def _lexical_recall(
         self, *, owner_id: str, norm: str, terms: list[str],
         document_ids: list[str] | None = None,
+        sources: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> list[dict[str, Any]]:
         """v1 词法召回，原样保留（v2 改判已达部分，不推倒）。
 
         FTS5 first；on miss（或不可用）回退 per-term LIKE；词法打分 +
         ``MIN_QUERY_COVERAGE`` 护栏；score 降序 → 长块优先 → id 升序。
+
+        metadata 过滤（``sources`` / 时间窗）在候选集之后的 SQL 上继续收窄，
+        与 owner 谓词同层下推——过滤发生在**排序之前**，不靠 top_k 截断兜底。
         """
         # 1) candidate set — owner predicate applied BEFORE any ranking.
         candidates = self._candidates(owner_id=owner_id, norm=norm, terms=terms)
@@ -363,6 +463,9 @@ class KnowledgeSearchService:
         )
         if document_ids:
             stmt = stmt.where(KBChunk.doc_id.in_(document_ids))
+        stmt = _apply_metadata_filters(
+            stmt, sources=sources, created_after=created_after, created_before=created_before
+        )
         rows = self.s.execute(stmt.order_by(KBChunk.doc_id, KBChunk.seq)).all()
 
         # 2) lexical ranking (deterministic, explainable).
@@ -434,8 +537,16 @@ class KnowledgeSearchService:
         embedding: EmbeddingProvider,
         top_k: int,
         document_ids: list[str] | None = None,
+        sources: list[str] | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
-        """向量语义召回路。字段与词法 item 同构（``score``=相似度，可对比可融合）。"""
+        """向量语义召回路。字段与词法 item 同构（``score``=相似度，可对比可融合）。
+
+        metadata 过滤不在 vec0 侧下推（向量表只有 chunk_id/doc_id），而是在
+        owner+ready 复核那一步一并收窄——过滤仍发生在构造结果之前，不让被
+        过滤掉的切片有机会进入融合与 top_k。
+        """
         if not store.is_available():
             return [], ["vector_backend_unavailable"]
         try:
@@ -463,7 +574,7 @@ class KnowledgeSearchService:
             return [], []
         # 授权谓词先于排序的纵深防御：向量命中的 chunk 再按 owner+ready 复核一遍，
         # 并补全 doc_name/source 等展示字段（vec 表里只有 id 与 doc_id）。
-        rows = self.s.execute(
+        rows_stmt = (
             select(KBChunk, KBDocument.name, KBDocument.source)
             .join(KBDocument, KBDocument.id == KBChunk.doc_id)
             .where(
@@ -471,7 +582,12 @@ class KnowledgeSearchService:
                 KBChunk.id.in_([h.chunk_id for h in hits]),
                 KBDocument.status == "ready",
             )
-        ).all()
+        )
+        rows_stmt = _apply_metadata_filters(
+            rows_stmt, sources=sources, created_after=created_after,
+            created_before=created_before,
+        )
+        rows = self.s.execute(rows_stmt).all()
         by_id = {chunk.id: (chunk, name, source) for chunk, name, source in rows}
         items: list[dict[str, Any]] = []
         for hit in hits:  # vec0 已按 distance 升序返回（越近越前）
@@ -547,7 +663,8 @@ def score_chunk(
 #
 # 混合检索公开 API（包6 消费清单）：
 #   * KnowledgeSearchService.search(actor, *, owner_id, query, top_k,
-#       document_ids, mode, fusion, rrf_k, weights, reranker, include_debug)
+#       document_ids, mode, fusion, rrf_k, weights, reranker, include_debug,
+#       sources, created_after, created_before)
 #       —— 旧调用形状不变（list[dict]，字段同 v1）；新 kwargs 全部可选。
 #   * include_debug=True → {"query","mode","fusion","count","results","debug"}，
 #       debug={"lexical_hits","vector_hits","fused","rerank","warnings",
@@ -556,6 +673,10 @@ def score_chunk(
 #   * Reranker / NoopReranker / LexicalReranker + register_reranker /
 #       get_reranker / list_rerankers / create_reranker —— 重排可插拔。
 #   * ensure_vector_index(session, owner_id) —— 向量影子索引惰性对账回填。
+#   * ensure_fts_index(session, owner_id) —— FTS5 影子索引惰性对账回填
+#       （与上面同构，返回 {"indexed","purged","total"[,"skipped"]}）。
+#   * metadata 过滤：sources（kb_documents.source）/ created_after /
+#       created_before（kb_documents.created_at）—— 复用既有列，不改表结构。
 # 环境变量（运行期直读，不碰 config.py——包1 独占）：
 #   FIND_YOURSELF_KB_RETRIEVAL_MODE / _FUSION / _FUSION_WEIGHTS / _RRF_K /
 #   _VECTOR_FLOOR / _RERANKER；embeddings/vectorstores 各自的注册表环境变量

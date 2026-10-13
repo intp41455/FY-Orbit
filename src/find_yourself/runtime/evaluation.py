@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, List, Literal
 
 from ..db.types import utcnow
-from ..services.actor import Actor
+from ..identity import Actor
 from .delegation import DelegationCoordinator
 from .hooks import HookBus
 from .kernel import SingleLoopKernel

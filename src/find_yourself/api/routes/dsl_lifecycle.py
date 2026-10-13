@@ -59,6 +59,9 @@ class DraftBody(BaseModel):
     doc: dict[str, Any]
     #: 显式传入时切换形态（chatflow ⇄ workflow）。
     flow_type: str | None = None
+    #: 乐观锁期望版本（N3 状态同步）。缺省/None = 不参与校验（无条件覆盖）；
+    #: 非 None 时与服务端 draft_version 比对，不一致即 409 Conflict。
+    expected_version: int | None = Field(default=None, ge=0)
 
 
 class PublishBody(BaseModel):
@@ -131,9 +134,13 @@ async def create_flow(body: FlowCreateBody,
         raise HTTPException(status_code=422,
                             detail=f"flow_type 必须是 {FLOW_TYPES}")
     try:
-        return _store(svc).create_flow(actor, name=body.name,
-                                         flow_type=body.flow_type,
-                                         doc=body.doc)
+        view = _store(svc).create_flow(actor, name=body.name,
+                                       flow_type=body.flow_type,
+                                       doc=body.doc)
+        # 必须 commit：store 只 flush，deps.get_db 在请求结束只 close()，
+        # 不 commit 的话新建流程会被回滚（返回 201 但库里查不到）。
+        svc.session.commit()
+        return view
     except DomainError as exc:
         raise _translate(exc) from exc
 
@@ -162,8 +169,13 @@ async def save_draft(flow_id: str, body: DraftBody,
                      actor: Actor = Depends(csrf_protected),
                      svc: Services = Depends(get_services)) -> dict:
     try:
-        return _store(svc).save_draft(actor, flow_id, body.doc,
-                                        flow_type=body.flow_type)
+        view = _store(svc).save_draft(actor, flow_id, body.doc,
+                                       flow_type=body.flow_type,
+                                       expected_version=body.expected_version)
+        # 必须 commit：store 只 flush，deps.get_db 在请求结束只 close()，
+        # 不 commit 的话这次草稿写入会被回滚（存了 200 但库里没变）。
+        svc.session.commit()
+        return view
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DomainError as exc:
@@ -175,7 +187,11 @@ async def publish_flow(flow_id: str, body: PublishBody,
                        actor: Actor = Depends(csrf_protected),
                        svc: Services = Depends(get_services)) -> dict:
     try:
-        return _store(svc).publish(actor, flow_id, note=body.note)
+        view = _store(svc).publish(actor, flow_id, note=body.note)
+        # 必须 commit：发布写 published_doc/published_version + 版本快照行，
+        # store 只 flush；不 commit 的话请求结束 close() 会把这次发布回滚。
+        svc.session.commit()
+        return view
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DomainError as exc:
@@ -207,7 +223,11 @@ async def rollback_flow(flow_id: str, body: RollbackBody,
                         actor: Actor = Depends(csrf_protected),
                         svc: Services = Depends(get_services)) -> dict:
     try:
-        return _store(svc).rollback(actor, flow_id, body.version)
+        view = _store(svc).rollback(actor, flow_id, body.version)
+        # 必须 commit：回滚改写 draft_doc 并递增 draft_version，store 只 flush；
+        # 不 commit 的话请求结束 close() 会把回滚结果回滚掉（200 但草稿没变）。
+        svc.session.commit()
+        return view
     except DomainError as exc:
         raise _translate(exc) from exc
 

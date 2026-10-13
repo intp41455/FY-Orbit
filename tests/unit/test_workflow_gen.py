@@ -352,6 +352,154 @@ def test_exported_script_rejects_bad_payload_json(tmp_path):
 
 
 # =========================================================================== #
+# 5b. 导出脚本解释器补全 15 类节点 / 10 个动词（G4-b · A2）
+#
+# 缺陷背景：``export_script`` 的校验闸门是 18 类 ``NODE_TYPES``（``validate_dsl``），
+# 但自带解释器 ``execute_node`` 只认 input/transform/output 三类，其余落到
+# ``raise DslError("未知节点类型: %s")``。于是「校验放行 / 执行拒绝」——用户拿到一份
+# 必然跑不出结果的脚本，且 ``main()`` 无条件 ``return 0``，构成双重「谎报成功」。
+#
+# 下面每条 DSL 都必须先通过 ``export_script`` 的 ``validate_dsl`` + ``compile_dsl``
+# 双重闸门（即平台侧认定它是**合法**工作流），再断言脚本能真正跑出结果。
+# =========================================================================== #
+
+#: 一张最小可用的**命名子图**：透传上游载荷后做 ``{field}`` 插值。
+_SUBFLOW_DOC = {
+    "version": "1",
+    "nodes": [
+        {"id": "g_in", "type": "input", "params": {"kind": "literal", "value": ""}},
+        {"id": "g_tpl", "type": "template", "params": {"template": "[{name}]"}},
+        {"id": "g_out", "type": "output", "params": {"format": "json"}},
+    ],
+    "edges": [{"from": "g_in", "to": "g_tpl"}, {"from": "g_tpl", "to": "g_out"}],
+}
+
+
+def test_exported_script_runs_template_node_type(tmp_path):
+    """15 类之 ``template``：独立节点类型（与 transform.template 动词同一实现）。
+
+    修复前：``execute_node`` 落到 ``未知节点类型: template``，输出 ``null``。
+    """
+    dsl = {
+        "version": "1",
+        "nodes": [
+            {"id": "in1", "type": "input",
+             "params": {"kind": "literal", "value": {"name": "星轨"}}},
+            {"id": "t1", "type": "template", "params": {"template": "你好，{name}"}},
+            {"id": "out1", "type": "output", "params": {"format": "text"}},
+        ],
+        "edges": [{"from": "in1", "to": "t1"}, {"from": "t1", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    body = json.loads(proc.stdout)
+    assert body["output"] == "你好，星轨", body
+    assert "未知节点类型" not in proc.stdout
+
+
+def test_exported_script_runs_aggregate_verb(tmp_path):
+    """10 个动词之 ``aggregate``（sum）：修复前落到 ``未知的 transform verb``。"""
+    dsl = {
+        "version": "1",
+        "nodes": [
+            {"id": "in1", "type": "input", "params": {"kind": "literal", "value": [
+                {"n": 1}, {"n": 2}, {"n": 3}]}},
+            {"id": "a1", "type": "transform", "verb": "aggregate",
+             "params": {"op": "sum", "field": "n"}},
+            {"id": "out1", "type": "output", "params": {"format": "json"}},
+        ],
+        "edges": [{"from": "in1", "to": "a1"}, {"from": "a1", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    assert json.loads(proc.stdout)["output"] == 6
+    assert "未知的 transform verb" not in proc.stdout
+
+
+def test_exported_script_passes_all_upstreams_to_variable_aggregator(tmp_path):
+    """多路入边：``upstreams`` 必须保留**全部**上游，而非只取首个非 None。
+
+    修复前 ``run()`` 只把首个非 None 上游当 ``payload`` 传下去，且不认识
+    ``variable_aggregator`` 这个类型。
+    """
+    dsl = {
+        "version": "1",
+        "nodes": [
+            # 第一路刻意产出 None，逼出「跳过空上游」的真实语义
+            {"id": "in1", "type": "input", "params": {"kind": "literal", "value": None}},
+            {"id": "in2", "type": "input", "params": {"kind": "literal", "value": "第二路"}},
+            {"id": "va", "type": "variable_aggregator",
+             "params": {"strategy": "first_non_null"}},
+            {"id": "out1", "type": "output", "params": {"format": "text"}},
+        ],
+        "edges": [{"from": "in1", "to": "va"}, {"from": "in2", "to": "va"},
+                  {"from": "va", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    assert json.loads(proc.stdout)["output"] == "第二路"
+
+
+def test_exported_script_runs_iteration_subflow_recursively(tmp_path):
+    """递归子流程：``iteration`` 逐项跑子图并按声明顺序汇聚成列表。"""
+    dsl = {
+        "version": "1",
+        "nodes": [
+            {"id": "in1", "type": "input", "params": {"kind": "literal", "value": [
+                {"name": "甲"}, {"name": "乙"}]}},
+            {"id": "it", "type": "iteration",
+             "params": {"subflow": _SUBFLOW_DOC}},
+            {"id": "out1", "type": "output", "params": {"format": "json"}},
+        ],
+        "edges": [{"from": "in1", "to": "it"}, {"from": "it", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    body = json.loads(proc.stdout)
+    assert body["output"] == ["[甲]", "[乙]"], body
+    assert [l["status"] for l in body["logs"]] == ["succeeded"] * 3
+
+
+def test_exported_script_runs_named_subgraph_from_document_library(tmp_path):
+    """命名子图库按**调用链显式传参**流转（``run_dsl(subgraphs=...)``），不靠全局。"""
+    dsl = {
+        "version": "1",
+        "subgraphs": {"greet": _SUBFLOW_DOC},
+        "nodes": [
+            {"id": "in1", "type": "input",
+             "params": {"kind": "literal", "value": {"name": "星轨"}}},
+            {"id": "sg", "type": "subgraph", "params": {"name": "greet"}},
+            {"id": "out1", "type": "output", "params": {"format": "json"}},
+        ],
+        "edges": [{"from": "in1", "to": "sg"}, {"from": "sg", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    body = json.loads(proc.stdout)
+    assert body["output"] == {"subgraph": "greet", "output": "[星轨]"}, body
+
+
+def test_exported_script_exits_nonzero_and_reports_failed_node(tmp_path):
+    """第二个「谎报成功」：节点失败时 ``main()`` 必须返回非零。
+
+    ``llm`` 节点在平台侧是合法 18 类之一，但导出脚本是**离线 stdlib 单文件**，
+    没有模型网关可注入 —— 正确行为是**诚实失败**（对齐平台「未注入解析器即失败」），
+    而不是假装成功。当前 ``main()`` 末尾无条件 ``return 0``。
+    """
+    dsl = {
+        "version": "1",
+        "nodes": [
+            {"id": "in1", "type": "input", "params": {"kind": "literal", "value": "你好"}},
+            {"id": "llm1", "type": "llm", "params": {"model": "demo", "prompt": "回复：{value}"}},
+            {"id": "out1", "type": "output", "params": {"format": "json"}},
+        ],
+        "edges": [{"from": "in1", "to": "llm1"}, {"from": "llm1", "to": "out1"}],
+    }
+    proc = _run_exported(tmp_path, dsl, "--json")
+    body = json.loads(proc.stdout)
+    assert proc.returncode != 0, "节点失败时脚本不得谎报成功"
+    assert [l["status"] for l in body["logs"]] == ["succeeded", "failed", "skipped"]
+    # 失败原因必须诚实指出「缺解析器」，而不是「未知节点类型」
+    assert "未知节点类型" not in proc.stdout
+    assert "llm1" in json.dumps(body["logs"], ensure_ascii=False)
+
+
+# =========================================================================== #
 # 6. 图↔DSL 双向序列化
 # =========================================================================== #
 

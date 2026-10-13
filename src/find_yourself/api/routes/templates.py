@@ -200,7 +200,7 @@ async def templates_restore_factory(
 @router.post("/{template_id}/expand-to-code")
 async def templates_expand_to_code(
     template_id: str,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     svc: Services = Depends(get_services),
     tier: str = "novice",
 ) -> dict[str, Any]:

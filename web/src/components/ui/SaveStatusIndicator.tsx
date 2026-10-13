@@ -43,6 +43,10 @@ export interface SaveStatusIndicatorProps {
   directory?: string | null;
   /** 排队中（尚未落盘）的改动条数。 */
   pendingChanges?: number;
+  /**
+   * 落盘位置状态。**省略 = 未接入**，如实按 `unlinked` 呈现。
+   * 历史缺陷：本 prop 曾默认 `'ok'`，于是从不传它的界面也对外声称「存储正常」。
+   */
   storage?: StorageState;
   error?: StorageErrorReceipt | null;
   history?: SaveRecord[];
@@ -54,7 +58,11 @@ export interface SaveStatusIndicatorProps {
 
 export function SaveStatusIndicator({
   state, savedAt = null, location = null, bytes = null, freeBytes = null,
-  directory = null, pendingChanges = 0, storage = 'ok', error = null, history = [],
+  /**
+   * 省略 = **未接入持久化**，如实按 `unlinked` 呈现（不给「存储正常」的假绿灯）。
+   * 接了 `useAutosave` 的界面请把 `auto.storage` 递进来。
+   */
+  directory = null, pendingChanges = 0, storage = 'unlinked', error = null, history = [],
   onRetry, now, className,
 }: SaveStatusIndicatorProps) {
   const [open, setOpen] = useState(false);
@@ -74,6 +82,16 @@ export function SaveStatusIndicator({
       {degraded ? (
         <span className="ui-save-status__badge" data-testid="save-degraded-badge">
           降级·备用目录
+        </span>
+      ) : null}
+
+      {/*
+       * 未接入持久化：必须**说出口**。这一条是 N3 的诚实性闸门 ——
+       * 没接存储却什么都不显示，用户就只能按「没提示=已保存」理解。
+       */}
+      {storage === 'unlinked' ? (
+        <span className="ui-save-status__badge" data-testid="save-unlinked-badge">
+          未接入持久化
         </span>
       ) : null}
 

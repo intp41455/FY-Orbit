@@ -9,7 +9,7 @@
  *    provider:model；发生降级时（``degraded_from`` 非空）**明确标注**，
  *    不让用户以为用的是他要求的那个模型。
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type Ref } from 'react';
 import { ApiError } from '../../api/client';
 import { workflowGenApi, type DslDocument } from '../../api/workflowGen';
 import { useBase } from '../../hooks/useAutosave';
@@ -17,6 +17,13 @@ import { useBase } from '../../hooks/useAutosave';
 export interface GeneratePanelProps {
   /** 生成成功后把真实 DSL 交给父组件载入画布。 */
   onGenerated: (doc: DslDocument, sourcePrompt: string) => void;
+  /**
+   * `data-testid` 前缀。同一个页面可能同时挂多个实例（工坊面板 + text 画布面板），
+   * 固定前缀会让 `getByTestId` 命中多个节点。默认 `'flow'` 保持既有测试不变。
+   */
+  testIdPrefix?: string;
+  /** 需求输入框的 ref，父组件可在展开面板后把焦点直接交给它。 */
+  promptRef?: Ref<HTMLTextAreaElement>;
 }
 
 const EXAMPLES = [
@@ -25,8 +32,13 @@ const EXAMPLES = [
   '筛出年龄大于 30 的记录并输出成文本',
 ];
 
-export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
+export function GeneratePanel({
+  onGenerated,
+  testIdPrefix = 'flow',
+  promptRef,
+}: GeneratePanelProps) {
   useBase({ surface: 'web/src/components/workflow/GeneratePanel' });
+  const tid = (suffix: string) => `${testIdPrefix}-${suffix}`;
   const [prompt, setPrompt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; hint: string } | null>(null);
@@ -88,12 +100,12 @@ export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
   }, [prompt, onGenerated]);
 
   return (
-    <div className="fy-flow-generate card" data-testid="flow-generate">
+    <div className="fy-flow-generate card" data-testid={tid('generate')}>
       <div className="fy-flow-generate-head">
         <strong>一句话生成工作流</strong>
         <span
           className={`fy-flow-badge${configured === false ? ' is-warn' : ''}`}
-          data-testid="flow-model-state"
+          data-testid={tid('model-state')}
         >
           {configured === null ? '模型状态未知' : configured ? '模型已就绪' : '未配置模型'}
         </span>
@@ -110,7 +122,8 @@ export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
           value={prompt}
           placeholder="例如：每天读文件并发邮件"
           onChange={(e) => setPrompt(e.target.value)}
-          data-testid="flow-generate-prompt"
+          data-testid={tid('generate-prompt')}
+          ref={promptRef}
         />
       </label>
 
@@ -120,7 +133,7 @@ export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
           className="btn btn-sm primary"
           onClick={() => void generate()}
           disabled={busy}
-          data-testid="flow-generate-run"
+          data-testid={tid('generate-run')}
         >{busy ? '生成中…' : '生成'}</button>
         {EXAMPLES.map((ex) => (
           <button
@@ -128,19 +141,19 @@ export function GeneratePanel({ onGenerated }: GeneratePanelProps) {
             type="button"
             className="btn btn-sm"
             onClick={() => setPrompt(ex)}
-            data-testid={`flow-example-${ex}`}
+            data-testid={tid(`example-${ex}`)}
           >{ex}</button>
         ))}
       </div>
 
       {error && (
-        <div className="fy-flow-error" role="alert" data-testid="flow-generate-error">
+        <div className="fy-flow-error" role="alert" data-testid={tid('generate-error')}>
           <strong>生成失败</strong>
           <span>{error.message}</span>
           {error.hint && <span className="fy-flow-error-hint">{error.hint}</span>}
         </div>
       )}
-      {meta && <div className="fy-flow-notice" data-testid="flow-generate-meta">{meta}</div>}
+      {meta && <div className="fy-flow-notice" data-testid={tid('generate-meta')}>{meta}</div>}
     </div>
   );
 }

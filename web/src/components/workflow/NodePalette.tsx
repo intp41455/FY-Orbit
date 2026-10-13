@@ -27,6 +27,8 @@ const TYPE_LABELS: Record<DslNodeType, string> = {
   tool: '工具调用 · 调用已注册的工具',
   human_input: '人工输入 · 等待人工提供输入',
   trigger: '触发器 · 工作流的入口节点',
+  parallel: '并行分支 · 同时扇出多个下游分支',
+  subgraph: '子图引用 · 引用一个已命名的子图',
 };
 
 const TYPE_HINTS: Record<DslNodeType, string> = {
@@ -46,6 +48,8 @@ const TYPE_HINTS: Record<DslNodeType, string> = {
   tool: '需要工具名称，可选传入参数',
   human_input: '需要提示用户输入的文本',
   trigger: '需要指定触发类型：手动/对话/定时/Webhook',
+  parallel: '需要提供分支列表，可选指定最大并发数',
+  subgraph: '需要提供被引用子图的名字',
 };
 
 export interface NodePaletteProps {

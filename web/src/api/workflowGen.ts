@@ -12,7 +12,12 @@
 import { request } from './client';
 // DSL 语义模型的**唯一真源**是 api/dslCanvas.ts（与后端 services/dsl_canvas.py 对齐）。
 // 这里直接复用，避免第二份结构漂移导致两层类型不兼容。
-import type { DslDocument } from './dslCanvas';
+import type {
+  DslDocument,
+  DslEdgeCondition,
+  DslNodeType,
+  DslTransformVerb,
+} from './dslCanvas';
 
 export type { DslDocument };
 
@@ -38,10 +43,15 @@ export interface WorkflowExportResponse {
   script: string;
 }
 
+// 图（graph↔DSL 互转的中间结构）字段名与后端 `services/workflow_gen.py`
+// 的 `GraphNode.to_dict` / `GraphEdge.to_dict` 逐字一致；类型收窄到
+// `api/dslCanvas.ts` 的单一真源，而不是各抄一份 `string`，
+// 这样后端新增动词/条件运算符时会在这里就 tsc 报错。
 export interface WorkflowGraphNode {
   id: string;
-  type: string;
-  verb: string | null;
+  type: DslNodeType;
+  /** 仅 transform 节点非空；与 DSL 的 `verb` 同一封闭动词集。 */
+  verb: DslTransformVerb | null;
   params: Record<string, unknown>;
   x: number;
   y: number;
@@ -50,7 +60,7 @@ export interface WorkflowGraphNode {
 export interface WorkflowGraphEdge {
   from: string;
   to: string;
-  condition: Record<string, unknown> | null;
+  condition: DslEdgeCondition | null;
 }
 
 export interface WorkflowGraph {

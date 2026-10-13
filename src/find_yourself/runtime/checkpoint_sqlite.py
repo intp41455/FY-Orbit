@@ -16,15 +16,19 @@ G1 现场：``runtime/graph.py`` 此前 ``cp = checkpointer or MemorySaver()``�
 * ``latest`` 语义按**插入序**（sqlite rowid）而非 checkpoint_id 排序——
   不依赖 id 的字典序性质，任何 langgraph 版本的 id 格式都正确。
 
-异步图（``ainvoke``）不在本切片范围：现有调用面（evaluation / recovery / 测试）
-全部是同步 ``invoke``；异步变体沿用基类默认（不实现即显式失败，不许假成功）。
+异步图（``ainvoke``）已支持：``sqlite3`` 是阻塞调用，异步侧（``aput`` /
+``aput_writes`` / ``aget_tuple`` / ``alist`` / ``arecord_resume``）统一用
+``asyncio.to_thread`` 委托到同一份同步实现——单一事实来源，两条路径的行为
+（包括 ``record_resume`` 的 resume 上限）不可能漂移。
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import sqlite3
 import threading
-from typing import Any, Iterator, Sequence
+from typing import Any, AsyncIterator, Iterator, Sequence
 
 from langgraph.checkpoint.base import (
     BaseCheckpointSaver,
@@ -33,6 +37,46 @@ from langgraph.checkpoint.base import (
     CheckpointMetadata,
     CheckpointTuple,
 )
+
+from ..contracts import ValidationFailed
+
+# 上限：为失控的恢复循环兜底（纵深防御，与运行时循环守卫配套）。
+MAX_RESUME_COUNT = 1000
+
+#: 检查点的业务扩展列（用户设计里超出 LangGraph 原生那部分，共 10 列；
+#: 连同 9 列 LangGraph 原生列，``_SCHEMA`` 合计 19 列）。
+#: 单一事实来源：``_SCHEMA`` 建新库、``_migrate_add_columns`` 升旧库、
+#: ``put`` 写入、``get_tuple`` / ``list`` 读回，四处都从这张表派生。
+_EXTRA_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("step_index", "INTEGER"),
+    ("idempotency_key", "TEXT"),
+    ("resume_count", "INTEGER DEFAULT 0"),
+    ("task_id", "TEXT"),
+    ("agent_id", "TEXT"),
+    ("status", "TEXT"),
+    ("intermediate_result", "TEXT"),
+    ("next_action", "TEXT"),
+    ("lineage", "TEXT"),          # JSON 数组文本：血缘链上的 agent id 名单
+    ("version", "INTEGER DEFAULT 1"),
+)
+
+#: 允许调用方经 ``configurable`` 写入的列。``resume_count`` 由 ``record_resume``
+#: 独占自增，不接受外部写入（否则上限语义可被绕过）。
+_WRITABLE_COLUMNS: tuple[str, ...] = tuple(
+    name for name, _ddl in _EXTRA_COLUMNS if name != "resume_count"
+)
+
+#: 读回时回填到 ``configurable`` 的列（含只读的 resume_count）。
+_READ_COLUMNS: tuple[str, ...] = tuple(name for name, _ddl in _EXTRA_COLUMNS)
+
+_EXTRA_SELECT = ", ".join(_READ_COLUMNS)
+
+
+def _encode_extra(value: Any) -> Any:
+    """列表/字典（``lineage`` 这类）落盘前序列化为 JSON 文本，其余原样存。"""
+    if isinstance(value, (list, tuple, dict)):
+        return json.dumps(value, ensure_ascii=False)
+    return value
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS checkpoints (
@@ -43,6 +87,13 @@ CREATE TABLE IF NOT EXISTS checkpoints (
     step_index INTEGER,              -- NEW: atomic step number within this checkpoint
     idempotency_key TEXT,           -- NEW: hash(task_id + step_id + op) for deduplication
     resume_count INTEGER DEFAULT 0, -- NEW: how many times this checkpoint was resumed
+    task_id TEXT,                   -- NEW: owning business task id
+    agent_id TEXT,                  -- NEW: owning agent id
+    status TEXT,                    -- NEW: business status snapshot (in_progress/failed/...)
+    intermediate_result TEXT,       -- NEW: partial result payload (text or JSON)
+    next_action TEXT,               -- NEW: planned next step, drives resumption
+    lineage TEXT,                   -- NEW: JSON array of ancestor agent ids
+    version INTEGER DEFAULT 1,      -- NEW: checkpoint record schema version
     type TEXT,
     checkpoint BLOB NOT NULL,
     mtype TEXT,
@@ -100,17 +151,18 @@ class SqliteCheckpointer(BaseCheckpointSaver):
             conn.close()
 
     def _migrate_add_columns(self, conn: sqlite3.Connection) -> None:
-        """Add new columns to existing checkpoints table if they don't exist."""
+        """Incrementally upgrade an old ``checkpoints`` table to the current schema.
+
+        ``CREATE TABLE IF NOT EXISTS`` never touches an existing table, so every
+        column added after a database was first created has to be grafted on by
+        ``ALTER TABLE``. The column list is derived from ``_EXTRA_COLUMNS`` so a
+        new column is migrated by editing that single table.
+        """
         # Check which columns exist
         cursor = conn.execute("PRAGMA table_info(checkpoints)")
         existing_cols = {row[1] for row in cursor.fetchall()}
 
-        migrations = [
-            ("step_index", "INTEGER"),
-            ("idempotency_key", "TEXT"),
-            ("resume_count", "INTEGER DEFAULT 0"),
-        ]
-        for col_name, col_def in migrations:
+        for col_name, col_def in _EXTRA_COLUMNS:
             if col_name not in existing_cols:
                 try:
                     conn.execute(f"ALTER TABLE checkpoints ADD COLUMN {col_name} {col_def}")
@@ -140,6 +192,17 @@ class SqliteCheckpointer(BaseCheckpointSaver):
         checkpoint_id = configurable.get("checkpoint_id")
         return thread_id, ns, (str(checkpoint_id) if checkpoint_id else None)
 
+    @staticmethod
+    def _extra_config(row: Sequence[Any], offset: int) -> dict[str, Any]:
+        """Rebuild the ``_EXTRA_COLUMNS`` slice of a SELECT row as a config dict.
+
+        ``offset`` is the column count of the base columns in front of them
+        (``get_tuple`` has 7, ``list`` has 8). ``None`` means "column absent /
+        never written" and is skipped so callers only see real values.
+        """
+        extra = zip(_READ_COLUMNS, row[offset:offset + len(_READ_COLUMNS)])
+        return {name: value for name, value in extra if value is not None}
+
     # -- BaseCheckpointSaver contract ---------------------------------------
 
     def put(
@@ -166,16 +229,19 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                      ck_type, ck_blob, md_type, md_blob, time.time()),
                 )
                 conn.commit()
-                # Update new columns if present in configurable
+                # Write the business columns carried by config.configurable.
+                # Kept as a follow-up UPDATE rather than extra INSERT columns so
+                # the base statement stays byte-identical to the LangGraph
+                # contract; absent keys simply leave the column at its default.
                 cfg = (config or {}).get("configurable", {})
                 updates = []
                 params = []
-                if "step_index" in cfg and cfg["step_index"] is not None:
-                    updates.append("step_index = ?")
-                    params.append(cfg["step_index"])
-                if "idempotency_key" in cfg and cfg["idempotency_key"] is not None:
-                    updates.append("idempotency_key = ?")
-                    params.append(cfg["idempotency_key"])
+                for col in _WRITABLE_COLUMNS:
+                    value = cfg.get(col)
+                    if value is None:
+                        continue
+                    updates.append(f"{col} = ?")
+                    params.append(_encode_extra(value))
                 if updates:
                     params.extend([thread_id, ns, checkpoint["id"]])
                     conn.execute(
@@ -227,25 +293,24 @@ class SqliteCheckpointer(BaseCheckpointSaver):
         thread_id, ns, checkpoint_id = self._cfg_parts(config)
         conn = self._connect()
         try:
+            base_cols = ("rowid, checkpoint_id, parent_checkpoint_id, type, checkpoint, "
+                         "mtype, metadata")
             if checkpoint_id is not None:
                 row = conn.execute(
-                    "SELECT rowid, checkpoint_id, parent_checkpoint_id, type, checkpoint, "
-                    "mtype, metadata, step_index, idempotency_key, resume_count FROM checkpoints "
+                    f"SELECT {base_cols}, {_EXTRA_SELECT} FROM checkpoints "
                     "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
                     (thread_id, ns, checkpoint_id),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT rowid, checkpoint_id, parent_checkpoint_id, type, checkpoint, "
-                    "mtype, metadata, step_index, idempotency_key, resume_count FROM checkpoints "
+                    f"SELECT {base_cols}, {_EXTRA_SELECT} FROM checkpoints "
                     "WHERE thread_id=? AND checkpoint_ns=? "
                     "ORDER BY rowid DESC LIMIT 1",
                     (thread_id, ns),
                 ).fetchone()
             if row is None:
                 return None
-            (rowid, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob,
-             step_index, idempotency_key, resume_count) = row
+            (rowid, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob) = row[:7]
             pending_rows = conn.execute(
                 "SELECT task_id, channel, type, blob FROM checkpoint_writes "
                 "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=? ORDER BY idx",
@@ -265,14 +330,9 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                               "checkpoint_id": parent_id}}
             if parent_id else None
         )
-        # Build extensible config with new checkpoint fields
+        # Build extensible config with the business columns
         cfg = {"thread_id": thread_id, "checkpoint_ns": ns, "checkpoint_id": ck_id}
-        if step_index is not None:
-            cfg["step_index"] = step_index
-        if idempotency_key is not None:
-            cfg["idempotency_key"] = idempotency_key
-        if resume_count is not None:
-            cfg["resume_count"] = resume_count
+        cfg.update(self._extra_config(row, 7))
         return CheckpointTuple(
             config={"configurable": cfg},
             checkpoint=checkpoint,
@@ -302,8 +362,8 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                     "thread_id=? AND checkpoint_ns=? AND checkpoint_id=?), 0)"
                 params += [b_thread, b_ns, b_id]
         sql = ("SELECT thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, "
-               "type, checkpoint, mtype, metadata, step_index, idempotency_key, "
-               "resume_count, rowid FROM checkpoints "
+               "type, checkpoint, mtype, metadata, "
+               f"{_EXTRA_SELECT}, rowid FROM checkpoints "
                f"{where} ORDER BY rowid DESC")
         if limit is not None:
             sql += f" LIMIT {int(limit)}"
@@ -312,18 +372,13 @@ class SqliteCheckpointer(BaseCheckpointSaver):
             rows = conn.execute(sql, params).fetchall()
         finally:
             conn.close()
-        for (t_id, t_ns, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob,
-             step_index, idempotency_key, resume_count, _rowid) in rows:
+        for row in rows:
+            (t_id, t_ns, ck_id, parent_id, ck_type, ck_blob, md_type, md_blob) = row[:8]
             metadata = self.serde.loads_typed((md_type, md_blob)) if md_blob is not None else {}
             if filter and any(metadata.get(k) != v for k, v in filter.items()):
                 continue
             cfg = {"thread_id": t_id, "checkpoint_ns": t_ns, "checkpoint_id": ck_id}
-            if step_index is not None:
-                cfg["step_index"] = step_index
-            if idempotency_key is not None:
-                cfg["idempotency_key"] = idempotency_key
-            if resume_count is not None:
-                cfg["resume_count"] = resume_count
+            cfg.update(self._extra_config(row, 8))
             yield CheckpointTuple(
                 config={"configurable": cfg},
                 checkpoint=self.serde.loads_typed((ck_type, ck_blob)),
@@ -362,6 +417,17 @@ class SqliteCheckpointer(BaseCheckpointSaver):
         with self._lock:
             conn = self._connect()
             try:
+                row = conn.execute(
+                    "SELECT resume_count FROM checkpoints "
+                    "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
+                    (thread_id, ns, ck_id),
+                ).fetchone()
+                current = row[0] if row and row[0] is not None else 0
+                if current >= MAX_RESUME_COUNT:
+                    raise ValidationFailed(
+                        "resume_count_exceeded",
+                        f"checkpoint resume_count reached cap {MAX_RESUME_COUNT}",
+                    )
                 conn.execute(
                     "UPDATE checkpoints SET resume_count = resume_count + 1 "
                     "WHERE thread_id=? AND checkpoint_ns=? AND checkpoint_id=?",
@@ -370,3 +436,50 @@ class SqliteCheckpointer(BaseCheckpointSaver):
                 conn.commit()
             finally:
                 conn.close()
+
+    # -- async variants -------------------------------------------------------
+    # ``sqlite3`` is blocking, so every async entry point hops onto a worker
+    # thread and delegates to the synchronous implementation above. One code
+    # path means the async graph (``ainvoke``) cannot drift from ``invoke`` —
+    # including the ``record_resume`` cap, which raises through ``to_thread``.
+
+    async def aput(
+        self,
+        config: dict,
+        checkpoint: Checkpoint,
+        metadata: CheckpointMetadata,
+        new_versions: ChannelVersions,
+    ) -> dict:
+        return await asyncio.to_thread(
+            self.put, config, checkpoint, metadata, new_versions
+        )
+
+    async def aput_writes(
+        self,
+        config: dict,
+        writes: Sequence[tuple[str, Any]],
+        task_id: str,
+        task_path: str = "",
+    ) -> None:
+        await asyncio.to_thread(self.put_writes, config, writes, task_id, task_path)
+
+    async def aget_tuple(self, config: dict) -> CheckpointTuple | None:
+        return await asyncio.to_thread(self.get_tuple, config)
+
+    async def alist(
+        self,
+        config: dict | None,
+        *,
+        filter: dict[str, Any] | None = None,
+        before: dict | None = None,
+        limit: int | None = None,
+    ) -> AsyncIterator[CheckpointTuple]:
+        rows = await asyncio.to_thread(
+            lambda: list(self.list(config, filter=filter, before=before, limit=limit))
+        )
+        for tup in rows:
+            yield tup
+
+    async def arecord_resume(self, config: dict, note: str = "") -> None:
+        """Async twin of :meth:`record_resume` (same cap, same exception)."""
+        await asyncio.to_thread(self.record_resume, config, note)

@@ -15,6 +15,13 @@ vi.mock('../../api/dslCanvas', async (importOriginal) => ({
 
 import { dslCanvasApi } from '../../api/dslCanvas';
 
+// G4-f：「生成 DSL」会展开一句话生成面板，不 mock 它就会打真实 fetch。
+vi.mock('../../api/workflowGen', () => ({
+  workflowGenApi: { status: vi.fn(), generate: vi.fn() },
+}));
+
+import { workflowGenApi } from '../../api/workflowGen';
+
 /** 节点 id 跨测试递增，用前缀正则定位端口/删除按钮。 */
 const port = (dir: 'in' | 'out', type: string) =>
   screen.getByTestId(new RegExp(`^port-${dir}-${type}`));
@@ -24,6 +31,8 @@ const delBtn = (type: string) =>
 describe('DslCanvas 拖拽生成 DSL → 执行', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // G4-f · 展开生成面板时会问后端模型状态
+    vi.mocked(workflowGenApi.status).mockResolvedValue({ model_configured: true });
     // P1 · 默认 IR 校验通过（个别用例自行覆盖返回值）
     vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
       valid: true, diagnostics: [],

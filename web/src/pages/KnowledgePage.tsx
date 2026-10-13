@@ -549,6 +549,7 @@ export function KnowledgePage() {
               {is3DMode ? (
                 <KnowledgeGraph3D
                   nodes={graph.nodes}
+                  edges={edges}
                   selectedId={selectedNode?.id ?? null}
                   onSelect={setSelectedNode}
                 />

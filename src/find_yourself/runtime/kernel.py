@@ -28,8 +28,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..services.actor import Actor
-from ..services.audit import AuditService
+from ..audit import AuditService
+from ..identity import Actor
 from .graph import compile_task_graph
 from .hooks import HookBus, HookOutcome, get_default_hook_bus
 

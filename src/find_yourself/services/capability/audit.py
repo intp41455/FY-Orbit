@@ -1,9 +1,9 @@
 """统一能力网关 · 审计集成 (补齐包1 A-能力网关-06)。
 
 **全部能力调用（本机动作 + 跨 agent 调度）的裁决与变更都进既有审计哈希链**
-（:class:`find_yourself.services.audit.AuditService`）——不建第二套审计，
+（:class:`find_yourself.audit.AuditService`）——不建第二套审计，
 不重写哈希链。agent 不可篡改性由该链的 ``hash``/``previous_hash`` 与独立
-anchor store（``services/anchor_store.py``）保证：改写任何一帧都会被
+anchor store（:mod:`find_yourself.anchors`）保证：改写任何一帧都会被
 ``verify()`` 抓出，抹平哈希需要同时攻破主库与独立锚库两个写权限面。
 
 本模块在既有链之上提供能力域的三件事：

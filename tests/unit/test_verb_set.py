@@ -37,6 +37,7 @@ from find_yourself.services.dsl_canvas import (
     AGGREGATE_OPS,
     MAP_OPS,
     MERGE_OPS,
+    NODE_PARAMS_SCHEMAS,
     NODE_TYPES,
     OUTPUT_FORMATS,
     TRANSFORM_VERBS,
@@ -819,6 +820,8 @@ class TestHttpSurface:
         assert body["aggregate_ops"] == list(AGGREGATE_OPS)
         assert body["merge_ops"] == list(MERGE_OPS)
         assert body["output_formats"] == list(OUTPUT_FORMATS)
+        # G4-j：节点级参数契约随 schema 下发（前端参数枚举的真源）。
+        assert body["node_params_schema"] == NODE_PARAMS_SCHEMAS
 
     def test_export_then_import_roundtrip_over_http(self, client: TestClient,
                                                     headers: dict[str, str]):
@@ -842,7 +845,7 @@ class TestHttpSurface:
         r = client.post("/api/dsl-canvas/export-code", json={"dsl": doc},
                         headers=headers)
         assert r.status_code == 422
-        assert "verb" in r.json()["detail"]
+        assert "verb" in r.json()["error"]["message"]
 
     def test_import_endpoint_rejects_evil_code(self, client: TestClient,
                                                headers: dict[str, str]):
@@ -850,7 +853,7 @@ class TestHttpSurface:
                         json={"code": "import os\nos.system('echo pwned')\n"},
                         headers=headers)
         assert r.status_code == 422
-        assert "import" in r.json()["detail"]
+        assert "import" in r.json()["error"]["message"]
 
     def test_import_endpoint_requires_code_field(self, client: TestClient,
                                                  headers: dict[str, str]):
@@ -927,7 +930,7 @@ class TestHttpSurface:
         r = client.post("/api/dsl-canvas/runs",
                         json={"dsl": doc, "execution_id": 123}, headers=headers)
         assert r.status_code == 422
-        assert "execution_id" in r.json()["detail"]
+        assert "execution_id" in r.json()["error"]["message"]
 
 
 # =========================================================================== #

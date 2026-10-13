@@ -1,47 +1,16 @@
-"""Canonical JSON and digesting (FROZEN_CONTRACT §6.1).
+"""Canonical JSON 与摘要工具 —— 兼容垫片。
 
-Digest input is serialised with compact separators, sorted keys and
-``ensure_ascii=False``; datetimes are normalised to UTC ISO-8601 before hashing.
-The result is SHA-256 hex. Recomputing the digest of stored content must equal
-the stored digest or approval is refused.
+实体已下沉至 L1 契约单源 :mod:`find_yourself.hashing`（ADR-0001 三层模型 D3/D6），
+此处仅为向后兼容的 re-export 垫片，供既有调用方继续
+``from ..services.hasher import ...``。
+``runtime``（L2.0）此前正是因此产生 ``runtime → services`` 的 D3R 禁止方向。
+新代码请直接 ``from ..hashing import ...``。
 """
 
-import hashlib
-import json
-from datetime import datetime
-from decimal import Decimal
-from typing import Any
+from ..hashing import canonical_json, content_hash, digest
 
-
-def _normalise(value: Any) -> Any:
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            from zoneinfo import ZoneInfo  # pragma: no cover
-            value = value.replace(tzinfo=ZoneInfo("UTC"))
-        return value.astimezone(_utc()).isoformat()
-    if isinstance(value, Decimal):
-        return format(value, "f")
-    if isinstance(value, dict):
-        return {k: _normalise(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_normalise(v) for v in value]
-    return value
-
-
-def _utc():
-    from datetime import timezone
-    return timezone.utc
-
-
-def canonical_json(value: Any) -> str:
-    return json.dumps(
-        _normalise(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str
-    )
-
-
-def digest(value: Any) -> str:
-    return hashlib.sha256(canonical_json(value).encode("utf-8")).hexdigest()
-
-
-def content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+__all__ = [
+    "canonical_json",
+    "content_hash",
+    "digest",
+]

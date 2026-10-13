@@ -65,7 +65,8 @@ from .dsl_canvas import (
 
 #: DSL 文档允许的顶层字段（模型/视图分离：``layout`` 等视图状态不得进入 DSL）。
 #: A-画布搭建器-05：``flow_type``（chatflow/workflow）是语义字段，允许进入文档。
-DOCUMENT_KEYS = frozenset({"version", "nodes", "edges", "flow_type"})
+#: N5：``subgraphs`` 是文档级命名子图库（语义字段，非视图状态），同样允许进入文档。
+DOCUMENT_KEYS = frozenset({"version", "nodes", "edges", "flow_type", "subgraphs"})
 
 
 # ---------------------------------------------------------------------------

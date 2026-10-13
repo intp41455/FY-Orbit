@@ -2,7 +2,7 @@
 
 为什么需要这个模块
 ------------------
-:class:`~find_yourself.services.scheduler.core.UnifiedScheduler` 早就实现了
+:class:`~find_yourself.scheduling.UnifiedScheduler` 早就实现了
 ``reclaim_stale()``（把超 deadline 仍在跑的任务标记 ``reclaimed`` 并释放并发
 名额）和 ``subscribe()``（状态监听器），但**生产代码里零调用者**——只有测试
 调它们。后果是两条：
@@ -37,7 +37,7 @@ import logging
 import threading
 from typing import Any, Callable
 
-from ..services.scheduler.core import (
+from ..scheduling import (
     TASK_FAILED,
     TASK_RECLAIMED,
     TASK_SUCCEEDED,

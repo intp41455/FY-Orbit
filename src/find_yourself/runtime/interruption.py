@@ -23,10 +23,10 @@ from enum import Enum
 
 from sqlalchemy.orm import Session
 
+from ..audit import AuditService
 from ..db.resilience_models import InterruptionEvent
 from ..db.types import utcnow
-from ..services.actor import Actor
-from ..services.audit import AuditService
+from ..identity import Actor
 
 
 class InterruptionClass(str, Enum):

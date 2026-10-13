@@ -8,7 +8,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { PropertyPanel } from './PropertyPanel';
-import type { DslDiagnostic } from '../../api/dslCanvas';
+import type { DslDiagnostic, DslSchemaResponse } from '../../api/dslCanvas';
 import type { EditorNode } from './FlowEditor';
 
 const node: EditorNode = {
@@ -83,5 +83,78 @@ describe('PropertyPanel 的 IR 字段错误态（P1）', () => {
     const { onChangeParams } = setup([DIAG_OP]);
     fireEvent.change(screen.getByTestId('prop-aggregate-op'), { target: { value: 'avg' } });
     expect(onChangeParams).toHaveBeenCalledWith({ op: 'avg' });
+  });
+});
+
+// --------------------------------------------------------------------------- //
+// G4-j · 参数枚举真去重：下拉选项来自后端 schema（注入），非本地硬编码镜像。
+// --------------------------------------------------------------------------- //
+describe('PropertyPanel 参数枚举来自后端 schema（G4-j）', () => {
+  const CUSTOM = 'zzz_backend_only';
+
+  function optionValues(testId: string): (string | null)[] {
+    return Array.from(screen.getByTestId(testId).querySelectorAll('option'))
+      .map((o) => o.getAttribute('value'));
+  }
+
+  // 后端 shape：node_params_schema 是 {节点类型: JSON Schema}；verb params 在
+  // verb_catalog[].params_schema 里。这里只注入恰好被断言的那几个枚举。
+  const schema = {
+    schema: {},
+    node_types: [],
+    transform_verbs: [],
+    verb_catalog: [
+      {
+        name: 'map', category: 'transform', summary: '', executable: true,
+        params_schema: {
+          type: 'object', additionalProperties: false,
+          properties: { op: { enum: ['set', 'upper', 'lower', CUSTOM] } },
+        },
+      },
+    ],
+    node_params_schema: {
+      input: {
+        type: 'object', additionalProperties: false,
+        properties: { kind: { enum: ['literal', 'text_lines', CUSTOM] } },
+      },
+    },
+    aggregate_ops: [],
+    merge_ops: [],
+    output_formats: [],
+  } as unknown as DslSchemaResponse;
+
+  it('input.kind 下拉来自注入 schema（含后端独有值），非本地镜像', () => {
+    render(
+      <PropertyPanel
+        node={{ id: 'in1', type: 'input', params: {}, x: 0, y: 0 } as unknown as EditorNode}
+        schema={schema}
+        onChange={vi.fn()}
+        onChangeParams={vi.fn()}
+      />,
+    );
+    expect(optionValues('prop-input-kind')).toContain(CUSTOM);
+  });
+
+  it('transform map 的 op 下拉来自 verb_catalog（含后端独有值）', () => {
+    render(
+      <PropertyPanel
+        node={{ id: 'tf2', type: 'transform', verb: 'map', params: {}, x: 0, y: 0 } as unknown as EditorNode}
+        schema={schema}
+        onChange={vi.fn()}
+        onChangeParams={vi.fn()}
+      />,
+    );
+    expect(optionValues('prop-map-op')).toContain(CUSTOM);
+  });
+
+  it('未注入 schema 时如实回落到本地常量（不出现后端独有值）', () => {
+    render(
+      <PropertyPanel
+        node={{ id: 'in2', type: 'input', params: {}, x: 0, y: 0 } as unknown as EditorNode}
+        onChange={vi.fn()}
+        onChangeParams={vi.fn()}
+      />,
+    );
+    expect(optionValues('prop-input-kind')).toEqual(['literal', 'text_lines']);
   });
 });

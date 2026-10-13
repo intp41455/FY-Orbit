@@ -166,12 +166,15 @@ def import_tool_registry(data: dict[str, Any], registry: Any) -> int:
 
 
 def export_dsl_store(store: DslRunStore) -> dict[str, Any]:
-    """Serialise every archived run via the store's public read APIs."""
+    """Serialise every archived run via the store's public read APIs.
+
+    归属标识（``owner``）随快照走：否则 restore 后原属主也读不回自己的 run。
+    """
     runs = []
     for run_id in store.list_ids():
         payload = store.get(run_id)
         if payload is not None:
-            runs.append(payload)
+            runs.append({**payload, "owner": store.owner_of(run_id)})
     return {"runs": runs}
 
 
@@ -197,6 +200,9 @@ def _run_result_from_dict(d: dict[str, Any]) -> RunResult:
         logs=[_node_log_from_dict(l) for l in d.get("logs", [])],
         output=d.get("output"),
         error=d.get("error"),
+        # execution_id 必须读回：丢失它会让 restore 后无法续跑同一轮执行
+        # （dsl_debug.get_state 直接透传该字段）。
+        execution_id=d.get("execution_id"),
         created_at=d.get("created_at", ""),
     )
 
@@ -210,7 +216,7 @@ def import_dsl_store(data: dict[str, Any], store: DslRunStore) -> int:
     """
     count = 0
     for payload in data.get("runs", []):
-        store.save(_run_result_from_dict(payload))
+        store.save(_run_result_from_dict(payload), owner=payload.get("owner", ""))
         count += 1
     return count
 

@@ -7,11 +7,15 @@
 * :data:`scheduler` —— 进程级共享单例（agent_dispatch / delegation / A2A 入站
   统一经它派发；外部成品 agent 与内部 agent 同池注册）。
 * 通道常量 ``CHANNEL_*`` 与任务状态常量 ``TASK_*``。
+
+实体已下沉至 L1 :mod:`find_yourself.scheduling`（ADR-0001 D3/D6），本包与
+``core`` 均只是向后兼容的 re-export 垫片，对外名字集合与下沉前完全一致。
+新代码请直接 ``from ..scheduling import ...``。
 """
 
 from __future__ import annotations
 
-from .core import (
+from ...scheduling import (
     CHANNEL_A2A,
     CHANNEL_CLI,
     CHANNEL_EXTERNAL_AGENT,

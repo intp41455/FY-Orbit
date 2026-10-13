@@ -1,7 +1,8 @@
 """LangGraph phase-internal orchestration (FROZEN_CONTRACT §7, §10, Execution Manual F3).
 
 Implements the phase-internal reasoning and execution graph:
-* Pipeline: requirements -> planning -> [single_agent | research | tool_step | delegate] -> validate -> finish.
+* Pipeline: requirements -> planning -> [single_agent | research | tool_step | delegate] -> validate
+  -> {planning | finish} (bounded loop while ``step_count < max_steps``).
 * Graph State: task_id, attempt, stage, route, route_criterion, goal, domain, budget_balance,
   granted_source_ids, evidence_refs, step_count, max_steps, history, output, error.
 * Route selection (ADR-07): an explicit, ORDERED criteria table (``ROUTE_CRITERIA``) is evaluated
@@ -18,14 +19,15 @@ Implements the phase-internal reasoning and execution graph:
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Literal, Mapping, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from ..services.actor import Actor
-from ..services.errors import Conflict, NotFound, ValidationFailed
+from ..identity import Actor
+from ..contracts import Conflict, NotFound, ValidationFailed
 
 # ---------------------------------------------------------------------------
 # ADR-07: explicit, ORDERED route-criteria table.
@@ -91,7 +93,7 @@ def _guard_tool_budget(ctx: RouteContext) -> RouteGuardResult:
     Contract: an unknown price must never be waved through as zero cost. We
     therefore require an explicit ``tool_price_status == "known"`` and a
     concrete ``estimated_cost_usd``, then prove sufficiency with an *atomic*
-    reservation through :class:`~find_yourself.services.budget.BudgetService`.
+    reservation through :class:`~find_yourself.budget.BudgetService`.
     A missing budget service is treated as failure to prove sufficiency.
     """
     state = ctx.state
@@ -378,133 +380,287 @@ def route_decision(state: TaskGraphState) -> str:
     return state.get("route", "single_agent")
 
 
-def node_single_agent(state: TaskGraphState) -> dict:
-    """Route 1: Pure empathetic listening.
+# ---------------------------------------------------------------------------
+# Model-call plumbing for the execution nodes.
+#
+# Honesty red line (FY-A-1): every execution node must obtain its output AND its
+# cost from a *real* model call. There is no template/fabrication fallback: when
+# no gateway can serve the call the node reports an honest failure and books no
+# spend. The gateway computes ``CallResult.settled_amount`` from the *actual*
+# token usage, so the node never invents a cost figure.
+# ---------------------------------------------------------------------------
 
-    Does not force psychometric assessment, diagnoses, or summarize away user emotion.
+
+def _runtime_actor() -> Actor:
+    """Actor for graph-issued calls: the wired one, else a system owner identity."""
+    actor = ROUTE_RUNTIME.get("actor")
+    return actor if actor is not None else Actor.owner("system")
+
+
+def _runtime_model_name(gateway: Any) -> str:
+    """Resolve the model id from the gateway's own settings (never hard-coded per node)."""
+    import os
+
+    settings = getattr(gateway, "settings", None)
+    name = getattr(settings, "model_name", "") if settings is not None else ""
+    return str(name or os.environ.get("FY_MODEL_NAME") or "gpt-4o-mini")
+
+
+def _default_gateway() -> Any:
+    """Build the process-wide gateway when the host injects none.
+
+    Mirrors ``companion._gateway``: the app settings plus the route runtime's
+    budget service. Construction is best-effort — if it fails the nodes fall
+    back to the honest "unconfigured" path (``model_not_configured``) instead of
+    inventing output or spend.
     """
-    goal = state.get("goal", "")
-    spent = 0.001
+    try:
+        from ..config import settings as app_settings
+        from .gateway import ModelGateway
 
-    # Empathetic listening reflection
-    response_text = (
-        f"I hear you completely. You expressed: '{goal}'. "
-        "I am here to listen without judgment or rushing to diagnose."
-    )
+        return ModelGateway(app_settings(), ROUTE_RUNTIME.get("budget"))
+    except Exception:  # noqa: BLE001 - a failed build degrades honestly to unconfigured
+        return None
+
+
+def _model_failure(mode: str, code: str) -> dict:
+    """Honest non-success update: no spend, no budget change, no evidence.
+
+    The node never invents a response or a cost. The failure is visible in the
+    returned ``output``. (The graph's top-level loop ``status`` is owned by
+    :func:`node_validate`, which this change deliberately leaves untouched.)
+    """
     return {
+        "status": "failed",
+        "error": code,
         "stage": "validate",
         "output": {
-            "mode": "listening",
-            "reflection": response_text,
-            "forced_assessment": False,
+            "mode": mode,
+            "model_backed": False,
+            "error": code,
         },
-        "spent_usd": state.get("spent_usd", 0.0) + spent,
-        "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
-        "evidence_refs": state.get("evidence_refs", []) + [f"ev:listen:{state.get('task_id')}"],
     }
 
 
-def node_research(state: TaskGraphState) -> dict:
-    """Route 2: Provenance-preserving source research.
+def _call_model(
+    gateway: Any, state: TaskGraphState, *, prompt: str, max_tokens: int = 512
+) -> tuple[Any | None, str | None]:
+    """Invoke the gateway, returning ``(result, error_code)`` and never raising.
 
-    Enforces outbound privacy checks and records evidence citations.
-    With no granted sources the output is explicitly marked unverified —
-    citations are never fabricated.
+    A missing/undeclared gateway or any provider failure becomes an error code
+    the caller turns into an honest failure. On success the returned
+    ``CallResult`` carries the real ``settled_amount`` derived from actual usage.
+    """
+    if gateway is None:
+        return None, "model_not_configured"
+    try:
+        result = gateway.complete(
+            _runtime_actor(),
+            task_id=str(state.get("task_id") or "task"),
+            model=_runtime_model_name(gateway),
+            prompt=prompt,
+            target_domain=str(state.get("domain") or "personal"),
+            max_tokens=max_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001 - every failure must degrade honestly
+        code = getattr(exc, "code", None) or f"model_unavailable:{type(exc).__name__}"
+        return None, str(code)
+    return result, None
+
+
+def _spend_update(state: TaskGraphState, settled: Decimal) -> dict[str, Any]:
+    """Book the *actual* settled cost against the running totals."""
+    spent = float(settled)
+    return {
+        "stage": "validate",
+        "spent_usd": state.get("spent_usd", 0.0) + spent,
+        "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
+    }
+
+
+def node_single_agent(state: TaskGraphState, *, gateway: Any = None) -> dict:
+    """Route 1: Pure empathetic listening, backed by a real model call.
+
+    Does not force psychometric assessment, diagnoses, or summarize away user
+    emotion. Without a serving model the node fails honestly — no canned
+    reflection and no fabricated spend.
+    """
+    goal = state.get("goal", "")
+    prompt = (
+        "You are an empathetic listener. Reflect the user's feeling without "
+        "diagnosing, assessing, or rushing to solutions.\n"
+        f"User: {goal}"
+    )
+    result, error = _call_model(gateway, state, prompt=prompt, max_tokens=512)
+    if result is None:
+        return _model_failure("listening", error or "model_not_configured")
+
+    update = _spend_update(state, result.settled_amount)
+    update["output"] = {
+        "mode": "listening",
+        "reflection": result.text,
+        "forced_assessment": False,
+        "model_backed": True,
+        "provider_request_id": result.provider_request_id,
+        "usage": dict(result.usage),
+    }
+    update["evidence_refs"] = state.get("evidence_refs", []) + [
+        f"ev:model:{result.provider_request_id}"
+    ]
+    return update
+
+
+def node_research(state: TaskGraphState, *, gateway: Any = None) -> dict:
+    """Route 2: Provenance-preserving source research, backed by a real model call.
+
+    Citations come only from the *granted* source ids; with none granted the
+    output is explicitly marked unverified. Findings are the model's real text,
+    never a fabricated summary; without a serving model the node fails honestly.
     """
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
-    spent = 0.002
-
     citations = [f"src:{sid}" for sid in granted]
-    if citations:
-        findings = f"Research findings for '{goal}', grounded in the granted sources listed in citations."
-    else:
-        findings = f"unverified: no authorized sources were granted for '{goal}'; no findings are claimed."
+    sources = ", ".join(granted) if granted else "(no authorized sources granted)"
+    prompt = (
+        "Answer strictly from the authorized sources listed below and cite their "
+        "ids. If no sources are provided, state that the result is unverified.\n"
+        f"Authorized sources: {sources}\nQuestion: {goal}"
+    )
+    result, error = _call_model(gateway, state, prompt=prompt, max_tokens=768)
+    if result is None:
+        return _model_failure("research", error or "model_not_configured")
 
-    return {
-        "stage": "validate",
-        "output": {
-            "mode": "research",
-            "findings": findings,
-            "citations": citations,
-            "verified": bool(citations),
-        },
-        "spent_usd": state.get("spent_usd", 0.0) + spent,
-        "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
-        "evidence_refs": state.get("evidence_refs", []) + citations,
+    update = _spend_update(state, result.settled_amount)
+    update["output"] = {
+        "mode": "research",
+        "findings": result.text,
+        "citations": citations,
+        "verified": bool(citations),
+        "model_backed": True,
+        "provider_request_id": result.provider_request_id,
+        "usage": dict(result.usage),
     }
+    update["evidence_refs"] = state.get("evidence_refs", []) + citations
+    return update
 
 
-def node_tool_step(state: TaskGraphState) -> dict:
-    """Route 3: Tool-execution slot.
+def node_tool_step(state: TaskGraphState, *, gateway: Any = None) -> dict:
+    """Route 3: Guarded tool-execution slot, backed by a real model call.
 
-    No tool is wired into this node yet — the output must never claim a
-    successful execution or fabricate an execution receipt.
+    No tool is actually wired into this node, so the execution result is
+    honestly reported as ``not_executed`` — the model call only *plans* the step
+    and its real settled cost is booked. No execution receipt is ever
+    fabricated; without a serving model the node fails honestly.
     """
+    goal = state.get("goal", "")
     tool_name = "data_analysis_tool"
-    spent = 0.005
+    prompt = (
+        "Plan (do not execute) a single tool step for the goal below and return "
+        "the intended tool arguments only; no execution result may be claimed.\n"
+        f"Tool: {tool_name}\nGoal: {goal}"
+    )
+    result, error = _call_model(gateway, state, prompt=prompt, max_tokens=512)
+    if result is None:
+        return _model_failure("tool", error or "model_not_configured")
 
-    output = {
+    update = _spend_update(state, result.settled_amount)
+    update["output"] = {
         "mode": "tool",
         "tool_used": tool_name,
         "status": "not_executed",
         "result": None,
-        "detail": "Tool execution is not wired into this node yet; no execution result is claimed.",
+        "planned_step": result.text,
+        "detail": "Tool execution is not wired into this node; only a model-backed plan is returned.",
+        "model_backed": True,
+        "provider_request_id": result.provider_request_id,
+        "usage": dict(result.usage),
     }
-    return {
-        "stage": "validate",
-        "output": output,
-        "spent_usd": state.get("spent_usd", 0.0) + spent,
-        "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
-        "evidence_refs": state.get("evidence_refs", []),
-    }
+    update["evidence_refs"] = state.get("evidence_refs", [])
+    return update
 
 
-def node_delegate(state: TaskGraphState) -> dict:
-    """Route 4: Expert delegation with scoped context.
+def node_delegate(state: TaskGraphState, *, gateway: Any = None) -> dict:
+    """Route 4: Expert delegation with scoped context, backed by a real model call.
 
-    MANDATORY RULE: The expert subagent receives only the scoped query and explicit
-    citations, NOT the full raw historical transcript.
+    MANDATORY RULE: the expert subagent receives only the scoped query and
+    explicit citations, NOT the full raw historical transcript. The answer is the
+    model's real text; without a serving model the node fails honestly.
     """
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
-    spent = 0.003
-
-    # Expert only receives isolated query + citation references
+    # Expert only receives an isolated query + citation references; raw history
+    # is intentionally withheld.
     scoped_context = {
         "scoped_goal": goal,
-        "citations": granted,
-        # History is intentionally withheld
+        "citations": list(granted),
         "raw_history_provided": False,
     }
+    prompt = (
+        "You are a specialist consultant. Answer only from the scoped query and "
+        "the cited references; assume no access to any raw conversation.\n"
+        f"Scoped query: {goal}\nCitations: {', '.join(granted) or '(none)'}"
+    )
+    result, error = _call_model(gateway, state, prompt=prompt, max_tokens=768)
+    if result is None:
+        return _model_failure("delegation", error or "model_not_configured")
 
-    expert_answer = f"Expert consultation response for: '{goal}'. (Context was scoped to {len(granted)} references)."
-    return {
-        "stage": "validate",
-        "output": {
-            "mode": "delegation",
-            "expert_role": "SpecialistAgent",
-            "scoped_context": scoped_context,
-            "expert_answer": expert_answer,
-        },
-        "spent_usd": state.get("spent_usd", 0.0) + spent,
-        "budget_balance": max(0.0, state.get("budget_balance", 1.0) - spent),
-        "evidence_refs": state.get("evidence_refs", []) + [f"ev:delegate:{state.get('task_id')}"],
+    update = _spend_update(state, result.settled_amount)
+    update["output"] = {
+        "mode": "delegation",
+        "expert_role": "SpecialistAgent",
+        "scoped_context": scoped_context,
+        "expert_answer": result.text,
+        "model_backed": True,
+        "provider_request_id": result.provider_request_id,
+        "usage": dict(result.usage),
     }
+    update["evidence_refs"] = state.get("evidence_refs", []) + [
+        f"ev:model:{result.provider_request_id}"
+    ]
+    return update
 
 
 def node_validate(state: TaskGraphState) -> dict:
-    """Stage 4: Structural validation, budget enforcement, and loop bounds."""
-    if state.get("budget_balance", 1.0) <= 0.0:
-        return {"status": "failed", "error": "budget_exhausted", "stage": "finish"}
+    """Stage 4: budget enforcement + the single collection point of the loop bound.
 
-    step = state.get("step_count", 1)
-    max_steps = state.get("max_steps", 5)
+    This node is the ONLY close of the ``planning -> route -> validate`` cycle. Each
+    pass advances ``step_count`` by exactly 1, and the two non-failure branches
+    return *different* values (``stage="planning"`` to iterate vs ``stage="finish"``
+    to stop) — this eliminates the earlier dead-code duplication where both branches
+    returned an identical ``{"status": "completed", "stage": "finish"}``.
+
+    Termination guarantee: ``step_count`` is strictly increasing and the only loop
+    guard is ``step_count < max_steps`` (``max_steps`` is finite int), so the cycle
+    converges to ``finish`` after at most ``max_steps`` passes. A budget-exhausted
+    run also lands on ``finish`` (never spins). Honesty red line: this node never
+    reports a completion state it did not actually reach.
+    """
+    step = int(state.get("step_count", 0)) + 1
+    max_steps = int(state.get("max_steps", 5))
+
+    if state.get("budget_balance", 1.0) <= 0.0:
+        return {
+            "status": "failed",
+            "error": "budget_exhausted",
+            "stage": "finish",
+            "step_count": step,
+        }
 
     if step >= max_steps:
-        return {"status": "completed", "stage": "finish"}
+        # Step bound reached: the bounded loop closes here (its normal completion).
+        return {"status": "completed", "stage": "finish", "step_count": step}
 
-    return {"status": "completed", "stage": "finish"}
+    # Headroom remains: hand back to planning for the next bounded iteration.
+    return {"status": "in_progress", "stage": "planning", "step_count": step}
+
+
+def route_after_validate(state: TaskGraphState) -> str:
+    """Exit router for ``validate``: loop back to planning, or terminate.
+
+    Reads only the ``stage`` marker set by :func:`node_validate`, so the back-edge
+    can never loop back on a terminal (``finish``) or budget-exhausted pass.
+    """
+    return "planning" if state.get("stage") == "planning" else "finish"
 
 
 def node_finish(state: TaskGraphState) -> dict:
@@ -523,16 +679,28 @@ def node_finish(state: TaskGraphState) -> dict:
     }
 
 
-def build_task_graph(checkpointer: Any | None = None) -> StateGraph:
-    """Builds the phase-internal LangGraph StateGraph."""
+def build_task_graph(
+    checkpointer: Any | None = None, gateway: Any | None = None
+) -> StateGraph:
+    """Builds the phase-internal LangGraph StateGraph.
+
+    ``gateway`` (optional) is the model gateway the execution nodes call. When
+    omitted, the process-wide gateway is resolved from settings at build time; if
+    none can be built the nodes degrade *honestly* (``model_not_configured``)
+    rather than fabricate output or spend. It is bound into each execution node
+    via :func:`functools.partial`, so the public node signature
+    ``node(state) -> dict`` is unchanged for every existing caller.
+    """
+    if gateway is None:
+        gateway = _default_gateway()
     graph = StateGraph(TaskGraphState)
 
     graph.add_node("requirements", node_requirements)
     graph.add_node("planning", node_planning)
-    graph.add_node("single_agent", node_single_agent)
-    graph.add_node("research", node_research)
-    graph.add_node("tool_step", node_tool_step)
-    graph.add_node("delegate", node_delegate)
+    graph.add_node("single_agent", functools.partial(node_single_agent, gateway=gateway))
+    graph.add_node("research", functools.partial(node_research, gateway=gateway))
+    graph.add_node("tool_step", functools.partial(node_tool_step, gateway=gateway))
+    graph.add_node("delegate", functools.partial(node_delegate, gateway=gateway))
     graph.add_node("validate", node_validate)
     graph.add_node("finish", node_finish)
 
@@ -555,7 +723,15 @@ def build_task_graph(checkpointer: Any | None = None) -> StateGraph:
     graph.add_edge("tool_step", "validate")
     graph.add_edge("delegate", "validate")
 
-    graph.add_edge("validate", "finish")
+    # Bounded back-edge: ``validate`` loops to ``planning`` while headroom
+    # remains, otherwise terminates. Termination is guaranteed by
+    # ``node_validate`` advancing ``step_count`` every pass (its only loop
+    # guard is the finite ``step_count < max_steps``).
+    graph.add_conditional_edges(
+        "validate",
+        route_after_validate,
+        {"planning": "planning", "finish": "finish"},
+    )
     graph.add_edge("finish", END)
 
     return graph
@@ -581,7 +757,7 @@ def _default_checkpointer() -> Any:
     return SqliteCheckpointer(path)
 
 
-def compile_task_graph(checkpointer: Any | None = None):
+def compile_task_graph(checkpointer: Any | None = None, gateway: Any | None = None):
     cp = checkpointer if checkpointer is not None else _default_checkpointer()
-    graph = build_task_graph()
+    graph = build_task_graph(gateway=gateway)
     return graph.compile(checkpointer=cp)

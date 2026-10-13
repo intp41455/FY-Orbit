@@ -57,6 +57,23 @@ jobs:
           python -m pytest tests/unit/test_migration_chain_gate.py -q
           python -c "import find_yourself.api.routes; print('IMPORT_OK')"
 
+      - name: Base Contract Gate (基座接入硬门禁 · P0-B1)
+        run: |
+          # A-基座质保-11：`BaseContractService.audit_tree` 是能真的 `exit_code=1`
+          # 的门禁，但此前无任何 workflow 调用它（P0-B1）。这里把它接成 CI 硬门禁：
+          #   ① 先按既有豁免机制登记纯展示页基线豁免 —— 走真实服务接口
+          #      (`scripts/p0/grant_base_exemptions.py`)，因此「可编辑文件不得豁免」
+          #      这类硬规则会在登记时真的被校验一遍，不是手写 JSON 绕过；
+          #   ② 再跑门禁 (`scripts/p0/run_base_contract_gate.py`)，fail-closed：
+          #      存在阻塞违规即 exit 1，并逐条打 `::error::` 注解定位。
+          # 本仓真实门禁在 base-contract-gate job 里跑（独立 job，失败信号不被
+          # backend job 的其他步骤淹没）；此处保留一次调用作为 backend 内的早期反馈。
+          # 当前基线仍有 1 个**可编辑**页面（FortunePage.tsx）未接入基座，且按
+          # 「可编辑文件不得豁免」的硬规则不能被豁免，故门禁会如实报红 —— 这正是
+          # 要把「门禁能失败」暴露到 CI 上的原因；请勿把本步改成 advisory 或吞掉退出码。
+          python scripts/p0/grant_base_exemptions.py
+          python scripts/p0/run_base_contract_gate.py
+
       - name: Lint (Ruff)
         run: |
           # 配置见 pyproject.toml [tool.ruff.lint]。select 已含 F/E9/I/W，
@@ -134,6 +151,97 @@ jobs:
             --cov=find_yourself \
             --cov-report=term-missing:skip-covered \
             --cov-fail-under=82
+
+  base-contract-gate:
+    name: Base Contract Gate (基座接入 fail-closed + 反假绿反向验证)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      FY_ENVIRONMENT: test
+      FY_OFFLINE_MODE: "true"
+      FY_SESSION_SECRET: ci-only-session-secret-0123456789abcdef0123456789
+      FY_LOCAL_TOKEN: ci-only-local-token-0123456789abcdef0123456789
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Dependencies (锁定安装)
+        run: uv sync --frozen --group dev
+
+      - name: Gate Self-Test (先证明这个门禁会红)
+        run: |
+          # **顺序很要紧**：先跑反向验证。它在临时目录里造三棵树喂给门禁 ——
+          # 契约被破坏 / 契约完好 / 扫描面缺失 —— 并断言真实子进程的退出码。
+          # 没有这一步，「CI 里接了个门禁」无法区分「硬门禁」与「永远绿的装饰品」：
+          # 一个 `sys.exit(0)` 或 `|| true` 就能让基座形同虚设而 CI 全程无信号。
+          # 断言以**子进程**调用脚本，因为退出码才是 CI（set -e）看到的那份契约。
+          python -m pytest tests/unit/scripts/test_base_contract_gate.py -q
+
+      - name: Base Contract Gate (本仓真实扫描 · fail-closed)
+        run: |
+          # 需求 N7「三层分层统一底座」的工程闸门：所有页面 / 可编辑组件必须接入
+          # 基座（useBase / BaseBound）或持已审批豁免，否则拒绝合并。
+          # ① 豁免走真实服务接口登记，「可编辑文件不得豁免」等硬规则会被真校验；
+          # ② 门禁 fail-closed：违规 exit 1 + `::error::` 逐条标注；
+          # ③ 扫描面缺失 / 扫到 0 文件同样 exit 1（0 违规 ≠ 契约满足）。
+          # 当前基线有 1 个可编辑页面未接入（FortunePage.tsx），故本步**预期报红**——
+          # 这是接线清单，不是脚本故障。请勿加 `|| true` 或 continue-on-error。
+          python scripts/p0/grant_base_exemptions.py
+          python scripts/p0/run_base_contract_gate.py
+
+  layering-gate:
+    name: Layering Gate (后端三层分层 fail-closed + 反假绿反向验证)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      FY_ENVIRONMENT: test
+      FY_OFFLINE_MODE: "true"
+      FY_SESSION_SECRET: ci-only-session-secret-0123456789abcdef0123456789
+      FY_LOCAL_TOKEN: ci-only-local-token-0123456789abcdef0123456789
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Dependencies (锁定安装)
+        run: uv sync --frozen --group dev
+
+      - name: Gate Self-Test (先证明这个门禁会红)
+        run: |
+          # 顺序很要紧：先跑反向验证。它在临时目录里造多棵最小树喂给门禁 ——
+          # 契约被破坏（R5/R6/V1）/ 契约完好 / 扫描面缺失 / 扫到 0 文件 —— 并断言
+          # 真实子进程退出码。没有这一步，「CI 里接了个门禁」无法区分「硬门禁」与
+          # 「永远绿的装饰品」：一个 sys.exit(0) 就能让分层形同虚设而 CI 无信号。
+          python -m pytest tests/unit/scripts/test_layering_gate.py -q
+
+      - name: Layering Gate (本仓真实扫描 · fail-closed)
+        run: |
+          # 需求 N7「三层分层统一底座」的后端工程闸门，判据见
+          # docs/architecture/three-layer-model.md §4/§9 与 ADR-0001。
+          # baseline = scripts/p0/layering_baseline.json（放在工作区可跟踪路径，
+          # 不放在被 .gitignore 排除的 .runtime/ 下，否则入不了库、CI 拿不到）。
+          # fail-closed：baseline 外新增违规 / 扫描面缺失 / 扫到 0 文件均 exit 1。
+          # 请勿把本步改成 advisory、吞退出码或以 continue-on-error 软化。
+          python scripts/p0/run_layering_gate.py --baseline scripts/p0/layering_baseline.json
 
   frontend:
     name: Frontend Typecheck, Test & Build

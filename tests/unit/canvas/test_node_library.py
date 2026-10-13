@@ -1,22 +1,33 @@
-"""A-画布搭建器-01：16 类节点库逐类执行语义测试（补齐包5）。
+"""A-画布搭建器-01：18 类节点库逐类执行语义测试（补齐包5）。
 
 覆盖：
 * 13 类新增节点（llm / knowledge_retrieval / question_classifier /
   parameter_extractor / iteration / loop / variable_aggregator / template /
   http_request / code / tool / human_input / trigger）每类至少一条「能跑通」
   与一条「诚实失败」语义；
+* N5 的 parallel / subgraph 两类（真并发扇出、命名子图复用、闸门与引用解析）；
 * code 节点沙箱：正常执行、超时终止、**拒绝网络**（A-Claw安全-01 边界）；
-* schema/IR/装配对 16 类节点全量自洽（NODE_PARAMS_SCHEMAS 单一真源）。
+* schema/IR/装配对 18 类节点全量自洽（NODE_PARAMS_SCHEMAS 单一真源）。
 """
 
 from __future__ import annotations
 
+import inspect
+import threading
+import time
+
 import pytest
 
+from find_yourself.services import dsl_canvas
 from find_yourself.services.dsl_canvas import (
     EXTENDED_NODE_TYPES,
+    MAX_EDGES_PER_GRAPH,
+    MAX_NODES_PER_GRAPH,
     NODE_PARAMS_SCHEMAS,
     NODE_TYPES,
+    PARALLEL_MAX_BRANCHES,
+    RECURSION_LIMIT_CAP,
+    DslFieldError,
     DslSuspended,
     DslValidationError,
     canonical_dsl,
@@ -54,20 +65,36 @@ def _status_and_output(doc: dict, **kwargs):
 # --------------------------------------------------------------------------- #
 
 def test_node_library_has_13_new_types() -> None:
-    assert len(NODE_TYPES) == 16
+    # 16 = 基础 3 类 + A-画布搭建器-01 的 13 类；N5 又补 parallel/subgraph 两类。
+    assert len(NODE_TYPES) == 18
     assert set(EXTENDED_NODE_TYPES) == {
         "llm", "knowledge_retrieval", "question_classifier", "parameter_extractor",
         "iteration", "loop", "variable_aggregator", "template", "http_request",
-        "code", "tool", "human_input", "trigger"}
+        "code", "tool", "human_input", "trigger",
+        # N5：并发扇出 / 命名子图复用
+        "parallel", "subgraph"}
 
 
 def test_every_node_type_has_closed_params_schema() -> None:
     # transform 的 params 由 verb 注册表约束（_verb_params_schema），不在本表；
-    # 其余 15 类节点都必须有封闭（additionalProperties=False）的 params 契约。
+    # 其余 17 类节点都必须有封闭（additionalProperties=False）的 params 契约。
     assert set(NODE_PARAMS_SCHEMAS) == set(NODE_TYPES) - {"transform"}
     for schema in NODE_PARAMS_SCHEMAS.values():
         assert schema["type"] == "object"
         assert schema["additionalProperties"] is False
+
+
+def test_every_node_type_is_executable_not_just_declared() -> None:
+    """防「只有声明没有接线」：每种节点都必须有真实执行分支。
+
+    N5 补 parallel/subgraph 前，这两类已在 ``NODE_TYPES`` 与对外 ``/schema``
+    里暴露，却没有 params 契约也没有执行分支——运行期必落「未知节点类型」。
+    """
+    src = inspect.getsource(dsl_canvas.execute_node)
+    for ntype in NODE_TYPES:
+        if ntype == "transform":  # 走 verb 注册表统一分发
+            continue
+        assert f'== "{ntype}"' in src, f"execute_node 缺少 {ntype} 的执行分支"
 
 
 def test_unknown_params_key_is_rejected_on_new_node() -> None:
@@ -313,6 +340,390 @@ def test_loop_stops_when_until_condition_met() -> None:
     status, output = _status_and_output(doc)
     assert status == "succeeded"
     assert output["reason"] == "max_iterations"
+
+
+# --------------------------------------------------------------------------- #
+# N5 拓扑扩展：parallel（并发扇出）/ subgraph（命名子图复用）
+# --------------------------------------------------------------------------- #
+
+def _echo_subflow(tag: str) -> dict:
+    """一张最小可运行子图：把入参原样贴上 ``tag`` 后输出。"""
+    return {
+        "version": "1",
+        "nodes": [
+            {"id": "si", "type": "input"},
+            {"id": "st", "type": "transform", "verb": "map",
+             "params": {"op": "set", "field": "tag", "value": tag}},
+            {"id": "so", "type": "output"}],
+        "edges": [{"from": "si", "to": "st"}, {"from": "st", "to": "so"}],
+    }
+
+
+def test_parallel_runs_branches_concurrently_not_sequentially() -> None:
+    """``parallel`` 必须**真并发**：两个分支同时到达屏障。
+
+    用 ``threading.Barrier`` 而不是「比耗时」——若实现退化成串行，第一个分支会
+    在屏障上超时抛 ``BrokenBarrierError``，测试立刻红。计时断言在 CI 上会 flaky。
+    """
+    barrier = threading.Barrier(2, timeout=5)
+    threads: list[int] = []
+
+    def _llm(model: str, payload, params):  # noqa: ANN001 - 测试替身
+        threads.append(threading.get_ident())
+        barrier.wait()  # 串行执行时这里必然超时
+        return {"text": "ok"}
+
+    sub = {
+        "version": "1",
+        "nodes": [
+            {"id": "si", "type": "input"},
+            {"id": "sl", "type": "llm",
+             "params": {"model": "mock", "prompt": "并发探针"}},
+            {"id": "so", "type": "output"}],
+        "edges": [{"from": "si", "to": "sl"}, {"from": "sl", "to": "so"}],
+    }
+    doc = _flow([_literal("hi"),
+                 {"id": "pl1", "type": "parallel", "params": {
+                     "branches": [{"name": "left", "inline": sub},
+                                  {"name": "right", "inline": sub}]}},
+                 _output()])
+    status, output = _status_and_output(doc, llm_resolver=_llm)
+    assert status == "succeeded"
+    # fan-in 按**分支声明顺序**返回，与谁先跑完无关。
+    assert len(output) == 2
+    assert len(set(threads)) == 2, f"两个分支跑在了同一个线程上：{threads}"
+
+
+def test_parallel_fan_in_follows_declaration_order() -> None:
+    """慢分支在前时，fan-in 结果仍按声明顺序（不按完成先后）。"""
+    delays = {"slow": 0.30, "fast": 0.0}
+
+    def _llm(model: str, prompt: str, params):  # noqa: ANN001 - 测试替身
+        # ``llm_resolver`` 收到的是**插值后的 prompt**，不是上游 payload。
+        # 分支标识只能从 ``params`` 里读——``llm`` 的 params 是封闭 schema，
+        # 塞自造键会被编译期直接拒掉。
+        name = params["system"]
+        time.sleep(delays.get(name, 0.0))
+        return {"text": name, "usage": {}}
+
+    branches = []
+    for which in ("slow", "fast"):
+        sub = _echo_subflow(which)
+        # 末尾插一个 llm 节点，靠 params.system 区分分支并制造完成顺序差。
+        sub["nodes"].insert(2, {"id": "sl", "type": "llm",
+                                "params": {"model": "mock", "prompt": "顺序探针",
+                                           "system": which}})
+        sub["edges"] = [{"from": "si", "to": "st"},
+                        {"from": "st", "to": "sl"},
+                        {"from": "sl", "to": "so"}]
+        branches.append({"name": which, "inline": sub})
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {"branches": branches}},
+                 _output()])
+    status, output = _status_and_output(doc, llm_resolver=_llm)
+    assert status == "succeeded"
+    # 每个分支的值是该子流程 output 节点的输出（即 llm 结果），
+    # 外层列表按分支**声明顺序**排列——与谁先跑完无关。
+    assert [branch["text"] for branch in output] == ["slow", "fast"]
+
+
+def test_parallel_branch_failure_fails_the_node() -> None:
+    """任一分支失败即本节点失败——绝不把失败分支混进 fan-in 结果。"""
+    bad = {"version": "1", "nodes": [_output()], "edges": []}
+    good = _echo_subflow("ok")
+    # good 分支有 input 入口；bad 没有，编译期就该被 _subflow_entry_ok 拦下，
+    # 所以这里用一个**能编译但会运行失败**的分支：引用未在库中的名字在运行期
+    # 由 _branch_subflow 抛错（inline 给 None 触发）。
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {
+                     "branches": [{"name": "ok", "inline": good},
+                                  {"name": "broken", "inline": {
+                                      "version": "1",
+                                      "nodes": [
+                                          {"id": "si", "type": "input"},
+                                          {"id": "sx", "type": "http_request",
+                                           "params": {"url": "ftp://x/y", "method": "GET"}},
+                                          {"id": "so", "type": "output"}],
+                                      "edges": [{"from": "si", "to": "sx"},
+                                                {"from": "sx", "to": "so"}]}}]}},
+                 _output()])
+    status, _ = _status_and_output(doc)
+    assert status == "failed"
+    assert bad is not None  # bad 仅用于说明「无入口子图」编译期已被拦（见下方用例）
+
+
+def test_parallel_rejects_subflow_without_input_entry_at_compile_time() -> None:
+    no_entry = {"version": "1", "nodes": [_output()], "edges": []}
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {
+                     "branches": [{"name": "bad", "inline": no_entry}]}},
+                 _output()])
+    with pytest.raises(DslValidationError):
+        compile_dsl(doc)
+
+
+def test_parallel_branch_count_gate_is_enforced_at_compile_time() -> None:
+    branches = [{"name": f"b{i}", "inline": _echo_subflow(f"t{i}")}
+                for i in range(PARALLEL_MAX_BRANCHES + 1)]
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {"branches": branches}},
+                 _output()])
+    with pytest.raises(DslFieldError) as exc:
+        compile_dsl(doc)
+    assert exc.value.field_path == "params.branches"
+    assert str(PARALLEL_MAX_BRANCHES) in str(exc.value)
+
+
+def test_parallel_requires_exactly_one_of_inline_or_ref() -> None:
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {
+                     "branches": [{"name": "b", "inline": _echo_subflow("t"),
+                                   "ref": "dup"}]}},
+                 _output()])
+    with pytest.raises(DslFieldError) as exc:
+        compile_dsl(doc)
+    assert exc.value.field_path == "params.branches.0"
+
+
+def test_parallel_rejects_out_of_range_max_workers() -> None:
+    doc = _flow([_literal("x"),
+                 {"id": "pl1", "type": "parallel", "params": {
+                     "branches": [{"name": "b", "inline": _echo_subflow("t")}],
+                     "max_workers": PARALLEL_MAX_BRANCHES + 1}},
+                 _output()])
+    with pytest.raises(DslFieldError) as exc:
+        compile_dsl(doc)
+    assert exc.value.field_path == "params.max_workers"
+
+
+# --------------------------- 命名子图（subgraph） --------------------------- #
+
+def test_subgraph_runs_named_subgraph_and_tags_output() -> None:
+    doc = {"version": "1",
+           "subgraphs": {"greet": _echo_subflow("hello")},
+           "nodes": [_literal("x"),
+                     {"id": "sg1", "type": "subgraph",
+                      "params": {"name": "greet"}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "sg1"}, {"from": "sg1", "to": "out1"}]}
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    # 输出带子图名，运行日志能看出结果来自哪张子图。
+    assert output["subgraph"] == "greet"
+    assert output["output"][0]["tag"] == "hello"
+
+
+def test_subgraph_can_be_reused_by_two_nodes() -> None:
+    doc = {"version": "1",
+           "subgraphs": {"echo": _echo_subflow("shared")},
+           "nodes": [_literal("x"),
+                     {"id": "sg1", "type": "subgraph", "params": {"name": "echo"}},
+                     {"id": "sg2", "type": "subgraph", "params": {"name": "echo"}},
+                     {"id": "agg", "type": "variable_aggregator",
+                      "params": {"strategy": "last_non_null"}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "sg1"}, {"from": "sg1", "to": "sg2"},
+                     {"from": "sg2", "to": "agg"}, {"from": "agg", "to": "out1"}]}
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    assert output["subgraph"] == "echo"
+
+
+def test_subgraph_undefined_reference_is_a_compile_error() -> None:
+    """引用不存在的子图在**编译期**就报，并带精确 field_path。
+
+    运行期才炸的话，画布作者会拿到「前半段跑通、后半段炸掉」的记录。
+    """
+    doc = {"version": "1", "subgraphs": {"known": _echo_subflow("k")},
+           "nodes": [_literal("x"),
+                     {"id": "sg1", "type": "subgraph", "params": {"name": "typo"}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "sg1"}, {"from": "sg1", "to": "out1"}]}
+    with pytest.raises(DslFieldError) as exc:
+        compile_dsl(doc)
+    assert exc.value.field_path == "params.name"
+    assert "typo" in str(exc.value)
+
+
+def test_parallel_branch_ref_to_undefined_subgraph_is_compile_error() -> None:
+    doc = {"version": "1",
+           "nodes": [_literal("x"),
+                     {"id": "pl1", "type": "parallel", "params": {
+                         "branches": [{"name": "b", "ref": "nope"}]}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "pl1"}, {"from": "pl1", "to": "out1"}]}
+    with pytest.raises(DslFieldError) as exc:
+        compile_dsl(doc)
+    assert exc.value.field_path == "params.branches.0.ref"
+
+
+def test_subgraph_library_entry_needs_input_entry() -> None:
+    doc = {"version": "1",
+           "subgraphs": {"bad": {"version": "1", "nodes": [_output()], "edges": []}},
+           "nodes": [_literal("x"),
+                     {"id": "sg1", "type": "subgraph", "params": {"name": "bad"}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "sg1"}, {"from": "sg1", "to": "out1"}]}
+    with pytest.raises(DslValidationError):
+        compile_dsl(doc)
+
+
+def test_subflow_inherits_parent_subgraph_library() -> None:
+    """子流程按调用链继承父图的子图库（本图自声明的同名 key 优先）。"""
+    inner = {
+        "version": "1",
+        "nodes": [
+            {"id": "si", "type": "input"},
+            {"id": "pl", "type": "parallel", "params": {
+                "branches": [{"name": "b", "ref": "shared"}]}},
+            {"id": "so", "type": "output"}],
+        "edges": [{"from": "si", "to": "pl"}, {"from": "pl", "to": "so"}],
+    }
+    doc = {"version": "1",
+           "subgraphs": {"shared": _echo_subflow("from-parent"),
+                         "wrapper": inner},
+           "nodes": [_literal("x"),
+                     {"id": "sg1", "type": "subgraph",
+                      "params": {"name": "wrapper"}},
+                     _output()],
+           "edges": [{"from": "in1", "to": "sg1"}, {"from": "sg1", "to": "out1"}]}
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    # 嵌套子流程里的 parallel.branches[].ref 解析到了父图的子图库：
+    # wrapper 内的 parallel 拿到了 shared 这张父图声明的子图，跑出 from-parent。
+    assert output["subgraph"] == "wrapper"
+    assert output["output"][0][0]["tag"] == "from-parent"
+
+
+def test_subgraph_library_is_not_leaked_across_runs() -> None:
+    """两次运行之间的子图库互不污染（回归：曾用模块级全局，parallel 并发必串味）。"""
+    parent = {"version": "1",
+              "subgraphs": {"shared": _echo_subflow("parent")},
+              "nodes": [_literal("x"),
+                        {"id": "pl", "type": "parallel", "params": {
+                            "branches": [{"name": "b", "ref": "shared"}]}},
+                        _output()],
+              "edges": [{"from": "in1", "to": "pl"},
+                        {"from": "pl", "to": "out1"}]}
+    child = {"version": "1",
+             "nodes": [_literal("x"),
+                       {"id": "pl", "type": "parallel", "params": {
+                           "branches": [{"name": "b", "ref": "shared"}]}},
+                       _output()],
+             "edges": [{"from": "in1", "to": "pl"},
+                       {"from": "pl", "to": "out1"}]}
+    first = run_dsl(parent)
+    # 调用方从外部注入的子图库同样可解析（DSL SDK 场景：库不在文档里）。
+    injected = run_dsl(child, subgraphs={"shared": _echo_subflow("x")})
+    # 第三次运行既没有自声明也没传参 —— 若子图库曾泄漏，这里会读到脏数据。
+    # 编译期就fail-closed 抛错（而不是跑一半失败），这正是期望：宁可拒绝执行，
+    # 也不给一份「前半段跑通、后半段炸掉」的运行记录。
+    assert first.status == "succeeded"
+    assert injected.status == "succeeded"
+    with pytest.raises(DslFieldError, match="未定义的子图"):
+        run_dsl(child)
+
+
+def test_frontend_default_params_satisfy_the_backend_contract() -> None:
+    """前端 ``defaultParams`` 的产物必须真过后端契约（防前后端默认值脱节）。
+
+    ``web/src/components/workflow/FlowEditor.tsx`` 的 ``defaultParams`` 为``parallel``
+    / ``subgraph`` 补了默认值——若这两类仍落到 ``default: return {}``，用户在画布上
+    点出来的节点会带空params，导出时被后端 422 拒掉。但前端跑不到 Python 校验，
+    契约一漂移没人先发现。这里用**与前端同形**的字面量走一遍后端编译 + 运行：
+    后端契约一旦变严（例如分支闸门、入口节点要求），这个测试第一时间红。
+    """
+    def _min_subflow(tag: str) -> dict:
+        """与前端 ``minSubflow`` 同形的最小内联子图（input 入口 + output 出口）。"""
+        return {"version": "1",
+                "nodes": [
+                    {"id": f"input_{tag}", "type": "input",
+                     "params": {"kind": "literal", "value": ["test"]}},
+                    {"id": f"output_{tag}", "type": "output",
+                     "params": {"format": "text"}},
+                ],
+                "edges": [{"from": f"input_{tag}", "to": f"output_{tag}"}]}
+
+    doc = {
+        "version": "1",
+        # 两个分支的节点 id 互不相同 —— 同文档内id 撞车是编译期错误。
+        "subgraphs": {"shared": _min_subflow("s")},
+        "nodes": [_literal("x"),
+                  {"id": "pl", "type": "parallel", "params": {"branches": [
+                      {"name": "分支1", "inline": _min_subflow("1")},
+                      {"name": "分支2", "inline": _min_subflow("2")}]}},
+                  {"id": "sg", "type": "subgraph", "params": {"name": "shared"}},
+                  _output()],
+        "edges": [{"from": "in1", "to": "pl"}, {"from": "pl", "to": "sg"},
+                  {"from": "sg", "to": "out1"}],
+    }
+    # 不是「不抛异常」就算过：必须真能编译成正确的拓扑波次顺序。
+    assert compile_dsl(doc).order == ["in1", "pl", "sg", "out1"]
+    # 也必须真跑得通—— 校验通过但运行期才炸（比如子图解析不到）同样不合格。
+    assert _status_and_output(doc) == ("succeeded", {"subgraph": "shared",
+                                                      "output": "x\nx"})
+
+
+# ------------------------------ 规模与步数闸门 ------------------------------ #
+
+def test_recursion_limit_fails_closed_instead_of_silently_truncating() -> None:
+    """步数超限必须**明确失败**，绝不「跑着跑着就没了」也不谎报 skipped。"""
+    nodes = [_literal("x")]
+    edges = []
+    for i in range(6):
+        nodes.append({"id": f"t{i}", "type": "transform", "verb": "map",
+                      "params": {"op": "set", "field": "i", "value": i}})
+        edges.append({"from": nodes[-2]["id"], "to": f"t{i}"})
+    nodes.append(_output())
+    edges.append({"from": "t5", "to": "out1"})
+    result = run_dsl(_flow(nodes, edges), recursion_limit=3)
+    assert result.status == "failed"
+    assert "recursion_limit" in (result.error or "")
+
+
+def test_recursion_limit_is_clamped_to_the_cap() -> None:
+    """传一个能把服务拖死的无界值，会被裁到 ``RECURSION_LIMIT_CAP``，不被照单全收。"""
+    from find_yourself.services import dsl_canvas as dc
+    doc = _flow([_literal("x"),
+                 {"id": "t0", "type": "transform", "verb": "map",
+                  "params": {"op": "set", "field": "i", "value": 0}},
+                 _output()])
+    assert dc.RECURSION_LIMIT_CAP == RECURSION_LIMIT_CAP
+    # 合法图在超大 limit 下正常跑完（说明 limit 没被当成 1 传给下游）。
+    assert run_dsl(doc, recursion_limit=10 ** 9).status == "succeeded"
+    # 非法值（非数字）回落到默认值，而不是抛异常或变成 0。
+    assert run_dsl(doc, recursion_limit="oops").status == "succeeded"
+
+
+def test_graph_scale_gates_reject_oversized_graphs() -> None:
+    """图级规模闸门：超大图在编译期被拒，并给出可执行的拆分建议。"""
+    nodes = [{"id": f"n{i}", "type": "input"} for i in range(MAX_NODES_PER_GRAPH + 1)]
+    with pytest.raises(DslValidationError) as exc:
+        validate_dsl({"version": "1", "nodes": nodes, "edges": []})
+    assert str(MAX_NODES_PER_GRAPH) in str(exc.value)
+
+    edges = [{"from": "a", "to": "b"}] * (MAX_EDGES_PER_GRAPH + 1)
+    with pytest.raises(DslValidationError) as exc:
+        validate_dsl({"version": "1",
+                      "nodes": [{"id": "a", "type": "input"},
+                                {"id": "b", "type": "output"}],
+                      "edges": edges})
+    assert str(MAX_EDGES_PER_GRAPH) in str(exc.value)
+
+
+def test_restricted_code_export_rejects_non_exportable_node_types() -> None:
+    """受限代码导出只认 input/transform/output。
+
+    以前这里掉进字典反查抛裸 ``KeyError``，API 层只捕 ``DslValidationError`` →
+    用户拿到 500 而非可读的 422。
+    """
+    from find_yourself.services.dsl_code_export import export_dsl_code
+    doc = _flow([_literal("x"),
+                 {"id": "sg1", "type": "subgraph", "params": {"name": "s"}},
+                 _output()])
+    with pytest.raises(DslValidationError) as exc:
+        export_dsl_code(doc)
+    assert "subgraph" in str(exc.value)
 
 
 # --------------------------------------------------------------------------- #

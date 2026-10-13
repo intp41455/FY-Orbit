@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable
 
-from ..services.scheduler import (
+from ..scheduling import (
     CHANNEL_INTERNAL_AGENT,
     DEFAULT_PRIORITY,
     TASK_FAILED,
@@ -23,7 +23,7 @@ from ..services.scheduler import (
     DispatchRequest,
     UnifiedScheduler,
 )
-from ..services.scheduler import scheduler as _default_scheduler
+from ..scheduling import scheduler as _default_scheduler
 
 logger = logging.getLogger(__name__)
 

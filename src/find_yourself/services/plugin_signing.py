@@ -78,7 +78,7 @@ _ED25519_KEY_BYTES = 32
 def canonical_package_bytes(package: dict[str, Any]) -> bytes:
     """签名所覆盖的**规范化字节**。
 
-    刻意复用 :func:`find_yourself.services.hasher.canonical_json`——``package_hash``
+    刻意复用 :func:`find_yourself.hashing.canonical_json`——``package_hash``
     就是 ``sha256(canonical_json(package))``。签名与哈希覆盖**同一串字节**，
     于是「哈希对得上」自动蕴含「签名覆盖的就是这份内容」，不会出现两个规范
     化口径漂移导致签名与哈希各说各话。

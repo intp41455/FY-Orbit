@@ -8,6 +8,7 @@ import {
 } from '../api/charts';
 import { LineIcon } from '../components/ui/LineIcon';
 import { errorMessage } from '../components/ui';
+import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 type TabKey = 'fortune' | 'tarot' | 'chart' | 'synastry';
 
@@ -101,7 +102,9 @@ export function FortunePage() {
     }
   };
 
+  // 本页无自动保存语义，按 BaseBound 契约诚实传 'idle'，不给「已保存」假承诺。
   return (
+    <BaseBound surface="fortune" state="idle">
     <div style={{ maxWidth: 1120, margin: '0 auto', padding: '24px 20px', color: 'var(--ui-ink-1, #f1f5f9)' }}>
       {/* Page Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, borderBottom: '1px solid var(--ui-line-1, rgba(255,255,255,0.08))', paddingBottom: 16 }}>
@@ -481,5 +484,6 @@ export function FortunePage() {
         </div>
       )}
     </div>
+    </BaseBound>
   );
 }

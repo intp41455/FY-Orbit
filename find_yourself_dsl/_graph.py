@@ -224,7 +224,12 @@ def reset_current_flow() -> None:
 
 
 def canonical_dsl(doc: dict[str, Any]) -> dict[str, Any]:
-    """规范化（省略空 params / 非 transform 的 verb / 空 condition），与平台一致。"""
+    """规范化（省略空 params / 非transform 的 verb / 空 condition），与平台一致。
+
+    N5：``flow_type`` 与 ``subgraphs`` 同样进入规范化结果——它们是语义的一部分，
+    不参与就会让「改了 flow_type / 子图库但 digest 不变」，人所审批的那份摘要
+    就不再代表实际执行的行为。
+    """
     validate_document(doc)
     nodes: list[dict[str, Any]] = []
     for n in doc["nodes"]:
@@ -241,7 +246,16 @@ def canonical_dsl(doc: dict[str, Any]) -> dict[str, Any]:
         if e.get("condition") is not None:
             entry["condition"] = e["condition"]
         edges.append(entry)
-    return {"version": doc["version"], "nodes": nodes, "edges": edges}
+    canonical: dict[str, Any] = {"version": doc["version"], "nodes": nodes,
+                                 "edges": edges}
+    if doc.get("flow_type") is not None:
+        canonical["flow_type"] = doc["flow_type"]
+    library = doc.get("subgraphs")
+    if isinstance(library, dict) and library:
+        canonical["subgraphs"] = {
+            name: canonical_dsl(sub) for name, sub in sorted(library.items())
+        }
+    return canonical
 
 
 def dsl_digest(doc: dict[str, Any]) -> str:

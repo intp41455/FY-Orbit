@@ -1,0 +1,157 @@
+{
+  "version": "1.0.0",
+  "records": [
+    {
+      "id": "R5|src/find_yourself/db/models.py|find_yourself.workflows.models",
+      "kind": "reverse_dep",
+      "rule": "R5",
+      "path": "src/find_yourself/db/models.py",
+      "detail": "L1 → L2 反向依赖：find_yourself.db.models → find_yourself.workflows.models",
+      "reason": "已知债务：L1 持久化模型 db/models.py 反向依赖 L2 workflows.models（R5）；解环时应把模型契约下沉 L1 或改依赖注入（three-layer-model §6、ADR-0001 D3）"
+    },
+    {
+      "id": "R5|src/find_yourself/db/workbench_models.py|find_yourself.services.hub",
+      "kind": "reverse_dep",
+      "rule": "R5",
+      "path": "src/find_yourself/db/workbench_models.py",
+      "detail": "L1 → L2 反向依赖：find_yourself.db.workbench_models → find_yourself.services.hub",
+      "reason": "已知债务：L1 持久化模型 db/workbench_models.py 反向依赖 L2 services.hub（R5）；解环时应改依赖注入或下沉契约（three-layer-model §6、ADR-0001 D3）"
+    },
+    {
+      "id": "V1|src/find_yourself/adapters/community_harness_adapter.py ⇄ src/find_yourself/services/hub/access.py|l2_cycle",
+      "kind": "l2_cycle",
+      "rule": "V1",
+      "path": "src/find_yourself/adapters/community_harness_adapter.py ⇄ src/find_yourself/services/hub/access.py",
+      "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/adapters/community_harness_adapter.py, src/find_yourself/services/hub/access.py",
+      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
+    },
+    {
+      "id": "V1|src/find_yourself/adapters/mcp.py ⇄ src/find_yourself/services/hub/adapters.py ⇄ src/find_yourself/services/hub/connections.py ⇄ src/find_yourself/services/knowledge/__init__.py ⇄ src/find_yourself/services/knowledge/hub_bridge.py ⇄ src/find_yourself/services/tool_registry.py|l2_cycle",
+      "kind": "l2_cycle",
+      "rule": "V1",
+      "path": "src/find_yourself/adapters/mcp.py ⇄ src/find_yourself/services/hub/adapters.py ⇄ src/find_yourself/services/hub/connections.py ⇄ src/find_yourself/services/knowledge/__init__.py ⇄ src/find_yourself/services/knowledge/hub_bridge.py ⇄ src/find_yourself/services/tool_registry.py",
+      "detail": "L2 内部成环（l2_cycle，6 个模块）：src/find_yourself/adapters/mcp.py, src/find_yourself/services/hub/adapters.py, src/find_yourself/services/hub/connections.py, src/find_yourself/services/knowledge/__init__.py, src/find_yourself/services/knowledge/hub_bridge.py, src/find_yourself/services/tool_registry.py",
+      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
+    },
+    {
+      "id": "V1|src/find_yourself/services/dsl_canvas.py ⇄ src/find_yourself/services/dsl_ir.py|l2_cycle",
+      "kind": "l2_cycle",
+      "rule": "V1",
+      "path": "src/find_yourself/services/dsl_canvas.py ⇄ src/find_yourself/services/dsl_ir.py",
+      "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/services/dsl_canvas.py, src/find_yourself/services/dsl_ir.py",
+      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
+    },
+    {
+      "id": "V1|src/find_yourself/services/knowledge/sources/__init__.py ⇄ src/find_yourself/services/knowledge/sources/baidu_pan.py|l2_cycle",
+      "kind": "l2_cycle",
+      "rule": "V1",
+      "path": "src/find_yourself/services/knowledge/sources/__init__.py ⇄ src/find_yourself/services/knowledge/sources/baidu_pan.py",
+      "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/services/knowledge/sources/__init__.py, src/find_yourself/services/knowledge/sources/baidu_pan.py",
+      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/a2a.py|find_yourself.runtime.local_agents",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/a2a.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.a2a → find_yourself.runtime.local_agents",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/bus.py|find_yourself.runtime.agent_bus",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/bus.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.bus → find_yourself.runtime.agent_bus",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/catalog.py|find_yourself.runtime.providers",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/catalog.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.catalog → find_yourself.runtime.providers",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/collaboration.py|find_yourself.runtime.sse",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/collaboration.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.collaboration → find_yourself.runtime.sse",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/dsl_lifecycle.py|find_yourself.runtime.gateway",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/dsl_lifecycle.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.dsl_lifecycle → find_yourself.runtime.gateway",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/inference.py|find_yourself.runtime.gateway",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/inference.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.inference → find_yourself.runtime.gateway",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/runtime.py|find_yourself.runtime.hooks",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/runtime.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.runtime → find_yourself.runtime.hooks",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/runtime.py|find_yourself.runtime.kernel",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/runtime.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.runtime → find_yourself.runtime.kernel",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/streaming.py|find_yourself.runtime.sse",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/streaming.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.streaming → find_yourself.runtime.sse",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/tasks.py|find_yourself.runtime.sse",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/tasks.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.tasks → find_yourself.runtime.sse",
+      "reason": "已知债务：L3 路由越层直连 runtime（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "W1|src/find_yourself/api/routes/tasks.py|find_yourself.runtime.temporal",
+      "kind": "skip_layer_direct",
+      "rule": "W1",
+      "path": "src/find_yourself/api/routes/tasks.py",
+      "detail": "L3 路由越层直连执行引擎：find_yourself.api.routes.tasks → find_yourself.runtime.temporal",
+      "reason": "已知债务：L3 路由越层直连执行引擎（three-layer-model §4.3 W1）；方向合法但破坏封装约定（应经 service 稳定接口访问），待逐项收敛"
+    },
+    {
+      "id": "D3R|src/find_yourself/runtime/graph.py|find_yourself.services.agent_teams",
+      "kind": "sublayer_reverse_dep",
+      "rule": "D3R",
+      "path": "src/find_yourself/runtime/graph.py",
+      "detail": "L2.0 → L2.1 反向依赖（ADR-0001 D3 禁止方向）：find_yourself.runtime.graph → find_yourself.services.agent_teams",
+      "reason": "已知债务 D3R：图节点内联引用 L2.1 AgentTeamService 组建团队（函数内延迟导入）。属真实行为耦合，需改为依赖注入或把组队上移到 L2.1（ADR-0001 D3）"
+    },
+    {
+      "id": "D3R|src/find_yourself/runtime/sandbox.py|find_yourself.services.terminal",
+      "kind": "sublayer_reverse_dep",
+      "rule": "D3R",
+      "path": "src/find_yourself/runtime/sandbox.py",
+      "detail": "L2.0 → L2.1 反向依赖（ADR-0001 D3 禁止方向）：find_yourself.runtime.sandbox → find_yourself.services.terminal",
+      "reason": "已知债务 D3R：沙箱清理直接调用 L2.1 的 terminal.kill_process_tree。形态上是纯进程工具函数、本属执行原语，应下沉至 L2.0 而非留在 L2.1，属归类错位而非行为耦合（ADR-0001 D3）"
+    }
+  ]
+}

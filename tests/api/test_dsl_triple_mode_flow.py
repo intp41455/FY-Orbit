@@ -91,3 +91,130 @@ def test_enterprise_template_suspends_not_fails(client: TestClient, tmp_path):
     body = r.json()
     assert body["status"] == "suspended"
     assert body["suspended"]["node_id"]
+
+
+def _open_hitl(client: TestClient, headers: dict, execution_id: str,
+               suspended: dict) -> str:
+    """按挂起载荷建一条 HITL 中断，返回 interrupt id。
+
+    走的是前端真正会打的那条路（``POST /api/hitl/interrupts``），不直接调
+    服务层——否则测的就不是「HTTP 面能不能闭环」而是「服务层能不能闭环」。
+    """
+    r = client.post("/api/hitl/interrupts", headers=headers, json={
+        "execution_id": execution_id,
+        "checkpoint": suspended["checkpoint"],
+        "context": suspended.get("context", {}),
+        "options": suspended["options"],
+        "reason": "DSL 治理节点等待裁决",
+    })
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
+def _decide(client: TestClient, headers: dict, interrupt_id: str,
+            decision: str) -> None:
+    r = client.post(f"/api/hitl/interrupts/{interrupt_id}/decision",
+                    headers=headers, json={"decision": decision})
+    assert r.status_code == 200, r.text
+
+
+def test_third_party_decision_keeps_run_suspended(client: TestClient, tmp_path):
+    """第三值 ``return_for_change`` 必须**继续挂起**，绝不放行也绝不失败。
+
+    ``team_approval`` 的决策集是三值（``approve`` / ``reject`` /
+    ``return_for_change``，见 ``TEAM_DECISIONS``），而 DSL 的 ``ApprovalSignal``
+    只有两值 + ``None``。接缝就在这个降维上：把「退回修改」当 approve 等于
+    替治理层签字，把它当 reject 等于伪造否决。正确解只有一个——不映射，落回
+    ``None`` 继续挂起，把选择权交回给人。
+
+    这条是前两条的反向护栏：只钉 approve/reject 的话，把读取器写成
+    ``lambda *_: row.decision or "approve"`` 一样全绿。
+    """
+    dsl_canvas.reset_store_for_tests(archive_dir=str(tmp_path / "runs"))
+    headers = login_owner(client)
+    dsl = _enterprise_dsl(client, headers)
+    execution_id = "exec-enterprise-third-value"
+
+    r = client.post("/api/dsl-canvas/runs", headers=headers,
+                    json={"dsl": dsl, "execution_id": execution_id})
+    assert r.status_code == 202, r.text
+    suspended = r.json()["suspended"]
+
+    # 挂起载荷自带的两值之外，补一个治理侧的第三值（真实 team_approval 会给）。
+    options = [*suspended["options"], {"value": "return_for_change",
+                                       "label": "退回修改"}]
+    iid = _open_hitl(client, headers, execution_id,
+                     {**suspended, "options": options})
+    _decide(client, headers, iid, "return_for_change")
+
+    r2 = client.post("/api/dsl-canvas/runs", headers=headers,
+                     json={"dsl": dsl, "execution_id": execution_id})
+    # 仍挂起：既没 succeeded（没被猜成 approve），也没 failed（没被猜成 reject）。
+    assert r2.status_code == 202, r2.text
+    assert r2.json()["status"] == "suspended", r2.json()
+
+
+def _enterprise_dsl(client: TestClient, headers: dict) -> dict:
+    return _template(_modes(client, headers), "enterprise",
+                     "enterprise-governed")["dsl"]
+
+
+def test_enterprise_run_resumes_after_human_approval(client: TestClient, tmp_path):
+    """判据 4 的后半程 · 挂起 → 人工裁决 → **带同一 execution_id 续跑成功**。
+
+    这一条是G4-e 的判据。此前 HTTP 面``run_dsl`` 压根没注入
+    ``approval_signal``（``api/routes/dsl_canvas.py`` 的 ``/runs`` 只传了
+    ``execution_id``），所以治理层就算裁决了 approve，重开一轮仍然恒 202
+    挂起——闭环在最后一米断掉。此处钉死「裁决真的能放行」。
+    """
+    dsl_canvas.reset_store_for_tests(archive_dir=str(tmp_path / "runs"))
+    headers = login_owner(client)
+    dsl = _enterprise_dsl(client, headers)
+    execution_id = "exec-enterprise-approve"
+
+    # 第一步：跑一轮，撞approval 挂起。
+    r = client.post("/api/dsl-canvas/runs", headers=headers,
+                    json={"dsl": dsl, "execution_id": execution_id})
+    assert r.status_code == 202, r.text
+    suspended = r.json()["suspended"]
+    assert suspended["checkpoint"] == f"{execution_id}#{suspended['node_id']}"
+
+    # 第二步：建中断并由人拍板 approve。
+    iid = _open_hitl(client, headers, execution_id, suspended)
+    _decide(client, headers, iid, "approve")
+
+    # 第三步：带同一 execution_id 重开一轮 —— 必须真的跑完。
+    r2 = client.post("/api/dsl-canvas/runs", headers=headers,
+                     json={"dsl": dsl, "execution_id": execution_id})
+    assert r2.status_code == 200, r2.text
+    body = r2.json()
+    assert body["status"] == "succeeded", body
+    # 放行后 payload 原样穿过治理节点交给 out（与小白模板同一条数据）。
+    assert [n["text"] for n in body["output"]] == ["甲", "丙"]
+
+
+def test_enterprise_run_fails_after_human_rejection(client: TestClient, tmp_path):
+    """反向闸门：驳回必须**显式失败**，绝不能被「读不到就当approve」蒙过去。
+
+    与上一条成对：只钉approve 的话，把读取器写死成 ``lambda *_: "approve"``
+    也能全绿——那等于给治理层开后门。
+    """
+    dsl_canvas.reset_store_for_tests(archive_dir=str(tmp_path / "runs"))
+    headers = login_owner(client)
+    dsl = _enterprise_dsl(client, headers)
+    execution_id = "exec-enterprise-reject"
+
+    r = client.post("/api/dsl-canvas/runs", headers=headers,
+                    json={"dsl": dsl, "execution_id": execution_id})
+    assert r.status_code == 202, r.text
+    suspended = r.json()["suspended"]
+
+    iid = _open_hitl(client, headers, execution_id, suspended)
+    _decide(client, headers, iid, "reject")
+
+    r2 = client.post("/api/dsl-canvas/runs", headers=headers,
+                     json={"dsl": dsl, "execution_id": execution_id})
+    assert r2.status_code == 200, r2.text
+    body = r2.json()
+    assert body["status"] == "failed", body
+    assert "驳回" in (body["error"] or ""), body["error"]

@@ -56,9 +56,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _load_run(run_id: str) -> dict[str, Any]:
-    """取共享存档里的运行记录（画布与调试端点读写同一份）。"""
-    payload = _canvas_routes._store.get(run_id)
+def _load_run(run_id: str, actor: Actor) -> dict[str, Any]:
+    """取共享存档里的运行记录（画布与调试端点读写同一份）。
+
+    与画布 ``GET /runs/{run_id}`` 同款判据：属主外一律 404。
+    """
+    actor.require_authenticated()
+    payload = _canvas_routes._store.get_owned(
+        run_id, _canvas_routes._actor_identity(actor))
     if payload is None:
         raise HTTPException(status_code=404, detail=f"run 不存在: {run_id}")
     return payload
@@ -253,7 +258,8 @@ async def create_draft_run(request: Request,
     plan = _plan_or_422(doc)  # 只编译不执行：环/类型错误在这里就 422
     result = RunResult(run_id=f"dsl-debug-{uuid.uuid4().hex[:12]}", status="draft",
                        doc=doc, execution_id=execution_id)
-    stored = _canvas_routes._store.save(result)
+    stored = _canvas_routes._store.save(
+        result, owner=_canvas_routes._actor_identity(actor))
     return {"run_id": stored["run_id"], "status": stored["status"],
             "node_count": len(plan.nodes), "edge_count": len(doc.get("edges", [])),
             "topological_order": plan.order}
@@ -269,7 +275,7 @@ async def step_run(run_id: str, request: Request,
                    actor: Actor = Depends(csrf_protected)):
     """单步执行一节点：缺省取拓扑序下一个未执行节点，也可用
     ``{"node_id": "..."}`` 指定。全部执行过时返回 ``status="completed"``。"""
-    run = _load_run(run_id)
+    run = _load_run(run_id, actor)
     plan = _plan_or_422(run["dsl"])
     node_id: str | None = None
     try:
@@ -295,14 +301,14 @@ async def run_node(run_id: str, node_id: str,
                    actor: Actor = Depends(csrf_protected)):
     """单节点运行：**自动取上游变量**（按 ``run_dsl`` 同款合并规则），
     可重复执行（追加日志，便于调试观察）。"""
-    run = _load_run(run_id)
+    run = _load_run(run_id, actor)
     return _execute_single_node(run, node_id)
 
 
 @router.get("/runs/{run_id}/state")
 async def get_state(run_id: str, actor: Actor = Depends(get_actor)) -> dict:
     """变量监视：每个节点的最新状态与输出（变量 = 节点输出）。"""
-    run = _load_run(run_id)
+    run = _load_run(run_id, actor)
     plan = _plan_or_422(run["dsl"])
     variables: dict[str, dict[str, Any]] = {}
     for nid in plan.order:

@@ -41,6 +41,7 @@ function getClusterCss(cluster: number): string {
 
 export function KnowledgeGraph3D({
   nodes,
+  edges,
   selectedId,
   onSelect,
   reducedMotion = false,
@@ -174,16 +175,30 @@ export function KnowledgeGraph3D({
     const linesGeometry = new THREE.BufferGeometry();
     const linePoints: number[] = [];
 
-    // Connect sequential or proximate nodes
-    for (let i = 0; i < nodeObjects.length; i++) {
-      for (let j = i + 1; j < nodeObjects.length; j++) {
-        const p1 = nodeObjects[i].basePos;
-        const p2 = nodeObjects[j].basePos;
-        const d = p1.distanceTo(p2);
-        // Connect if close enough or sharing cluster
-        if (d < 240 || (nodeObjects[i].node.cluster === nodeObjects[j].node.cluster && d < 320)) {
-          linePoints.push(p1.x, p1.y, p1.z);
-          linePoints.push(p2.x, p2.y, p2.z);
+    // 真实边优先：按节点 id 把 StarEdge 的 source→target 映射到三维坐标。
+    // 仅当 edges 为空/未传时，才回落到几何距离启发式（保证 demoFallback 仍可渲染）。
+    if (edges && edges.length > 0) {
+      const posById = new Map<string, THREE.Vector3>();
+      nodeObjects.forEach((o) => posById.set(o.node.id, o.basePos));
+      for (const edge of edges) {
+        const p1 = posById.get(edge.source);
+        const p2 = posById.get(edge.target);
+        if (!p1 || !p2) continue;
+        linePoints.push(p1.x, p1.y, p1.z);
+        linePoints.push(p2.x, p2.y, p2.z);
+      }
+    } else {
+      // Connect sequential or proximate nodes
+      for (let i = 0; i < nodeObjects.length; i++) {
+        for (let j = i + 1; j < nodeObjects.length; j++) {
+          const p1 = nodeObjects[i].basePos;
+          const p2 = nodeObjects[j].basePos;
+          const d = p1.distanceTo(p2);
+          // Connect if close enough or sharing cluster
+          if (d < 240 || (nodeObjects[i].node.cluster === nodeObjects[j].node.cluster && d < 320)) {
+            linePoints.push(p1.x, p1.y, p1.z);
+            linePoints.push(p2.x, p2.y, p2.z);
+          }
         }
       }
     }

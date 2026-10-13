@@ -41,10 +41,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
+from ..audit import AuditService
 from ..db.claim_models import TaskClaim
 from ..db.types import utcnow
-from ..services.actor import Actor
-from ..services.audit import AuditService
+from ..identity import Actor
 
 #: 默认租约时长（秒）。持有者须在此之前 ``renew``，否则被回收放回板上。
 DEFAULT_LEASE_SECONDS = 300

@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DSL_NODE_TYPES,
+  DSL_TRANSFORM_VERBS,
   dslCanvasApi,
   type DslDiagnostic,
   type DslDocument,
@@ -27,6 +28,7 @@ import {
   type DslNode,
   type DslNodeType,
   type DslRunResult,
+  type DslSchemaResponse,
   type DslSuspendedResult,
   type DslTransformVerb,
 } from '../../api/dslCanvas';
@@ -48,7 +50,13 @@ const NODE_H = 52;
  * 从 `DSL_NODE_TYPES` 派生，前端只有一份清单。
  */
 export const FLOW_NODE_TYPES: DslNodeType[] = [...DSL_NODE_TYPES];
-export const FLOW_VERBS: DslTransformVerb[] = ['map', 'filter', 'template'];
+/**
+ * transform 动词门禁：与后端 `services/dsl_canvas.py` 的 `TRANSFORM_VERBS`
+ * 一致，直接用 `DSL_TRANSFORM_VERBS` 真源，不再在前端另抄一份短清单。
+ * （曾硬编码为 ['map','filter','template']，导致另外 7 个后端认得的动词被
+ *  本地 quickValidate / runFlow 执行门禁误拒。）
+ */
+export const FLOW_VERBS: readonly DslTransformVerb[] = DSL_TRANSFORM_VERBS;
 
 let seq = 0;
 /** 节点 id 生成：必须匹配后端 `^[A-Za-z0-9_-]{1,64}$`。 */
@@ -73,8 +81,15 @@ export interface EditorNode extends DslNode {
 
 export interface EditorEdge extends DslEdge {}
 
-/** 图（节点+边+坐标）→ DSL 文档。**坐标被丢弃**。 */
-export function serializeGraph(nodes: EditorNode[], edges: EditorEdge[]): DslDocument {
+/**
+ * 图（节点+边+坐标）→ DSL 文档。**坐标被丢弃**。
+ *
+ * 入参声明为 `DslNode[]` 而非 `EditorNode[]`：序列化只读语义字段
+ * （id/type/verb/params），坐标有没有都无所谓。这是 DslCanvas 与
+ * FlowEditor **唯一的图→DSL 序列化实现**（单一真源），两个画布必须
+ * 产出逐字段相同的 DSL，否则「同一份工作流两条路径结构不一致」。
+ */
+export function serializeGraph(nodes: DslNode[], edges: DslEdge[]): DslDocument {
   return {
     version: '1',
     nodes: nodes.map((n) => ({
@@ -292,9 +307,32 @@ export function defaultParams(type: DslNodeType): Record<string, unknown> {
       return { prompt: '请输入' };
     case 'trigger':
       return { kind: 'manual', config: {} };
+    case 'parallel':
+      // 分支数硬闸门在后端（PARALLEL_MAX_BRANCHES=8）；这里给两个最小可跑的
+      // 内联分支，节点 id 必须互不相同（否则同一个 DSL 文档里 id 撞车）。
+      return {
+        branches: [
+          { name: '分支1', inline: minSubflow('1') },
+          { name: '分支2', inline: minSubflow('2') },
+        ],
+      };
+    case 'subgraph':
+      return { name: 'shared' };
     default:
       return {};
   }
+}
+
+/** 最小可用的内联子图文档：一个 input 入口 + 一个 output 出口。 */
+function minSubflow(tag: string): Record<string, unknown> {
+  return {
+    version: '1',
+    nodes: [
+      { id: `input_${tag}`, type: 'input', params: { kind: 'literal', value: ['test'] } },
+      { id: `output_${tag}`, type: 'output', params: { format: 'text' } },
+    ],
+    edges: [{ from: `input_${tag}`, to: `output_${tag}` }],
+  };
 }
 
 /**
@@ -333,35 +371,91 @@ export interface FlowEditorProps {
    * 差别只在复杂度开关：
    *
    * * `beginner`："小白层" —— 隐藏代码视图 / DSL 手改 / 导出（那是技术层的活），
-   *   保留全部 16 类节点可拖（藏的是"怎么读图"，不是"能搭什么"）；
+   *   保留全部 18 类节点可拖（藏的是"怎么读图"，不是"能搭什么"）；
    * * `technical`（默认）：现有全量视图（代码、手改、导出都在）；
    * * `enterprise`：同技术层 + 治理提示（approval 动词）。
    */
   mode?: DslMode;
+  /**
+   * 本地文档变化后回传给页面（与 DslCanvas 共享同一条状态通道）。
+   * 载荷复用下面那份唯一的 `doc`（`serializeGraph(nodes, edges)`），
+   * 不造第二份序列化。
+   */
+  onDocChange?: (doc: DslDocument) => void;
+  /**
+   * 宿主是否可见（两个画布同时挂载、用 `hidden` 切页签）。
+   *
+   * 不可见时**只跳过防抖 IR 校验请求**（否则首屏两份文档各发一次，
+   * 请求量翻倍），编辑与回传一律照旧 —— 切回可见时会立刻补一次校验。
+   */
+  visible?: boolean;
 }
 
-/** 画布顶部错误条（含行列级信息）。 */
-function ErrorBanner({ message, detail }: { message: string; detail?: string }) {
+/**
+ * 把收集式 IR 的 `diagnostics[]` 压成一行可定位摘要（`节点 x · 字段 path`）。
+ *
+ * G4-g2：`/validate` 的统一错误信封里 `details` 恒为 `{}`（见
+ * `api/errors.py::_envelope`），所以 `details.line/column` 永远拿不到；
+ * 真正带定位的是 `/validate-ir` 的 `diagnostics[]`（`node_id` + `field_path`）。
+ *
+ * 一次全量拼接，绝不只报第一条（与 `DslDiagnostics` 的铁律一致）。
+ * 无诊断时返回空串 —— **宁可没有位置，也不编造位置**。
+ */
+export function formatDiagnosticLocations(diagnostics: DslDiagnostic[]): string {
+  return diagnostics
+    .map((d) => `${d.node_id || '文档'} · ${d.field_path || '(整份文档)'}`)
+    .join('；');
+}
+
+/** 防抖 IR 校验「请求失败」用的错误条标题。独立常量：既让标题如实说明是
+ * 「请求失败」而非「DSL 不合法」，也让下一次校验成功时只清自己挂上去的那一条。
+ */
+const IR_CHECK_FAILED = 'DSL 校验未完成（校验请求失败）';
+
+/** G4-d · 文档变化后等多久发起即时重算。
+ *
+ * 属性面板是**逐击键**提交的（`onChangeParams` 每敲一个字符就改一次 `doc`），
+ * 没有防抖就是每个键一次请求。所以防抖必须落在画布这一层，绝不能下推到面板。
+ * 300ms 与 IR 校验一致：比人的连续击键间隔长，比「改完看一眼」的间隔短。
+ */
+const PREVIEW_DEBOUNCE_MS = 300;
+
+/** 即时重算「请求失败」用的错误条标题。与运行结果分开存，不互相顶掉。 */
+const PREVIEW_FAILED = '即时重算未完成（预览请求失败）';
+
+/** 画布顶部错误条（含行列级信息）。`title` 可覆盖标题：请求失败 ≠ 校验不通过。 */
+function ErrorBanner({
+  title = 'DSL 校验未通过',
+  message,
+  detail,
+}: {
+  title?: string;
+  message: string;
+  detail?: string;
+}) {
   return (
     <div className="fy-flow-error" role="alert" data-testid="flow-error">
-      <strong>DSL 校验未通过</strong>
+      <strong>{title}</strong>
       <span>{message}</span>
       {detail && <code data-testid="flow-error-pos">{detail}</code>}
     </div>
   );
 }
 
-export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: FlowEditorProps) {
+export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDocChange, visible = true }: FlowEditorProps) {
   // A-基座质保-01：声明式接入基座（声明 + 保存指示器由 useBase 统一产出）。
   useBase({ surface: 'web/src/components/workflow/FlowEditor' });
   const [nodes, setNodes] = useState<EditorNode[]>([]);
   const [edges, setEdges] = useState<EditorEdge[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
-  const [error, setError] = useState<{ message: string; detail: string } | null>(null);
+  const [error, setError] = useState<{ title?: string; message: string; detail: string } | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
   const [schemaTypes, setSchemaTypes] = useState<DslNodeType[]>(FLOW_NODE_TYPES);
+  /** G4-j · 后端 schema 原始返回体（含 node_params_schema / verb_catalog），
+   * 注入属性面板驱动参数枚举下拉；拉取失败时保持 null，面板如实回落本地常量。 */
+  const [schema, setSchema] = useState<DslSchemaResponse | null>(null);
   const [dslText, setDslText] = useState('');
   const [exported, setExported] = useState<WorkflowExportResponse | null>(null);
   /** A-三重模式-01：运行结果（小白全流程的最后一环）。 */
@@ -371,9 +465,20 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
   const [suspended, setSuspended] = useState<DslSuspendedResult['suspended'] | null>(null);
   /** P1 · 后端收集式 IR 校验的全部诊断（按 field_path 落到属性面板字段）。 */
   const [irDiagnostics, setIrDiagnostics] = useState<DslDiagnostic[]>([]);
+  /** G4-d · 即时重算结果。与 {@link run} 分开存：混在一起会让「预览里改了参数」
+   * 顺手把上一次真实运行的结果覆盖掉，用户点运行前后看到的东西对不上号。 */
+  const [preview, setPreview] = useState<DslRunResult | null>(null);
+  /** 预览挂起也是控制流信号，不是失败 —— 但**不是**运行挂起，不共用同一处展示。 */
+  const [previewSuspended, setPreviewSuspended] = useState<DslSuspendedResult['suspended'] | null>(null);
 
-  /** 小白模式藏起"怎么读图"（代码 / 手改 / 导出），不是藏"能搭什么"。 */
-  const showAdvanced = mode !== 'beginner';
+  /**
+   * G4-i · R10：「怎么读图」这一层技术面（代码 / 手改 / 导出）在**所有模式
+   * 下都渲染**，小白模式只是收进折叠区——折叠而非卸载，收起态内容仍在 DOM，
+   * 页面级同源断言与读屏都还能命中。
+   *
+   * （此前这里是 `const showAdvanced = mode !== 'beginner'` 直接不渲染，
+   *  与 `DslCanvasPage.test.tsx` 里 beginner 模式的同源断言冲突——已实测红。）
+   */
 
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
 
@@ -382,18 +487,82 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
   const dslTextValue = useMemo(() => JSON.stringify(doc, null, 2), [doc]);
   const selected = useMemo(() => nodes.find((n) => n.id === selectedId) ?? null, [nodes, selectedId]);
 
-  // P1 · 文档一变就防抖调收集式 IR 校验；请求失败不阻塞编辑
-  // （权威拦截仍在执行路径与「载入」的 validate 调用上）。
+  // P1 · 文档一变就防抖调收集式 IR 校验；请求失败**不阻塞编辑**，但绝不静默：
+  // 「校验请求失败」与「校验通过」必须在界面上可区分，否则属性面板的诊断区
+  // 会因为「没报错」而被当成「没问题」（权威拦截仍在执行路径与「载入」的
+  // validate 调用上）。
   useEffect(() => {
+    // 不可见的那一半不校验：两个画布同时挂载且共用同一份文档，不加这道闸
+    // 首屏就会对同一份图发两次 `validateIr`。切回可见时依赖变化会补一次。
+    if (!visible) return undefined;
     const t = window.setTimeout(() => {
       if (typeof dslCanvasApi?.validateIr === 'function') {
         dslCanvasApi.validateIr(doc)
-          .then((r) => setIrDiagnostics(r?.diagnostics ?? []))
-          .catch(() => undefined);
+          .then((r) => {
+            setIrDiagnostics(r?.diagnostics ?? []);
+            // 只清掉本项自己挂上去的错误，不动用户其他操作产生的错误。
+            setError((prev) => (prev?.title === IR_CHECK_FAILED ? null : prev));
+          })
+          .catch((e: unknown) => {
+            const err = e as { body?: { message?: string } };
+            setError({
+              title: IR_CHECK_FAILED,
+              message: `${err.body?.message ?? (e as Error).message ?? '未知原因'}；属性面板的诊断可能不完整`,
+              detail: '',
+            });
+          });
       }
     }, 300);
     return () => window.clearTimeout(t);
-  }, [doc]);
+  }, [doc, visible]);
+
+  // G4-d · 改参数后即时重算：文档一变就防抖打一次 `POST /preview`。
+  //
+  // 后端跑的是**同一套**执行器、同一份文档，唯一不做的是 `_store.save()`；所以
+  // 「预览里能跑通」与「点运行也能跑通」在语义上同源，不存在旁路近似。
+  //
+  // 三条边界都在这守住：
+  // 1. 不在属性面板做防抖 —— 面板逐击键提交，防抖只能落在画布这层。
+  // 2. 请求失败**不阻塞编辑**，但要如实显示：失败与「跑通了」在界面上必须可区分，
+  //    否则用户会把过期结果当成新参数的结论。旧结果同时清掉，不拿旧值冒充新值。
+  // 3. 图还没成形（空画布 / 本地快检不通过）不发请求：后端 `validate_dsl` 要求
+  //    `nodes` 非空，空图会 422，白白在界面上弹一个红条。
+  useEffect(() => {
+    if (!visible) return undefined;
+    if (!nodes.length) {
+      setPreview(null);
+      setPreviewSuspended(null);
+      return undefined;
+    }
+    const local = quickValidate(doc);
+    if (!local.ok) {
+      setPreview(null);
+      setPreviewSuspended(null);
+      return undefined;
+    }
+    const t = window.setTimeout(() => {
+      if (typeof dslCanvasApi?.preview !== 'function') return;
+      dslCanvasApi.preview(doc)
+        .then((res) => {
+          setPreviewSuspended(res.status === 'suspended' ? res.suspended : null);
+          setPreview(res.status === 'suspended' ? null : res);
+          setError((prev) => (prev?.title === PREVIEW_FAILED ? null : prev));
+        })
+        .catch((e: unknown) => {
+          const err = e as { body?: { message?: string } };
+          // 旧结果必须同时作废：留着上一份参数的输出，界面就成了假账。
+          setPreview(null);
+          setPreviewSuspended(null);
+          setError({
+            title: PREVIEW_FAILED,
+            message: `${err.body?.message ?? (e as Error).message ?? '未知原因'}；下面显示的即时结果可能不是当前参数的`,
+            detail: '',
+          });
+        });
+    }, PREVIEW_DEBOUNCE_MS);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc, visible, nodes.length]);
 
   const loadDoc = useCallback((next: DslDocument) => {
     const parsed = graphFromDsl(next);
@@ -408,20 +577,56 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
     if (initialDoc) loadDoc(initialDoc);
   }, [initialDoc, loadDoc]);
 
+  /**
+   * 本地图变化 → 回传给页面（与 DslCanvas 共享同一条状态通道）。
+   *
+   * 载荷复用上面那份唯一的 `doc`，不造第二份序列化。
+   *
+   * 防循环：`onDocChange(doc)` 走页面 → `setDoc` → `initialDoc` 引用变 →
+   * 本组件 `loadDoc` 重建 nodes/edges → doc 再变，看起来会绕圈。收敛同样靠页面侧
+   * 那道「内容等价就不换引用」的闸（载入后产出的文档与传进来的逐字段相同）。
+   * 拖拽只改 x/y：doc 会换引用但内容不变，页面因此不 setDoc，拖拽既不会被回滚，
+   * 也不会顺着通道在两个画布间反复重载。
+   */
+  useEffect(() => {
+    if (onDocChange) onDocChange(doc);
+  }, [doc, onDocChange]);
+
   // 左侧面板的节点类型：动态取后端 schema；失败时如实回落到本地受限集。
   useEffect(() => {
     let alive = true;
     void dslCanvasApi.schema()
       .then((s) => {
         if (!alive) return;
-        // 后端返回即接受：受限集就是 `NODE_TYPES` 那 16 类，前端不再 filter
-        // 掉任何一类（旧版只认 3 类，会把其余 13 类静默丢弃——那正是本包的病根）。
-        // 认不得的类型由本地 quickValidate / 后端 IR 校验如实报错，不静默丢。
-        const types = (s.node_types ?? []).filter((t): t is DslNodeType =>
+        // G4-j · 保留整份 schema（含 node_params_schema / verb_catalog），注入
+        // 属性面板作参数枚举的真源；面板内部的本地常量只是拉取失败时的回落。
+        setSchema(s);
+        // 受限集只认 FLOW_NODE_TYPES：认得的类型**全部保留**（不多不少），
+        // 认不出的（旧前端 / 认领错位）不再是静默丢弃——它们会被点名报给用户，
+        // 免得面板少了一类却什么都不说。
+        const known = (s.node_types ?? []).filter((t): t is DslNodeType =>
           FLOW_NODE_TYPES.includes(t as DslNodeType));
-        if (types.length) setSchemaTypes(types);
+        const unknown = (s.node_types ?? []).filter((t) => !FLOW_NODE_TYPES.includes(t as DslNodeType));
+        if (known.length) setSchemaTypes(known);
+        if (unknown.length) {
+          setError({
+            title: '节点类型清单未全部接入',
+            message: `有 ${unknown.length} 个节点类型当前画布不支持：${unknown.join('、')}`,
+            detail: '',
+          });
+        }
       })
-      .catch(() => { /* schema 不可用不是致命错误：用本地受限集并保持可用 */ });
+      .catch((e: unknown) => {
+        if (!alive) return;
+        // 不是致命错误（面板仍可用），但必须让用户知道它在用本地回落清单，
+        // 否则「面板少了一类」和「后端真的没有这一类」看起来一模一样。
+        const err = e as { body?: { message?: string } };
+        setError({
+          title: '节点类型清单拉取失败',
+          message: `已回落到本地清单：${err.body?.message ?? (e as Error).message ?? '未知原因'}`,
+          detail: '',
+        });
+      });
     return () => { alive = false; };
   }, []);
 
@@ -504,16 +709,23 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
       return;
     }
     try {
-      // 服务端权威校验（含环检测）；失败时把真实错误与行列号显示在顶部。
+      // 服务端权威校验（含环检测）；失败时把真实错误与可定位信息显示在顶部。
       await dslCanvasApi.validate(parsed);
     } catch (e) {
-      const err = e as { body?: { message?: string; details?: Record<string, unknown> } };
-      const line = err.body?.details?.line;
-      const column = err.body?.details?.column;
-      setError({
-        message: err.body?.message ?? 'DSL 校验未通过',
-        detail: typeof line === 'number' ? `第 ${line} 行${typeof column === 'number' ? ` 第 ${column} 列` : ''}` : '',
-      });
+      const err = e as { body?: { message?: string } };
+      const message = err.body?.message ?? 'DSL 校验未通过';
+      // G4-g2：`/validate` 的统一错误信封 `details` 恒为 `{}`（`api/errors.py::_envelope`），
+      // 读不到行列；改用收集式 `/validate-ir` 的 `diagnostics[]`（node_id + field_path）
+      // 补一次可定位诊断。权威闸门仍是 `/validate`（fail-fast、含环检测），这里只补信息。
+      let detail = '';
+      try {
+        const ir = await dslCanvasApi.validateIr(parsed);
+        detail = formatDiagnosticLocations(ir?.diagnostics ?? []);
+      } catch {
+        // 连收集式校验都拿不到 —— 宁可没有位置，也不编造位置。
+        detail = '';
+      }
+      setError({ message, detail });
       return;
     }
     loadDoc(parsed);
@@ -600,12 +812,75 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
     setExported((prev) => (prev ? { ...prev, script: e.target.value } : prev));
   };
 
+  /**
+   * G4-i：「怎么读图」这一层技术面（代码视图 / 手改 DSL / 导出脚本）。
+   * 抽成变量是因为外层容器要按模式在 `<div class="card">` 与
+   * `<details class="card">` 之间切换，而**内容必须逐字共用一份**——
+   * 复制两份就等于给「两个画布同源」埋一个只差一个字符的坑。
+   */
+  const advancedBody = (
+    <>
+      <div className="fy-flow-code-head">
+        <strong>代码视图（只读，实时同步）</strong>
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => void doExport()}
+          disabled={busy || !nodes.length}
+          data-testid="flow-export"
+        >{busy ? '导出中…' : '导出 Python 脚本'}</button>
+      </div>
+      <textarea
+        className="fy-flow-code"
+        readOnly
+        rows={10}
+        value={dslTextValue}
+        data-testid="flow-code"
+        aria-label="DSL 代码视图"
+      />
+      <div className="fy-flow-load">
+        <textarea
+          className="fy-flow-code"
+          rows={6}
+          value={dslText}
+          placeholder="在此粘贴 / 手改 DSL JSON，点「载入 DSL」反向解析成图。非法会整份拒绝并给出行列级错误。"
+          onChange={(e) => setDslText(e.target.value)}
+          data-testid="flow-dsl-input"
+          aria-label="可编辑的 DSL 文本"
+        />
+        <button
+          type="button"
+          className="btn btn-sm"
+          onClick={() => void loadFromText()}
+          data-testid="flow-load"
+        >载入 DSL</button>
+      </div>
+      {notice && <div className="fy-flow-notice" data-testid="flow-notice">{notice}</div>}
+      {exported && (
+        <details className="fy-flow-exported" data-testid="flow-exported">
+          <summary>已导出脚本（{exported.filename}）</summary>
+          <div className="muted">
+            来源需求：{exported.source_prompt}｜生成时间：{exported.generated_at}
+          </div>
+          <textarea
+            className="fy-flow-code"
+            rows={10}
+            value={exported.script}
+            onChange={onScriptText}
+            data-testid="flow-export-script"
+            aria-label="导出的 Python 脚本"
+          />
+        </details>
+      )}
+    </>
+  );
+
   return (
     <div className="fy-flow" data-testid="flow-editor-root">
       <NodePalette types={schemaTypes} onAdd={addNode} onDropNode={addNode} />
 
       <div className="fy-flow-center">
-        {error && <ErrorBanner message={error.message} detail={error.detail} />}
+        {error && <ErrorBanner title={error.title} message={error.message} detail={error.detail} />}
 
         {/* A-三重模式-01：运行是三种模式共有的一步（小白也要能跑到底）。 */}
         <div className="fy-flow-runbar" data-testid="flow-runbar" data-mode={mode}>
@@ -722,66 +997,59 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical' }: Flo
         <PropertyPanel
           node={selected}
           diagnostics={irDiagnostics}
+          schema={schema}
           onChange={(patch) => selected && updateNode(selected.id, patch)}
           onChangeParams={(patch) =>
             selected && updateNode(selected.id, { params: { ...selected.params, ...patch } })}
         />
 
-        {showAdvanced && (
-        <div className="card" data-testid="flow-code-card">
-          <div className="fy-flow-code-head">
-            <strong>代码视图（只读，实时同步）</strong>
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void doExport()}
-              disabled={busy || !nodes.length}
-              data-testid="flow-export"
-            >{busy ? '导出中…' : '导出 Python 脚本'}</button>
+        {/* G4-d · 即时重算结果。放在属性面板正下方：改参数的人正在那儿，
+            视线不需要跳到画布顶部。标题写明「预览不落库」，避免与运行结果混淆。 */}
+        {(preview || previewSuspended) && (
+          <div className="card" data-testid="flow-preview">
+            <strong>即时重算（预览，不落库）</strong>
+            {previewSuspended && (
+              <p className="muted" data-testid="flow-preview-suspended">
+                此图需人工裁决后才能跑完（节点 <code>{previewSuspended.node_id}</code>）：
+                {previewSuspended.context.prompt || '需要你的裁决'}。预览不会替你决定。
+              </p>
+            )}
+            {preview && preview.status === 'succeeded' && (
+              <pre className="fy-flow-run-out" data-testid="flow-preview-output">
+                {JSON.stringify(preview.output, null, 2)}
+              </pre>
+            )}
+            {preview && preview.status === 'failed' && (
+              <span className="fy-flow-run-err" role="alert" data-testid="flow-preview-error">
+                {preview.error ?? '执行失败'}
+              </span>
+            )}
+            {/* 逐步日志按节点展示：调参时最需要知道的是「错在哪一步」。 */}
+            {preview && preview.logs.length > 0 && (
+              <ul className="fy-flow-preview-logs" data-testid="flow-preview-logs">
+                {preview.logs.map((l) => (
+                  <li key={l.node_id} data-status={l.status}>
+                    <code>{l.node_id}</code>
+                    {l.status !== 'succeeded' && <em> · {l.error ?? l.status}</em>}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
-          <textarea
-            className="fy-flow-code"
-            readOnly
-            rows={10}
-            value={dslTextValue}
-            data-testid="flow-code"
-            aria-label="DSL 代码视图"
-          />
-          <div className="fy-flow-load">
-            <textarea
-              className="fy-flow-code"
-              rows={6}
-              value={dslText}
-              placeholder="在此粘贴 / 手改 DSL JSON，点「载入 DSL」反向解析成图。非法会整份拒绝并给出行列级错误。"
-              onChange={(e) => setDslText(e.target.value)}
-              data-testid="flow-dsl-input"
-              aria-label="可编辑的 DSL 文本"
-            />
-            <button
-              type="button"
-              className="btn btn-sm"
-              onClick={() => void loadFromText()}
-              data-testid="flow-load"
-            >载入 DSL</button>
-          </div>
-          {notice && <div className="fy-flow-notice" data-testid="flow-notice">{notice}</div>}
-          {exported && (
-            <details className="fy-flow-exported" data-testid="flow-exported">
-              <summary>已导出脚本（{exported.filename}）</summary>
-              <div className="muted">
-                来源需求：{exported.source_prompt}｜生成时间：{exported.generated_at}
-              </div>
-              <textarea
-                className="fy-flow-code"
-                rows={10}
-                value={exported.script}
-                onChange={onScriptText}
-                data-testid="flow-export-script"
-                aria-label="导出的 Python 脚本"
-              />
-            </details>
-          )}
-        </div>
+        )}
+
+        {/* G4-i：小白模式把这层技术面收进 `<details>` 折叠区——折叠而非卸载，
+            收起态内容仍在 DOM（页面级同源断言与读屏都还能命中）。
+            非小白模式保持原来的 `<div class="card">`，DOM 结构零变化。 */}
+        {mode === 'beginner' ? (
+          <details className="card" data-testid="flow-code-card">
+            <summary style={{ cursor: 'pointer' }} data-testid="flow-code-summary">
+              技术详情（代码视图 / 手改 DSL / 导出脚本）
+            </summary>
+            {advancedBody}
+          </details>
+        ) : (
+          <div className="card" data-testid="flow-code-card">{advancedBody}</div>
         )}
       </div>
     </div>

@@ -139,6 +139,23 @@ describe('SaveStatusIndicator（W2）', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/\/backup/);
   });
 
+  it('未接持久化（storage 省略 / unlinked）：必须说出口，且不给降级以外的好消息', () => {
+    // 回归点：本 prop 曾默认 'ok'，于是「从没落过盘」的界面也对外声称存储正常。
+    const { container } = render(<SaveStatusIndicator state="idle" now={AT} />);
+    expect(screen.getByTestId('save-unlinked-badge')).toHaveTextContent('未接入持久化');
+    expect(screen.queryByTestId('save-degraded-badge')).toBeNull();
+    expect(container.querySelector('.ui-save-status')?.getAttribute('data-storage')).toBe('unlinked');
+    // 徽标不得混进 role="status" 的状态文案里（否则基座接线测试的取值口径会变）。
+    expect(screen.getByRole('status')).toHaveTextContent(SAVE_STATE_LABELS.idle);
+    expect(screen.getByRole('status')).not.toHaveTextContent('未接入持久化');
+  });
+
+  it('已接持久化（storage=ok）时不显示「未接入持久化」徽标', () => {
+    render(<SaveStatusIndicator state="saved" savedAt={AT} now={AT} storage="ok" />);
+    expect(screen.queryByTestId('save-unlinked-badge')).toBeNull();
+    expect(screen.getByRole('status')).toHaveTextContent('已保存到 14:03');
+  });
+
   it('不抢焦点：状态变化时正在输入的控件仍是焦点所在', async () => {
     const { rerender } = render(
       <div>

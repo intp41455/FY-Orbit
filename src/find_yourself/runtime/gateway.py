@@ -39,13 +39,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Callable, Protocol
 
+from ..budget import BudgetService
 from ..config import Settings
+from ..contracts import Conflict, PermissionDenied, ValidationFailed
 from ..db.models import Grant
 from ..db.types import utcnow
-from ..services.actor import Actor
-from ..services.budget import BudgetService
-from ..services.errors import Conflict, PermissionDenied, ValidationFailed
-from ..services.offline import OfflineUnavailable, remote_block_reason
+from ..identity import Actor
+from ..offline import OfflineUnavailable, remote_block_reason
 from .providers import (
     LOCAL_INFERENCE_PROVIDERS,
     OPENAI_COMPAT,

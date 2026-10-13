@@ -43,7 +43,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from ..services.scheduler.core import (
+from ..scheduling import (
     DispatchRequest,
     TaskRecord,
     UnifiedScheduler,

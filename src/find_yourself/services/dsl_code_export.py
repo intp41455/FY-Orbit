@@ -129,6 +129,12 @@ _CALL_TO_TYPE = {
     "output_node": "output",
 }
 
+#: 受限代码导出**能表达**的节点类型（``_CALL_TO_TYPE`` 的值域，单一真源）。
+#: 代码导出是「受限动词集」产物，只含 Flow / input / transform / output 四种构造
+#: 调用；其余节点类型（llm / knowledge_retrieval / iteration / parallel / subgraph …）
+#: 没有对应的运行时构造器，导出它们只会得到一份跑不起来的代码。
+_EXPORTABLE_NODE_TYPES = frozenset(_CALL_TO_TYPE.values())
+
 _HEADER = '''# -*- coding: utf-8 -*-
 """Find Yourself 受限 DSL 导出（由协作画布 / 工作流工坊生成）。
 
@@ -182,6 +188,16 @@ def export_dsl_code(doc: dict[str, Any], *,
     validate_dsl(doc)
     compile_dsl(doc)
     canonical = canonical_dsl(doc)
+    # fail-closed：受限代码导出只能表达 input / transform / output 三类节点。
+    # 以前这里不拦，直接掉进 ``_render_node`` 的反查字典抛裸 ``KeyError`` →
+    # API 层只捕 ``DslValidationError``，用户拿到的是 500 而不是可读诊断。
+    unsupported = sorted({n["type"] for n in canonical["nodes"]
+                          if n["type"] not in _EXPORTABLE_NODE_TYPES})
+    if unsupported:
+        raise DslValidationError(
+            f"受限代码导出只支持 input / transform / output 三类节点，"
+            f"当前画布含不可导出的节点类型：{'、'.join(unsupported)}；"
+            f"可导出类型：{'、'.join(sorted(_EXPORTABLE_NODE_TYPES))}")
 
     lines: list[str] = [_HEADER.format(source=list(VERB_REGISTRY)), ""]
     lines.append(_call(FLOW_CTOR, version=_py_literal(canonical["version"])))
@@ -213,7 +229,13 @@ def export_dsl_code(doc: dict[str, Any], *,
 
 def _render_node(node: dict[str, Any]) -> str:
     ntype = node["type"]
-    caller = {v: k for k, v in _CALL_TO_TYPE.items()}[ntype]
+    # 上游 ``export_dsl_code`` 已 fail-closed 拦掉不可导出的类型，这里仍显式
+    # 报错而非让字典反查抛裸 KeyError（纵深防御，诊断信息可读）。
+    caller = {v: k for k, v in _CALL_TO_TYPE.items()}.get(ntype)
+    if caller is None:
+        raise DslValidationError(
+            f"节点 {node.get('id')!r} 的类型 {ntype!r} 没有对应的受限构造调用，"
+            f"无法导出为代码")
     kwargs: dict[str, str] = {}
     if ntype == "transform":
         kwargs["verb"] = _py_literal(node["verb"])

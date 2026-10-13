@@ -8,7 +8,7 @@ vi.mock('../../api/dslCanvas', async (importOriginal) => ({
   // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
   // 只替换网络面 dslCanvasApi。
   ...(await importOriginal<typeof import('../../api/dslCanvas')>()),
-  dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn() },
+  dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn(), preview: vi.fn() },
 }));
 vi.mock('../../api/workflowGen', () => ({
   workflowGenApi: { exportScript: vi.fn() },
@@ -209,7 +209,6 @@ describe('FlowEditor 环检测与本地快校验', () => {
 // =========================================================================== //
 // 3. 组件：动态 schema / 拖拽成环拒绝 / 行列级错误 / 导出
 // =========================================================================== //
-
 describe('FlowEditor 组件 · 画布交互', () => {
   it('左侧节点面板动态取后端 schema 类型（不是硬编码列表）', async () => {
     render(<FlowEditor />);
@@ -280,7 +279,7 @@ describe('FlowEditor 组件 · 画布交互', () => {
     expect(quickValidate(code).ok).toBe(true);
   });
 
-  it('载入非法 DSL：整份拒绝、显示行列级错误，画布内容不被半解析污染', async () => {
+  it('载入非法 DSL：整份拒绝、显示可定位错误（node_id + field_path），画布内容不被半解析污染', async () => {
     const user = userEvent.setup();
     render(<FlowEditor />);
     await screen.findByTestId('flow-palette-input');
@@ -289,13 +288,21 @@ describe('FlowEditor 组件 · 画布交互', () => {
 
     // 用真实 ApiError 构造：request() 已把 {"error":{...}} 外层剥掉，
     // err.body 就是 {code, message, details}（见 api/client.ts:117-121）。
+    // 冻结契约下 details 恒为 {}（api/errors.py::_envelope），没有行列——
+    // 定位只能来自收集式 /validate-ir 的 diagnostics[]（G4-g2）。
     vi.mocked(dslCanvasApi.validate).mockRejectedValue(
       new ApiError(422, {
-        code: 'workflow_dsl_invalid',
+        code: 'validation_failed',
         message: "transform 节点 b verb 必须是 ('map','filter','template')",
-        details: { line: 13, column: 8 },
+        details: {},
       }, 'Request failed with status 422'),
     );
+    vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({
+      valid: false,
+      diagnostics: [
+        { node_id: 'b', field_path: 'verb', code: 'unknown_verb', message: 'verb 非法' },
+      ],
+    });
 
     // paste 而非 type：userEvent.type 会把 '{' 当特殊描述符，DSL 的花括号会被吃掉
     await user.click(screen.getByTestId('flow-dsl-input'));
@@ -304,7 +311,9 @@ describe('FlowEditor 组件 · 画布交互', () => {
 
     const banner = await screen.findByTestId('flow-error');
     expect(banner.textContent).toContain("必须是 ('map','filter','template')");
-    expect(screen.getByTestId('flow-error-pos').textContent).toBe('第 13 行 第 8 列');
+    const pos = screen.getByTestId('flow-error-pos').textContent ?? '';
+    expect(pos).toContain('b');
+    expect(pos).toContain('verb');
     // 画布仍是原来那一个节点——没有半解析
     expect(screen.getAllByTestId(/^flow-node-/)).toHaveLength(1);
   });
@@ -369,5 +378,116 @@ describe('FlowEditor 组件 · 画布交互', () => {
     await user.click(screen.getByTestId('flow-export'));
     expect((await screen.findByTestId('flow-error')).textContent).toContain('引用了未定义节点');
     expect(screen.queryByTestId('flow-notice')).toBeNull();
+  });
+});
+
+// =========================================================================== //
+// 4. G4-d · 改参数即时重算（防抖 + 同源 + 不拿旧结果冒充新结果）
+//
+// 命题：属性面板改一个参数 → 不点任何按钮 → 界面上出现按**新参数**重算的结果。
+// 三条边界各由一条测试钉住：防抖在画布不在面板、结果与真实运行同源、
+// 预览失败时作废旧结果而不是留着一份上一份参数的输出。
+// =========================================================================== //
+
+/** 造一份 /preview 的成功响应（含逐步日志）。 */
+const previewOk = (output: unknown) => ({
+  run_id: 'pv-1',
+  status: 'succeeded' as const,
+  dsl: VALID_DSL,
+  output,
+  error: null,
+  execution_id: null,
+  created_at: '2026-01-01T00:00:00+00:00',
+  logs: [
+    { node_id: 'in1', node_type: 'input', verb: null, status: 'succeeded' as const, input: null, output: null, error: null, started_at: '', finished_at: '' },
+    { node_id: 'tf1', node_type: 'transform', verb: 'template', status: 'succeeded' as const, input: null, output: null, error: null, started_at: '', finished_at: '' },
+  ],
+  preview_only: true as const,
+});
+
+describe('FlowEditor · G4-d 内联调参即时重算', () => {
+  it('改参数后不需要点任何按钮就出现按新参数重算的结果', async () => {
+    const user = userEvent.setup();
+    // 回显用的后端：它返回什么，画布就必须显示什么。
+    vi.mocked(dslCanvasApi.preview).mockImplementation(
+      async (d) => previewOk(`收到模板：${(d.nodes[1].params as { template: string }).template}`) as never,
+    );
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    await screen.findByTestId('flow-node-in1');
+    await user.click(screen.getByTestId('flow-node-tf1'));
+
+    const field = await screen.findByTestId('prop-template');
+    await user.clear(field);
+    await user.type(field, '新模板');
+
+    expect(await screen.findByTestId('flow-preview-output'))
+      .toHaveTextContent('收到模板：新模板');
+    // 「预览不落库」必须写在界面上：否则用户分不清预览结果与运行记录。
+    expect(screen.getByTestId('flow-preview').textContent).toContain('不落库');
+  });
+
+  it('防抖在画布层：连续击键只发一次 preview 请求', async () => {
+    const user = userEvent.setup();
+    vi.mocked(dslCanvasApi.preview).mockImplementation(async () => previewOk('ok') as never);
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    await screen.findByTestId('flow-node-in1');
+    await user.click(screen.getByTestId('flow-node-tf1'));
+
+    const field = await screen.findByTestId('prop-template');
+    await user.clear(field);
+    await user.type(field, 'abcd');
+
+    expect(await screen.findByTestId('flow-preview-output')).toBeInTheDocument();
+    const calls = vi.mocked(dslCanvasApi.preview).mock.calls.length;
+    // 击键 5 次（clear 算 1 次）绝不能等于 5 次请求；只断言「远少于击键数」，
+    // 不断言具体次数 —— 定时器实现换了次数会变，但「击键数 ≫ 请求数」不会。
+    expect(calls).toBeGreaterThan(0);
+    expect(calls).toBeLessThan(5);
+  });
+
+  it('预览挂起如实显示为「需人工裁决」，不误报成执行失败', async () => {
+    vi.mocked(dslCanvasApi.preview).mockResolvedValue({
+      status: 'suspended',
+      suspended: {
+        checkpoint: '-#apv',
+        dsl_digest: 'd',
+        context: { prompt: '是否批准?' },
+        options: [{ value: 'approve', label: '批准' }, { value: 'reject', label: '驳回' }],
+        node_id: 'apv',
+      },
+      preview_only: true,
+    } as never);
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    expect(await screen.findByTestId('flow-preview-suspended')).toHaveTextContent('apv');
+    expect(screen.queryByTestId('flow-preview-error')).toBeNull();
+  });
+
+  it('预览请求失败时作废旧结果并如实报错，不拿上一份参数的输出冒充', async () => {
+    const user = userEvent.setup();
+    vi.mocked(dslCanvasApi.preview).mockImplementation(
+      async (d) => previewOk(`旧：${(d.nodes[1].params as { template: string }).template}`) as never,
+    );
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    await screen.findByTestId('flow-node-in1');
+    await user.click(screen.getByTestId('flow-node-tf1'));
+    const field = await screen.findByTestId('prop-template');
+    await user.clear(field);
+    await user.type(field, '第一版');
+    expect(await screen.findByTestId('flow-preview-output')).toHaveTextContent('第一版');
+
+    vi.mocked(dslCanvasApi.preview).mockRejectedValue(new Error('boom'));
+    await user.clear(field);
+    await user.type(field, '第二版');
+
+    expect(await screen.findByTestId('flow-error')).toHaveTextContent('即时重算未完成');
+    // 旧输出必须同时消失 —— 留着它，界面就成了假账。
+    await waitFor(() => expect(screen.queryByTestId('flow-preview-output')).toBeNull());
+  });
+
+  it('空画布不发起 preview 请求（后端会 422，界面不该白弹一个红条）', async () => {
+    render(<FlowEditor />);
+    await screen.findByTestId('flow-palette-input');
+    await new Promise((r) => setTimeout(r, 500));
+    expect(dslCanvasApi.preview).not.toHaveBeenCalled();
   });
 });

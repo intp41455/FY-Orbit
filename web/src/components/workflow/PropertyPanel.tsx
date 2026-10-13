@@ -12,11 +12,27 @@
  * 命中本节点某 `field_path` 的诊断会让该字段显示**红框 + 内联错误文案**
  * （`fy-field-invalid` / `role="alert"`），多字段同时出错时每个字段各自标错。
  */
-import type { DslDiagnostic, DslNodeType, DslTransformVerb } from '../../api/dslCanvas';
+import type { DslDiagnostic, DslNodeType, DslSchemaResponse, DslTransformVerb } from '../../api/dslCanvas';
+import { DSL_TRANSFORM_VERBS } from '../../api/dslCanvas';
 import type { EditorNode } from './FlowEditor';
 import { paramsForVerb } from './FlowEditor';
 import { useBase } from '../../hooks/useAutosave';
 
+// --------------------------------------------------------------------------- //
+// 参数枚举 · 后端 schema 为真源，本地常量仅是如实回落
+// --------------------------------------------------------------------------- //
+//
+// 【G4-j · 已真去重】下列枚举是后端 `services/dsl_canvas.py` 的
+// `NODE_PARAMS_SCHEMAS`（封闭 schema，`additionalProperties: False`）与
+// `VERB_REGISTRY` 动词参数契约的前端**回落镜像**，逐字复制而来，写错一个字符
+// 后端就 422。但渲染时的**选项真源是 `GET /api/dsl-canvas/schema`**：
+//   * 节点级枚举 ← 返回体的 `node_params_schema`（G4-j 新增，= NODE_PARAMS_SCHEMAS）；
+//   * 动词级枚举 ← 已有的 `verb_catalog[].params_schema`。
+// FlowEditor 已拉 schema，经 `schema` prop 注入本面板（见下）；命中即用后端枚举，
+// 拉取失败 / prop 缺省时才回落到这里的本地常量（与 `dslCanvas.ts:33-39` 同一口径：
+// 本地常量是「读不到时的如实回落」，后端才是验收真源）。
+//
+// transform 动词集**始终真去重**：直接复用 `DSL_TRANSFORM_VERBS`，不再手抄。
 const MAP_OPS = ['set', 'upper', 'lower'] as const;
 const FILTER_OPS = ['eq', 'ne', 'gt', 'lt', 'contains'] as const;
 const INPUT_KINDS = ['literal', 'text_lines'] as const;
@@ -28,16 +44,56 @@ const VARIABLE_AGGREGATOR_STRATEGIES = ['first_non_null', 'last_non_null'] as co
 const TRIGGER_KINDS = ['manual', 'conversation', 'schedule', 'webhook'] as const;
 const HTTP_METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] as const;
 const CODE_LANGUAGES = ['python'] as const;
+
 /**
- * 受限动词白名单（与后端 `services/dsl_canvas.py` 的 `VERB_REGISTRY`逐字对齐）。
- * 顺序即注册表顺序，前端不做增删——多一个后端就 422，少一个则画布表达力缺失。
+ * 受限动词白名单：直接用 `DSL_TRANSFORM_VERBS` 单一真源（与后端
+ * `services/dsl_canvas.py` 的 `TRANSFORM_VERBS` / `VERB_REGISTRY` 对齐）。
+ * 曾在此处手抄第 4 份清单，与 FlowEditor 的短清单互相矛盾。
  */
-const VERBS: DslTransformVerb[] = [
-  'map', 'filter', 'template',
-  'branch', 'aggregate', 'merge',
-  'agent', 'confirm', 'artifact',
-  'approval',
+const VERBS: readonly DslTransformVerb[] = DSL_TRANSFORM_VERBS;
+
+/**
+ * 需要外部注入才能真跑的新节点类型（未接通时执行必定诚实失败）。
+ * 同样搬进「参数枚举 · 单一存放处」，避免散落在文件各处。
+ */
+const NEEDS_RESOLVER: readonly DslNodeType[] = [
+  'llm', 'knowledge_retrieval', 'question_classifier', 'parameter_extractor',
+  'http_request', 'tool', 'human_input',
 ];
+
+// --------------------------------------------------------------------------- //
+// G4-j · 枚举真源解析：后端 schema 优先，缺失时如实回落到本地常量
+// --------------------------------------------------------------------------- //
+
+/** 后端 JSON Schema 片段的极小视图：只取我们渲染下拉所必需的 `properties[..].enum`。 */
+interface EnumSchemaView {
+  properties?: Record<string, { enum?: string[] } | undefined>;
+}
+
+/** 从后端 `node_params_schema` 取某节点某字段的枚举；无则回落 `fallback`。 */
+export function nodeEnumFromSchema(
+  nodeParamsSchema: DslSchemaResponse['node_params_schema'],
+  nodeType: DslNodeType,
+  field: string,
+  fallback: readonly string[],
+): readonly string[] {
+  const e = (nodeParamsSchema?.[nodeType] as EnumSchemaView | undefined)
+    ?.properties?.[field]?.enum;
+  return e && e.length ? e : fallback;
+}
+
+/** 从后端 `verb_catalog[].params_schema` 取某动词某字段的枚举；无则回落 `fallback`。 */
+export function verbEnumFromSchema(
+  verbCatalog: DslSchemaResponse['verb_catalog'] | undefined,
+  verb: DslTransformVerb,
+  field: string,
+  fallback: readonly string[],
+): readonly string[] {
+  const entry = verbCatalog?.find((v) => v.name === verb);
+  const e = (entry?.params_schema as EnumSchemaView | undefined)
+    ?.properties?.[field]?.enum;
+  return e && e.length ? e : fallback;
+}
 
 // --------------------------------------------------------------------------- //
 // A-画布搭建器-01：13 类新增节点的属性表单
@@ -58,12 +114,6 @@ interface NodeFieldSpec {
   kind: FieldKind;
   options?: readonly string[];
 }
-
-/** 需要外部注入才能真跑的新节点类型（未接通时执行必定诚实失败）。 */
-const NEEDS_RESOLVER: readonly DslNodeType[] = [
-  'llm', 'knowledge_retrieval', 'question_classifier', 'parameter_extractor',
-  'http_request', 'tool', 'human_input',
-];
 
 const NEW_NODE_FIELDS: Partial<Record<DslNodeType, readonly NodeFieldSpec[]>> = {
   llm: [
@@ -118,6 +168,15 @@ const NEW_NODE_FIELDS: Partial<Record<DslNodeType, readonly NodeFieldSpec[]>> = 
     { key: 'kind', label: '触发方式', kind: 'enum', options: TRIGGER_KINDS },
     { key: 'config', label: '触发配置（JSON，可选）', kind: 'json' },
   ],
+  // N5 两类拓扑节点：`NodeFieldSpec` 没有「数组 of 对象」这种控件，
+  // branches 用 `json`（与 iteration.subflow 同一口径）表达——只能整体手改JSON。
+  parallel: [
+    { key: 'branches', label: '并行分支（JSON 数组，每项 {name, inline|ref}）', kind: 'json' },
+    { key: 'max_workers', label: '并发线程数（可选，1..8）', kind: 'number' },
+  ],
+  subgraph: [
+    { key: 'name', label: '子图名（引用文档级 subgraphs）', kind: 'text' },
+  ],
 };
 
 export interface PropertyPanelProps {
@@ -126,6 +185,11 @@ export interface PropertyPanelProps {
   onChangeParams: (patch: Record<string, unknown>) => void;
   /** P1 · 该画布全部 IR 诊断（可选；按 node_id + field_path 匹配到字段）。 */
   diagnostics?: DslDiagnostic[];
+  /**
+   * G4-j · `GET /api/dsl-canvas/schema` 的返回体（FlowEditor 拉取后注入）。
+   * 据此驱动参数枚举的下拉选项；缺省 / 拉取失败时如实回落到本地常量。
+   */
+  schema?: DslSchemaResponse | null;
 }
 
 /** 取本节点某字段路径上的第一条诊断；无则 undefined。 */
@@ -204,7 +268,7 @@ function JsonValueField({
   );
 }
 
-export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: PropertyPanelProps) {
+export function PropertyPanel({ node, onChange, onChangeParams, diagnostics, schema }: PropertyPanelProps) {
   useBase({ surface: 'web/src/components/workflow/PropertyPanel' });
   if (!node) {
     return (
@@ -218,6 +282,17 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
   const p = node.params ?? {};
   const f = (path: string) => diagForField(diagnostics, node.id, path);
   void f;
+
+  // G4-j · 枚举真源：后端 schema（FlowEditor 注入）优先，缺失时回落本地常量。
+  const nodeParams = schema?.node_params_schema;
+  const verbCatalog = schema?.verb_catalog;
+  const enumInputKind = nodeEnumFromSchema(nodeParams, 'input', 'kind', INPUT_KINDS);
+  const enumOutputFormat = nodeEnumFromSchema(nodeParams, 'output', 'format', OUTPUT_FORMATS);
+  const enumMapOp = verbEnumFromSchema(verbCatalog, 'map', 'op', MAP_OPS);
+  const enumFilterOp = verbEnumFromSchema(verbCatalog, 'filter', 'op', FILTER_OPS);
+  const enumBranchOp = verbEnumFromSchema(verbCatalog, 'branch', 'op', FILTER_OPS);
+  const enumAggregateOp = verbEnumFromSchema(verbCatalog, 'aggregate', 'op', AGGREGATE_OPS);
+  const enumMergeMode = verbEnumFromSchema(verbCatalog, 'merge', 'mode', MERGE_OPS);
 
   return (
     <div className="card" data-testid="flow-properties">
@@ -236,7 +311,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                 onChange={(e) => onChangeParams({ kind: e.target.value })}
                 data-testid="prop-input-kind"
               >
-                {INPUT_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
+                {enumInputKind.map((k) => <option key={k} value={k}>{k}</option>)}
               </select>
             </ParamField>
             {p.kind === 'text_lines' ? (
@@ -296,7 +371,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                     onChange={(e) => onChangeParams({ op: e.target.value })}
                     data-testid="prop-map-op"
                   >
-                    {MAP_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {enumMapOp.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </ParamField>
                 {p.op === 'set' && (
@@ -335,7 +410,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                     onChange={(e) => onChangeParams({ op: e.target.value })}
                     data-testid="prop-filter-op"
                   >
-                    {FILTER_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {enumFilterOp.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </ParamField>
                 <JsonValueField
@@ -365,7 +440,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                     onChange={(e) => onChangeParams({ op: e.target.value })}
                     data-testid="prop-branch-op"
                   >
-                    {FILTER_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {enumBranchOp.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </ParamField>
                 <JsonValueField
@@ -402,7 +477,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                     onChange={(e) => onChangeParams({ op: e.target.value })}
                     data-testid="prop-aggregate-op"
                   >
-                    {AGGREGATE_OPS.map((o) => <option key={o} value={o}>{o}</option>)}
+                    {enumAggregateOp.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </ParamField>
                 <ParamField label="字段（sum/min/max/avg 必填）" path="params.field" nodeId={node.id} diagnostics={diagnostics}>
@@ -429,7 +504,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                   onChange={(e) => onChangeParams({ mode: e.target.value })}
                   data-testid="prop-merge-mode"
                 >
-                  {MERGE_OPS.map((m) => <option key={m} value={m}>{m}</option>)}
+                  {enumMergeMode.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
               </ParamField>
             )}
@@ -498,6 +573,10 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
             {(NEW_NODE_FIELDS[node.type] ?? []).map((spec) => {
               const path = `params.${spec.key}`;
               const testId = `prop-${node.type}-${spec.key}`;
+              // G4-j · 枚举选项真源：后端 schema 优先，缺失时回落 spec 内置常量。
+              const options = spec.kind === 'enum'
+                ? nodeEnumFromSchema(nodeParams, node.type, spec.key, spec.options ?? [])
+                : (spec.options ?? []);
               if (spec.kind === 'json') {
                 return (
                   <JsonValueField
@@ -522,11 +601,11 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
                 >
                   {spec.kind === 'enum' ? (
                     <select
-                      value={String(p[spec.key] ?? spec.options?.[0] ?? '')}
+                      value={String(p[spec.key] ?? options[0] ?? '')}
                       onChange={(e) => onChangeParams({ [spec.key]: e.target.value })}
                       data-testid={testId}
                     >
-                      {(spec.options ?? []).map((o) => (
+                      {options.map((o) => (
                         <option key={o} value={o}>{o}</option>
                       ))}
                     </select>
@@ -567,7 +646,7 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics }: P
               onChange={(e) => onChangeParams({ format: e.target.value })}
               data-testid="prop-output-format"
             >
-              {OUTPUT_FORMATS.map((fm) => <option key={fm} value={fm}>{fm}</option>)}
+              {enumOutputFormat.map((fm) => <option key={fm} value={fm}>{fm}</option>)}
             </select>
           </ParamField>
         )}

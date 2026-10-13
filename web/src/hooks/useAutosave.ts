@@ -37,7 +37,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
  * 现在 `state` 在 `BaseBound` 上是**必传**，且本态文案明确不含"已保存"字样。
  */
 export type SaveState = 'saving' | 'saved' | 'dirty' | 'error' | 'idle';
-export type StorageState = 'ok' | 'degraded';
+/**
+ * 落盘位置状态。
+ *
+ * - `ok`：本次确实写到了目标位置。
+ * - `degraded`：写到了**备用**位置（主位置不可用）。
+ * - `unlinked`：**尚未接入真实持久化 / 还没有任何一次成功落盘**。
+ *   历史缺陷：本枚举只有前两值，且未接存储时把 `storage` 硬编码成 `'ok'`，
+ *   于是「一个字节都没写出去」也报「存储正常」——与 `BaseBound` 曾默认
+ *   `'saved'` 同一类的假绿灯（用户据此认为改动已保全）。现在未落盘前一律
+ *   如实报 `unlinked`，成功落盘后才升为 `ok`。
+ */
+export type StorageState = 'ok' | 'degraded' | 'unlinked';
 
 export type StorageErrorCode =
   | 'disk_full'
@@ -291,7 +302,12 @@ export function useAutosave<T>(options: AutosaveOptions<T>): AutosaveHandle {
   const [location, setLocation] = useState<string | null>(null);
   const [bytes, setBytes] = useState<number | null>(null);
   const [freeBytes, setFreeBytes] = useState<number | null>(null);
-  const [storage, setStorage] = useState<StorageState>('ok');
+  /**
+   * 初始必须是 `unlinked`（未接存储 / 未落盘），**不得**硬编码 `'ok'`：
+   * 报「存储正常」而实际一个字节都没写出去，是可证伪的假绿灯。
+   * 第一次真实落盘成功后（`attempt` 的成功分支）才升为 `'ok'`。
+   */
+  const [storage, setStorage] = useState<StorageState>('unlinked');
   const [error, setError] = useState<StorageErrorReceipt | null>(null);
   const [pendingChanges, setPendingChanges] = useState(0);
   const [history, setHistory] = useState<SaveRecord[]>([]);
@@ -387,6 +403,14 @@ export function useAutosave<T>(options: AutosaveOptions<T>): AutosaveHandle {
   /**
    * 落盘循环：写成功后再看有没有「写期间又改了」——有就继续写，
    * 这样降级期间积压的改动在恢复后会被**一次性补写干净**（W4 验收 ④）。
+   *
+   * 关于 `round < 8` 这个上限（N3 诚实性说明）：**失败路径不会走到它** ——
+   * `attempt` 返回 false 时立刻 `setState('error')` + return，错误状态由
+   * `SaveStatusIndicator` 的 `role="alert"` 回执卡如实呈现，不会静默退出。
+   * 走满 8 轮的唯一可能是「保存期间用户又改了 8 次」，此时循环正常结束、
+   * 状态仍停在最后一次成功的 `saved` 上，而 `pendingChanges > 0`（值又变了，
+   * dirty effect 会再置 dirty，debounce 定时器会再触发一次 flush）——
+   * 所以积压改动仍在队列里可见、可继续落盘，不丢。
    */
   const flush = useCallback(async (): Promise<void> => {
     if (!enabled || busyRef.current) return;
@@ -573,7 +597,12 @@ export function useBase(declaration: BaseDeclaration, options: UseBaseOptions = 
     capabilities: declared.capabilities,
     unknownCapabilities: declared.unknown,
     audit: { record: record2, frames: framesRef.current },
-    storage: storage ?? { state: 'ok', location: null, bytes: null },
+    /**
+     * 未接 `useAutosave` 的界面**如实报 `unlinked`**，不报 `'ok'`。
+     * 历史缺陷：此处曾硬编码 `{ state: 'ok' }`，于是 63 处 `useBase` 里
+     * 绝大多数从未落盘的界面也对外声称「存储正常」——假绿灯。
+     */
+    storage: storage ?? { state: 'unlinked', location: null, bytes: null },
     errors: { receipt, last: lastError },
   };
 }

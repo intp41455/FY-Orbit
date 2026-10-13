@@ -176,6 +176,39 @@ class HitlInterruptService:
             out.append(self._view(row))
         return out
 
+    def decision_for(
+        self, actor: Actor, execution_id: str, checkpoint: str
+    ) -> str | None:
+        """取该检查点上**已经落定**的裁决原值；尚未裁决则``None``。
+
+        给「挂起 → 人工裁决 → 续跑」的重放读器用：执行体第二轮跑到同一个
+        ``checkpoint`` 时，凭这个方法找回上一轮人的决定。
+
+        返回 ``decision`` 原值而**不是** :attr:`HitlInterrupt.status`：终态映射
+        （:meth:`_status_for`）刻意保守，把 ``return_for_change`` 这类第三值一律
+        记成 ``rejected``。读 status 会把「退回修改」与「真驳回」混成同一个值，
+        调用方便再也无法区分「人否决了」与「人要求改了再来」。
+
+        不可见 / 无此行 / 仍是 ``pending`` 一律 ``None``——「读不到」绝不等于
+        「同意」，把猜测的权利留给调用方自己决定（DSL 侧的选择是继续挂起）。
+        """
+        actor.require_authenticated()
+        if not execution_id or not checkpoint:
+            return None
+        row = self.session.execute(
+            select(HitlInterrupt)
+            .where(
+                HitlInterrupt.execution_id == execution_id,
+                HitlInterrupt.checkpoint == checkpoint,
+            )
+            .order_by(HitlInterrupt.created_at.desc())
+        ).scalars().first()
+        if row is None or not self._is_visible(actor, row):
+            return None
+        if row.status == "pending":
+            return None
+        return row.decision
+
     # ------------------------------------------------------------------
     # 恢复
     # ------------------------------------------------------------------

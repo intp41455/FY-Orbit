@@ -2,11 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-// DslCanvasPage 挂两个子组件；这里只关心页签接线与「生成结果流进画布」这条链。
-// 原有 DSL 文本模式的 DslCanvas 单独 mock，避免把它的内部实现卷进来。
-vi.mock('../components/dsl/DslCanvas', () => ({
-  DslCanvas: () => <div data-testid="dsl-canvas-stub" />,
-}));
+// DslCanvasPage 同时挂载 FlowEditor 与 DslCanvas 两个画布（共享同一条状态通道），
+// 这里直接用真实的 DslCanvas：页签接线与「两个画布同源」都要看它的真实输出
+// （dsl-json / dsl-node-* / delete-*），stub 掉就测不到同源了。
 vi.mock('../api/workflowGen', () => ({
   workflowGenApi: { status: vi.fn(), generate: vi.fn() },
 }));
@@ -17,6 +15,8 @@ vi.mock('../api/dslCanvas', async (importOriginal) => ({
   dslCanvasApi: {
     validate: vi.fn(), schema: vi.fn(),
     modes: vi.fn(), run: vi.fn(), validateIr: vi.fn(),
+    // N3 切片 3：页面级草稿持久化会真的调这三个方法，缺一个就是 TypeError。
+    getFlow: vi.fn(), saveDraft: vi.fn(), createFlow: vi.fn(),
   },
 }));
 
@@ -86,6 +86,20 @@ beforeEach(() => {
   });
   vi.mocked(dslCanvasApi.modes).mockResolvedValue({ modes: MODES });
   vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({ valid: true, diagnostics: [] });
+  // N3 切片 3：草稿通道默认成功路径（用例要冲突时单独覆盖）。
+  sessionStorage.clear();
+  vi.mocked(dslCanvasApi.createFlow).mockResolvedValue({
+    id: 'flow-1', flow_type: 'workflow', draft_doc: null,
+    published_version: 0, draft_version: 1,
+  });
+  vi.mocked(dslCanvasApi.saveDraft).mockResolvedValue({
+    id: 'flow-1', flow_type: 'workflow', draft_doc: null,
+    published_version: 0, draft_version: 2,
+  });
+  vi.mocked(dslCanvasApi.getFlow).mockResolvedValue({
+    id: 'flow-1', flow_type: 'workflow', draft_doc: null,
+    published_version: 0, draft_version: 3,
+  });
 });
 
 /** 切到技术模式：代码视图 / 手改 DSL / 导出都只在非小白模式下出现。 */
@@ -99,8 +113,9 @@ describe('DslCanvasPage 工作流工坊页签接线', () => {
     expect(screen.getByTestId('workshop-panel')).toBeInTheDocument();
     expect(screen.getByTestId('flow-generate')).toBeInTheDocument();
     expect(await screen.findByTestId('flow-editor-root')).toBeInTheDocument();
-    // 原有 DSL 文本模式此时不挂载
-    expect(screen.queryByTestId('dsl-canvas-stub')).toBeNull();
+    // 改动后两个画布**同时挂载**（只是可见性切换），文本画布已在 DOM 里但不可见
+    expect(screen.getByTestId('dsl-canvas-root')).toBeInTheDocument();
+    expect(screen.getByTestId('text-panel')).not.toBeVisible();
     expect(screen.getByTestId('tab-workshop')).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -111,9 +126,10 @@ describe('DslCanvasPage 工作流工坊页签接线', () => {
 
     await user.click(screen.getByTestId('tab-text'));
     expect(screen.getByTestId('text-panel')).toBeInTheDocument();
-    expect(screen.getByTestId('dsl-canvas-stub')).toBeInTheDocument();
-    // 工坊模式的组件已卸载
-    expect(screen.queryByTestId('flow-editor-root')).toBeNull();
+    expect(screen.getByTestId('dsl-canvas-root')).toBeInTheDocument();
+    // 工坊画布**不再卸载**（否则切页签就丢图），只切可见性
+    expect(screen.getByTestId('flow-editor-root')).toBeInTheDocument();
+    expect(screen.getByTestId('workshop-panel')).not.toBeVisible();
     expect(screen.getByTestId('tab-text')).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -169,6 +185,7 @@ describe('DslCanvasPage 工作流工坊页签接线', () => {
 
 describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
   it('三模式可见，默认落在小白且不展示技术层复杂度', async () => {
+    const user = userEvent.setup();
     render(<DslCanvasPage />);
     await screen.findByTestId('flow-editor-root');
 
@@ -176,11 +193,19 @@ describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
     expect(screen.getByTestId('mode-tab-technical')).toBeInTheDocument();
     expect(screen.getByTestId('mode-tab-enterprise')).toBeInTheDocument();
 
-    // 小白模式：代码视图 / 手改 DSL / 导出都不在（藏的是「怎么读图」）
-    expect(screen.queryByTestId('flow-code')).toBeNull();
-    expect(screen.queryByTestId('flow-export')).toBeNull();
-    expect(screen.queryByTestId('flow-dsl-input')).toBeNull();
-    // 但节点面板照旧（16 类可拖这件事不受模式影响）
+    // G4-i · 小白模式：代码视图 / 手改 DSL / 导出**收进折叠区**（不是卸载）。
+    // 折叠而非卸载是硬约束：N3 那条 beginner 同源断言（dslDoc() 读 dsl-json）
+    // 也跑在小白模式下，卸载会把它打红。
+    expect(screen.getByTestId('flow-code')).not.toBeVisible();
+    expect(screen.getByTestId('flow-export')).not.toBeVisible();
+    expect(screen.getByTestId('flow-dsl-input')).not.toBeVisible();
+    expect(screen.getByTestId('flow-code')).toBeInTheDocument();
+    // 点开折叠区 → 三者原样回来
+    await user.click(screen.getByTestId('flow-code-summary'));
+    expect(screen.getByTestId('flow-code')).toBeVisible();
+    expect(screen.getByTestId('flow-export')).toBeVisible();
+    expect(screen.getByTestId('flow-dsl-input')).toBeVisible();
+    // 但节点面板照旧（18 类可拖这件事不受模式影响）
     expect(screen.getByTestId('flow-palette')).toBeInTheDocument();
   });
 
@@ -194,6 +219,36 @@ describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
     expect(screen.getByTestId('flow-export')).toBeInTheDocument();
     expect(screen.getByTestId('flow-dsl-input')).toBeInTheDocument();
     expect(screen.queryByTestId('template-starter')).toBeNull();
+    // G4-i：技术模式不套折叠壳（就是原来那张常开卡片，DOM 结构零变化）
+    expect(screen.getByTestId('flow-code')).toBeVisible();
+    expect(screen.queryByTestId('flow-code-summary')).toBeNull();
+  });
+
+  it('G4-i · R10：小白模式下文本页签那份同源 JSON 也收起，不给绕过口子', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    // 切到「DSL 文本模式」——同一个小白用户、同一个页面，
+    // 工坊画布藏了技术面，文本画布不能明晃晃摊着同一份 JSON。
+    await user.click(screen.getByTestId('tab-text'));
+    expect(screen.getByTestId('dsl-json')).not.toBeVisible();
+
+    // 点开折叠区 → 可见，且内容与工坊画布代码视图逐字段相同（同源没被折叠打断）
+    await user.click(screen.getByTestId('dsl-json-summary'));
+    expect(screen.getByTestId('dsl-json')).toBeVisible();
+    const fromTextCanvas = JSON.parse(screen.getByTestId('dsl-json').textContent ?? '{}');
+    expect(fromTextCanvas).toEqual({ version: '1', nodes: [], edges: [] });
+  });
+
+  it('G4-i · R10：切到技术模式后文本页签的 JSON 恢复可见', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    await user.click(screen.getByTestId('tab-text'));
+    await toTechnical(user);
+    expect(screen.getByTestId('dsl-json')).toBeVisible();
   });
 
   it('模式清单拉不到时如实报错，仍停在当前模式并能编辑', async () => {
@@ -272,5 +327,172 @@ describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
     expect(screen.getByTestId('flow-run-suspended')).toHaveTextContent('是否写入长期记忆？');
     expect(screen.queryByTestId('flow-run-error')).toBeNull();
     expect(screen.queryByTestId('flow-run-ok')).toBeNull();
+  });
+});
+
+/**
+ * N3 状态同步 · 切片 2（修 G1）：两个 DSL 画布共享同一条状态通道。
+ * 两个画布**同时挂载**（页签只切可见性），文档由页面单一持有，
+ * 子组件通过 initialDoc 载入 / onDocChange 回传。
+ */
+describe('N3 · 两个画布共享同一条状态通道', () => {
+  /** FlowEditor 的代码视图是 textarea，取 value；DslCanvas 的是 pre，取 textContent。 */
+  const flowDoc = (): DslDocument =>
+    JSON.parse((screen.getByTestId('flow-code') as HTMLTextAreaElement).value);
+  const dslDoc = (): DslDocument =>
+    JSON.parse(screen.getByTestId('dsl-json').textContent ?? '{}');
+
+  it('切到 text 页签后两个面板的 DSL 代码视图逐字段一致（同源）', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-model-state');
+    await toTechnical(user);
+
+    await user.type(screen.getByTestId('flow-generate-prompt'), '每天读文件并发邮件');
+    await user.click(screen.getByTestId('flow-generate-run'));
+    expect(await screen.findByTestId('flow-node-in1')).toBeInTheDocument();
+
+    // 切页签前后，文本画布拿到的必须是同一份文档
+    await user.click(screen.getByTestId('tab-text'));
+    expect(dslDoc()).toEqual(VALID_DSL);
+    expect(dslDoc()).toEqual(flowDoc());
+  });
+
+  it('在 text 模式删掉节点，切回 workshop 后工坊画布也少了该节点', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    expect(await screen.findByTestId('flow-node-src')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('tab-text'));
+    await screen.findByTestId('dsl-node-src');
+    await user.click(screen.getByTestId('delete-src'));
+    await waitFor(() => expect(screen.queryByTestId('dsl-node-src')).toBeNull());
+
+    // 共享通道生效：工坊画布同步收缩，而不是各自留一份
+    await user.click(screen.getByTestId('tab-workshop'));
+    await waitFor(() => expect(screen.queryByTestId('flow-node-src')).toBeNull());
+    expect(screen.getByTestId('flow-node-out')).toBeInTheDocument();
+  });
+
+  it('应用模板后两个画布同时呈现该模板（不是只有一个）', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    expect(await screen.findByTestId('flow-node-src')).toBeInTheDocument();
+
+    // 不切页签也能在文本画布看到同一张图
+    expect(await screen.findByTestId('dsl-node-src')).toBeInTheDocument();
+    expect(screen.getByTestId('dsl-node-out')).toBeInTheDocument();
+    expect(dslDoc()).toEqual(TEMPLATE_DSL);
+  });
+});
+
+/**
+ * N3 状态同步 · 切片 3（前端 G4）：草稿持久化 + 乐观锁 + 消除 UI 假绿灯。
+ *
+ * 这里测的是**用户能看到什么**（页面壳层）：
+ *   - 未落盘前指示器必须说「未接入持久化」，不得显示存储正常 / 已保存；
+ *   - 409 冲突时横幅必须出现，且给「重新读取 / 覆盖保存」两个出口；
+ *   - 冲突后不得再自动发保存（不静默覆盖）。
+ */
+describe('N3 · 草稿持久化与版本冲突的用户可见行为', () => {
+  it('未落盘时保存指示器不是绿灯：显示「未接入持久化」且不说「已保存」', async () => {
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    // 关键诚实断言：一个字节都没写出去过，就不许声称存储正常。
+    expect(screen.getByTestId('save-unlinked-badge')).toHaveTextContent('未接入持久化');
+    expect(screen.getByRole('status')).toHaveTextContent('无待保存内容');
+    expect(screen.getByRole('status')).not.toHaveTextContent('已保存');
+  });
+
+  it('模板起手后落盘成功：请求带 expected_version，且存储状态转 ok', async () => {
+    const user = userEvent.setup();
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    expect(await screen.findByTestId('flow-node-src')).toBeInTheDocument();
+
+    await waitFor(() => expect(dslCanvasApi.saveDraft).toHaveBeenCalled(), { timeout: 4000 });
+    const call = vi.mocked(dslCanvasApi.saveDraft).mock.calls[0];
+    expect(call[0]).toBe('flow-1');
+    expect(call[2]).toEqual({ expected_version: 1 });
+    await waitFor(() => expect(screen.queryByTestId('save-unlinked-badge')).toBeNull());
+  });
+
+  it('版本冲突（409）→ 横幅可见 + 两个出口，且不再自动重试覆盖', async () => {
+    const user = userEvent.setup();
+    const { DslDraftConflictError } = await import('../api/dslCanvas');
+    vi.mocked(dslCanvasApi.saveDraft).mockRejectedValue(new DslDraftConflictError('flow-1'));
+
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+
+    const banner = await screen.findByTestId('draft-conflict', {}, { timeout: 4000 });
+    expect(banner).toHaveTextContent('草稿已被其他会话修改，需重新读取后再保存');
+    expect(screen.getByTestId('draft-reload')).toBeInTheDocument();
+    expect(screen.getByTestId('draft-overwrite')).toBeInTheDocument();
+
+    // 冲突后再等一段时间：一次都不许再发保存（绝不静默覆盖）
+    const before = vi.mocked(dslCanvasApi.saveDraft).mock.calls.length;
+    await new Promise((r) => { setTimeout(r, 1200); });
+    expect(vi.mocked(dslCanvasApi.saveDraft)).toHaveBeenCalledTimes(before);
+  });
+
+  it('冲突后点「覆盖保存」：发出一次不带 expected_version 的写入并解除冲突', async () => {
+    const user = userEvent.setup();
+    const { DslDraftConflictError } = await import('../api/dslCanvas');
+    vi.mocked(dslCanvasApi.saveDraft)
+      .mockRejectedValueOnce(new DslDraftConflictError('flow-1'))
+      .mockResolvedValue({
+        id: 'flow-1', flow_type: 'workflow', draft_doc: null,
+        published_version: 0, draft_version: 8,
+      });
+
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    await screen.findByTestId('draft-conflict', {}, { timeout: 4000 });
+
+    await user.click(screen.getByTestId('draft-overwrite'));
+
+    await waitFor(() => expect(screen.queryByTestId('draft-conflict')).toBeNull());
+    const last = vi.mocked(dslCanvasApi.saveDraft).mock.calls.at(-1);
+    expect(last?.[2]?.expected_version).toBeUndefined();
+  });
+
+  it('冲突后点「重新读取」：读回服务端版本并解除冲突', async () => {
+    const user = userEvent.setup();
+    const { DslDraftConflictError } = await import('../api/dslCanvas');
+    vi.mocked(dslCanvasApi.saveDraft).mockRejectedValue(new DslDraftConflictError('flow-1'));
+    vi.mocked(dslCanvasApi.getFlow).mockResolvedValue({
+      id: 'flow-1', flow_type: 'workflow', draft_doc: null,
+      published_version: 0, draft_version: 11,
+    });
+
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    await user.click(await screen.findByTestId('template-beginner-starter'));
+    await screen.findByTestId('draft-conflict', {}, { timeout: 4000 });
+
+    await user.click(screen.getByTestId('draft-reload'));
+
+    await waitFor(() => expect(screen.queryByTestId('draft-conflict')).toBeNull());
+    expect(dslCanvasApi.getFlow).toHaveBeenCalledWith('flow-1');
+  });
+
+  it('草稿读取失败时如实报错，不静默', async () => {
+    vi.mocked(dslCanvasApi.getFlow).mockRejectedValue(new Error('读不到草稿'));
+    sessionStorage.setItem('fy-orbit.dsl-draft.flow-id', 'flow-1');
+
+    render(<DslCanvasPage />);
+
+    expect(await screen.findByTestId('draft-error')).toHaveTextContent('读取草稿失败');
+    expect(screen.getByTestId('draft-error')).toHaveTextContent('读不到草稿');
   });
 });
