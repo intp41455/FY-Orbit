@@ -563,6 +563,13 @@ def collect_d3_reverse_deps(graph: ImportGraph, root: Path) -> list[dict]:
 # 主流程
 # --------------------------------------------------------------------------
 def main(argv: list[str] | None = None) -> int:
+    # Windows GBK 控制台下 print「⇄」等字符会 UnicodeEncodeError 打崩门禁
+    # （实测 tests/unit/scripts/test_layering_gate.py::test_gate_detects_real_cycle）。
+    # 统一改走 UTF-8 且不因个别字符中断 CI 输出。
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(description="后端三层分层门禁（fail-closed）")
     parser.add_argument("--scan-root", default=None,
                         help="扫描根目录；默认取 FY_LAYERING_SCAN_ROOT，再默认本仓根")

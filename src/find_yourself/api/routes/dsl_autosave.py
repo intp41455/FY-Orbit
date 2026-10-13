@@ -12,18 +12,15 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, update
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
-from ...services.errors import DomainError, Conflict
+from ..deps import csrf_protected, get_actor
 
 router = APIRouter(prefix="/api/dsl-canvas/autosave", tags=["dsl-canvas-autosave"])
 
@@ -228,7 +225,7 @@ async def check_status(
 @router.get("/history/{canvas_id}")
 async def get_history(
     canvas_id: str,
-    limit: int = Field(default=10, ge=1, le=100),
+    limit: int = Query(default=10, ge=1, le=100),
     actor: Actor = Depends(get_actor),
 ) -> dict[str, Any]:
     """获取画布的版本历史。

@@ -61,12 +61,15 @@ def _run_gate(scan_root: Path, *extra: str) -> subprocess.CompletedProcess[str]:
     env["PYTHONPATH"] = str(REPO_ROOT / "src")
     env["FY_ENVIRONMENT"] = "test"
     env["FY_OFFLINE_MODE"] = "true"
+    # Windows GBK 控制台：子进程 stdout 与本进程解码都强制 UTF-8，
+    # 否则门禁输出的「⇄」会在编码层打崩（与脚本内 reconfigure 双保险）。
+    env["PYTHONIOENCODING"] = "utf-8"
     # 显式清掉可能从外层继承的覆盖，保证测的就是 --scan-root 与本仓 baseline 无关。
     env.pop("FY_LAYERING_SCAN_ROOT", None)
     env.pop("FY_LAYERING_BASELINE", None)
     return subprocess.run(
         [sys.executable, str(GATE_SCRIPT), "--scan-root", str(scan_root), *extra],
-        cwd=REPO_ROOT, env=env, capture_output=True, text=True,
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, encoding="utf-8",
     )
 
 
