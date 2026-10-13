@@ -93,6 +93,16 @@ def test_distill_and_mappings_require_csrf(client: TestClient, isolated_dossier)
     assert client.post("/api/dossier/enterprise/generic/mappings",
                        json={"mappings": [{"from": "corp", "to": "agent.id"}]},
                        headers=auth).status_code == 200
+    # adapt 与 mappings 同属变异（服务层 commit），CSRF 不得只挂一个。
+    assert client.post("/api/dossier/enterprise/generic/adapt",
+                       json={},
+                       headers=no_csrf).status_code == 403
+
+
+def test_enterprise_adapt_with_csrf_is_accepted(client: TestClient, auth, isolated_dossier):
+    resp = client.post("/api/dossier/enterprise/generic/adapt", headers=auth,
+                       json={"external": {"team": {"name": "x"}}})
+    assert resp.status_code == 200
 
 
 # --------------------------------------------------------------------------- #

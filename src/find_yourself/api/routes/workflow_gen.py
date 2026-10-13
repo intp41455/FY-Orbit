@@ -263,7 +263,8 @@ async def generate_workflow(
 
 
 @router.post("/export", response_model=None)
-async def export_workflow(body: ExportRequest) -> dict | JSONResponse:
+async def export_workflow(body: ExportRequest,
+                           actor: Actor = Depends(get_actor)) -> dict | JSONResponse:
     """合法 DSL → 独立 Python 脚本（不含密钥，地址为占位符）。"""
     doc: dict[str, Any] | None = None
     try:
@@ -281,7 +282,8 @@ async def export_workflow(body: ExportRequest) -> dict | JSONResponse:
 
 
 @router.post("/graph/from-dsl", response_model=None)
-async def graph_from_dsl(body: FromDslRequest) -> dict | JSONResponse:
+async def graph_from_dsl(body: FromDslRequest,
+                         actor: Actor = Depends(get_actor)) -> dict | JSONResponse:
     """DSL → 图。整体校验，非法时报行列级错误，**不半解析**。"""
     try:
         graph = _graph_from_payload(body.dsl, body.dsl_text, body.layout)
@@ -291,7 +293,8 @@ async def graph_from_dsl(body: FromDslRequest) -> dict | JSONResponse:
 
 
 @router.post("/graph/to-dsl", response_model=None)
-async def graph_to_dsl_route(body: ToDslRequest) -> dict | JSONResponse:
+async def graph_to_dsl_route(body: ToDslRequest,
+                             actor: Actor = Depends(get_actor)) -> dict | JSONResponse:
     """图 → DSL。坐标被丢弃；语义非法即报错，绝不静默产出坏DSL。"""
     graph = FlowGraph(
         nodes=[

@@ -32,6 +32,11 @@ from ..deps import csrf_protected, get_actor
 router = APIRouter(prefix="/api/agent-dispatch", tags=["agent-dispatch"])
 
 
+def _actor_identity(actor: Actor) -> str:
+    """派发归属标识（owner 与 service 身份不互通，同 dsl_canvas 范式）。"""
+    return actor.owner_id or actor.service_id or ""
+
+
 class TaskSpec(BaseModel):
     capability: str = Field(min_length=1, max_length=128)
     payload: dict = Field(default_factory=dict)
@@ -54,7 +59,8 @@ def dispatch_task(body: DispatchBody,
                   actor: Actor = Depends(csrf_protected)) -> dict:
     try:
         parent = agent_dispatch.dispatch(
-            body.task.model_dump(), [t.model_dump() for t in body.tools])
+            body.task.model_dump(), [t.model_dump() for t in body.tools],
+            owner=_actor_identity(actor))
     except DispatchValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return parent
@@ -62,13 +68,13 @@ def dispatch_task(body: DispatchBody,
 
 @router.get("")
 def list_dispatches(actor: Actor = Depends(get_actor)) -> dict:
-    return {"count": len(agent_dispatch.list_ids()),
-            "parent_task_ids": agent_dispatch.list_ids()}
+    ids = agent_dispatch.list_ids(owner=_actor_identity(actor))
+    return {"count": len(ids), "parent_task_ids": ids}
 
 
 @router.get("/{parent_task_id}")
 def get_dispatch(parent_task_id: str, actor: Actor = Depends(get_actor)) -> dict:
-    parent = agent_dispatch.get(parent_task_id)
+    parent = agent_dispatch.get_owned(parent_task_id, _actor_identity(actor))
     if parent is None:
         raise HTTPException(status_code=404,
                             detail=f"派发不存在: {parent_task_id}")

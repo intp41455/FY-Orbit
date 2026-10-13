@@ -138,7 +138,7 @@ async def enterprise_catalog(actor: Actor = Depends(get_actor),
 async def enterprise_adapt(
     target: str,
     body: AdaptBody,
-    actor: Actor = Depends(get_actor),
+    actor: Actor = Depends(csrf_protected),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
     """外部框架定义 → 内部单循环规格。未映射字段全部保留并报告，不静默丢弃。"""

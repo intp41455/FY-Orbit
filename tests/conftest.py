@@ -28,6 +28,31 @@ from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_env_file(monkeypatch):
+    """测试进程**不得**读取仓库根 ``.env``。
+
+    实测（2026-10-14，HEAD 5d800ee）：开发者机器配了真实模型 Key 的 ``.env``
+    会让 26 条单元测试翻红（离线门默认 True / 未配置诚实 503 / provider 探测
+    类断言），而 CI（无 ``.env``）全绿 —— 即"测试绿不绿取决于开发者机器，
+    不取决于代码"。pydantic-settings 在**实例化时**从
+    ``cls.model_config['env_file']`` 读文件（pydantic_settings/main.py:332），
+    因此把该键指向空值即可切断，**零产品代码改动**；``_get_settings`` 是
+    lru_cache，同一会话里先前实例会被缓存，故一并清缓存。
+
+    测试若确需某配置，请用 ``monkeypatch.setenv("FY_...", ...)``（进程环境
+    变量优先级高于 env_file，仍生效）。
+    """
+    from find_yourself.config import Settings, _get_settings
+
+    cfg = dict(Settings.model_config)
+    cfg["env_file"] = None
+    monkeypatch.setattr(Settings, "model_config", cfg, raising=True)
+    _get_settings.cache_clear()
+    yield
+    _get_settings.cache_clear()
+
+
 @pytest.fixture()
 def engine():
     eng = create_engine(

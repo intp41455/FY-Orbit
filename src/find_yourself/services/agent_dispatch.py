@@ -163,7 +163,7 @@ class AgentDispatchService:
 
     # -- 派发与子 Agent 执行 ------------------------------------------------------
 
-    def dispatch(self, task: Any, tools: Any) -> dict[str, Any]:
+    def dispatch(self, task: Any, tools: Any, *, owner: str = "") -> dict[str, Any]:
         spec = self.validate_task(task)
         plan = self.validate_tools(tools)
 
@@ -186,6 +186,7 @@ class AgentDispatchService:
         }
         parent: dict[str, Any] = {
             "parent_task_id": parent_id,
+            "owner_id": owner,
             "task": spec,
             "status": "dispatched",
             "dispatched_at": dispatched_at,
@@ -372,9 +373,26 @@ class AgentDispatchService:
             parent = self._parents.get(parent_task_id)
             return json.loads(json.dumps(parent, ensure_ascii=False)) if parent else None
 
-    def list_ids(self) -> list[str]:
+    def get_owned(self, parent_task_id: str, owner: str) -> dict[str, Any] | None:
+        """属主自己的派发；属主外一律 ``None``（路由层转 404，不泄漏存在性）。
+
+        与 ``DslRunStore.get_owned`` 同一范式（dsl_canvas.py）：``owner`` 为空串
+        的遗留记录对任何非空 owner 不可见 —— 派发自 2026-10-14 起必须带 owner，
+        空串只可能来自测试里未传 ``owner=`` 的直调。
+        """
         with self._lock:
-            return list(self._parents)
+            parent = self._parents.get(parent_task_id)
+            if parent is None or parent.get("owner_id", "") != owner:
+                return None
+            return json.loads(json.dumps(parent, ensure_ascii=False))
+
+    def list_ids(self, owner: str | None = None) -> list[str]:
+        """派发 id 列表；``owner=None`` 保持历史语义（全量，供快照导出）。"""
+        with self._lock:
+            if owner is None:
+                return list(self._parents)
+            return [pid for pid, p in self._parents.items()
+                    if p.get("owner_id", "") == owner]
 
     def _archive(self, parent: dict[str, Any]) -> None:
         if not self._dir:
