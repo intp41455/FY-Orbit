@@ -21,6 +21,8 @@ export function LegacyCanvas() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 派发成功提示（此前成功后悄无声息，用户只能靠计数猜，P1-6）。
+  const [dispatchNotice, setDispatchNotice] = useState<string | null>(null);
 
   // New instance form
   const [showNewInstance, setShowNewInstance] = useState(false);
@@ -114,7 +116,7 @@ export function LegacyCanvas() {
     }
     setDispatching(true);
     try {
-      await canvasApi.dispatchSubtask(activeInstance.id, {
+      const rec = await canvasApi.dispatchSubtask(activeInstance.id, {
         root_task_id: `root-${activeInstance.id}`,
         worker_id: targetWorker,
         goal: dispatchGoal.trim(),
@@ -122,6 +124,9 @@ export function LegacyCanvas() {
       });
       setShowDispatch(false);
       setDispatchGoal('');
+      setDispatchNotice(
+        `已派发给 ${targetWorker}（${rec.state === 'pending_adapter' ? '待适配器接通' : rec.state}）：「${dispatchGoal.trim()}」。下方计数与事件时间线已同步刷新。`,
+      );
       // Refresh snapshot
       await selectInstance(activeInstance);
     } catch (err) {
@@ -378,7 +383,9 @@ export function LegacyCanvas() {
                   <div style={{ fontSize: '0.75rem', color: '#64748b' }}>目标 · 授权 · 验收</div>
                 </div>
 
-                <div style={{ color: '#94a3b8', fontSize: '1.25rem' }}>➔</div>
+                <svg width="30" height="16" viewBox="0 0 30 16" aria-hidden="true">
+                  <path d="M1 8 H23 M18 2 L25 8 L18 14" fill="none" stroke="#64748b" strokeWidth="1.8" />
+                </svg>
 
                 {/* Orchestrator Center Node */}
                 <div style={{ textAlign: 'center', padding: '1.25rem', background: '#eff6ff', borderRadius: '8px', minWidth: '160px', border: '2px solid #3b82f6' }}>
@@ -388,36 +395,56 @@ export function LegacyCanvas() {
                   <span className="badge badge-primary" style={{ marginTop: '0.25rem' }}>Orchestrator</span>
                 </div>
 
-                <div style={{ color: '#94a3b8', fontSize: '1.25rem' }}>➔</div>
+                <svg width="30" height="16" viewBox="0 0 30 16" aria-hidden="true">
+                  <path d="M1 8 H23 M18 2 L25 8 L18 14" fill="none" stroke="#64748b" strokeWidth="1.8" />
+                </svg>
 
-                {/* Workers Nodes */}
+                {/* Visual Topology Nodes：每行独立箭头 + 可点卡片。
+                    此前是整列共用 1 个 ➔ 字符（违反 UI_BASELINE“有方向曲线，
+                    不能退化为文字箭头”，且 N 个 worker 语义共用 1 条边）。
+                    卡片可点即设为派发目标（与下方表单 select 同源）。 */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {activeTemplate?.workers.map((workerName) => {
                     const probe = connectors.find((c) => c.name.toLowerCase() === workerName.toLowerCase());
+                    const isTarget = (dispatchWorker || activeTemplate?.workers[0]) === workerName;
                     return (
-                      <div
-                        key={workerName}
-                        style={{
-                          padding: '0.75rem 1rem',
-                          background: '#ffffff',
-                          borderRadius: '6px',
-                          border: '1px solid #e2e8f0',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: '1rem',
-                          minWidth: '240px',
-                        }}
-                      >
-                        <div>
-                          <strong>{workerName}</strong>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                            {probe ? probe.protocol : '标准 Agent 协议'}
+                      <div key={workerName} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <svg width="26" height="14" viewBox="0 0 26 14" aria-hidden="true">
+                          <path d="M1 7 H19 M15 2 L21 7 L15 12" fill="none" stroke="#64748b" strokeWidth="1.8" />
+                        </svg>
+                        <button
+                          type="button"
+                          onClick={() => setDispatchWorker(workerName)}
+                          aria-pressed={isTarget}
+                          title={isTarget ? '当前派发目标' : `设为派发目标（当前：${dispatchWorker || '未指定'}）`}
+                          data-testid={`topo-worker-${workerName}`}
+                          style={{
+                            padding: '0.75rem 1rem',
+                            background: '#ffffff',
+                            borderRadius: '6px',
+                            border: isTarget ? '2px solid #0e9ad9' : '1px solid #e2e8f0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: '1rem',
+                            minWidth: '240px',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            font: 'inherit',
+                            color: 'inherit',
+                          }}
+                        >
+                          <div>
+                            <strong>{workerName}</strong>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                              {probe ? probe.protocol : '标准 Agent 协议'}
+                              {isTarget ? ' · 当前派发目标' : ''}
+                            </div>
                           </div>
-                        </div>
-                        <span className={`badge ${getStageBadgeClass(probe?.stage || '仅设计')}`}>
-                          {probe?.stage || '仅设计'}
-                        </span>
+                          <span className={`badge ${getStageBadgeClass(probe?.stage || '仅设计')}`}>
+                            {probe?.stage || '仅设计'}
+                          </span>
+                        </button>
                       </div>
                     );
                   })}
@@ -426,9 +453,13 @@ export function LegacyCanvas() {
             </div>
 
             {/* Subtask Dispatches and Handoffs Grid */}
+            {dispatchNotice && (
+              <div className="banner banner-ok" role="status" data-testid="dispatch-notice">
+                {dispatchNotice}
+              </div>
+            )}
             <div className="grid grid-2" style={{ gap: '1.5rem', marginBottom: '1.5rem' }}>
-              {/* Dispatches Card */}
-              <div className="card">
+              {/* Dispatches Card */}              <div className="card">
                 <h4>子任务派发记录 ({snapshot.dispatches.length})</h4>
                 {snapshot.dispatches.length === 0 ? (
                   <p className="subtext">暂无派发记录。点击上方「派发子任务」分配工作。</p>

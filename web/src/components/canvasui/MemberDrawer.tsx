@@ -85,33 +85,10 @@ export function MemberDrawer({
       </div>
 
       <div className="cv-drawer__bd">
-        <div className="cv-kv"><span>角色</span><span>{member.role}</span></div>
-        <div className="cv-kv"><span>宿主</span><span>{member.agent_host}</span></div>
-        <div className="cv-kv"><span>供应商</span><span>{member.provider_id || '未设置'}</span></div>
-        <div className="cv-kv"><span>独立会话</span><span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11 }}>
-          {member.session_id.slice(0, 18)}…
-        </span></div>
-        <div className="cv-kv"><span>依赖</span><span>{member.depends_on.join('、') || '无'}</span></div>
-        <div className="cv-kv"><span>运行批次</span><span>#{member.run_batch}</span></div>
-        <div className="cv-kv"><span>计划版本</span><span>v{member.plan_version}</span></div>
-        <div className="cv-kv">
-          <span>凭据引用</span>
-          <span>
-            {member.credential_ref || '未设置'} ·{' '}
-            {member.credential_configured ? '已配置' : '未配置'}
-          </span>
-        </div>
-        <div className="cv-kv"><span>预留</span><span>{fmtUsd(member.budget_reserved_usd)}</span></div>
-        <div className="cv-kv"><span>已用</span><span>{fmtUsd(member.budget_spent_usd)}</span></div>
-
-        {member.current_goal && (
-          <div>
-            <span className="ui-label">当前任务</span>
-            <p className="ui-hint" style={{ margin: 0, lineHeight: 1.5 }}>{member.current_goal}</p>
-          </div>
-        )}
-
-        <label className="ui-label" style={{ marginTop: 8 }} htmlFor="cv-node-model">请求模型（节点覆盖）</label>
+        {/* 可操作项优先（P1-5）：此前首屏 400px 全是只读键值对，
+            唯一的模型控件在 914px 深处，用户以为面板不能设置。
+            现在请求模型与运行中切换提到最前，只读明细下移。 */}
+        <label className="ui-label" style={{ marginTop: 0 }} htmlFor="cv-node-model">请求模型（节点覆盖）</label>
         {models.length === 0 ? (
           <p className="ui-error-text" data-testid="cv-node-model-empty">
             模型目录为空，无可选模型：先去设置页接入供应商并配置模型，再回来换 Agent。
@@ -166,6 +143,32 @@ export function MemberDrawer({
           </select>
           <p className="ui-hint">切换只在安全边界后的新批次生效；旧批次保留。</p>
         </details>
+
+        <div className="cv-kv"><span>角色</span><span>{member.role}</span></div>
+        <div className="cv-kv"><span>宿主</span><span>{member.agent_host}</span></div>
+        <div className="cv-kv"><span>供应商</span><span>{member.provider_id || '未设置'}</span></div>
+        <div className="cv-kv"><span>独立会话</span><span style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11 }}>
+          {member.session_id.slice(0, 18)}…
+        </span></div>
+        <div className="cv-kv"><span>依赖</span><span>{member.depends_on.join('、') || '无'}</span></div>
+        <div className="cv-kv"><span>运行批次</span><span>#{member.run_batch}</span></div>
+        <div className="cv-kv"><span>计划版本</span><span>v{member.plan_version}</span></div>
+        <div className="cv-kv">
+          <span>凭据引用</span>
+          <span>
+            {member.credential_ref || '未设置'} ·{' '}
+            {member.credential_configured ? '已配置' : '未配置'}
+          </span>
+        </div>
+        <div className="cv-kv"><span>预留</span><span>{fmtUsd(member.budget_reserved_usd)}</span></div>
+        <div className="cv-kv"><span>已用</span><span>{fmtUsd(member.budget_spent_usd)}</span></div>
+
+        {member.current_goal && (
+          <div>
+            <span className="ui-label">当前任务</span>
+            <p className="ui-hint" style={{ margin: 0, lineHeight: 1.5 }}>{member.current_goal}</p>
+          </div>
+        )}
 
         <details>
           <summary>权限、预算与高级参数</summary>

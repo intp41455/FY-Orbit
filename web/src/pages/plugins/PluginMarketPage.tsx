@@ -390,7 +390,7 @@ export function PluginMarketPage() {
                 data-testid="plugin-query"
                 style={{ flex: 1, minWidth: '200px' }}
               />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ui-s-1)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--ui-s-1)', whiteSpace: 'nowrap', flex: '0 0 auto' }}>
                 <label htmlFor="plugin-sort-select" className="muted" style={{ fontSize: 'var(--ui-fs-sm)' }}>排序：</label>
                 <select
                   id="plugin-sort-select"

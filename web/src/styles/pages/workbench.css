@@ -242,7 +242,13 @@
   overflow: hidden;
 }
 .wb-sec-hd { margin: 0; }
-.wb-sec-bar {
+/* 中区三区段纵向堆叠时必须禁止 flex 收缩。
+   子项默认 flex-shrink:1，上下两块都展开、总高超过中区高度时，
+   三个区段会被一起压扁；而 .wb-sec 是 overflow:hidden，被压扁的
+   正文会截在自己的下边界上 —— 用户看到的就是“差异审查那一块的字
+   被下面那块遮住了一部分”。改 flex:0 0 auto 让区段保持自然高度，
+   超出部分交给 .wb-zone-middle 已有的 overflow:auto 滚动。 */
+.wb-zone-middle > .wb-sec { flex: 0 0 auto; }.wb-sec-bar {
   display: flex;
   align-items: center;
   gap: var(--ui-s-3);
@@ -1111,7 +1117,7 @@
   color: var(--ui-ink-inv);
   border-color: var(--ui-sky-700);
 }
-.appr-sort-row { display: inline-flex; align-items: center; gap: var(--ui-s-1); }
+.appr-sort-row { display: inline-flex; align-items: center; gap: var(--ui-s-1); white-space: nowrap; flex: 0 0 auto; }
 .appr-search {
   flex: 1 1 160px;
   min-width: 160px;

@@ -676,6 +676,7 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 .subtext { font-size: 0.84rem; color: var(--text-muted); margin: 0.3rem 0 0; }
 .banner { border-radius: 12px; padding: 0.7rem 0.9rem; margin-bottom: 0.9rem; font-size: 0.86rem; }
 .banner-error { background: var(--rose-bg); color: var(--rose); border: 1px solid var(--rose-border); }
+.banner-ok { background: var(--ui-st-complete-bg); color: var(--ui-ink-1); border: 1px solid var(--ui-line-2); }
 .btn { border-radius: 12px; padding: 0.55rem 0.9rem; min-height: 44px; border: 1px solid var(--line); background: #fff; color: #334155; cursor: pointer; font: inherit; }
 .btn-primary { background: linear-gradient(135deg, #38bdf8, #0284c7); color: #fff; border-color: transparent; }
 .btn-secondary { background: rgba(255, 255, 255, 0.85); }
@@ -2984,6 +2985,12 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 
 .asset-input-narrow {
   flex: 0 1 130px;
+}
+
+/* 占位符对比度 ≥4.5:1（此前 #757575 在灰底上约 1.24:1，几乎不可见）。 */
+.asset-input::placeholder {
+  color: #64748B;
+  opacity: 1;
 }
 
 .asset-select {

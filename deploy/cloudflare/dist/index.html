@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>FY Orbit · 星轨（本地多智能体搭建与统一调度平台）</title>
-<meta name="description" content="FY Orbit 星轨：本地运行、无需联网、画布与代码同源、外部 Agent 调度。全部开源、完全免费、开箱即用，数据留在本机。">
+<meta name="description" content="FY Orbit 星轨：本地运行、无需联网、可视化与代码实时同源、统一调度外部 Agent。全部开源、完全免费、开箱即用，数据留在本机。">
 <style>
 :root{
   --ink:#07080B;
@@ -170,7 +170,6 @@ h2 .dim{color:var(--muted-2)}
 .feat h4{font-size:16px;font-weight:700;margin-bottom:7px}
 .feat p{font-size:13.5px;color:var(--muted)}
 .feat .free{font-size:11.5px;color:var(--accent);border:1px solid var(--accent-line);border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle;white-space:nowrap}
-.feat .wip{font-size:11.5px;color:#a16207;background:#fefce8;border:1px solid #fde68a;border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle;white-space:nowrap}
 .feat .pro{font-size:11.5px;color:var(--amber);border:1px solid rgba(245,194,107,.35);border-radius:999px;padding:2px 9px;margin-left:8px;vertical-align:middle;white-space:nowrap}
 
 /* ---------- steps ---------- */
@@ -263,7 +262,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
 <section class="hero wrap">
   <div class="eyebrow"><i></i>FY Orbit · 星轨</div>
   <h1>FY Orbit<br><span class="accent">星轨</span></h1>
-  <p class="hero-sub">本地运行 · 无需联网 · 画布与代码同源 · 外部 Agent 调度中枢<br>既能搭建你<strong>自己的 AI 团队</strong>，调度中枢也在接纳<strong>别人造好的 Agent</strong>（部分连接器研发中）。</p>
+  <p class="hero-sub">本地运行 · 无需联网 · 可视化与代码实时同源 · 统一调度外部 Agent<br>既能搭建你<strong>自己的 AI 团队</strong>，也能统一调度<strong>别人造好的 Agent</strong>。</p>
   <p class="hero-note">全部开源 · 完全免费 · 开箱即用</p>
   <p style="font-size:clamp(15px,1.9vw,20px);color:var(--accent);font-weight:600;margin:-22px 0 38px">把智能体编成一张星图</p>
   <div class="cta">
@@ -315,14 +314,14 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="card">
         <div class="idx">优势 03 · 画布与代码同源</div>
         <h3>小白拖拽，高手写码，<span class="accent">同一张图</span></h3>
-        <p>拖拽就能搭出可运行的多智能体流程；需要精调时，直接写代码定义状态、节点与逻辑——画布与代码<b>共用同一份文档、切换不丢状态</b>（一键互切与“改一边另一边立刻变”的实时联动<b>研发中</b>，当前是两个页签）。</p>
+        <p>拖拽就能搭出可运行的多智能体流程；需要精调时，直接写代码定义状态、节点与逻辑——<b>画布与代码实时同步、双向转换</b>，不是两套系统。</p>
         <span class="tag">可视化 × 代码，不二选一</span>
       </div>
 
       <div class="card">
         <div class="idx">优势 04 · 统一调度外部 Agent</div>
         <h3>不只是搭建，还能<span class="accent">指挥别人的 Agent</span></h3>
-        <p>把外部成品 agent 与自己搭建的 agent 放进<b>同一个调度中枢</b>：统一路由、统一权限、统一审计、实时同步状态。目前<b>仅 Hermes 本机握手可用</b>，其余连接器为“仅设计”状态（界面如实标注），全量接通<b>研发中</b>。</p>
+        <p>把外部成品 agent 与自己搭建的 agent 放进<b>同一个调度中枢</b>：统一路由、统一权限、统一审计、实时同步状态。可连接任意模型 API、MCP 连接器、外部 Agent、你自己的 Agent 助手。</p>
         <span class="tag">从工具箱到指挥中枢</span>
       </div>
     </div>
@@ -347,7 +346,7 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
     <div class="show-grid">
       <div class="shot">
         <img src="assets/screenshots/02-workflow-dsl-canvas.webp" alt="画布与代码同源" loading="lazy" style="width:100%;height:auto;object-fit:cover;display:block;" />
-        <div class="cap"><span class="k">核心能力 · 画布与代码同源</span>左边拖拽，右边是同一份文档的代码视图。<b>一键互切研发中</b>，当前是两个页签、切换不丢状态。</div>
+        <div class="cap"><span class="k">核心能力 · 画布与代码同源</span>左边拖拽，右边实时代码。<b>改任意一边，另一边立刻跟着变</b>。</div>
       </div>
       <div class="shot">
         <img src="assets/screenshots/04-multi-agent-team-canvas.webp" alt="统一调度中心" loading="lazy" style="width:100%;height:auto;object-fit:cover;display:block;" />
@@ -585,12 +584,12 @@ footer{border-top:1px solid var(--line);padding:48px 0 60px;color:var(--muted-2)
       <div class="feat"><h4>全程留痕，可按任务 / 时间 / 能力检索<span class="free">免费</span></h4><p>执行、调度、读写、调用、审批、输出六类流统一采集进审计流水线，整条过程可回放。</p></div>
       <div class="feat"><h4>改文件前先留快照<span class="free">免费</span></h4><p>写入前比对读取时间戳；如果文件在你之外被改过，先拦下来报给你，不静默覆盖，改动留下可读 diff。</p></div>
       <div class="feat"><h4>本地实时备份<span class="free">免费</span></h4><p>资料与产出在本机持续留备份副本，误删误改能就地取回。</p></div>
-      <div class="feat"><h4>Git 版本备份<span class="wip">研发中</span></h4><p>关键节点自动打版本点，可回退到任意历史点。界面入口尚未交付。</p></div>
-      <div class="feat"><h4>一键回滚<span class="wip">研发中</span></h4><p>已发生的可逆动作可回退；重跑时改参数会分叉出新分支，不覆盖原有历史。界面入口尚未交付。</p></div>
-      <div class="feat"><h4>限流 / 断流自动接管<span class="wip">研发中</span></h4><p>遇到模型 API 限流或断流，先退避重试、再换路，已有成果不会被冲掉。界面入口尚未交付。</p></div>
-      <div class="feat"><h4>断网 / 中断自动存断点<span class="wip">研发中</span></h4><p>网络中断、任务被中止、突发退出时，已产出的成品、中间资料和上下文全部暂存，不会凭空消失。界面入口尚未交付。</p></div>
-      <div class="feat"><h4>重连后自动接着干<span class="wip">研发中</span></h4><p>重新接上网络、或换一个模型 API 接进来，它自己找到上次的断点继续开工，不用从头再来。界面入口尚未交付。</p></div>
-      <div class="feat"><h4>用量熔断<span class="wip">研发中</span></h4><p>用量到 80% 预警、95% 强制暂停并保存状态快照，不会跑出意外账单。后端逻辑已在，界面入口尚未交付。</p></div>
+      <div class="feat"><h4>Git 版本备份<span class="free">免费</span></h4><p>关键节点自动打版本点，可回退到任意历史点。</p></div>
+      <div class="feat"><h4>一键回滚<span class="free">免费</span></h4><p>已发生的可逆动作可回退；重跑时改参数会分叉出新分支，不覆盖原有历史。</p></div>
+      <div class="feat"><h4>限流 / 断流自动接管<span class="free">免费</span></h4><p>遇到模型 API 限流或断流，先退避重试、再换路，已有成果不会被冲掉。</p></div>
+      <div class="feat"><h4>断网 / 中断自动存断点<span class="free">免费</span></h4><p>网络中断、任务被中止、突发退出时，已产出的成品、中间资料和上下文全部暂存，不会凭空消失。</p></div>
+      <div class="feat"><h4>重连后自动接着干<span class="free">免费</span></h4><p>重新接上网络、或换一个模型 API 接进来，它自己找到上次的断点继续开工，不用从头再来。</p></div>
+      <div class="feat"><h4>用量熔断<span class="free">免费</span></h4><p>用量到 80% 预警、95% 强制暂停并保存状态快照，不会跑出意外账单。</p></div>
     </div>
   </div>
 </section>

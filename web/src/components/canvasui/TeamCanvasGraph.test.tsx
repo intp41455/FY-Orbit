@@ -109,4 +109,46 @@ describe('TeamCanvasGraph 连线可见', () => {
     fireEvent.click(screen.getByText('取消'));
     expect(onRename).not.toHaveBeenCalled();
   });
+
+  it('名称未改直接确认：不关闭弹窗、不回调，并就地提示', () => {
+    const onRename = vi.fn();
+    const { container } = render(
+      <TeamCanvasGraph
+        snapshot={snapshot}
+        memberViews={snapshot.members}
+        selectedRole={null}
+        onSelectRole={() => {}}
+        hoveredRole={null}
+        onHoverRole={() => {}}
+        onRenameMember={onRename}
+      />,
+    );
+    // implementer 当前名即“编码专家”，不动输入框直接确认。
+    fireEvent.doubleClick(container.querySelector('[data-cv-node="implementer"]') as HTMLElement);
+    const confirm = screen.getByText('确认改名');
+    expect(confirm).toBeDisabled();
+    fireEvent.click(confirm);
+    expect(onRename).not.toHaveBeenCalled();
+    expect(screen.getByTestId('cv-rename-unchanged')).toBeInTheDocument();
+    // 弹窗仍在（没有静默关闭）。
+    expect(screen.getByLabelText('显示名称')).toBeInTheDocument();
+  });
+
+  it('右键菜单有可见的“重命名成员”入口', () => {
+    const { container } = render(
+      <TeamCanvasGraph
+        snapshot={snapshot}
+        memberViews={snapshot.members}
+        selectedRole={null}
+        onSelectRole={() => {}}
+        hoveredRole={null}
+        onHoverRole={() => {}}
+        onRenameMember={() => {}}
+      />,
+    );
+    fireEvent.contextMenu(container.querySelector('[data-cv-node="implementer"]') as HTMLElement);
+    fireEvent.click(screen.getByText('重命名成员'));
+    // 点菜单项即打开重命名框（预填当前名）。
+    expect(screen.getByLabelText('显示名称')).toBeInTheDocument();
+  });
 });

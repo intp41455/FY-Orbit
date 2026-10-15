@@ -49,7 +49,8 @@ interface NodeGeom { x: number; y: number; w: number; h: number }
 const COORD_W = 240;
 const MEMBER_W = 230;
 const VERIFIER_W = 200;
-const MEMBER_GAP_Y = 150;
+// 同列纵向间隔：实测节点内容高约 227px，150 会重叠 62px；取 250 留呼吸。
+const MEMBER_GAP_Y = 250;
 const MEMBER_TOP = 60;
 const VERIFIER_KEY = '__verifier__';
 
@@ -85,6 +86,15 @@ export function TeamCanvasGraph({
   const [panning, setPanning] = useState(false);
   const [renameTarget, setRenameTarget] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // ---- 重命名状态机：“名称未变化”必须是一个可解释的状态，而不是静默空转。
+  // 旧实现先关闭弹窗、再判断新名是否等于当前名；条件不成立时既不改名、
+  // 也没有任何提示 —— 用户看到的就是“点了没反应”。
+  const renameCurrentTitle = renameTarget
+    ? memberViews.find((m) => m.role === renameTarget)?.title ?? ''
+    : '';
+  const renameNextTitle = renameValue.trim();
+  const renameUnchanged = renameTarget != null && renameNextTitle === renameCurrentTitle;
+  const renameBlank = renameNextTitle.length === 0;
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; role: string } | null>(null);
   const dragRef = useRef<{ mode: 'pan' | null; start: Pt; orig: Pt } | null>(null);
   const suppressClickRef = useRef(false);
@@ -223,14 +233,20 @@ export function TeamCanvasGraph({
     if (!c) return out;
     const v = layout[VERIFIER_KEY];
     if (!v) return out;
+    // 连线取实测高度（sizeMap），回落布局高度：节点内容高于 140 时，
+    // 端点仍打在卡片真实中线而非 140 盒中线。
+    const hOf = (key: string, fallback: number) => sizeMap[key]?.h ?? fallback;
 
     for (const m of members) {
       const g = layout[m.role];
       if (!g) continue;
       const isRework = m.state === 'waiting_rework';
+      const gh = hOf(m.role, g.h);
+      const ch = hOf(coordRole, c.h);
+      const vh = hOf(VERIFIER_KEY, v.h);
       // 协调者 → 成员：水平 S 曲线
-      const from: Pt = { x: c.x + c.w, y: c.y + c.h / 2 };
-      const to: Pt = { x: g.x, y: g.y + g.h / 2 };
+      const from: Pt = { x: c.x + c.w, y: c.y + ch / 2 };
+      const to: Pt = { x: g.x, y: g.y + gh / 2 };
       const mx = (from.x + to.x) / 2;
       out.push({
         key: `d-${m.role}`,
@@ -241,8 +257,8 @@ export function TeamCanvasGraph({
         from, to,
       });
       // 成员 → 验证节点
-      const f2: Pt = { x: g.x + g.w, y: g.y + g.h / 2 };
-      const t2: Pt = { x: v.x, y: v.y + v.h / 2 };
+      const f2: Pt = { x: g.x + g.w, y: g.y + gh / 2 };
+      const t2: Pt = { x: v.x, y: v.y + vh / 2 };
       const mx2 = (f2.x + t2.x) / 2;
       out.push({
         key: `u-${m.role}`,
@@ -254,11 +270,11 @@ export function TeamCanvasGraph({
       });
     }
     return out;
-  }, [layout, members, coordRole]);
+  }, [layout, members, coordRole, sizeMap]);
 
   // ---- 箭头 marker ----
   const markerColors: Record<string, string> = {
-    'cv-edge--idle': 'var(--ui-line-1)',
+    'cv-edge--idle': 'var(--ui-edge-idle)',
     'cv-edge--running': 'var(--ui-st-running)',
     'cv-edge--complete': 'var(--ui-st-complete)',
     'cv-edge--waiting': 'var(--ui-st-waiting)',
@@ -460,12 +476,11 @@ export function TeamCanvasGraph({
             onClick={(e) => e.stopPropagation()}
             onSubmit={(e) => {
               e.preventDefault();
-              const v = renameValue.trim();
               const role = renameTarget;
+              // 留空 / 与当前名一致：不关闭弹窗、不提交，把原因留在用户眼前。
+              if (!role || renameBlank || renameUnchanged) return;
               setRenameTarget(null);
-              if (v && role && v !== memberViews.find((m) => m.role === role)?.title) {
-                onRenameMember(role, v.slice(0, 200));
-              }
+              onRenameMember(role, renameNextTitle.slice(0, 200));
             }}
           >
             <p className="ui-panel-title">重命名成员</p>
@@ -483,6 +498,11 @@ export function TeamCanvasGraph({
             <p className="ui-hint">
               改名会生成新的计划版本；在途批次保持其冻结模型。
             </p>
+            {renameUnchanged && (
+              <p className="ui-hint" role="status" data-testid="cv-rename-unchanged">
+                名称与当前一致，无需改名；请先修改「显示名称」。
+              </p>
+            )}
             <div className="cv-modal-actions">
               <button
                 type="button"
@@ -491,7 +511,18 @@ export function TeamCanvasGraph({
               >
                 取消
               </button>
-              <button type="submit" className="ui-btn ui-btn--primary ui-btn--sm">
+              <button
+                type="submit"
+                className="ui-btn ui-btn--primary ui-btn--sm"
+                disabled={renameBlank || renameUnchanged}
+                title={
+                  renameBlank
+                    ? '请输入显示名称'
+                    : renameUnchanged
+                      ? '名称未变化，无需改名'
+                      : undefined
+                }
+              >
                 <LineIcon name="check" size={14} /> 确认改名
               </button>
             </div>
@@ -520,6 +551,20 @@ export function TeamCanvasGraph({
           </button>
           <button type="button" className="ui-btn ui-btn--sm ui-btn--block" onClick={() => { onSelectRole(contextMenu.role); setContextMenu(null); }}>
             <LineIcon name="history" size={16} /> 查看批次历史
+          </button>
+          {/* 可发现性：改名此前只藏在“双击节点”，界面上没有任何入口，
+              用户无从得知。这里补一个显式菜单项；双击仍保留。 */}
+          <button
+            type="button"
+            className="ui-btn ui-btn--sm ui-btn--block"
+            onClick={() => {
+              const m = memberViews.find((x) => x.role === contextMenu.role);
+              setRenameValue(m?.title || contextMenu.role);
+              setRenameTarget(contextMenu.role);
+              setContextMenu(null);
+            }}
+          >
+            <LineIcon name="edit" size={16} /> 重命名成员
           </button>
           <button
             type="button"

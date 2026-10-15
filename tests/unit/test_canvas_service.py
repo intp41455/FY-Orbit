@@ -1483,3 +1483,28 @@ def test_cancel_subtask_releases_budget_and_confirms_process_tree_killed(
     assert cancel_events[0]["details"]["process_tree_killed"] is True
 
 
+def test_snapshot_includes_pending_adapter_dispatch(
+    canvas_service: CanvasService, owner: Actor
+) -> None:
+    """P1-6 回归：派发（pending_adapter）后快照的派发记录与事件时间线一致。
+
+    快照的 dispatches 必须包含刚派发的记录（计数 +1），不能出现
+    “事件里有 task.planned、派发记录仍显示 0”的矛盾。
+    """
+    root_task = create_task(canvas_service.session, owner, task_id="task-snap-01",
+                            domain="personal")
+    inst = canvas_service.create_instance(
+        owner, project_name="快照一致性", template_id="personal")
+    rec = canvas_service.dispatch_subtask(
+        actor=owner, instance_id=inst.id, root_task_id=root_task.id,
+        worker_id="WorkBuddy", goal="快照冒烟验证", budget_slice=0.05)
+    assert rec.state == "pending_adapter"
+    canvas_service.session.commit()
+
+    snap = canvas_service.get_snapshot(owner, inst.id)
+    goals = [d["goal"] for d in snap["dispatches"]]
+    assert goals == ["快照冒烟验证"]
+    planned = [e for e in snap["events"] if e["event_type"] == "task.planned"]
+    assert len(planned) == 1
+
+

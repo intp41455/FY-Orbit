@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../../api/teams', () => ({
   teamsApi: {
@@ -61,5 +61,40 @@ describe('CanvasTeamView 同名团队页签', () => {
     // 不重名的不加后缀。
     const solo = screen.getByRole('button', { name: /^研究团队/ });
     expect(solo.textContent).not.toContain('·');
+  });
+
+  it('图例按钮可开关状态图例（非摆设）', async () => {
+    const snap = {
+      team: {
+        id: 't-legend', name: '图例团队', mode: 'system_managed', state: 'draft',
+        version: 1, plan_version: 1, root_task_id: null, canvas_instance_id: null,
+        coordinator_role: 'coordinator',
+        default_binding: {}, budget_ref: {}, permission_ref: {},
+        members: [{ role: 'coordinator', title: '协调者', agent_host: 'find_yourself', depends_on: [] }],
+        last_change_reason: '', last_changed_by: '', real_model_configured: false,
+        started_at: null,
+      },
+      members: [],
+      events: [],
+      validation: {
+        team_id: 't-legend', version: 1, state: 'draft', can_start: true,
+        blockers: [], warnings: [], real_model_configured: false,
+      },
+    };
+    api.list.mockResolvedValue({
+      items: [{ ...summary('t-legend', '图例团队') }],
+      count: 1,
+    });
+    api.get.mockResolvedValue(snap);
+    render(<CanvasTeamView />);
+    const btn = await screen.findByRole('button', { name: '图例' });
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(screen.getByText('已完成')).toBeInTheDocument();
+    });
+    fireEvent.click(btn);
+    await waitFor(() => {
+      expect(screen.queryByText('已完成')).not.toBeInTheDocument();
+    });
   });
 });

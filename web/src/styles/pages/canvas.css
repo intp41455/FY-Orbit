@@ -259,7 +259,7 @@
   stroke-width: 1.8;
   transition: stroke var(--ui-t) var(--ui-ease), opacity var(--ui-t) var(--ui-ease);
 }
-.cv-edge--idle      { stroke: var(--ui-line-1); }
+.cv-edge--idle      { stroke: var(--ui-edge-idle); stroke-dasharray: 4 3; }
 .cv-edge--running   { stroke: var(--ui-st-running); }
 .cv-edge--complete  { stroke: var(--ui-st-complete); }
 .cv-edge--waiting   { stroke: var(--ui-st-waiting); stroke-dasharray: 5 4; }

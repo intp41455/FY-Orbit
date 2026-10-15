@@ -188,6 +188,8 @@ describe('LegacyCanvas (05 功能规格)', () => {
         goal: '新增日程同步',
       }));
     });
+    // 成功后有明确提示（此前悄无声息，只能靠计数猜）。
+    expect(await screen.findByTestId('dispatch-notice')).toHaveTextContent('已派发给');
   });
 
   it('rejects subtask dispatch exceeding 0.50 budget', async () => {
@@ -216,5 +218,23 @@ describe('LegacyCanvas (05 功能规格)', () => {
 
     expect(await screen.findByText(/单次派发预算切片最高不可超过 \$0\.50/)).toBeInTheDocument();
     expect(canvasApi.dispatchSubtask).not.toHaveBeenCalled();
+  });
+
+  it('拓扑 worker 卡片可点即设为派发目标（P1-8）', async () => {
+    vi.mocked(canvasApi.templates).mockResolvedValue({ items: mockTemplates });
+    vi.mocked(canvasApi.connectors).mockResolvedValue({ items: mockConnectors });
+    vi.mocked(canvasApi.listInstances).mockResolvedValue({ items: [mockInstance], count: 1 });
+    vi.mocked(canvasApi.getSnapshot).mockResolvedValue(mockSnapshot);
+
+    const user = userEvent.setup();
+    render(<LegacyCanvas />);
+
+    const card = await screen.findByTestId('topo-worker-豆包');
+    expect(card.getAttribute('aria-pressed')).toBe('false');
+    await user.click(card);
+    expect(card.getAttribute('aria-pressed')).toBe('true');
+    // 与下方派发表单的 select 同源：切卡即切目标（先展开表单再断言）。
+    await user.click(screen.getByRole('button', { name: '派发子任务' }));
+    expect(screen.getByLabelText(/目标执行 Worker/)).toHaveValue('豆包');
   });
 });

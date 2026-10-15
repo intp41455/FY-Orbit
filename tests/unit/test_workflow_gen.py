@@ -735,3 +735,35 @@ def test_dsl_canvas_tests_remain_green():
     result = run_dsl(VALID_DSL)
     assert result.status == "succeeded"
     assert result.output == "处理：示例行"
+
+
+def test_generate_with_real_budget_creates_gen_task(session) -> None:
+    """P0-7 回归：一句话生成走真实预算时，不得因预算任务行缺失而 Task not found。
+
+    generate 用 task_id=workflow-gen:{owner} 调 gateway → budget.reserve
+    要求 Task 行存在；服务必须自建该归集任务行（幂等复用），而不是让
+    NotFound("Task not found") 漏到界面上。
+    """
+    import json
+
+    from find_yourself.budget import BudgetService
+    from find_yourself.services.audit import AuditService
+
+    audit = AuditService(session)
+    budget = BudgetService(session, audit)
+    settings = Settings(
+        session_secret="x" * 32,
+        model_api_key="test-key",
+        model_base_url="http://127.0.0.1:9",
+        model_name="gpt-4o-mini",
+    )
+    stub = _StubProvider([json.dumps(VALID_DSL)])
+    gateway = ModelGateway(settings, budget=budget, provider=stub)
+    svc = WorkflowGenService(settings=settings, budget=budget, model_gateway=gateway)
+
+    out = svc.generate(Actor.owner("owner-gen-1", csrf_token=""), prompt="每天读文件并发邮件")
+
+    assert out["dsl"]["nodes"]
+    task_id = "workflow-gen:owner-gen-1"
+    from find_yourself.db.models import Task
+    assert session.get(Task, task_id) is not None

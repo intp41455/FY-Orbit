@@ -416,6 +416,33 @@ class WorkflowGenService:
     def _model_name(self) -> str:
         return getattr(self._settings, "model_name", None) or "gpt-4o-mini"
 
+    def _ensure_gen_task(self, actor: Actor, task_id: str) -> None:
+        """幂等自建一句话生成的预算归集任务行（无 session/无 budget 时跳过）。
+
+        gateway 的 budget.reserve 只认已存在的 Task 行；归集行按 owner 稳定
+        复用（id 即 task_id），goal 写明用途，绝不伪装成用户业务任务。
+        """
+        budget = self._budget
+        session = getattr(budget, "s", None) if budget is not None else None
+        if session is None:
+            return
+        from datetime import timedelta
+
+        from ..db.models import Task
+
+        if session.get(Task, task_id) is not None:
+            return
+        session.add(Task(
+            id=task_id,
+            owner_id=actor.owner_id or "anonymous",
+            goal="一句话生成工作流的模型费用归集（系统自建，非用户业务任务）",
+            domain="work",
+            status="queued",
+            deadline=datetime.now(timezone.utc) + timedelta(days=365),
+            idempotency_key=f"gen-task-{task_id}",
+        ))
+        session.flush()
+
     def model_configured(self) -> bool:
         """True 仅当真的有可调用的provider（驱动前端按钮的诚实态）。"""
         try:
@@ -449,6 +476,10 @@ class WorkflowGenService:
         gateway = self._gateway()
         model = self._model_name()
         task_id = f"workflow-gen:{(actor.owner_id or actor.service_id or 'anonymous')}"
+        # P0-7：gateway 调 budget.reserve(task_id) 要求 Task 行存在；
+        # 一句话生成的归集任务行此前从未创建，线上直接 Task not found。
+        # 这里幂等自建（同 owner 复用同一行），费用归集有处可落。
+        self._ensure_gen_task(actor, task_id)
 
         feedback: str | None = None
         rejected: str | None = None
