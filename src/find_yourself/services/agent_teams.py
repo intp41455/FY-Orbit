@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..adapters.native_subagents import HostCapabilities, NativeSubAgentAdapter
 from ..config import Settings
-from ..db.models import BudgetReservation, Task
+from ..db.models import BudgetReservation, ServiceIdentity, Task
 from ..db.team_models import (
     AgentControlCapabilities,
     AgentInstance,
@@ -261,6 +261,67 @@ class AgentTeamService:
                      "changed": sorted(patch.keys()), "reason": reason},
         )
         return team
+
+    def join_external(
+        self,
+        actor: Actor,
+        team_id: str,
+        *,
+        expected_version: int,
+        role: str,
+        agent_host: str,
+        service_id: str,
+        title: str = "",
+        depends_on: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """B6 上车仪式：外部 Agent 加入团队（身份登记 + 作用域绑定）。
+
+        owner 邀请制：只有 owner 能签发上车（service 自助上车不在 v1 范围——
+        匿名 Agent 自己给自己发角色等于没有门）。
+        身份必绑：``service_id`` 必须指向存在且 active 的 ServiceIdentity，
+        登记 who（service 名/kind）进成员条目；role 唯一 + 格式与建队同门；
+        depends_on 无环；版本乐观锁；TeamEvent 留痕（含 service 身份，不含密钥）。
+        """
+        actor.require_owner()
+        team = self.get_team(actor, team_id)
+        if team.version != expected_version:
+            raise Conflict(
+                f"Team {team_id} is at version {team.version}; expected {expected_version}"
+            )
+        ident = self.session.get(ServiceIdentity, service_id)
+        if ident is None:
+            raise NotFound(f"service identity 不存在：{service_id}")
+        if ident.state != "active":
+            raise ValidationFailed(
+                "service_not_active", f"service 身份非 active（{ident.state}），拒绝上车")
+        if ident.lease_expires_at is not None and ident.lease_expires_at <= utcnow():
+            raise ValidationFailed("service_expired", "service 身份租约已过期，拒绝上车")
+
+        member = self._normalize_member({
+            "role": role, "title": title or role, "agent_host": agent_host,
+            "depends_on": depends_on or [],
+        })
+        roles = [m["role"] for m in team.members]
+        if member["role"] in roles:
+            raise ValidationFailed("duplicate_role", f"Duplicate member roles: {member['role']}")
+        member["external"] = True
+        member["service_id"] = ident.id
+        member["service_name"] = ident.name
+        member["service_kind"] = ident.kind
+        member["joined_at"] = utcnow().isoformat()
+        self._assert_no_cycle([*team.members, member], "member dependencies")
+        team.members = [*team.members, member]
+        team.version += 1
+        team.last_change_reason = f"external join: {member['role']}@{agent_host}"
+        team.last_changed_by = actor.owner_id
+        self.session.flush()
+        self._emit_event(
+            actor, team, "team.member_joined",
+            details={"role": member["role"], "agent_host": member["agent_host"],
+                     "service_id": ident.id, "service_name": ident.name,
+                     "service_kind": ident.kind, "version": team.version},
+        )
+        return member
 
     def rename_member(
         self,

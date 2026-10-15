@@ -335,3 +335,25 @@ def test_member_rename_version_conflict_409(client, auth):
         headers=auth,
     )
     assert r.status_code == 409, r.text
+
+
+def test_join_requires_csrf(client, auth):
+    team_id = create_team(client, auth).json()["team"]["id"]
+    r = client.post(
+        f"/api/teams/{team_id}/join",
+        json={"expected_version": 1, "role": "spy",
+              "agent_host": "dify", "service_id": "x"},
+    )
+    assert r.status_code in (401, 403), r.text
+
+
+def test_join_unknown_service_404(client, auth):
+    snap = create_team(client, auth).json()
+    team_id = snap["team"]["id"]
+    r = client.post(
+        f"/api/teams/{team_id}/join",
+        json={"expected_version": snap["team"]["version"], "role": "spy",
+              "agent_host": "dify", "service_id": "no-such-service"},
+        headers=auth,
+    )
+    assert r.status_code == 404, r.text

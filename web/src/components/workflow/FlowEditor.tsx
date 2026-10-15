@@ -732,6 +732,30 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
     setNotice('已载入 DSL');
   }, [dslText, dslTextValue, loadDoc]);
 
+  // --- 从脚本载入（G4-c 反向编辑）：手改后的 Python 经 import-code 换回
+  // DSL 再载入画布。import-code 服务端已做解析 + 全量编译（含环检测），
+  // 这里只负责诚实透出失败，不二次编造位置。
+  const loadFromScript = useCallback(async () => {
+    setError(null);
+    setNotice('');
+    const script = exported?.script ?? '';
+    if (!script.trim()) {
+      setError({ message: '脚本为空：请先导出或粘贴 Python 脚本。', detail: '' });
+      return;
+    }
+    setBusy(true);
+    try {
+      const { dsl } = await dslCanvasApi.importCode(script);
+      loadDoc(dsl);
+      setNotice('已从脚本载入画布');
+    } catch (e) {
+      const err = e as { body?: { message?: string }; message?: string };
+      setError({ message: err.body?.message ?? err.message ?? '从脚本载入失败', detail: '' });
+    } finally {
+      setBusy(false);
+    }
+  }, [exported, loadDoc]);
+
   // --- 导出脚本 ------------------------------------------------------------ //
   const doExport = useCallback(async () => {
     setBusy(true);
@@ -870,6 +894,15 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
             data-testid="flow-export-script"
             aria-label="导出的 Python 脚本"
           />
+          <div className="row" style={{ marginTop: '0.4rem' }}>
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => void loadFromScript()}
+              disabled={busy || !exported.script.trim()}
+              data-testid="flow-load-script"
+            >{busy ? '载入中…' : '从脚本载入画布'}</button>
+          </div>
         </details>
       )}
     </>

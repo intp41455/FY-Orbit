@@ -49,6 +49,15 @@ class UpdateTeamRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class JoinTeamRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    role: str = Field(min_length=1, max_length=64)
+    agent_host: str = Field(default="external", max_length=64)
+    service_id: str = Field(min_length=1, max_length=64)
+    title: str = Field(default="", max_length=200)
+    depends_on: list[str] = Field(default_factory=list)
+
+
 class MemberBindingRequest(BaseModel):
     provider_id: str = Field(default="", max_length=64)
     model_id: str = Field(default="", max_length=160)
@@ -217,6 +226,27 @@ async def update_team(
     )
     svc.session.commit()
     return svc.teams.get_snapshot(actor, team_id)
+
+
+@router.post("/{team_id}/join", status_code=status.HTTP_201_CREATED)
+async def join_team(
+    team_id: str,
+    body: JoinTeamRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """B6 上车仪式：owner 为外部 Agent 登记身份并加入团队。
+
+    ``service_id`` 指向已签发的 service 身份（存在且 active），登记 who 进
+    成员条目；role 唯一、depends_on 无环、版本乐观锁（与建队同门）。
+    """
+    member = svc.teams.join_external(
+        actor, team_id, expected_version=body.expected_version,
+        role=body.role, agent_host=body.agent_host, service_id=body.service_id,
+        title=body.title, depends_on=body.depends_on,
+    )
+    svc.session.commit()
+    return {"member": member, "team_id": team_id}
 
 
 class MemberRenameRequest(BaseModel):

@@ -8,7 +8,7 @@ vi.mock('../../api/dslCanvas', async (importOriginal) => ({
   // B5 · 单一真源：展开真模块，保留 DSL_NODE_TYPES 等常量不被 mock 掉，
   // 只替换网络面 dslCanvasApi。
   ...(await importOriginal<typeof import('../../api/dslCanvas')>()),
-  dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn(), preview: vi.fn() },
+  dslCanvasApi: { validate: vi.fn(), schema: vi.fn(), validateIr: vi.fn(), preview: vi.fn(), importCode: vi.fn() },
 }));
 vi.mock('../../api/workflowGen', () => ({
   workflowGenApi: { exportScript: vi.fn() },
@@ -489,5 +489,80 @@ describe('FlowEditor · G4-d 内联调参即时重算', () => {
     await screen.findByTestId('flow-palette-input');
     await new Promise((r) => setTimeout(r, 500));
     expect(dslCanvasApi.preview).not.toHaveBeenCalled();
+  });
+});
+
+// =========================================================================== //
+// 5. G4-c · 反向编辑（代码改动回写画布）
+//
+// 命题：导出的 Python 脚本手改后，点「从脚本载入画布」经 import-code 换回 DSL
+// 并载入画布；失败时如实报错、不动当前画布。终结“代码视图只读、改完回不去”。
+// =========================================================================== //
+describe('G4-c 从脚本载入画布', () => {
+  const IMPORTED_DSL: DslDocument = {
+    version: '1',
+    nodes: [
+      { id: 'imp-in', type: 'input', params: { kind: 'literal', value: 'x' } },
+      { id: 'imp-out', type: 'output', params: { format: 'text' } },
+    ],
+    edges: [{ from: 'imp-in', to: 'imp-out' }],
+  };
+
+  it('手改脚本经 import-code 换回并载入画布', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workflowGenApi.exportScript).mockResolvedValue({
+      filename: 'fy_workflow.py',
+      language: 'python',
+      requires_python: '>=3.9',
+      base_url_placeholder: '{{FY_BASE_URL}}',
+      source_prompt: 'p',
+      generated_at: '2026-10-04T00:00:00Z',
+      script: 'print("orig")',
+    });
+    vi.mocked(dslCanvasApi.importCode).mockResolvedValue({
+      dsl: IMPORTED_DSL,
+      topological_order: ['imp-in', 'imp-out'],
+    });
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    await screen.findByTestId('flow-node-in1');
+
+    await user.click(screen.getByTestId('flow-export'));
+    const scriptBox = await screen.findByTestId('flow-export-script');
+    await user.clear(scriptBox);
+    await user.type(scriptBox, 'print("edited")');
+    await user.click(screen.getByTestId('flow-load-script'));
+
+    await waitFor(() =>
+      expect(dslCanvasApi.importCode).toHaveBeenCalledWith('print("edited")'),
+    );
+    // 画布换上导入的图（旧节点消失，新节点出现）。
+    expect(await screen.findByTestId('flow-node-imp-in')).toBeInTheDocument();
+    expect(screen.queryByTestId('flow-node-in1')).toBeNull();
+    expect(screen.getByTestId('flow-notice')).toHaveTextContent('已从脚本载入画布');
+  });
+
+  it('import-code 失败时如实报错且不动当前画布', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workflowGenApi.exportScript).mockResolvedValue({
+      filename: 'fy_workflow.py',
+      language: 'python',
+      requires_python: '>=3.9',
+      base_url_placeholder: '{{FY_BASE_URL}}',
+      source_prompt: 'p',
+      generated_at: '2026-10-04T00:00:00Z',
+      script: 'print("orig")',
+    });
+    vi.mocked(dslCanvasApi.importCode).mockRejectedValue(
+      new ApiError(422, { code: 'validation_failed', message: 'parse 炸了' }, 'bad'),
+    );
+    render(<FlowEditor initialDoc={VALID_DSL} />);
+    await screen.findByTestId('flow-node-in1');
+
+    await user.click(screen.getByTestId('flow-export'));
+    await user.click(screen.getByTestId('flow-load-script'));
+
+    expect((await screen.findByTestId('flow-error')).textContent).toContain('parse 炸了');
+    // 当前画布原样保留。
+    expect(screen.getByTestId('flow-node-in1')).toBeInTheDocument();
   });
 });
