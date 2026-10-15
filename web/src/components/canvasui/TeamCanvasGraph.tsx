@@ -145,6 +145,11 @@ export function TeamCanvasGraph({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layout, zoom, snapshot, members.length]);
 
+  // ---- 内层显式尺寸：子元素全是绝对定位，内层自身会塌成 0x0，
+  // edge svg 按百分比取盒就会同样 0x0 —— 连线全部不可见（节点因 overflow
+  // 可见照常显示，用户看到的就是“有节点没连线”）。高度按成员数展开。
+  const contentH = MEMBER_TOP + Math.max(0, members.length - 1) * MEMBER_GAP_Y + 220;
+
   // ---- 滚轮缩放 ----
   useEffect(() => {
     const el = wrapRef.current;
@@ -391,7 +396,11 @@ export function TeamCanvasGraph({
     >
       <div
         className="cv-canvas-inner"
-        style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        style={{
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          width: CANVAS_W,
+          height: contentH,
+        }}
       >
         <svg className="cv-connections" style={{ overflow: 'visible' }}>
           <defs>

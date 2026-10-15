@@ -108,6 +108,12 @@ export function MemberDrawer({
         )}
 
         <label className="ui-label" style={{ marginTop: 8 }} htmlFor="cv-node-model">请求模型（节点覆盖）</label>
+        {models.length === 0 ? (
+          <p className="ui-error-text" data-testid="cv-node-model-empty">
+            模型目录为空，无可选模型：先去设置页接入供应商并配置模型，再回来换 Agent。
+            这不是抽屉坏了，是没有可换的东西。
+          </p>
+        ) : (
         <select
           id="cv-node-model"
           className="ui-select"
@@ -122,6 +128,7 @@ export function MemberDrawer({
             </option>
           ))}
         </select>
+        )}
         <p className="ui-hint">
           继承来源：{SCOPE_LABEL[binding?.inherited_from ?? member.inherited_from] ?? '未解析'}
           {binding && binding.chain.length > 0 && (

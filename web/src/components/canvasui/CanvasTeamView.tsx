@@ -373,18 +373,22 @@ export function CanvasTeamView() {
           <div className="tabs-container cv-team-tabs" role="group" aria-label="团队切换">
             {teams.map((t) => {
               const tm = statusMeta(t.state);
+              // 同名团队区分：模板默认名会导致一排相同的页签（横滚看起来内容重复）。
+              // 重名时后缀 id 前 6 位；不重名保持干净。
+              const dup = teams.filter((x) => x.name === t.name).length > 1;
+              const label = dup ? `${t.name} · ${t.id.slice(0, 6)}` : t.name;
               return (
                 <button
                   key={t.id}
                   type="button"
                   aria-pressed={snapshot?.team.id === t.id}
-                  aria-label={`${t.name}，状态${tm.text}`}
+                  aria-label={`${label}，状态${tm.text}`}
                   className={`cv-team-tab ${snapshot?.team.id === t.id ? 'is-active' : ''}`}
                   onClick={() => void openTeam(t.id)}
                 >
                   <span className={`ui-dot ${t.state === 'running' ? 'ui-dot--running' : ''}`} />
                   <LineIcon name={tm.icon} size={16} />
-                  {t.name}
+                  {label}
                 </button>
               );
             })}
