@@ -5,6 +5,7 @@ import { authApi } from '../api/auth';
 import { useOptionalAuth } from '../auth/AuthContext';
 import type {
   ModelCatalogSummary,
+  ModelCredentialsStatus,
   ProviderHealthInfo,
   ProviderId,
 } from '../api/models';
@@ -581,6 +582,25 @@ function ModelAccessCard() {
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProviderHealthInfo | null>(null);
   const [probeError, setProbeError] = useState<string | null>(null);
+  // D06 BYOK 界面持久化：服务端加密存储状态（脱敏）与保存/删除。
+  const [credStatus, setCredStatus] = useState<ModelCredentialsStatus | null>(null);
+  const [credMsg, setCredMsg] = useState<string | null>(null);
+  const [savingCred, setSavingCred] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    modelsApi
+      .credentialsStatus()
+      .then((s) => {
+        if (alive) setCredStatus(s);
+      })
+      .catch(() => {
+        if (alive) setCredStatus(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const serverProvider = useMemo<ModelDraft | null>(
     () => (catalog ? draftFromCatalog(catalog) : null),
@@ -623,6 +643,42 @@ function ModelAccessCard() {
   function saveDraft() {
     writeDraft(current);
     setDraftMsg('草稿已保存到本机浏览器（不含密钥）。请按下方片段写入项目根目录 .env 并重启服务后生效——v1 不做运行时热改配置。');
+  }
+
+  // D06：凭证存服务端（hub Fernet 加密），保存后网关即时生效、无需重启。
+  // 存完即清空输入框里的密钥（不让 secret 在 DOM state 里久留）。
+  async function saveCredentials() {
+    setSavingCred(true);
+    setCredMsg(null);
+    try {
+      const st = await modelsApi.saveCredentials({
+        provider,
+        base_url: baseUrl,
+        api_key: apiKey,
+        model,
+      });
+      setCredStatus(st);
+      setApiKey('');
+      setCredMsg('已保存到服务端加密存储，网关即时生效（无需重启）。密钥加密保存、不回显。');
+    } catch (e) {
+      setCredMsg(`保存失败：${errorMessage(e)}`);
+    } finally {
+      setSavingCred(false);
+    }
+  }
+
+  async function forgetCredentials() {
+    setSavingCred(true);
+    setCredMsg(null);
+    try {
+      await modelsApi.forgetCredentials();
+      setCredStatus(await modelsApi.credentialsStatus());
+      setCredMsg('服务端凭证已删除，回落到 .env 配置。');
+    } catch (e) {
+      setCredMsg(`删除失败：${errorMessage(e)}`);
+    } finally {
+      setSavingCred(false);
+    }
   }
 
   function addFallback() {
@@ -684,7 +740,7 @@ function ModelAccessCard() {
           autoComplete="off"
           value={apiKey}
           disabled={!requiresKey}
-          placeholder={requiresKey ? '仅用于生成 .env 片段，不会上传也不会保存' : '本地推理无需密钥'}
+          placeholder={requiresKey ? '保存到服务端时经加密通道传输，不回显' : '本地推理无需密钥'}
           onChange={(e) => setApiKey(e.target.value)}
         />
         {!requiresKey && (
@@ -744,7 +800,34 @@ function ModelAccessCard() {
           {probing ? '探测中…' : '测试连接'}
         </button>
         <button data-testid="save-draft" onClick={saveDraft}>保存草稿</button>
+        <button
+          data-testid="save-credentials"
+          disabled={savingCred || (!baseUrl.trim() && !apiKey)}
+          onClick={() => void saveCredentials()}
+        >
+          {savingCred ? '保存中…' : '保存到服务端'}
+        </button>
+        {credStatus?.configured && (
+          <button
+            className="danger"
+            data-testid="forget-credentials"
+            disabled={savingCred}
+            onClick={() => void forgetCredentials()}
+          >
+            删除服务端凭证
+          </button>
+        )}
       </div>
+
+      <p className="muted" data-testid="credentials-status">
+        {credStatus === null && '服务端凭证状态加载中…'}
+        {credStatus && !credStatus.configured && '服务端未存凭证：当前走 .env 配置。'}
+        {credStatus?.configured && (
+          <>服务端已存：{credStatus.provider || '（未填 provider）'} · {credStatus.base_url || '（未填地址）'}
+          {credStatus.has_api_key ? ' · 密钥已加密保存（不回显）' : ' · 无密钥（本地推理）'}</>
+        )}
+      </p>
+      {credMsg && <div className="notice info" data-testid="cred-msg" style={{ marginTop: '0.6rem' }}>{credMsg}</div>}
 
       <p className="small-text">
         提示：探测发生在服务端，测的是它当前生效的配置，不是本页尚未写入 .env 的草稿。

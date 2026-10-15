@@ -118,7 +118,7 @@ class BaiduPanSource(UniversalCloudDriveConnector):
         """
         if key not in ("access_token", "refresh_token"):
             return ""
-        from . import secret_store  # 本地导入：sources/__init__ 装载完成后才可用
+        from .store import secret_store  # N7 V1-4：实例已下沉，不再回指包 __init__
 
         stored = secret_store.get("baidu_pan").get(key, "")
         if stored:
@@ -150,7 +150,7 @@ class BaiduPanSource(UniversalCloudDriveConnector):
     def persist_credentials(self, tokens: Mapping[str, str], store: Any | None = None) -> dict[str, bool]:
         """把 token 写入 SECRETS 门禁（hub Fernet 加密存储）。明文不落日志、不回显。"""
         if store is None:
-            from . import secret_store as store  # noqa: N813 — 本地导入
+            from .store import secret_store as store  # noqa: N813 — N7 V1-4 已下沉
         fields = {k: str(tokens.get(k) or "") for k in ("access_token", "refresh_token")}
         if not any(fields.values()):
             raise ValidationFailed(

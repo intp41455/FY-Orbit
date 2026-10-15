@@ -17,6 +17,9 @@ vi.mock('../api/models', () => ({
   modelsApi: {
     catalog: vi.fn(),
     healthCheck: vi.fn(),
+    credentialsStatus: vi.fn(),
+    saveCredentials: vi.fn(),
+    forgetCredentials: vi.fn(),
   },
 }));
 
@@ -117,6 +120,10 @@ beforeEach(() => {
   vi.mocked(dataApi.settings).mockResolvedValue(SETTINGS as never);
   vi.mocked(modelsApi.catalog).mockResolvedValue(CATALOG);
   vi.mocked(modelsApi.healthCheck).mockResolvedValue(HEALTH_OK);
+  vi.mocked(modelsApi.credentialsStatus).mockResolvedValue({
+    configured: false, provider: '', base_url: '', model: '',
+    has_api_key: false, storage: '', persist_restart: false,
+  });
 });
 
 describe('SettingsPage 模型接入卡 (W4)', () => {
@@ -248,5 +255,35 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText('系统配置状态')).toBeInTheDocument());
     expect(screen.getByText('未配置（付费调用关闭）')).toBeInTheDocument();
+  });
+
+  it('D06：保存到服务端调 saveCredentials，成功后清空密钥框并显示状态', async () => {
+    const user = userEvent.setup();
+    vi.mocked(modelsApi.saveCredentials).mockResolvedValue({
+      configured: true, provider: 'openai_compat', base_url: 'https://api.example.com/v1',
+      model: 'gpt-4o-mini', has_api_key: true, storage: 'hub_fernet', persist_restart: true,
+    });
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
+
+    await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');
+    await user.type(screen.getByTestId('base-url-input'), 'https://api.example.com/v1');
+    await user.type(screen.getByTestId('api-key-input'), 'sk-test-123');
+    await user.click(screen.getByTestId('save-credentials'));
+
+    await waitFor(() =>
+      expect(modelsApi.saveCredentials).toHaveBeenCalledWith({
+        provider: 'openai_compat',
+        base_url: expect.stringContaining('https://api.example.com/v1'),
+        api_key: expect.stringContaining('sk-test-123'),
+        model: expect.anything(),
+      }),
+    );
+    // 密钥框已清空（secret 不在 DOM state 久留），状态行显示已存。
+    await waitFor(() =>
+      expect(screen.getByTestId('api-key-input')).toHaveValue(''),
+    );
+    expect(screen.getByTestId('credentials-status')).toHaveTextContent('服务端已存');
+    expect(screen.getByTestId('credentials-status')).toHaveTextContent('密钥已加密保存');
   });
 });

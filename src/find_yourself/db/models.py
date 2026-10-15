@@ -31,8 +31,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ..workflows.models import Stage as WorkflowStage
 from .base import Base
+from .stages import Stage as WorkflowStage  # N7 R5-1：L1 内部边（原反向导入 workflows.models）
 from .types import HASH64, ID, MONEY, TZDateTime, utcnow
 
 # ---------------------------------------------------------------------------
@@ -48,7 +48,7 @@ ATTEMPT_STATUSES = ("pending", "running", "succeeded", "failed", "cancelled")
 # 任务看板事件类别（A-任务看板-10 历史记录 + 03 进度变更留痕）。
 TASK_EVENT_KINDS = ("created", "status", "progress", "plan", "dependency")
 # Task.stage is the persisted orchestration checkpoint. Its allowed values are
-# **derived** from the workflow ``Stage`` enum (``workflows/models.py``) rather
+# **derived** from the ``Stage`` enum (``db/stages.py``, L1 single source) rather
 # than copied, so the DB CHECK and the workflow's own state machine can never
 # drift into two independent sources of truth. Order follows the enum's
 # declaration order.

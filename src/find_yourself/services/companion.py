@@ -31,6 +31,7 @@ from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .audit import AuditService
 from .errors import DomainError
+from .model_credentials import resolve_model_settings
 from .proposal import ProposalService
 
 CRISIS_KEYWORDS = [
@@ -83,7 +84,7 @@ class CompanionService:
                 "Set FY_MODEL_API_KEY and FY_MODEL_BASE_URL (OpenAI-compatible endpoint, "
                 "e.g. DeepSeek or a local Ollama) to enable real replies."
             )
-        self._model_gateway = ModelGateway(self._settings, self._budget)
+        self._model_gateway = ModelGateway(resolve_model_settings(self._settings), self._budget)
         return self._model_gateway
 
     def _model_name(self) -> str:

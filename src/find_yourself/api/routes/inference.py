@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from ...config import Settings
 from ...runtime.gateway import ModelGateway
 from ...services.actor import Actor
+from ...services.model_credentials import resolve_model_settings
 from ..deps import Services, csrf_protected, get_services, get_settings
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
@@ -30,7 +31,7 @@ async def complete(body: CompleteRequest,
                    actor: Actor = Depends(csrf_protected),
                    svc: Services = Depends(get_services),
                    settings: Settings = Depends(get_settings)) -> dict:
-    gw = ModelGateway(settings, svc.budget)
+    gw = ModelGateway(resolve_model_settings(settings), svc.budget)
     # Reaches require_configured -> ModelNotConfigured (503) when unconfigured.
     result = gw.complete(actor, task_id=body.task_id or "adhoc", model=body.model,
                          prompt=body.prompt, max_tokens=body.max_tokens)

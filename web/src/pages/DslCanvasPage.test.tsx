@@ -22,6 +22,7 @@ vi.mock('../api/dslCanvas', async (importOriginal) => ({
 
 import { workflowGenApi } from '../api/workflowGen';
 import { dslCanvasApi } from '../api/dslCanvas';
+import { writeDslHandoff } from '../api/dslHandoff';
 import { DslCanvasPage } from './DslCanvasPage';
 import type { DslDocument } from '../api/dslCanvas';
 
@@ -494,5 +495,29 @@ describe('N3 · 草稿持久化与版本冲突的用户可见行为', () => {
 
     expect(await screen.findByTestId('draft-error')).toHaveTextContent('读取草稿失败');
     expect(screen.getByTestId('draft-error')).toHaveTextContent('读不到草稿');
+  });
+
+  it('G4-k：开箱模板交接的文档在挂载时载入工坊（一次性消费）', async () => {
+    const user = userEvent.setup();
+    const handoffDoc: DslDocument = {
+      version: '1',
+      nodes: [
+        { id: 'tpl-in', type: 'input', params: { kind: 'literal', value: 't' } },
+        { id: 'tpl-out', type: 'output', params: { format: 'text' } },
+      ],
+      edges: [{ from: 'tpl-in', to: 'tpl-out' }],
+    };
+    writeDslHandoff(handoffDoc, '开箱模板:tpl-1');
+
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    // 文本页签的同源 JSON 里出现交接文档的节点（不是默认空图）。
+    await user.click(screen.getByTestId('tab-text'));
+    await user.click(screen.getByTestId('dsl-json-summary'));
+    const loaded = JSON.parse(screen.getByTestId('dsl-json').textContent ?? '{}');
+    expect(loaded.nodes.map((n: { id: string }) => n.id)).toEqual(['tpl-in', 'tpl-out']);
+    // 一次性消费：刷新不再重复载入（键已删）。
+    expect(sessionStorage.getItem('fy-orbit.dsl-handoff')).toBeNull();
   });
 });

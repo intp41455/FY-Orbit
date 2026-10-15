@@ -10,10 +10,13 @@ to validate the plain objects; the Temporal data converter only sees JSON.
 """
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# N7 R5-1：Stage 本体下沉 L1（db/stages.py），此处重导出——既有
+# ``from ..workflows.models import Stage`` 全网零改动。
+from ..db.stages import Stage  # noqa: F401 (re-export)
 
 
 class Strict(BaseModel):
@@ -24,18 +27,6 @@ class Strict(BaseModel):
 # Stages. The checkpoint key binds task/attempt/stage so LangGraph can resume
 # without re-running external side effects or opening new budgets.
 # ---------------------------------------------------------------------------
-class Stage(StrEnum):
-    queued = "queued"
-    requirements = "requirements"
-    planning = "planning"
-    execution = "execution"
-    awaiting_approval = "awaiting_approval"
-    awaiting_input = "awaiting_input"
-    reconciling = "reconciling"
-    review = "review"
-    completed = "completed"
-    failed = "failed"
-    cancelled = "cancelled"
 
 
 # Terminal stages do not drive further external work.

@@ -2,30 +2,6 @@
   "version": "1.0.0",
   "records": [
     {
-      "id": "R5|src/find_yourself/db/models.py|find_yourself.workflows.models",
-      "kind": "reverse_dep",
-      "rule": "R5",
-      "path": "src/find_yourself/db/models.py",
-      "detail": "L1 → L2 反向依赖：find_yourself.db.models → find_yourself.workflows.models",
-      "reason": "已知债务：L1 持久化模型 db/models.py 反向依赖 L2 workflows.models（R5）；解环时应把模型契约下沉 L1 或改依赖注入（three-layer-model §6、ADR-0001 D3）"
-    },
-    {
-      "id": "R5|src/find_yourself/db/workbench_models.py|find_yourself.services.hub",
-      "kind": "reverse_dep",
-      "rule": "R5",
-      "path": "src/find_yourself/db/workbench_models.py",
-      "detail": "L1 → L2 反向依赖：find_yourself.db.workbench_models → find_yourself.services.hub",
-      "reason": "已知债务：L1 持久化模型 db/workbench_models.py 反向依赖 L2 services.hub（R5）；解环时应改依赖注入或下沉契约（three-layer-model §6、ADR-0001 D3）"
-    },
-    {
-      "id": "V1|src/find_yourself/adapters/community_harness_adapter.py ⇄ src/find_yourself/services/hub/access.py|l2_cycle",
-      "kind": "l2_cycle",
-      "rule": "V1",
-      "path": "src/find_yourself/adapters/community_harness_adapter.py ⇄ src/find_yourself/services/hub/access.py",
-      "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/adapters/community_harness_adapter.py, src/find_yourself/services/hub/access.py",
-      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
-    },
-    {
       "id": "V1|src/find_yourself/adapters/mcp.py ⇄ src/find_yourself/services/hub/adapters.py ⇄ src/find_yourself/services/hub/connections.py ⇄ src/find_yourself/services/knowledge/__init__.py ⇄ src/find_yourself/services/knowledge/hub_bridge.py ⇄ src/find_yourself/services/tool_registry.py|l2_cycle",
       "kind": "l2_cycle",
       "rule": "V1",
@@ -39,14 +15,6 @@
       "rule": "V1",
       "path": "src/find_yourself/services/dsl_canvas.py ⇄ src/find_yourself/services/dsl_ir.py",
       "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/services/dsl_canvas.py, src/find_yourself/services/dsl_ir.py",
-      "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
-    },
-    {
-      "id": "V1|src/find_yourself/services/knowledge/sources/__init__.py ⇄ src/find_yourself/services/knowledge/sources/baidu_pan.py|l2_cycle",
-      "kind": "l2_cycle",
-      "rule": "V1",
-      "path": "src/find_yourself/services/knowledge/sources/__init__.py ⇄ src/find_yourself/services/knowledge/sources/baidu_pan.py",
-      "detail": "L2 内部成环（l2_cycle，2 个模块）：src/find_yourself/services/knowledge/sources/__init__.py, src/find_yourself/services/knowledge/sources/baidu_pan.py",
       "reason": "已知债务：L2 内部成环（R7 / three-layer-model §6 V1）；子层口径为 L2.0 runtime < L2.1 services（ADR-0001 D3），待 G7-c 解环切片消解"
     },
     {

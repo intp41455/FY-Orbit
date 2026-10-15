@@ -30,6 +30,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
@@ -320,6 +321,102 @@ def build_child_env(env_whitelist: tuple[str, ...] = (),
     return child
 
 
+# --------------------------------------------------------------------------- #
+# 进程存活判定与进程树回收（N7 V1-2 解环：从 adapters.community_harness_adapter
+# 下沉至此——CLI 超时杀整树本就是本模块 run_cli_process 的职责；搬迁后
+# adapters 只剩「adapter → access」单向边，同层环消除。函数体逐字搬迁，
+# 行为不变；services/terminal.py 里同名的另一个实现保持不动
+# （历史重复，另案治理，不在本轮范围）。
+# --------------------------------------------------------------------------- #
+
+def process_alive(pid: int | None) -> bool:
+    """OS-level liveness check used to verify a process tree was really reaped.
+
+    Reads raw bytes on Windows: ``tasklist`` output is locale-encoded (GBK on a
+    Chinese Windows), so decoding as UTF-8 would raise and hide a live process.
+
+    A freshly-spawned process is not always visible to ``tasklist`` on the first
+    enumeration pass — the OS snapshot can lag the ``CreateProcess`` return, and
+    antivirus may briefly delay visibility. To avoid a false-negative liveness
+    report (which would wrongly conclude a tree was reaped), we retry a few times
+    across a short window. A genuinely dead PID never matches, so retries do not
+    mask real reclamation.
+    """
+    if pid is None or pid <= 0:
+        return False
+    if os.name == "nt":
+        target = str(pid).encode("ascii")
+        for _ in range(3):
+            try:
+                out = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True, timeout=10, check=False,
+                )
+                if target in out.stdout:
+                    return True
+            except Exception:
+                pass
+            time.sleep(0.05)
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    # POSIX：被 SIGKILL 但父进程尚未 wait() 的子进程处于**僵尸态**，
+    # os.kill(pid, 0) 仍会成功 → 误判「仍存活」，使 kill_process_tree 的
+    # reaped 验证恒为 False（Linux CI 实证）。僵尸不消耗资源，视为已回收。
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as fh:
+            fields = fh.read().rsplit(b")", 1)[-1].split()
+        if fields and fields[0] == b"Z":
+            return False
+    except OSError:
+        pass
+    return True
+
+
+def kill_process_tree(pid: int | None) -> dict[str, Any]:
+    """Terminate a process tree and verify it was reaped (§6.4).
+
+    A single ``proc.kill()`` on the leader is insufficient — the tree must be
+    terminated and reclamation verified. Returns an evidence dict.
+    """
+    result: dict[str, Any] = {"attempted": True, "pid": pid, "tree_signal": None, "reaped": False}
+    if pid is None or pid <= 0:
+        result["attempted"] = False
+        return result
+    if os.name == "nt":
+        result["tree_signal"] = "taskkill /F /T"
+        # Capture raw bytes (not text): on a Chinese Windows the taskkill output
+        # is GBK-encoded and decoding as UTF-8 raises UnicodeDecodeError in a
+        # background reader thread. We only need the side effect (the kill), so
+        # bytes are fine and avoid the decode crash.
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=20, check=False,
+        )
+    else:
+        result["tree_signal"] = "SIGKILL process group"
+        try:
+            pgid = os.getpgid(pid)
+            if pgid != os.getpgrp():
+                os.killpg(pgid, 9)
+            else:
+                os.kill(pid, 9)
+        except Exception:
+            try:
+                os.kill(pid, 9)
+            except Exception:
+                pass
+    # Verify reclamation with up to ~2s of polling.
+    for _ in range(40):
+        if not process_alive(pid):
+            result["reaped"] = True
+            break
+        time.sleep(0.05)
+    return result
+
+
 def run_cli_process(
     command: list[str] | tuple[str, ...],
     *,
@@ -330,15 +427,11 @@ def run_cli_process(
 ) -> dict[str, Any]:
     """统一 CLI 执行（A-统一接入-04 实现体）。
 
-    Popen(argv) + communicate(deadline) + 超时杀整树并验证回收（复用社区
-    harness 的 ``kill_process_tree``，单一事实源）+ 统一退出码语义。
+    Popen(argv) + communicate(deadline) + 超时杀整树并验证回收（本模块
+    ``kill_process_tree``）+ 统一退出码语义。
 
     Returns ``{ok, exit_code, stdout, stderr, timed_out, reaped, duration_ms}``。
     """
-    import os
-
-    from ...adapters.community_harness_adapter import kill_process_tree
-
     started = time.perf_counter()
     popen_kw: dict[str, Any] = {}
     if os.name != "nt":

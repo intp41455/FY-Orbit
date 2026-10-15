@@ -13,6 +13,7 @@
  * （跨包锁三）。本文件只交付页面本身，挂载行见交付报告的「集成请求」。
  */
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   controllerCheck,
   exampleRun,
@@ -32,6 +33,8 @@ import type {
   TemplateDetail,
 } from '../api/templates';
 import { Spinner, errorMessage, useAsync } from '../components/ui';
+import { dslCanvasApi } from '../api/dslCanvas';
+import { writeDslHandoff } from '../api/dslHandoff';
 import { ControllerPromptPanel } from '../components/templates/ControllerPromptPanel';
 import { EssentialsPanel } from '../components/templates/EssentialsPanel';
 import { SystemOverviewCard } from '../components/templates/SystemOverviewCard';
@@ -39,6 +42,7 @@ import '../styles/pages/templates.css';
 import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 export function TemplatesPage() {
+  const navigate = useNavigate();
   const [tier, setTier] = useState('novice');
   const [scenario, setScenario] = useState<string>('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -272,6 +276,24 @@ export function TemplatesPage() {
                     onClick={() => selectedId && run(() => expandToCode(selectedId, tier), setCode)}
                   >
                     展开为代码（技术层）
+                  </button>
+                  {/* G4-k 开箱模板→工坊通道：模板代码经 import-code 换回 DSL，
+                      sessionStorage 一次性交接后跳工坊页继续编辑。 */}
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={busy || !selectedId}
+                    onClick={() =>
+                      selectedId &&
+                      run(async () => {
+                        const exp = await expandToCode(selectedId, tier);
+                        const { dsl } = await dslCanvasApi.importCode(exp.code);
+                        writeDslHandoff(dsl, `开箱模板:${selectedId}`);
+                        navigate('/dsl-canvas');
+                      }, () => undefined)
+                    }
+                  >
+                    去工坊编辑
                   </button>
                 </section>
 

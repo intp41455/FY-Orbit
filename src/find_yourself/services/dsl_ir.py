@@ -212,13 +212,19 @@ class EdgeCondition(Strict):
 
 
 class DslEdge(Strict):
-    """一条有向边。``from`` 是 Python 关键字，用别名暴露。"""
+    """一条有向边。``from`` 是 Python 关键字，用别名暴露。
+
+    B3 图级循环：``back_edge`` + ``max_rounds``（细校验在
+    ``dsl_canvas.validate_dsl``，此处只放行字段形状）。
+    """
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     from_id: str = Field(alias="from")
     to: str
     condition: EdgeCondition | None = None
+    back_edge: bool = False
+    max_rounds: int | None = None
 
 
 class DslNode(Strict):

@@ -13,7 +13,13 @@ vi.mock('../api/data', () => ({
 }));
 
 vi.mock('../api/models', () => ({
-  modelsApi: { catalog: vi.fn(), healthCheck: vi.fn() },
+  modelsApi: {
+    catalog: vi.fn(),
+    healthCheck: vi.fn(),
+    credentialsStatus: vi.fn(),
+    saveCredentials: vi.fn(),
+    forgetCredentials: vi.fn(),
+  },
 }));
 
 vi.mock('../api/auth', () => ({
@@ -86,6 +92,10 @@ beforeEach(() => {
     checks: [],
     hint: '',
   } as never);
+  vi.mocked(modelsApi.credentialsStatus).mockResolvedValue({
+    configured: false, provider: '', base_url: '', model: '',
+    has_api_key: false, storage: '', persist_restart: false,
+  });
 });
 
 describe('设置页账号卡 · 账号三层（W8）', () => {

@@ -260,6 +260,23 @@ baseline 为 `scripts/p0/layering_baseline.json`。二者是本节所有数字�
 > ⚠️ **两条不可混为一谈**：前者是「位置错了」，后者是「职责错了」。前者可用搬迁解决，
 > 后者只能靠职责重划。若把后者也当作搬迁来做，会直接把一条单向依赖升级成 R7 真环。
 
+**V1 / R5 终态处置（2026-10-15，N7 收官）**
+
+> 方法：6 条逐边 AST 实测（模块级 vs 函数内）+ 打破代价评估。修了 4 条（门禁逐条复核消解、
+> baseline 19→15）；2 条永久接受（理由如下，门禁 baseline 保留）。
+
+| # | 项 | 处置 | 证据 |
+|---|---|---|---|
+| V1-4 | `sources/__init__` ⇄ `baidu_pan` | **已修**：`secret_store` 实例下沉 `sources/store.py`（只依赖 `hub.secrets`）；包 `__init__` 重导出（`__all__` 不变）；`baidu_pan` 两处改从 `.store` 取 | 门禁「1 条已不再复现」；sources/hub 相关 174 passed |
+| V1-2 | `community_harness_adapter` ⇄ `hub/access` | **已修**：`process_alive` + `kill_process_tree` 下沉 `hub/access.py`（CLI 超时杀整树本就是该模块职责）；adapter 顶部重导出（既有导入位零改动）；`access` 侧惰性导入删除 | 门禁消解；`adapter.kill is access.kill is True`；community/terminal/sandbox 相关 213 passed |
+| R5-1 | `db/models` → `workflows.models`（Stage） | **已修**：`Stage` 本体下沉 `db/stages.py`（L1）；`workflows/models.py` 重导出（全网 `import Stage` 零改动）；`db/models` 改 L1 内部边 | 门禁消解；stage 约束/工作流相关测试绿 |
+| R5-2 | `db/workbench_models` → `services.hub`（常量） | **已修**：`HUB_KINDS` 等整块常量下沉 `db/hub_constants.py`；`services/hub/__init__` 重导出（`__all__` 不变）；workbench 改 L1 内部边 | 门禁消解；hub 相关测试绿 |
+| V1-1 | 6 模块网（mcp/tools/knowledge/hub_bridge/hub/connections/hub/adapters） | **永久接受**：12 条边中 11 条函数内惰性、仅 1 条模块级（`knowledge/__init__:30`）；**零导入时成环**（全量单测即证明）；网状源于 hub↔knowledge↔tools↔mcp 真实双向能力需求，重构 = 中台边界重划，属独立立项 | AST 逐边核实表见本轮 board §3.35 |
+| V1-3 | `dsl_canvas` ⇄ `dsl_ir` | **永久接受**：`dsl_ir` 要的是 `VERB_REGISTRY` 等**行为闭包**（`execute` 字段绑定本模块 20+ 执行函数），搬迁 = 执行器裂变（10+ 调用方改注入签名）；反向边已是惰性，**零导入时成环**；打破 = 独立立项 | 同上 |
+
+> ⚠️ **接受 ≠ 放任**：两条接受项保留在门禁 baseline 内（永久已知债务），新增边仍会被门禁拦截；
+> 接受的是「现状」，不是「增量」。
+
 ---
 
 ## 7. 解环第一刀（规范指引 · 详见 ADR-0001）

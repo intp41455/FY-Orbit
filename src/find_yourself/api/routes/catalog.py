@@ -28,6 +28,7 @@ from ...db.types import utcnow
 from ...services.actor import Actor
 from ...services.errors import NotFound
 from ...services.model_catalog import ModelCatalog
+from ...services.model_credentials import ModelCredentialService, resolve_model_settings
 from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
 
 log = logging.getLogger("find_yourself.api.catalog")
@@ -127,7 +128,7 @@ async def models_catalog(probe: bool = True,
     pure configuration listing.
     """
     timeout = min(max(float(timeout_seconds), 0.1), _HEALTH_TIMEOUT_MAX) if probe else 0.0
-    catalog_local = ModelCatalog(settings=settings)
+    catalog_local = ModelCatalog(settings=resolve_model_settings(settings))
     if not probe:
         return catalog_local.gateway_summary(probe=False)
     # Probing is blocking network I/O — keep it off the event loop.
@@ -146,10 +147,51 @@ async def models_health_check(body: HealthCheckRequest | None = None,
     """
     payload = body or HealthCheckRequest()
     timeout = payload.bounded_timeout()
-    catalog_local = ModelCatalog(settings=settings)
+    catalog_local = ModelCatalog(settings=resolve_model_settings(settings))
     report = await run_in_threadpool(
         lambda: catalog_local.health_report(payload.providers or None, timeout_seconds=timeout))
     return {"checked_at": utcnow().isoformat(), **report}
+
+
+class ModelCredentialsBody(BaseModel):
+    provider: str = Field(default="", max_length=100)
+    base_url: str = Field(default="", max_length=500)
+    api_key: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=200)
+
+
+def _credential_service(svc: Services) -> ModelCredentialService:
+    return ModelCredentialService(svc.session, svc.audit)
+
+
+@router.get("/models/credentials")
+async def model_credentials_status(actor: Actor = Depends(get_actor),
+                                   svc: Services = Depends(get_services)) -> dict:
+    """已存 BYOK 凭证的脱敏状态（明文 key 永不外泄）。"""
+    return _credential_service(svc).status(actor)
+
+
+@router.post("/models/credentials")
+async def model_credentials_save(body: ModelCredentialsBody,
+                                 actor: Actor = Depends(csrf_protected),
+                                 svc: Services = Depends(get_services)) -> dict:
+    """保存 BYOK 凭证到服务端加密存储（hub Fernet），保存后网关即时生效。
+
+    取代「设置页生成 env 片段手贴 + 重启」——D06 界面持久化。
+    """
+    out = _credential_service(svc).save(
+        actor, provider=body.provider, base_url=body.base_url,
+        api_key=body.api_key, model=body.model)
+    svc.session.commit()
+    return out
+
+
+@router.delete("/models/credentials")
+async def model_credentials_forget(actor: Actor = Depends(csrf_protected),
+                                   svc: Services = Depends(get_services)) -> dict:
+    out = _credential_service(svc).forget(actor)
+    svc.session.commit()
+    return out
 
 
 @router.get("/settings")

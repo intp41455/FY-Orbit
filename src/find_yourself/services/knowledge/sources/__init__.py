@@ -104,8 +104,8 @@ class InMemorySecretStore:
         return {k: bool(v) for k, v in self._values.get(source_id, {}).items()}
 
 
-#: 默认凭证存储 = hub 的 Fernet 加密存储（接口壳，签名与 InMemorySecretStore 一致）。
-secret_store = HubSecretStore()
+#: 默认凭证存储 = hub 的 Fernet 加密存储（实例见 .store；此处重导出，旧导入位不变）。
+from .store import secret_store as secret_store  # noqa: F401 (N7 V1-4 重导出)
 
 SOURCE_STATUS: dict[str, dict[str, str]] = {
     "ima": {

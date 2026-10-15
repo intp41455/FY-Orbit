@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DslCanvas } from '../components/dsl/DslCanvas';
 import { FlowEditor } from '../components/workflow/FlowEditor';
 import { GeneratePanel } from '../components/workflow/GeneratePanel';
 import { ModeSwitcher, TemplateStarter, useDslModes } from '../components/workflow/ModeSwitcher';
 import type { DslDocument, DslMode } from '../api/dslCanvas';
+import { takeDslHandoff } from '../api/dslHandoff';
 import { useDslDraft } from '../hooks/useDslDraft';
 import { LineIcon } from '../components/ui/LineIcon';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
@@ -77,6 +78,20 @@ export function DslCanvasPage() {
   const applyTemplate = useCallback((next: DslDocument, templateId: string) => {
     setDoc({ version: next.version, nodes: [...next.nodes], edges: [...next.edges] });
     setSourcePrompt(`模板：${templateId}`);
+  }, []);
+
+  /**
+   * G4-k 开箱模板→工坊通道的读端：挂载时消费一次性交接（读后即删）。
+   * 有交接才换文档；无/坏交接保持原状（takeDslHandoff 内部已保证不抛错）。
+   */
+  useEffect(() => {
+    const handoff = takeDslHandoff();
+    if (handoff) {
+      const d = handoff.doc;
+      setDoc({ version: d.version, nodes: [...d.nodes], edges: [...d.edges] });
+      setSourcePrompt(`模板：${handoff.source}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 挂载消费一次
   }, []);
 
   /**

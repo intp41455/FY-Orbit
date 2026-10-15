@@ -20,6 +20,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# N7 V1-2 解环：process_alive / kill_process_tree 本体已下沉至
+# services.hub.access（CLI 超时杀整树是那里的职责），此处重导出——
+# 既有 ``from ...adapters.community_harness_adapter import kill_process_tree``
+# 全网零改动；此后仅剩「adapter → access」单向边。
+from find_yourself.services.hub.access import (  # noqa: F401 (re-export)
+    CLI_EXIT_TIMEOUT,
+    kill_process_tree,
+    process_alive,
+    run_cli_process,
+)
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HARNESS_LAB_DIR = REPO_ROOT / ".runtime" / "harness-lab"
 
@@ -361,8 +372,10 @@ class HarnessSandbox:
 
 
 # ---------------------------------------------------------------------------
-# §6 shared remediation helpers (process-tree kill, secret stripping, budget
-# gateway, ECC approval verification, active-execution persistence).
+# §6 shared remediation helpers (secret stripping, budget gateway, ECC
+# approval verification, active-execution persistence).
+# NOTE (N7 V1-2)：process_alive / kill_process_tree 已下沉至
+# services.hub.access，本模块顶部重导出，旧导入位不变。
 # ---------------------------------------------------------------------------
 
 # Secret keys that must never be inherited by an external community executor (§6.1).
@@ -371,94 +384,6 @@ _SECRET_ENV_KEYS = (
     "AWS_ACCESS_KEY_ID", "AZURE_OPENAI_API_KEY", "GOOGLE_API_KEY", "CODEBUDDY_TOKEN",
     "WORKBUDDY_TOKEN", "FINDBUDDY_TOKEN", "PERI_LICENSE_KEY", "CCB_LICENSE_KEY",
 )
-
-
-def process_alive(pid: int | None) -> bool:
-    """OS-level liveness check used to verify a process tree was really reaped.
-
-    Reads raw bytes on Windows: ``tasklist`` output is locale-encoded (GBK on a
-    Chinese Windows), so decoding as UTF-8 would raise and hide a live process.
-
-    A freshly-spawned process is not always visible to ``tasklist`` on the first
-    enumeration pass — the OS snapshot can lag the ``CreateProcess`` return, and
-    antivirus may briefly delay visibility. To avoid a false-negative liveness
-    report (which would wrongly conclude a tree was reaped), we retry a few times
-    across a short window. A genuinely dead PID never matches, so retries do not
-    mask real reclamation.
-    """
-    if pid is None or pid <= 0:
-        return False
-    if os.name == "nt":
-        target = str(pid).encode("ascii")
-        for _ in range(3):
-            try:
-                out = subprocess.run(
-                    ["tasklist", "/FI", f"PID eq {pid}"],
-                    capture_output=True, timeout=10, check=False,
-                )
-                if target in out.stdout:
-                    return True
-            except Exception:
-                pass
-            time.sleep(0.05)
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    # POSIX：被 SIGKILL 但父进程尚未 wait() 的子进程处于**僵尸态**，
-    # os.kill(pid, 0) 仍会成功 → 误判「仍存活」，使 kill_process_tree 的
-    # reaped 验证恒为 False（Linux CI 实证）。僵尸不消耗资源，视为已回收。
-    try:
-        with open(f"/proc/{pid}/stat", "rb") as fh:
-            fields = fh.read().rsplit(b")", 1)[-1].split()
-        if fields and fields[0] == b"Z":
-            return False
-    except OSError:
-        pass
-    return True
-
-
-def kill_process_tree(pid: int | None) -> dict[str, Any]:
-    """Terminate a process tree and verify it was reaped (§6.4).
-
-    A single ``proc.kill()`` on the leader is insufficient — the tree must be
-    terminated and reclamation verified. Returns an evidence dict.
-    """
-    result: dict[str, Any] = {"attempted": True, "pid": pid, "tree_signal": None, "reaped": False}
-    if pid is None or pid <= 0:
-        result["attempted"] = False
-        return result
-    if os.name == "nt":
-        result["tree_signal"] = "taskkill /F /T"
-        # Capture raw bytes (not text): on a Chinese Windows the taskkill output
-        # is GBK-encoded and decoding as UTF-8 raises UnicodeDecodeError in a
-        # background reader thread. We only need the side effect (the kill), so
-        # bytes are fine and avoid the decode crash.
-        subprocess.run(
-            ["taskkill", "/F", "/T", "/PID", str(pid)],
-            capture_output=True, timeout=20, check=False,
-        )
-    else:
-        result["tree_signal"] = "SIGKILL process group"
-        try:
-            pgid = os.getpgid(pid)
-            if pgid != os.getpgrp():
-                os.killpg(pgid, 9)
-            else:
-                os.kill(pid, 9)
-        except Exception:
-            try:
-                os.kill(pid, 9)
-            except Exception:
-                pass
-    # Verify reclamation with up to ~2s of polling.
-    for _ in range(40):
-        if not process_alive(pid):
-            result["reaped"] = True
-            break
-        time.sleep(0.05)
-    return result
 
 
 def build_safe_env(allow_provider_keys: bool) -> dict[str, str]:
@@ -857,9 +782,8 @@ def _peri_submit(self: PeriAdapter, envelope: TaskEnvelope) -> HarnessExecutionR
 
     try:
         # A-统一接入-04：subprocess 执行体收敛到通用 CLI 契约
-        # （services/hub/access.run_cli_process —— 统一 Popen/超时/杀树/退出码），
-        # 本函数保留 harness 专有的取消、凭证门禁与执行事件语义。
-        from find_yourself.services.hub.access import CLI_EXIT_TIMEOUT, run_cli_process
+        # （services/hub/access.run_cli_process —— 统一 Popen/超时/杀树/退出码，
+        # 模块顶部已导入），本函数保留 harness 专有的取消、凭证门禁与执行事件语义。
 
         def _on_spawn(proc: Any) -> None:
             _ACTIVE_EXECUTIONS[execution_id]["process"] = proc

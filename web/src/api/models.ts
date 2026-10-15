@@ -74,6 +74,23 @@ export interface HealthCheckPayload {
   timeout_seconds?: number;
 }
 
+export interface ModelCredentialsStatus {
+  configured: boolean;
+  provider: string;
+  base_url: string;
+  model: string;
+  has_api_key: boolean;
+  storage: string;
+  persist_restart: boolean;
+}
+
+export interface ModelCredentialsInput {
+  provider?: string;
+  base_url?: string;
+  api_key?: string;
+  model?: string;
+}
+
 export const modelsApi = {
   /** provider/模型/配置状态/健康态。probe=false 时后端不做任何出站连接。 */
   catalog: (probe = true, timeoutSeconds = 2.5) =>
@@ -83,4 +100,13 @@ export const modelsApi = {
   /** 真实探测：成功返回毫秒延迟，失败返回脱敏错误原文。 */
   healthCheck: (body: HealthCheckPayload = {}) =>
     request<HealthCheckReport>(`${BASE}/health-check`, { method: 'POST', body }),
+  /** D06 BYOK 界面持久化：服务端加密存储的脱敏状态（永无明文 key）。 */
+  credentialsStatus: () =>
+    request<ModelCredentialsStatus>(`${BASE}/credentials`),
+  /** 保存 BYOK 凭证到服务端（hub Fernet 加密），保存后网关即时生效、无需重启。 */
+  saveCredentials: (body: ModelCredentialsInput) =>
+    request<ModelCredentialsStatus>(`${BASE}/credentials`, { method: 'POST', body }),
+  /** 删除服务端已存凭证（回落到 .env）。 */
+  forgetCredentials: () =>
+    request<{ forgotten: boolean }>(`${BASE}/credentials`, { method: 'DELETE' }),
 };

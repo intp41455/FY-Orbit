@@ -125,6 +125,9 @@ LOOP_DEFAULT_MAX_ITERATIONS = 10
 LOOP_MAX_ITERATIONS_CAP = 1000
 #: ``parallel`` 分支数上界（并发扇出的规模闸门）。
 PARALLEL_MAX_BRANCHES = 8
+#: B3 图级循环：回边默认最大重入轮数。回边是作者显式声明的（``back_edge: true``），
+#: 轮数耗尽 = 期望终止（正常收尾，不失败）；系统级无界防护另由 recursion_limit 承担。
+BACKEDGE_DEFAULT_MAX_ROUNDS = 10
 #: N5：图级 ``recursion_limit`` 默认/上界（对标 LangGraph ``recursion_limit``：
 #: 图执行步数硬上限，绝不让画布无限跑）。缺省即生效，无需画布作者显式声明。
 DEFAULT_RECURSION_LIMIT = 100
@@ -1833,6 +1836,19 @@ def validate_dsl(doc: Any, *,
                     or not isinstance(c.get("field"), str) or not c["field"]:
                 raise DslValidationError(
                     f"边 {src}->{dst} condition 需要 field/op/value 且 op 属于 {CONDITION_OPS}")
+        # B3 图级循环：回边必须显式声明。back_edge/max_rounds 类型错误即拒；
+        # max_rounds 出现在前向边上同样拒绝（无意义键不许静默存在）。
+        is_back = e.get("back_edge", False)
+        if "back_edge" in e and not isinstance(e["back_edge"], bool):
+            raise DslValidationError(f"边 {src}->{dst} back_edge 必须是布尔值")
+        if "max_rounds" in e and e["max_rounds"] is not None:
+            mr = e["max_rounds"]
+            if isinstance(mr, bool) or not isinstance(mr, int) or mr < 1:
+                raise DslValidationError(
+                    f"边 {src}->{dst} max_rounds 必须是 ≥1 整数，实际是 {mr!r}")
+            if not is_back:
+                raise DslValidationError(
+                    f"边 {src}->{dst} max_rounds 只允许出现在 back_edge 边上")
     return doc
 
 
@@ -1951,9 +1967,11 @@ def compile_dsl(doc: Any, *,
     nodes = {n["id"]: n for n in doc["nodes"]}
     adjacency: dict[str, list[dict[str, Any]]] = {nid: [] for nid in nodes}
     indegree = {nid: 0 for nid in nodes}
+    # B3：回边不计入度（Kahn 只走前向边）；未标记的纯前向环仍是编译错误。
     for e in doc["edges"]:
         adjacency[e["from"]].append(e)
-        indegree[e["to"]] += 1
+        if not e.get("back_edge"):
+            indegree[e["to"]] += 1
     pristine_indegree = dict(indegree)  # Kahn 会原地扣减，Dispatcher 需要原始入度
 
     # Kahn 拓扑排序；若无法覆盖全部节点则存在环。
@@ -2347,10 +2365,12 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
     step_guard_hit = False
 
     outputs: dict[str, Any] = {}
-    # node -> 剩余未满足的入边数（入队闸门）
+    # node -> 剩余未满足的入边数（入队闸门；B3：只计前向边，回边不参与）
     pending = dict(plan.indegree)
     # node -> 已有一 Condition 通过（用于 skipped 判定）
     triggered: dict[str, bool] = {nid: False for nid in plan.nodes}
+    # B3：(from_nid, 边在 adjacency[from] 中的下标) -> 已重入轮数
+    backedge_rounds: dict[tuple[str, int], int] = {}
     queue: list[str] = [nid for nid in plan.order if pending[nid] == 0]
     # 拓扑序 -> 排名表（稳定出队用，避免每次 O(n) 线性查找）。
     _rank = {nid: i for i, nid in enumerate(plan.order)}
@@ -2437,18 +2457,30 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                     result.status = "failed"
                     result.error = f"节点 {nid} 执行失败: {exc}"
                     continue
-                # 动态展开：按出边条件决定后继是否入队
-                for edge in plan.adjacency[nid]:
+                # 动态展开：按出边条件决定后继是否入队。
+                # B3 回边：条件通过（无条件恒过）且轮数未超时则重入目标；
+                # 轮数耗尽 = 作者声明的上界（期望终止），正常收尾、不失败。
+                # 每轮重入都是一步，仍受上方的 steps/recursion_limit 系统闸门约束。
+                for idx, edge in enumerate(plan.adjacency[nid]):
                     cond = edge.get("condition")
                     passed = True if not cond else _compare(
                         _lookup(out, cond["field"]), cond["op"], cond.get("value"))
+                    if passed and edge.get("back_edge"):
+                        max_rounds = edge.get("max_rounds") or BACKEDGE_DEFAULT_MAX_ROUNDS
+                        key = (nid, idx)
+                        used = backedge_rounds.get(key, 0)
+                        if used < int(max_rounds):
+                            backedge_rounds[key] = used + 1
+                            triggered[edge["to"]] = True
+                            queue.append(edge["to"])
+                        continue
                     if passed:
                         triggered[edge["to"]] = True
                         if pending[edge["to"]] > 0:
                             pending[edge["to"]] -= 1
                             if pending[edge["to"]] == 0:
                                 queue.append(edge["to"])
-                    else:
+                    elif not edge.get("back_edge"):
                         enqueue_ready(edge["to"])
             # 步数闸门触发时直接收尾：既不继续跑，也不把剩余节点谎报成 skipped。
             if step_guard_hit:
@@ -2467,6 +2499,8 @@ def run_dsl(doc: dict[str, Any], *, run_id: str | None = None,
                 result.logs.append(skipped_log)
                 _emit(on_event, "node_finished", skipped_log.to_dict())
                 for edge in plan.adjacency[nid]:
+                    if edge.get("back_edge"):
+                        continue  # B3：回边不计入度，跳过传播不扣减
                     dst = edge["to"]
                     pending[dst] -= 1
                     if pending[dst] == 0 and triggered[dst] and \

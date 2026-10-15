@@ -40,10 +40,11 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
 from find_yourself.db.base import Base
-from find_yourself.db.types import ID, TZDateTime, utcnow
 
 # W6：kind / state 白名单与 services.hub 共用同一份常量，杜绝两边漂移。
-from find_yourself.services.hub import CONNECTION_STATES, HUB_KINDS
+# N7 R5-2：常量本体已下沉 L1（db/hub_constants.py），此处改从 L1 取（L1 内部边）。
+from find_yourself.db.hub_constants import CONNECTION_STATES, HUB_KINDS
+from find_yourself.db.types import ID, TZDateTime, utcnow
 
 WORKSPACE_MODES = ("local", "cloud")
 WORKSPACE_STATES = ("active", "paused", "archived")
