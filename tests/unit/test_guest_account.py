@@ -34,6 +34,7 @@ import find_yourself.db.sync_models  # noqa: F401
 import find_yourself.db.team_models  # noqa: F401
 import find_yourself.db.workbench_models  # noqa: F401
 from find_yourself.api.app import create_app
+from find_yourself.audit import AuditEvent
 from find_yourself.config import Settings
 from find_yourself.db.base import Base
 from find_yourself.db.models import USER_PLANS, USER_STATUSES, Memory, User
@@ -467,3 +468,82 @@ def test_api_account_reports_payment_disabled(client: TestClient, app: FastAPI):
     # The guest surface is exactly the three documented endpoints.
     assert "/auth/guest" in paths and "/auth/guest/upgrade" in paths
     assert "/api/auth/account" in paths
+
+
+# --------------------------------------------------------------------------- #
+# T11 · R1.2/R1.4/R6/R12（2026-10-16 I-13）
+# --------------------------------------------------------------------------- #
+def test_guest_session_ttl_is_365_days(session):
+    """R1.2：访客会话 8 小时即过期是 P0-1 的根因之一，改为 365 天。"""
+    from datetime import datetime, timedelta
+
+    auth = make_auth(session)
+    _user, row = auth.create_guest_user(ip="127.0.0.1")
+    remaining = row.expires_at - datetime.now(timezone.utc)
+    assert remaining > timedelta(days=364)
+
+
+def test_guest_cookie_max_age_is_365_days(client: TestClient):
+    """R1.2：cookie max-age 与服务端行 TTL 同为 365 天（两边不一致等于没修）。"""
+    r = client.post("/auth/guest")
+    assert r.status_code == 200, r.text
+    cookie = r.headers.get("set-cookie", "")
+    assert "Max-Age=31536000" in cookie, cookie
+
+
+def test_upgrade_audits_old_guest_email(session):
+    """R12：升级时原 guest 邮箱记入审计（不做认领机制，但留痕可查）。"""
+    from sqlalchemy import select
+
+    auth = make_auth(session)
+    user, _row = auth.create_guest_user(ip="127.0.0.1")
+    old_email = user.email
+    assert old_email.startswith("guest-")
+    auth.upgrade_guest(
+        Actor.owner(user.id),
+        email="new-owner@example.com", password="StrongPass123!",
+        consent_accepted=True, ip="127.0.0.1",
+    )
+    events = session.execute(
+        select(AuditEvent).where(AuditEvent.action == "user.guest_upgraded")
+    ).scalars().all()
+    assert events
+    assert old_email in str(events[-1].details)
+
+
+def test_reclaim_expired_guest_session(client: TestClient):
+    """R1.4：会话过期后凭客户端留存的访客标记找回原访客（同 id，不丢数据）。"""
+    body, _headers = guest_headers(client)
+    guest_id = body["owner_id"]
+    r = client.post("/auth/guest/reclaim", json={"guest_id": guest_id})
+    assert r.status_code == 200, r.text
+    assert r.json()["owner_id"] == guest_id
+    assert r.json()["is_guest"] is True
+
+
+def test_purge_expired_guests_keeps_data_rows(session):
+    """R6：只清过期空访客；有数据的永不自动删。"""
+    from datetime import datetime, timedelta, timezone
+
+    from find_yourself.db.models import Conversation, User
+
+    auth = make_auth(session)
+    old = datetime.now(timezone.utc) - timedelta(days=100)
+
+    # 先建三个新鲜访客（建时惰性清理不触发），再回拨其中两个的生日。
+    empty, _ = auth.create_guest_user(ip="127.0.0.1")
+    with_data, _ = auth.create_guest_user(ip="127.0.0.1")
+    fresh, _ = auth.create_guest_user(ip="127.0.0.1")
+    empty.created_at = old
+    with_data.created_at = old
+    session.add(Conversation(
+        id="conv-keep", owner_id=with_data.id, title="别删我",
+        domain="personal", version=1,
+    ))
+    session.commit()
+
+    removed = auth.purge_expired_guests()
+    assert removed == 1
+    assert session.get(User, empty.id) is None
+    assert session.get(User, with_data.id) is not None
+    assert session.get(User, fresh.id) is not None

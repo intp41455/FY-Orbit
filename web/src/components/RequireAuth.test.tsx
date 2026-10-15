@@ -17,6 +17,7 @@ function state(over: Partial<AuthState> = {}): AuthState {
     error: null,
     isGuest: true,
     plan: 'free',
+    account: null,
     login: vi.fn(),
     loginWithToken: vi.fn(),
     logout: vi.fn(),

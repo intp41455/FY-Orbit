@@ -9,15 +9,19 @@ vi.mock('../api/auth', () => ({
   authApi: {
     me: vi.fn(),
     createGuest: vi.fn(),
+    reclaimGuest: vi.fn(),
     upgradeGuest: vi.fn(),
     logout: vi.fn(),
     localDevToken: vi.fn(),
+    account: vi.fn(),
   },
 }));
 
 const me = vi.mocked(authApi.me);
 const createGuest = vi.mocked(authApi.createGuest);
+const reclaimGuest = vi.mocked(authApi.reclaimGuest);
 const upgradeGuest = vi.mocked(authApi.upgradeGuest);
+const account = vi.mocked(authApi.account);
 
 function guestPayload(over: Partial<GuestResponse> = {}): GuestResponse {
   return {
@@ -55,6 +59,7 @@ function Probe() {
       <span data-testid="owner">{s.owner ? s.owner.sub : 'none'}</span>
       <span data-testid="is-guest">{String(s.isGuest)}</span>
       <span data-testid="plan">{s.plan}</span>
+      <span data-testid="account-email">{s.account ? s.account.email : 'none'}</span>
       <span data-testid="error">{s.error ?? ''}</span>
       <button type="button" data-testid="do-upgrade" onClick={() => {
         void s.upgradeGuest({
@@ -79,7 +84,13 @@ beforeEach(() => {
   window.localStorage.clear();
   me.mockReset();
   createGuest.mockReset();
+  reclaimGuest.mockReset();
   upgradeGuest.mockReset();
+  account.mockReset();
+  account.mockResolvedValue({
+    email: 'guest-4f2a@local', is_guest: true, plan: 'free',
+    display_name: '', status: 'guest', payment_enabled: false,
+  });
 });
 
 describe('AuthContext · 游客自动登录（W8）', () => {
@@ -176,5 +187,39 @@ describe('AuthContext · 游客自动登录（W8）', () => {
 
     await waitFor(() => expect(screen.getByTestId('loading')).toHaveTextContent('false'));
     expect(screen.getByTestId('owner')).toHaveTextContent('none');
+  });
+
+  it('R1.4：有访客标记时先找回原访客，不新建（同 id 不丢数据）', async () => {
+    window.localStorage.setItem('fy.guest_id', 'own_old_guest');
+    me.mockRejectedValue(new ApiError(401, null, 'unauthorized'));
+    reclaimGuest.mockResolvedValue(guestPayload({ owner_id: 'own_old_guest' }));
+
+    renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId('owner')).toHaveTextContent('own_old_guest'));
+    expect(reclaimGuest).toHaveBeenCalledWith('own_old_guest');
+    expect(createGuest).not.toHaveBeenCalled();
+  });
+
+  it('R1.4：找回失败才新建；新建后写下访客标记', async () => {
+    me.mockRejectedValue(new ApiError(401, null, 'unauthorized'));
+    reclaimGuest.mockRejectedValue(new ApiError(404, null, 'gone'));
+    window.localStorage.setItem('fy.guest_id', 'own_dead_guest');
+    createGuest.mockResolvedValue(guestPayload({ owner_id: 'own_new_guest' }));
+
+    renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId('owner')).toHaveTextContent('own_new_guest'));
+    expect(window.localStorage.getItem('fy.guest_id')).toBe('own_new_guest');
+  });
+
+  it('R2/R11：登录后拉取账号读模型供展示层使用', async () => {
+    me.mockRejectedValue(new ApiError(401, null, 'unauthorized'));
+    createGuest.mockResolvedValue(guestPayload());
+
+    renderProvider();
+
+    await waitFor(() => expect(screen.getByTestId('account-email')).toHaveTextContent('guest-4f2a@local'));
+    expect(account).toHaveBeenCalled();
   });
 });

@@ -323,6 +323,13 @@ function AccountCard() {
     return '未登记账号';
   }, [plan]);
 
+  // I-13 R2：登录用户 email 脱敏（`a***@domain`），与侧栏同口径。
+  const maskEmail = useCallback((email: string) => {
+    const at = email.indexOf('@');
+    if (at <= 0) return email || '—';
+    return `${email[0]}***@${email.slice(at + 1)}`;
+  }, []);
+
   // All hooks above this line run unconditionally, per the Rules of Hooks.
   if (!auth || !auth.upgradeGuest) {
     return (
@@ -394,6 +401,16 @@ function AccountCard() {
               </td>
             </tr>
             <tr><td>邮箱</td><td data-testid="account-email">{data.email || '—'}</td></tr>
+            <tr>
+              <td>账号标识</td>
+              <td data-testid="account-short-id">
+                {/* I-13 R2：与侧栏同源同显。游客 `guest-<uuid前8>`；
+                    登录用户脱敏 email。完整 id 不再展示。 */}
+                {data.is_guest
+                  ? `guest-${(data.email.split('@')[0] ?? '').replace(/^guest-/, '').slice(0, 8)}`
+                  : maskEmail(data.email)}
+              </td>
+            </tr>
             <tr><td>会员位</td><td data-testid="account-plan">{planLabel}</td></tr>
             {/* 付费通道行已下线（v1 不展示支付相关行，用户要求删除）。
                 后端 `payment_enabled` 字段保留（API 契约不动），前端不再渲染。 */}

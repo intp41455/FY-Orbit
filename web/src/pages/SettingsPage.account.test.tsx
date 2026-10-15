@@ -42,6 +42,7 @@ function authState(over: Partial<AuthState> = {}): AuthState {
     error: null,
     isGuest: true,
     plan: 'free',
+    account: null,
     login: vi.fn(),
     loginWithToken: vi.fn(),
     logout: vi.fn(),
@@ -112,6 +113,19 @@ describe('设置页账号卡 · 账号三层（W8）', () => {
     await waitFor(() => expect(screen.getByTestId('account-tier')).toBeInTheDocument());
     expect(screen.queryByTestId('account-payment')).not.toBeInTheDocument();
     expect(screen.queryByText('付费通道')).not.toBeInTheDocument();
+  });
+
+  it('账号标识与侧栏同显：游客 guest-短号，登录脱敏 email（I-13 R2）', async () => {
+    account.mockResolvedValue({ ...GUEST, email: 'guest-4f2a9c11@local' });
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('account-short-id')).toHaveTextContent('guest-4f2a9c11'));
+  });
+
+  it('登录账号标识脱敏 email', async () => {
+    useAuthMock.mockReturnValue(authState({ isGuest: false, plan: 'pro' }));
+    account.mockResolvedValue({ ...GUEST, is_guest: false, plan: 'pro', email: 'jia@example.com', status: 'active' });
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('account-short-id')).toHaveTextContent('j***@example.com'));
   });
 
   it('已注册账号不再渲染升级表单', async () => {

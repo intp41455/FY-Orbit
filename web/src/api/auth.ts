@@ -31,6 +31,9 @@ export const authApi = {
   // ---- W8 account tiers ----
   /** Create a local guest session. Refused outside local/test + loopback. */
   createGuest: () => request<GuestResponse>('/auth/guest', { method: 'POST' }),
+  /** 找回过期的访客会话（R1.4）：凭客户端留存的访客标记认领原访客，同 id 不丢数据。 */
+  reclaimGuest: (guestId: string) =>
+    request<GuestResponse>('/auth/guest/reclaim', { method: 'POST', body: { guest_id: guestId } }),
   /** Upgrade the current guest account in place; all existing data stays. */
   upgradeGuest: (body: {
     email: string;

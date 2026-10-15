@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { authApi } from '../api/auth';
 import { onUnauthorized, setCsrfToken } from '../api/client';
-import type { GuestResponse, MeResponse, OwnerIdentity } from '../api/types';
+import type { AccountInfo, GuestResponse, MeResponse, OwnerIdentity } from '../api/types';
 
 export interface AuthState {
   owner: OwnerIdentity | null;
@@ -37,6 +37,29 @@ export interface AuthState {
     consent_accepted: boolean;
     display_name?: string;
   }) => Promise<void>;
+  /** R2/R11：账号读模型（/api/auth/account）：email/昵称/短号来源。
+      `/auth/me` 只答“谁在调用”（冻结契约），展示层一律读这里。 */
+  account: AccountInfo | null;
+}
+
+// R1.4：客户端留存的访客标记（用户 id）。换浏览器/清数据/无痕下没有它，
+// 允许产生新访客；有它则先试找回，找回失败才新建。
+const GUEST_MARK_KEY = 'fy.guest_id';
+
+function readGuestMark(): string | null {
+  try {
+    return window.localStorage.getItem(GUEST_MARK_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function writeGuestMark(ownerId: string): void {
+  try {
+    window.localStorage.setItem(GUEST_MARK_KEY, ownerId);
+  } catch {
+    /* 隐私模式写不进去：找回兜底缺席，但不影响本次会话 */
+  }
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -66,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [isGuest, setIsGuest] = useState(false);
   const [plan, setPlan] = useState('unknown');
+  const [account, setAccount] = useState<AccountInfo | null>(null);
 
   const applyIdentity = useCallback((res: MeResponse | GuestResponse) => {
     if (res.csrf_token) setCsrfToken(res.csrf_token);
@@ -82,10 +106,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshAccount = useCallback(async () => {
+    try {
+      setAccount(await authApi.account());
+    } catch {
+      setAccount(null);
+    }
+  }, []);
+
   /** W8: 静默建一个本地游客会话。失败时把原因如实抛出，不假装已登录。 */
   const ensureGuest = useCallback(async () => {
-    applyIdentity(await authApi.createGuest());
-  }, [applyIdentity]);
+    const created = await authApi.createGuest();
+    applyIdentity(created);
+    // R1.4：记下访客标记，会话过期后凭它找回（同 id 不丢数据）。
+    if (created.owner_id) writeGuestMark(created.owner_id);
+    await refreshAccount();
+  }, [applyIdentity, refreshAccount]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -93,12 +129,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await authApi.me();
       applyIdentity(res);
+      await refreshAccount();
     } catch (e) {
       // 401/403 means simply not logged in. W8: that is the *normal* desktop
       // state, so silently become a guest instead of bouncing to /login —
       // this is what makes the workbench usable with no account at all.
       const status = (e as { status?: number }).status;
       if (status === 401 || status === 403) {
+        // R1.4：先试找回（客户端留存的访客标记），找回失败才新建。
+        // 换浏览器/清数据/无痕下没有标记，直接新建——按裁决允许产生新访客。
+        const mark = readGuestMark();
+        if (mark) {
+          try {
+            const reclaimed = await authApi.reclaimGuest(mark);
+            applyIdentity(reclaimed);
+            await refreshAccount();
+            return;
+          } catch {
+            /* 标记过期或访客已升级/删除：落到新建 */
+          }
+        }
         try {
           await ensureGuest();
         } catch (guestErr) {
@@ -123,7 +173,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [applyIdentity, ensureGuest]);
+  }, [applyIdentity, ensureGuest, refreshAccount]);
 
   useEffect(() => {
     void refresh();
@@ -160,8 +210,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const upgradeGuest = useCallback(
     async (input: { email: string; password: string; consent_accepted: boolean; display_name?: string }) => {
       applyIdentity(await authApi.upgradeGuest(input));
+      await refreshAccount();
     },
-    [applyIdentity],
+    [applyIdentity, refreshAccount],
   );
 
   const register = useCallback(
@@ -196,12 +247,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setOwner(null);
     setIsGuest(false);
     setPlan('unknown');
+    setAccount(null);
     window.location.href = '/login';
   }, []);
 
   const value = useMemo(
-    () => ({ owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest, register }),
-    [owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest, register],
+    () => ({ owner, loading, error, isGuest, plan, account, login, loginWithToken, logout, refresh, upgradeGuest, register }),
+    [owner, loading, error, isGuest, plan, account, login, loginWithToken, logout, refresh, upgradeGuest, register],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { ErrorBoundary } from './ErrorBoundary';
+import { ConfirmDialog } from './workbench/ConfirmDialog';
 import { useAuth } from '../auth/AuthContext';
 import { OfflineBadge } from './ui';
 import { NotificationBell } from './NotificationBell';
@@ -162,9 +163,10 @@ function FontScaleIndicator() {
 }
 
 export function Layout() {
-  const { owner, logout } = useAuth();
+  const { owner, logout, account, isGuest } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   // 空间 = 路由的纯函数。这里曾同时持有 `space` state 与路由派生的 `derived`，
   // 手动切换只改 state 而不改路由，导致 effect（依赖 derived）不重跑，
@@ -178,12 +180,22 @@ export function Layout() {
     navigate(SPACE_HOME[next]);
   }
 
-  // P3-21: owner 展示名。优先真实昵称；只有 sub（游客哈希）时脱敏。
+  // 身份展示（I-13 R2/R8/R11）：唯一来源是账号读模型（account），
+  // 与设置页同源。游客显示 `guest-<uuid前8>`；登录用户显示昵称优先、
+  // 否则脱敏 email（`a***@domain`）。title/aria 与可见文本一致，
+  // 不再裸露完整 uuid（此前注释说不裸露、代码却裸露）。
   const ownerSub = owner?.sub ?? '';
-  const ownerLabel = owner?.name?.trim()
-    || (ownerSub ? `${ownerSub.slice(0, 8)}…` : '')
+  const guestShort = ownerSub ? `guest-${ownerSub.slice(0, 8)}` : '';
+  const maskedEmail = (() => {
+    const email = account?.email ?? '';
+    const at = email.indexOf('@');
+    if (at <= 0) return '';
+    return `${email[0]}***@${email.slice(at + 1)}`;
+  })();
+  const ownerLabel = account?.display_name?.trim()
+    || (!isGuest ? maskedEmail : '')
+    || (isGuest ? guestShort : '')
     || '本地访客';
-  const ownerLabelFull = owner?.name?.trim() || ownerSub || '本地访客';
 
   const items = NAV.filter((n) => n.space === space);
 
@@ -268,12 +280,9 @@ export function Layout() {
             <span style={{ color: 'var(--amber)', fontWeight: 700 }}>查看</span>
           </NavLink>
           <div className="identity" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            {/* P3-21: 不裸露完整 owner id。游客会话 sub 是 32 位哈希，
-                直接铺在侧栏既占版面又泄漏内部标识；这里只露前 8 位，
-                完整值留在 title / aria-label 里供需要时查看。 */}
             <span
-              title={ownerLabelFull}
-              aria-label={ownerLabelFull}
+              title={ownerLabel}
+              aria-label={ownerLabel}
               data-testid="sidebar-owner"
             >
               {ownerLabel}
@@ -281,11 +290,31 @@ export function Layout() {
             <NotificationBell />
           </div>
           <FontScaleIndicator />
-          <button type="button" className="small ghost" onClick={() => void logout()}>
+          <button type="button" className="small ghost" onClick={() => setConfirmLogout(true)}>
             登出
           </button>
         </div>
       </aside>
+
+      {confirmLogout && (
+        <ConfirmDialog
+          title="退出并清除本地数据？"
+          body={
+            <>
+              将登出当前{isGuest ? '游客' : ''}会话并清除本机缓存数据。
+              {isGuest
+                ? '当前访客数据将无法找回（除非你记得访客标记）。继续吗？'
+                : '继续吗？'}
+            </>
+          }
+          confirmLabel="退出并清除"
+          onConfirm={() => {
+            setConfirmLogout(false);
+            void logout();
+          }}
+          onCancel={() => setConfirmLogout(false)}
+        />
+      )}
 
       <main className="main">
         <OfflineBadge />

@@ -26,13 +26,15 @@ from fastapi.responses import JSONResponse
 from ...config import Settings
 from ...net import is_loopback
 from ...services.actor import Actor
-from ...services.errors import PermissionDenied
+from ...services.errors import PermissionDenied, ValidationFailed
 from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
 from ..schemas import EmailPasswordBody
 
 router = APIRouter(tags=["auth"])
 
-SESSION_MAX_AGE = 8 * 3600
+#: 访客会话有效期（2026-10-16 I-13 R1.2/Q1 裁决：8 小时 → 365 天）。
+#: cookie max-age 与服务端会话行 TTL 必须同值（两边不一致等于没修）。
+SESSION_MAX_AGE = 365 * 24 * 3600
 
 
 def _client_ip(request: Request) -> str:
@@ -134,6 +136,37 @@ async def upgrade_guest(body: EmailPasswordBody, request: Request,
         "email": user.email,
         "display_name": user.display_name,
         "csrf_token": row.csrf_secret,
+    })
+    _issue_session_cookie(resp, row, request=request, settings=settings)
+    return resp
+
+
+@router.post("/auth/guest/reclaim")
+async def reclaim_guest(body: dict, request: Request,
+                        svc: Services = Depends(get_services),
+                        settings: Settings = Depends(get_settings)) -> Response:
+    """找回过期的访客会话（I-13 R1.4）：客户端留存访客标记，凭标记认领原访客。
+
+    只认“仍存在的 guest 行”（已升级/已删除无法找回，诚实 404）。
+    与创建同款双闸（local/test + loopback）：访客数据价值低但不可无成本枚举，
+    落地前须过安全评审（Q1 注记）。
+    """
+    _require_local_guest(request, settings)
+    guest_id = str((body or {}).get("guest_id") or "").strip()
+    if not guest_id:
+        raise ValidationFailed("guest_id_required", "需要提供访客标记 guest_id")
+    user, row = svc.auth.reclaim_guest_session(guest_id, ip=_client_ip(request))
+    svc.session.commit()
+    resp = JSONResponse({
+        "subject_type": "owner",
+        "status": "guest",
+        "owner_id": user.id,
+        "is_guest": True,
+        "plan": user.plan,
+        "email": user.email,
+        "display_name": user.display_name,
+        "csrf_token": row.csrf_secret,
+        "reclaimed": True,
     })
     _issue_session_cookie(resp, row, request=request, settings=settings)
     return resp

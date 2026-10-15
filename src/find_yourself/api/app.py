@@ -114,6 +114,24 @@ def create_app(*, session_maker=None, settings: Settings | None = None,
         app.state.mcp_status = await asyncio.to_thread(
             assemble_mcp_tools, settings=settings
         )
+        # R6 定时轨：启动时扫一次过期空访客（惰性轨在建访客时跑）。
+        # best-effort：失败不阻断启动。
+        try:
+            from ..services.auth import AuthService
+
+            def _purge_guests() -> int:
+                from ..services.audit import AuditService
+
+                maker = app.state.session_maker
+                session = maker()
+                try:
+                    return AuthService(session, AuditService(session)).purge_expired_guests()
+                finally:
+                    session.close()
+
+            app.state.guest_purge_count = await asyncio.to_thread(_purge_guests)
+        except Exception:  # noqa: BLE001
+            app.state.guest_purge_count = -1
         tr = temporal if temporal is not None else TemporalRuntime.disabled()
         app.state.temporal = tr
         if settings.temporal_address:

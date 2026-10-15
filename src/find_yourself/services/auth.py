@@ -13,9 +13,19 @@ import secrets
 from datetime import timedelta
 from uuid import uuid4
 
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from ..db.models import USER_PLANS, AuthSession, ServiceIdentity, User, UserConsent
+from ..db.models import (
+    USER_PLANS,
+    AuthSession,
+    Conversation,
+    Memory,
+    ServiceIdentity,
+    Task,
+    User,
+    UserConsent,
+)
 from ..db.types import utcnow
 from ..net import is_loopback
 from .actor import Actor
@@ -340,8 +350,69 @@ class AuthService:
         self.audit.append(
             Actor.owner(user.id), "user.guest_created", user.id, {"ip": (ip or "")[:64]}
         )
-        session_row = self.create_owner_session(user.id)
+        # R1.2：访客会话与 cookie 同为 365 天（8 小时是 P0-1 根因之一）。
+        session_row = self.create_owner_session(user.id, ttl_seconds=365 * 24 * 3600)
+        # R6 惰性清理：顺手清掉过期且无业务数据的空访客行（best-effort，不阻断创建）。
+        try:
+            self.purge_expired_guests()
+        except Exception:  # noqa: BLE001 — 清理失败不该让建访客失败
+            pass
         return user, session_row
+
+    def reclaim_guest_session(self, guest_id: str, *, ip: str = "") -> tuple[User, AuthSession]:
+        """凭客户端留存的访客标记找回原访客（I-13 R1.4）。
+
+        只认仍存在的 guest 行：已升级/已删除/不存在一律诚实失败，
+        不造新行（否则“找回”语义被稀释成“新建”）。
+        新开会话同样 365 天。
+        """
+        user = self.s.get(User, (guest_id or "").strip())
+        if user is None or user.status != "guest":
+            raise Unauthenticated("guest_not_found", "访客不存在或已升级/删除，无法找回")
+        session_row = self.create_owner_session(user.id, ttl_seconds=365 * 24 * 3600)
+        self.audit.append(
+            Actor.owner(user.id), "user.guest_reclaimed", user.id, {"ip": (ip or "")[:64]}
+        )
+        return user, session_row
+
+    def purge_expired_guests(self, *, ttl_days: int = 90, limit: int = 200) -> int:
+        """清理过期且无业务数据的空访客行（I-13 R6）。
+
+        只删同时满足的行：status=guest、创建时间超 TTL、有数据的（会话/任务/
+        记忆任一存在）**永不自动删**。连带删其会话行。返回删除数。
+        定时轨挂在 app lifespan 启动扫描（同文件调用处注释）。
+        """
+        from datetime import timedelta
+
+        cutoff = utcnow() - timedelta(days=ttl_days)
+        candidates = self.s.execute(
+            select(User).where(User.status == "guest", User.created_at < cutoff).limit(limit)
+        ).scalars().all()
+        removed = 0
+        for user in candidates:
+            has_data = (
+                self.s.execute(
+                    select(func.count()).select_from(Conversation).where(
+                        Conversation.owner_id == user.id)
+                ).scalar_one() > 0
+                or self.s.execute(
+                    select(func.count()).select_from(Task).where(
+                        Task.owner_id == user.id)
+                ).scalar_one() > 0
+                or self.s.execute(
+                    select(func.count()).select_from(Memory).where(
+                        Memory.owner_id == user.id)
+                ).scalar_one() > 0
+            )
+            if has_data:
+                continue
+            self.s.execute(
+                delete(AuthSession).where(AuthSession.owner_id == user.id))
+            self.s.delete(user)
+            removed += 1
+        if removed:
+            self.s.flush()
+        return removed
 
     def upgrade_guest(
         self,
@@ -392,6 +463,8 @@ class AuthService:
         if existing is not None:
             raise PermissionDenied("email_taken", "An account with this email already exists", 409)
 
+        # R12：先记下原 guest 邮箱，升级后记入审计（不做认领机制，但留痕可查）。
+        old_guest_email = user.email
         user.email = email
         user.password_hash = hash_password(password)
         user.status = "active"
@@ -413,7 +486,7 @@ class AuthService:
             Actor.owner(user.id),
             "user.guest_upgraded",
             user.id,
-            {"email_domain": email.split("@")[-1]},
+            {"email_domain": email.split("@")[-1], "old_guest_email": old_guest_email},
         )
         # The existing session stays valid: same owner_id, so nothing is lost.
         return user, self.create_owner_session(user.id)
