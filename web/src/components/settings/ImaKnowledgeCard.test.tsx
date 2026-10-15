@@ -38,9 +38,11 @@ describe('ImaKnowledgeCard', () => {
     fireEvent.change(screen.getByLabelText('ima-app_id'), { target: { value: 'app-1' } });
     fireEvent.change(screen.getByLabelText('ima-api_key'), { target: { value: 'key-1' } });
     fireEvent.change(screen.getByLabelText('ima-secret_key'), { target: { value: 'sec-1' } });
+    fireEvent.change(screen.getByLabelText('ima-kb_id'), { target: { value: '999000111' } });
     fireEvent.click(screen.getByText('保存 ima 凭证'));
     await waitFor(() =>
       expect(api().configureSource).toHaveBeenCalledWith('ima', {
+        kb_id: '999000111',
         app_id: 'app-1',
         api_key: 'key-1',
         secret_key: 'sec-1',

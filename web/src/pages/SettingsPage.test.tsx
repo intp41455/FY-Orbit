@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { SettingsPage } from './SettingsPage';
 import { dataApi } from '../api/data';
@@ -128,7 +129,7 @@ beforeEach(() => {
 
 describe('SettingsPage 模型接入卡 (W4)', () => {
   it('渲染 provider 下拉并回填服务端当前生效配置', async () => {
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     expect(screen.getByTestId('base-url-input')).toHaveValue('http://127.0.0.1:11434');
     expect(screen.getByTestId('model-input')).toHaveValue('qwen2.5:7b');
@@ -137,7 +138,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('切到 Ollama 时密钥输入禁用并说明无需密钥', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');
     expect(screen.getByTestId('api-key-input')).toBeEnabled();
@@ -148,7 +149,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('测试连接成功显示真实延迟与可用模型，不编造数字', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.click(screen.getByTestId('probe-button'));
 
@@ -164,7 +165,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
       checks: [okCheck({ ok: false, latency_ms: null, models: [], error: 'transport(连接被拒绝)' })],
     });
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.click(screen.getByTestId('probe-button'));
 
@@ -174,7 +175,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('探测端点与表单不一致时给出警示而不是假装测的是草稿', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.clear(screen.getByTestId('base-url-input'));
     await user.type(screen.getByTestId('base-url-input'), 'http://192.168.1.9:11434');
@@ -191,7 +192,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
       hint: '尚未检测到已配置的模型端点：请设置 FY_MODEL_BASE_URL',
     });
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.click(screen.getByTestId('probe-button'));
 
@@ -200,7 +201,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('添加/移除降级链会同步到 .env 片段', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.click(screen.getByTestId('fallback-add'));
     await user.type(screen.getByTestId('fallback-row-0-model'), 'qwen2.5:7b');
@@ -215,7 +216,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('保存草稿写入 localStorage 但绝不写入密钥', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');
     await user.type(screen.getByTestId('api-key-input'), 'sk-super-secret');
@@ -230,7 +231,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
 
   it('远程 provider 的片段必须带 FY_OFFLINE_MODE=0 与单价声明（两个必踩坑）', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
     await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');
     await user.type(screen.getByTestId('base-url-input'), 'https://api.example.com');
@@ -243,7 +244,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
   });
 
   it('纯本机 ollama 的片段保持在离线模式（不外传数据）', async () => {
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('base-url-input')).toHaveValue(''));
 
     const snippet = snippetText();
@@ -252,7 +253,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
   });
 
   it('系统配置状态卡仍然渲染（回归）', async () => {
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText('系统配置状态')).toBeInTheDocument());
     expect(screen.getByText('未配置（付费调用关闭）')).toBeInTheDocument();
   });
@@ -263,7 +264,7 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
       configured: true, provider: 'openai_compat', base_url: 'https://api.example.com/v1',
       model: 'gpt-4o-mini', has_api_key: true, storage: 'hub_fernet', persist_restart: true,
     });
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
 
     await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');

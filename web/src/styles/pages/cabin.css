@@ -1187,6 +1187,9 @@
   flex-direction: column;
   gap: var(--ui-s-3);
   min-width: 0;
+  /* 两侧面板太长：超出视口的部分面板内滚动，不再把整页撑成一长串。 */
+  max-height: calc(100dvh - 200px);
+  overflow-y: auto;
 }
 .cabin-ni-avatar-panel > h3 {
   margin: 0;

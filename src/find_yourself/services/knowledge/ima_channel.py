@@ -556,8 +556,15 @@ def build_ima_channel_config() -> ImaChannelConfig:
     raw = getattr(cfg, "mcp_servers", None) or {}
     if isinstance(raw, dict) and isinstance(raw.get("ima"), dict):
         mcp_server = raw["ima"]
+    # kb 自定义：凭证卡存的 kb_id 优先（用户接自己的库），其次 Settings，
+    # 最后默认公共库。三层都有空才回落默认，绝不静默变空。
+    stored = secret_store.get("ima") or {}
+    kb_id = (
+        str(stored.get("kb_id") or getattr(cfg, "ima_kb_id", "")
+            or DEFAULT_KB_ID).strip() or DEFAULT_KB_ID
+    )
     return ImaChannelConfig(
-        kb_id=str(getattr(cfg, "ima_kb_id", "") or DEFAULT_KB_ID).strip(),
+        kb_id=kb_id,
         cache_path=str(getattr(cfg, "ima_cache_path", "") or ".runtime/ima_cache"),
         mcp_server=mcp_server,
         credentials=secret_store.get("ima"),

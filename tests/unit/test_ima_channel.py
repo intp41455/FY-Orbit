@@ -291,6 +291,28 @@ def test_status_reports_channels_and_kb_match(tmp_path):
     assert "未接入" in bare_status["detail"]
 
 
+def test_build_config_prefers_stored_kb_id(monkeypatch):
+    """凭证卡存的 kb_id 优先于 Settings/默认值：用户可接自己的库，不绑死公共库。"""
+    from find_yourself.services.knowledge import ima_channel
+    from find_yourself.services.knowledge.sources import secret_store
+
+    monkeypatch.setattr(
+        secret_store, "get",
+        lambda scope: {"kb_id": "999000111"} if scope == "ima" else {},
+    )
+    assert ima_channel.build_ima_channel_config().kb_id == "999000111"
+
+
+def test_build_config_falls_back_to_default_kb_id(monkeypatch):
+    """未存 kb_id 时回落默认公共库（向后兼容，不静默变空）。"""
+    from find_yourself.services.knowledge import ima_channel
+    from find_yourself.services.knowledge.ima_channel import DEFAULT_KB_ID
+    from find_yourself.services.knowledge.sources import secret_store
+
+    monkeypatch.setattr(secret_store, "get", lambda scope: {})
+    assert ima_channel.build_ima_channel_config().kb_id == DEFAULT_KB_ID
+
+
 def test_default_client_factory_merges_credentials_into_env(monkeypatch):
     """stdio 形：凭证并入子进程 env；URL 形：api_key 并入 Authorization 头。
 

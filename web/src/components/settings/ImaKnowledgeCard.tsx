@@ -10,6 +10,7 @@ import { errorMessage } from '../ui';
 import { useBase } from '../../hooks/useAutosave';
 
 const FIELDS: { key: string; label: string; secret: boolean }[] = [
+  { key: 'kb_id', label: '知识库 ID（接你自己的库；留空用默认公共库）', secret: false },
   { key: 'app_id', label: 'App ID', secret: false },
   { key: 'api_key', label: 'API Key', secret: true },
   { key: 'secret_key', label: 'Secret Key', secret: true },
@@ -70,7 +71,8 @@ export function ImaKnowledgeCard() {
     <div className="card st-section" data-testid="ima-knowledge-card">
       <h3>ima 知识库</h3>
       <p className="muted">
-        接入陛下的 ima 公共知识库（库 {status?.kb_id ?? '7509748362520236'}）。凭证加密存储，不回显明文。
+        接入 ima 知识库：默认公共库（库 {status?.kb_id ?? '7509748362520236'}），
+        也可填你自己的知识库 ID + 自行申请的密钥。凭证加密存储，不回显明文。
       </p>
       {status && (
         <p className="muted" data-testid="ima-card-status">

@@ -251,14 +251,16 @@ export function Layout() {
         </div>
 
         <div className="sidebar-foot">
-          <NavLink to="/settings" className="control-chip">
+          {/* 直达锚点：此前两个 chip 都只跳 /settings 顶部，看起来像没反应。
+              现在分别落到桌面自动化卡与用量仪表页。 */}
+          <NavLink to="/settings#automation-permissions" className="control-chip">
             <span className="row" style={{ gap: '0.45rem' }}>
               <span className="dot sky" aria-hidden="true" />
               权限与沙箱隔离
             </span>
             <span className="badge ok">受控</span>
           </NavLink>
-          <NavLink to="/settings" className="control-chip">
+          <NavLink to="/observability" className="control-chip">
             <span className="row" style={{ gap: '0.45rem' }}>
               <span className="dot amber" aria-hidden="true" />
               预算与用量

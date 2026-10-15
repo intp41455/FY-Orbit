@@ -121,7 +121,9 @@
   min-height: 0;
   overflow: auto;
 }
-/* 中区：min 420（§12.4） */
+/* 中区：min 420（§12.4）；独立滚动（与左右区一致）。
+   此前中区无 overflow，内容超高时直接溢出盖住下方区段
+   （差异审查文字被下一节遮住即此因）。 */
 .wb-zone-middle {
   flex: 1 1 0;
   min-width: 420px;
@@ -129,6 +131,7 @@
   flex-direction: column;
   gap: var(--ui-s-3);
   min-height: 0;
+  overflow: auto;
 }
 /* 右区：固定 300（§12.4）；1200–1400 收抽屉 */
 .wb-zone-right {
@@ -1568,8 +1571,9 @@
   align-items: flex-end;
   gap: 0.6rem;
   flex-wrap: wrap;
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
+  /* 内容上收：标题与工具条之间不再空 0.6rem，文字整体往上一点。 */
+  margin-top: 0.25rem;
+  padding-top: 0.5rem;
   border-top: 1px solid color-mix(in srgb, var(--ui-sky-300, #a8d4f0) 45%, transparent);
 }
 /* 字段行改为「标签 | 输入框」同一行。

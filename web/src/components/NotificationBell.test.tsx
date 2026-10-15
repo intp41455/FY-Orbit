@@ -153,4 +153,13 @@ describe('NotificationBell 前端订阅与红点交互', () => {
       expect(screen.getByTestId('notification-badge').textContent).toBe('9');
     });
   });
+
+  it('X5: 通知面板用 fixed 定位逃出侧栏裁剪（不被遮住一半）', async () => {
+    const user = userEvent.setup();
+    render(<NotificationBell />);
+    await user.click(screen.getByTestId('notification-bell-btn'));
+    const popover = await screen.findByTestId('notification-popover');
+    // 侧栏 overflow-y:auto 会横向裁剪 absolute 子元素；fixed 相对视口，不被裁。
+    expect(popover.style.position).toBe('fixed');
+  });
 });

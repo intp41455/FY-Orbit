@@ -167,7 +167,7 @@ export function ObservabilityPage() {
               全链路 Trace 追踪 · 实时事件日志 · 耗时性能分位 · 成本与步骤进度
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, background: 'var(--ui-surface-2, rgba(255,255,255,0.04))', padding: 4, borderRadius: 8 }}>
+          <div style={{ display: 'flex', gap: 8, background: 'var(--ui-glass-1)', padding: 4, borderRadius: 8 }}>
             <button
               className={`btn btn-sm ${tab === 'logs' ? 'btn-primary' : 'btn-ghost'}`}
               onClick={() => setTab('logs')}
@@ -219,7 +219,7 @@ export function ObservabilityPage() {
               <select
                 value={levelFilter}
                 onChange={(e) => setLevelFilter(e.target.value)}
-                style={{ padding: '6px 12px', borderRadius: 6, background: 'var(--ui-surface-2, #171B25)', color: '#fff', border: '1px solid var(--ui-line, rgba(255,255,255,0.1))' }}
+                style={{ padding: '6px 12px', borderRadius: 6, background: 'var(--ui-glass-1)', color: 'var(--ui-ink-1)', border: '1px solid var(--ui-line-2)' }}
               >
                 <option value="">全部日志级别</option>
                 <option value="error">ERROR 错误</option>
@@ -234,7 +234,7 @@ export function ObservabilityPage() {
                 placeholder="按执行者筛选 (Actor)..."
                 value={actorFilter}
                 onChange={(e) => setActorFilter(e.target.value)}
-                style={{ padding: '6px 12px', borderRadius: 6, background: 'var(--ui-surface-2, #171B25)', color: '#fff', border: '1px solid var(--ui-line, rgba(255,255,255,0.1))', width: 220 }}
+                style={{ padding: '6px 12px', borderRadius: 6, background: 'var(--ui-glass-1)', color: 'var(--ui-ink-1)', border: '1px solid var(--ui-line-2)', width: 220 }}
               />
 
               <button className="btn btn-sm btn-ghost" onClick={loadLogs} disabled={loadingLogs || streaming}>
@@ -253,8 +253,8 @@ export function ObservabilityPage() {
             {loadingLogs && <Spinner />}
 
             <div style={{
-              background: 'var(--ui-surface, #12151D)',
-              border: '1px solid var(--ui-line, rgba(255,255,255,0.08))',
+              background: 'var(--ui-glass-2)',
+              border: '1px solid var(--ui-line-2)',
               borderRadius: 12,
               overflow: 'hidden',
               fontFamily: 'monospace',
@@ -262,7 +262,7 @@ export function ObservabilityPage() {
             }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'var(--ui-surface-2, #171B25)', borderBottom: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                  <tr style={{ background: 'var(--ui-glass-1)', borderBottom: '1px solid var(--ui-line-2)' }}>
                     <th style={{ padding: '10px 14px', width: 80 }}>Seq</th>
                     <th style={{ padding: '10px 14px', width: 90 }}>级别</th>
                     <th style={{ padding: '10px 14px', width: 140 }}>执行者</th>
@@ -284,7 +284,7 @@ export function ObservabilityPage() {
                       const isWarn = log.level === 'warning';
                       const badgeColor = isErr ? '#ff4d4f' : isWarn ? '#faad14' : log.level === 'change' ? '#35E0C8' : '#8A7BFF';
                       return (
-                        <tr key={log.seq} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: isErr ? 'rgba(255,77,79,0.06)' : 'transparent' }}>
+                        <tr key={log.seq} style={{ borderBottom: '1px solid var(--ui-line-2)', background: isErr ? 'rgba(255,77,79,0.06)' : 'transparent' }}>
                           <td style={{ padding: '8px 14px', color: 'var(--ui-muted, #8A93A8)' }}>#{log.seq}</td>
                           <td style={{ padding: '8px 14px' }}>
                             <span style={{
@@ -299,7 +299,7 @@ export function ObservabilityPage() {
                               {log.level.toUpperCase()}
                             </span>
                           </td>
-                          <td style={{ padding: '8px 14px', color: '#EAECF2' }}>{log.actor}</td>
+                          <td style={{ padding: '8px 14px', color: 'var(--ui-ink-1)' }}>{log.actor}</td>
                           <td style={{ padding: '8px 14px', color: '#35E0C8' }}>{log.action}</td>
                           <td style={{ padding: '8px 14px', color: 'var(--ui-muted, #8A93A8)' }}>
                             {log.target ? `[${log.target}] ` : ''}
@@ -330,27 +330,27 @@ export function ObservabilityPage() {
             {loadingPerf && <Spinner />}
             {perfStats && (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-                <div className="card" style={{ padding: 18, background: 'var(--ui-surface, #12151D)', borderRadius: 12, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                <div className="card" style={{ padding: 18, background: 'var(--ui-glass-2)', borderRadius: 12, border: '1px solid var(--ui-line-2)' }}>
                   <div style={{ fontSize: 12, color: 'var(--ui-muted, #8A93A8)', marginBottom: 6 }}>中位耗时 (p50)</div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: '#35E0C8' }}>
                     {perfStats.p50_latency_ms !== null ? `${perfStats.p50_latency_ms} ms` : '样本积累中'}
                   </div>
                 </div>
-                <div className="card" style={{ padding: 18, background: 'var(--ui-surface, #12151D)', borderRadius: 12, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                <div className="card" style={{ padding: 18, background: 'var(--ui-glass-2)', borderRadius: 12, border: '1px solid var(--ui-line-2)' }}>
                   <div style={{ fontSize: 12, color: 'var(--ui-muted, #8A93A8)', marginBottom: 6 }}>长尾耗时 (p95)</div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: '#F5C26B' }}>
                     {perfStats.p95_latency_ms !== null ? `${perfStats.p95_latency_ms} ms` : '样本积累中'}
                   </div>
                 </div>
-                <div className="card" style={{ padding: 18, background: 'var(--ui-surface, #12151D)', borderRadius: 12, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                <div className="card" style={{ padding: 18, background: 'var(--ui-glass-2)', borderRadius: 12, border: '1px solid var(--ui-line-2)' }}>
                   <div style={{ fontSize: 12, color: 'var(--ui-muted, #8A93A8)', marginBottom: 6 }}>总事件吞吐</div>
                   <div style={{ fontSize: 24, fontWeight: 700, color: '#8A7BFF' }}>
                     {perfStats.total_events} 笔
                   </div>
                 </div>
-                <div className="card" style={{ padding: 18, background: 'var(--ui-surface, #12151D)', borderRadius: 12, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                <div className="card" style={{ padding: 18, background: 'var(--ui-glass-2)', borderRadius: 12, border: '1px solid var(--ui-line-2)' }}>
                   <div style={{ fontSize: 12, color: 'var(--ui-muted, #8A93A8)', marginBottom: 6 }}>活跃跨度 (Span)</div>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: '#EAECF2' }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--ui-ink-1)' }}>
                     {perfStats.active_span_ms !== null ? `${Math.round(perfStats.active_span_ms / 1000)} 秒` : '单点会话'}
                   </div>
                 </div>
@@ -359,17 +359,17 @@ export function ObservabilityPage() {
 
             {agentStats && (
               <div style={{
-                background: 'var(--ui-surface, #12151D)',
-                border: '1px solid var(--ui-line, rgba(255,255,255,0.08))',
+                background: 'var(--ui-glass-2)',
+                border: '1px solid var(--ui-line-2)',
                 borderRadius: 12,
                 overflow: 'hidden',
               }}>
-                <div style={{ padding: '14px 20px', fontWeight: 600, borderBottom: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+                <div style={{ padding: '14px 20px', fontWeight: 600, borderBottom: '1px solid var(--ui-line-2)' }}>
                   各 Agent 独立性能与健康度明细
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: 13 }}>
                   <thead>
-                    <tr style={{ background: 'var(--ui-surface-2, #171B25)', color: 'var(--ui-muted, #8A93A8)' }}>
+                    <tr style={{ background: 'var(--ui-glass-1)', color: 'var(--ui-muted, #8A93A8)' }}>
                       <th style={{ padding: '10px 16px' }}>Agent 标识</th>
                       <th style={{ padding: '10px 16px' }}>调用次数</th>
                       <th style={{ padding: '10px 16px' }}>平均耗时</th>
@@ -386,7 +386,7 @@ export function ObservabilityPage() {
                       </tr>
                     ) : (
                       agentStats.agents.map((ag) => (
-                        <tr key={ag.agent_id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                        <tr key={ag.agent_id} style={{ borderBottom: '1px solid var(--ui-line-2)' }}>
                           <td style={{ padding: '10px 16px', fontWeight: 600, color: '#35E0C8' }}>{ag.agent_id}</td>
                           <td style={{ padding: '10px 16px' }}>{ag.calls_count} 次</td>
                           <td style={{ padding: '10px 16px' }}>{ag.avg_latency_ms !== null ? `${ag.avg_latency_ms} ms` : '-'}</td>
@@ -411,7 +411,7 @@ export function ObservabilityPage() {
                 placeholder="输入任务 ID (选填，留空展示全局任务进度)..."
                 value={taskIdInput}
                 onChange={(e) => setTaskIdInput(e.target.value)}
-                style={{ flex: 1, padding: '8px 14px', borderRadius: 6, background: 'var(--ui-surface-2, #171B25)', color: '#fff', border: '1px solid var(--ui-line, rgba(255,255,255,0.1))' }}
+                style={{ flex: 1, padding: '8px 14px', borderRadius: 6, background: 'var(--ui-glass-1)', color: 'var(--ui-ink-1)', border: '1px solid var(--ui-line-2)' }}
               />
               <button className="btn btn-sm btn-primary" onClick={() => loadCost(taskIdInput)}>查询进度</button>
             </div>
@@ -419,7 +419,7 @@ export function ObservabilityPage() {
             {loadingCost && <Spinner />}
 
             {costData && (
-              <div style={{ background: 'var(--ui-surface, #12151D)', borderRadius: 12, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))', padding: 24 }}>
+              <div style={{ background: 'var(--ui-glass-2)', borderRadius: 12, border: '1px solid var(--ui-line-2)', padding: 24 }}>
                 <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>任务执行进度与剩余预估</h3>
 
                 <div style={{ marginBottom: 20 }}>
@@ -429,7 +429,7 @@ export function ObservabilityPage() {
                       {costData.step_progress_pct !== null ? `${Math.round(costData.step_progress_pct)}%` : '动态执行中'}
                     </span>
                   </div>
-                  <div style={{ height: 10, background: 'rgba(255,255,255,0.08)', borderRadius: 5, overflow: 'hidden' }}>
+                  <div style={{ height: 10, background: 'var(--ui-line-2)', borderRadius: 5, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%',
                       width: `${costData.step_progress_pct ?? 25}%`,
@@ -440,11 +440,11 @@ export function ObservabilityPage() {
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24, fontSize: 13 }}>
-                  <div style={{ padding: 14, background: 'var(--ui-surface-2, #171B25)', borderRadius: 8 }}>
+                  <div style={{ padding: 14, background: 'var(--ui-glass-1)', borderRadius: 8 }}>
                     <span style={{ color: 'var(--ui-muted, #8A93A8)' }}>剩余步数估计上限: </span>
-                    <strong style={{ color: '#EAECF2' }}>{costData.remaining_steps_upper_bound ?? '自适应'} 步</strong>
+                    <strong style={{ color: 'var(--ui-ink-1)' }}>{costData.remaining_steps_upper_bound ?? '自适应'} 步</strong>
                   </div>
-                  <div style={{ padding: 14, background: 'var(--ui-surface-2, #171B25)', borderRadius: 8 }}>
+                  <div style={{ padding: 14, background: 'var(--ui-glass-1)', borderRadius: 8 }}>
                     <span style={{ color: 'var(--ui-muted, #8A93A8)' }}>预计剩余时间 (基于历史均耗): </span>
                     <strong style={{ color: '#35E0C8' }}>
                       {costData.estimated_remaining_ms !== null ? `${(costData.estimated_remaining_ms / 1000).toFixed(1)} 秒` : '动态评估中'}
@@ -474,7 +474,7 @@ export function ObservabilityPage() {
 
         {/* Tab 4: Trace */}
         {tab === 'trace' && (
-          <div style={{ background: 'var(--ui-surface, #12151D)', borderRadius: 12, padding: 20, border: '1px solid var(--ui-line, rgba(255,255,255,0.08))' }}>
+          <div style={{ background: 'var(--ui-glass-2)', borderRadius: 12, padding: 20, border: '1px solid var(--ui-line-2)' }}>
             <TraceView />
           </div>
         )}

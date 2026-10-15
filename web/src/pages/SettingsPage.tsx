@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { dataApi } from '../api/data';
 import { modelsApi } from '../api/models';
 import { authApi } from '../api/auth';
@@ -104,6 +105,21 @@ function ConfirmDialog({
 
 export function SettingsPage() {
   const { data, loading, error } = useAsync(() => dataApi.settings(), []);
+  const location = useLocation();
+
+  // 侧栏直达：/settings#automation-permissions 等锚点进页即滚动到对应卡片。
+  // （此前侧栏两个 chip 都只跳 /settings 顶部，用户感觉“按键无效”。）
+  useEffect(() => {
+    if (!location.hash) return;
+    const el = document.getElementById(location.hash.slice(1));
+    // jsdom 无 scrollIntoView：守卫，测试与非浏览器环境不炸。
+    if (el && typeof el.scrollIntoView === 'function') {
+      const t = window.setTimeout(
+        () => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+      return () => window.clearTimeout(t);
+    }
+    return undefined;
+  }, [location.hash]);
   const [exporting, setExporting] = useState(false);
   const [exportMsg, setExportMsg] = useState<string | null>(null);
 
@@ -206,7 +222,7 @@ export function SettingsPage() {
               <p className="muted">
                 不可逆。将级联删除你的全部记忆、吊销所有会话并匿名化账号；
                 按 GDPR 合规要求会保留同意记录作为举证。
-                <strong>建议先导出留存</strong>。
+                <strong>建议先导出留存</strong>
               </p>
             </div>
             <button
@@ -273,7 +289,7 @@ export function SettingsPage() {
 /* 三层账号的产品承诺在这里落地：                                                 */
 /*   游客 = 默认态，工作台免登录全功能可用；                                       */
 /*   注册 = 解锁云同步 / 社区 / 导出分享；                                        */
-/*   会员 = **只留位**。v1 不接支付通道，因此本卡明确写「付费通道未开通」，       */
+/*   会员 = **只留位**。v1 不展示支付相关行（付费通道行已按用户要求下线），  */
 /*          不用任何「开通」「立即升级」这类会误导用户的按钮。                      */
 /* 升级走的是同 id 就地 UPDATE，用户此前产生的数据全部保留（任务书 §4）。       */
 /* -------------------------------------------------------------------------- */
@@ -379,15 +395,8 @@ function AccountCard() {
             </tr>
             <tr><td>邮箱</td><td data-testid="account-email">{data.email || '—'}</td></tr>
             <tr><td>会员位</td><td data-testid="account-plan">{planLabel}</td></tr>
-            <tr>
-              <td>付费通道</td>
-              <td data-testid="account-payment">
-                {/* 诚实标注：v1 没有接支付，不做任何“立即开通”类误导入口。 */}
-                {data.payment_enabled
-                  ? <span className="badge ok">已开通</span>
-                  : <span className="badge warn">未开通（v1 不接支付，会员位仅预留）</span>}
-              </td>
-            </tr>
+            {/* 付费通道行已下线（v1 不展示支付相关行，用户要求删除）。
+                后端 `payment_enabled` 字段保留（API 契约不动），前端不再渲染。 */}
           </tbody>
         </table>
       )}

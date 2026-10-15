@@ -56,6 +56,22 @@ const TYPE_HINTS: Record<DslNodeType, string> = {
   delay: '等待秒数（0..300，0 即直通）',
 };
 
+/**
+ * 分组收纳（展示层分组，不另维护类型清单）。
+ *
+ * 20 类一屏放不下：按「基础 / Agent / 流程 / 外部 / 拓扑」收到原生
+ * `<details>` 分组里（文档流内展开，把下面内容自然下推，**不遮挡**其它面板）。
+ * 未登录分组的新类型自动落进「其他」（扩展位置，不丢类型）。
+ * 默认只展开「基础」：首屏只见 3 个，其余点组名展开。
+ */
+const PALETTE_GROUPS: ReadonlyArray<{ title: string; types: DslNodeType[] }> = [
+  { title: '基础', types: ['input', 'transform', 'output'] },
+  { title: 'Agent 与知识', types: ['llm', 'knowledge_retrieval', 'question_classifier', 'parameter_extractor'] },
+  { title: '流程控制', types: ['iteration', 'loop', 'variable_aggregator', 'template', 'join', 'delay'] },
+  { title: '外部与人工', types: ['http_request', 'code', 'tool', 'human_input', 'trigger'] },
+  { title: '拓扑', types: ['parallel', 'subgraph'] },
+];
+
 export interface NodePaletteProps {
   /** 来自后端 schema 的节点类型（已过滤到受限集内）。 */
   types: DslNodeType[];
@@ -75,6 +91,32 @@ export function NodePalette({ types, onAdd, onDropNode }: NodePaletteProps) {
     onDropNode(type, { x: e.clientX, y: e.clientY });
   }, [onDropNode]);
 
+  const inTypes = new Set(types);
+  const groups = PALETTE_GROUPS.map((g) => ({
+    ...g,
+    items: g.types.filter((t) => inTypes.has(t)),
+  }));
+  // 扩展位置：分组表里没写的新类型不丢，进「其他」。
+  const grouped = new Set(groups.flatMap((g) => g.items));
+  const others = types.filter((t) => !grouped.has(t));
+  if (others.length > 0) groups.push({ title: '其他', types: [], items: others });
+
+  const renderItem = (t: DslNodeType) => (
+    <button
+      key={t}
+      type="button"
+      className={`fy-flow-palette-item type-${t}`}
+      draggable
+      onDragStart={(e) => e.dataTransfer.setData('text/fy-flow-node', t)}
+      onClick={() => onAdd(t)}
+      data-testid={`flow-palette-${t}`}
+      title={TYPE_HINTS[t]}
+    >
+      <span className="fy-flow-palette-label">{TYPE_LABELS[t]}</span>
+      <span className="fy-flow-palette-hint">{TYPE_HINTS[t]}</span>
+    </button>
+  );
+
   return (
     <div
       className={`fy-flow-palette${over ? ' is-drop' : ''}`}
@@ -87,21 +129,21 @@ export function NodePalette({ types, onAdd, onDropNode }: NodePaletteProps) {
       <p className="muted fy-flow-palette-note">
         受限动词集——这是平台的**全部**能力，超出集合的需求会被诚实拒绝。
       </p>
-      {types.map((t) => (
-        <button
-          key={t}
-          type="button"
-          className={`fy-flow-palette-item type-${t}`}
-          draggable
-          onDragStart={(e) => e.dataTransfer.setData('text/fy-flow-node', t)}
-          onClick={() => onAdd(t)}
-          data-testid={`flow-palette-${t}`}
-          title={TYPE_HINTS[t]}
-        >
-          <span className="fy-flow-palette-label">{TYPE_LABELS[t]}</span>
-          <span className="fy-flow-palette-hint">{TYPE_HINTS[t]}</span>
-        </button>
-      ))}
+      <div className="fy-flow-palette-list" data-testid="flow-list">
+        {groups.filter((g) => g.items.length > 0).map((g, gi) => (
+          <details
+            key={g.title}
+            className="fy-flow-palette-group"
+            open={gi === 0}
+            data-testid={`flow-group-${gi}`}
+          >
+            <summary className="fy-flow-palette-group-hd">
+              {g.title}（{g.items.length}）
+            </summary>
+            {g.items.map(renderItem)}
+          </details>
+        ))}
+      </div>
       <p className="muted fy-flow-palette-note">
         点选即添加到画布；也可以把卡片拖进画布。
       </p>

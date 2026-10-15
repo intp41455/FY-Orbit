@@ -50,6 +50,13 @@ export function AutomationPermissionCard() {
   const current: AutomationMode = data?.mode ?? 'off';
 
   async function choose(mode: AutomationMode) {
+    // 点已选中的档位时 radio 不触发 change；但键盘/辅助技术可能重复激活，
+    // 此时给一句明确反馈而不是静默无事发生（用户会误以为“按键无效”）。
+    if (mode === current) {
+      setMsg(`已是「${MODES.find((m) => m.id === mode)?.label}」，无需切换。`);
+      setFormError(null);
+      return;
+    }
     setPending(true);
     setMsg(null);
     setFormError(null);
@@ -111,7 +118,10 @@ export function AutomationPermissionCard() {
                   data-testid={`automation-mode-${m.id}`}
                   checked={current === m.id}
                   disabled={pending}
-                  onChange={() => void choose(m.id)}
+                  // 用 onClick 而不用 onChange：点已选中的档位时 change 不触发，
+                  // 用户会觉得“按键无效”；click 两种情形都触发，重复点走上面的
+                  // “已是…无需切换”反馈。键盘空格/回车同样触发 click，无障碍不受影响。
+                  onClick={() => void choose(m.id)}
                 />
                 <span>
                   <strong>{m.label}</strong>

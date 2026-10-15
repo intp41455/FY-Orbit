@@ -1679,6 +1679,30 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 .fy-flow-palette.is-drop { border-color: rgba(56, 189, 248, 0.75); }
 .fy-flow-palette-title { font-size: 0.85rem; }
 .fy-flow-palette-note { font-size: 0.72rem; margin: 0; line-height: 1.45; }
+/* 分组收纳：列表区独立滚动 + 分组文档流内展开（不遮挡其它面板）。
+   组头永远可见，首屏只展开第一组；新类型自动进「其他」组。 */
+.fy-flow-palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  min-height: 0;
+}
+.fy-flow-palette-group { border: 0; padding: 0; margin: 0; }
+.fy-flow-palette-group-hd {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--sky-deep, #0b3a5d);
+  padding: 0.3rem 0.2rem;
+  list-style: none;
+  position: sticky;
+  top: 0;
+}
+.fy-flow-palette-group-hd::-webkit-details-marker { display: none; }
+.fy-flow-palette-group-hd::before { content: '▸ '; }
+.fy-flow-palette-group[open] > .fy-flow-palette-group-hd::before { content: '▾ '; }
 .fy-flow-palette-item {
   display: flex;
   flex-direction: column;
@@ -2951,9 +2975,10 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
   flex: 1 1 220px;
   min-width: 0;
   border-radius: 8px;
-  border: 1px solid rgba(150, 190, 230, 0.3);
-  background: rgba(20, 34, 52, 0.55);
-  color: inherit;
+  border: 1px solid var(--ui-line-2);
+  /* 去深底：浅色主题下输入框与页面同底，不再是灰块。 */
+  background: var(--ui-glass-1);
+  color: var(--ui-ink-1);
   padding: 0.35rem 0.5rem;
 }
 
@@ -2963,9 +2988,9 @@ button.team-node:hover { transform: translateY(-1.5px); box-shadow: 0 12px 30px 
 
 .asset-select {
   border-radius: 8px;
-  border: 1px solid rgba(150, 190, 230, 0.3);
-  background: rgba(20, 34, 52, 0.55);
-  color: inherit;
+  border: 1px solid var(--ui-line-2);
+  background: var(--ui-glass-1);
+  color: var(--ui-ink-1);
   padding: 0.35rem 0.4rem;
 }
 

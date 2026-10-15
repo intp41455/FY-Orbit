@@ -123,11 +123,13 @@ export function NotificationBell() {
           className="notification-popover"
           data-testid="notification-popover"
           style={{
-            position: 'absolute',
-            bottom: '40px',
-            left: '0',
-            width: '280px',
-            maxHeight: '360px',
+            // fixed 相对视口：侧栏 overflow-y:auto 会横向裁剪 absolute 子元素
+            // （面板被遮住一半即此因）。左下角贴边，不盖主内容。
+            position: 'fixed',
+            left: '16px',
+            bottom: '16px',
+            width: 'min(320px, calc(100vw - 32px))',
+            maxHeight: 'min(420px, calc(100vh - 32px))',
             overflowY: 'auto',
             background: 'var(--bg-elevated, #1e293b)',
             border: '1px solid var(--border, #334155)',

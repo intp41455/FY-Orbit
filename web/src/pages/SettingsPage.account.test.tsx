@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import { SettingsPage } from './SettingsPage';
 import { dataApi } from '../api/data';
@@ -100,25 +101,24 @@ beforeEach(() => {
 
 describe('设置页账号卡 · 账号三层（W8）', () => {
   it('展示游客身份、真实邮箱与 free 会员位', async () => {
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('account-tier')).toHaveTextContent('游客'));
     expect(screen.getByTestId('account-email')).toHaveTextContent('guest-4f2a@local');
     expect(screen.getByTestId('account-plan')).toHaveTextContent('Free');
   });
 
-  it('诚实标注付费通道未开通，且不出现任何“立即开通”类按钮', async () => {
-    render(<SettingsPage />);
-    await waitFor(() => expect(screen.getByTestId('account-payment')).toBeInTheDocument());
-    expect(screen.getByTestId('account-payment')).toHaveTextContent('未开通（v1 不接支付，会员位仅预留）');
-    // v1 has no payment channel: no upsell affordance may exist.
-    expect(screen.queryByRole('button', { name: /立即开通|开通会员|升级会员|购买/ })).not.toBeInTheDocument();
+  it('付费通道整行已下线（v1 不展示支付相关行）', async () => {
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
+    await waitFor(() => expect(screen.getByTestId('account-tier')).toBeInTheDocument());
+    expect(screen.queryByTestId('account-payment')).not.toBeInTheDocument();
+    expect(screen.queryByText('付费通道')).not.toBeInTheDocument();
   });
 
   it('已注册账号不再渲染升级表单', async () => {
     useAuthMock.mockReturnValue(authState({ isGuest: false, plan: 'pro' }));
     account.mockResolvedValue({ ...GUEST, is_guest: false, plan: 'pro', email: 'jia@example.com', status: 'active' });
 
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('account-tier')).toHaveTextContent('已注册'));
     expect(screen.getByTestId('account-plan')).toHaveTextContent('Pro（会员位）');
     expect(screen.queryByTestId('upgrade-submit')).not.toBeInTheDocument();
@@ -126,7 +126,7 @@ describe('设置页账号卡 · 账号三层（W8）', () => {
 
   it('未勾选隐私政策同意时不发请求，并说明原因', async () => {
     const user = userEvent.setup();
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('upgrade-submit')).toBeInTheDocument());
 
     await user.type(screen.getByTestId('upgrade-email'), 'jia@example.com');
@@ -143,7 +143,7 @@ describe('设置页账号卡 · 账号三层（W8）', () => {
     useAuthMock.mockReturnValue(authState({ upgradeGuest: upgrade }));
     account.mockResolvedValue({ ...GUEST, is_guest: false, plan: 'free', email: 'jia@example.com', status: 'active' });
 
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('upgrade-submit')).toBeInTheDocument());
 
     await user.type(screen.getByTestId('upgrade-email'), 'jia@example.com');
@@ -168,7 +168,7 @@ describe('设置页账号卡 · 账号三层（W8）', () => {
     );
     useAuthMock.mockReturnValue(authState({ upgradeGuest: upgrade }));
 
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByTestId('upgrade-submit')).toBeInTheDocument());
 
     await user.type(screen.getByTestId('upgrade-email'), 'taken@example.com');
@@ -187,7 +187,7 @@ describe('设置页账号卡 · 账号三层（W8）', () => {
   it('缺少 AuthProvider 时账号卡降级提示，其余设置分区照常渲染', async () => {
     useAuthMock.mockReturnValue(null);
 
-    render(<SettingsPage />);
+    render(<MemoryRouter><SettingsPage /></MemoryRouter>);
 
     await waitFor(() => expect(screen.getByTestId('account-no-provider')).toBeInTheDocument());
     expect(screen.getByTestId('account-no-provider')).toHaveTextContent('未接入会话上下文');

@@ -1157,6 +1157,23 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
             selected && updateNode(selected.id, { params: { ...selected.params, ...patch } })}
         />
 
+        {/* 右侧顺序：属性面板 → 代码视图 → 边条件 → 预览。
+            代码视图紧跟属性面板往上放（用户要求）：改完参数视线不用跳太远；
+            边条件与预览依次下移。 */}
+        {/* G4-i：小白模式把这层技术面收进 `<details>` 折叠区——折叠而非卸载，
+            收起态内容仍在 DOM（页面级同源断言与读屏都还能命中）。
+            非小白模式保持原来的 `<div class="card">`，DOM 结构零变化。 */}
+        {mode === 'beginner' ? (
+          <details className="card" data-testid="flow-code-card">
+            <summary style={{ cursor: 'pointer' }} data-testid="flow-code-summary">
+              技术详情（代码视图 / 手改 DSL / 导出脚本）
+            </summary>
+            {advancedBody}
+          </details>
+        ) : (
+          <div className="card" data-testid="flow-code-card">{advancedBody}</div>
+        )}
+
         <EdgeConditions />
 
         {/* G4-d · 即时重算结果。放在属性面板正下方：改参数的人正在那儿，
@@ -1192,20 +1209,6 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
               </ul>
             )}
           </div>
-        )}
-
-        {/* G4-i：小白模式把这层技术面收进 `<details>` 折叠区——折叠而非卸载，
-            收起态内容仍在 DOM（页面级同源断言与读屏都还能命中）。
-            非小白模式保持原来的 `<div class="card">`，DOM 结构零变化。 */}
-        {mode === 'beginner' ? (
-          <details className="card" data-testid="flow-code-card">
-            <summary style={{ cursor: 'pointer' }} data-testid="flow-code-summary">
-              技术详情（代码视图 / 手改 DSL / 导出脚本）
-            </summary>
-            {advancedBody}
-          </details>
-        ) : (
-          <div className="card" data-testid="flow-code-card">{advancedBody}</div>
         )}
       </div>
     </div>
