@@ -1384,6 +1384,11 @@
     "properties": [],
     "required": []
   },
+  "POST /api/plugins/marketplace/sources/{conn_id}/import": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
   "POST /api/plugins/marketplace/{skill_id}/install": {
     "has_body": false,
     "properties": [],
@@ -2011,6 +2016,13 @@
       "operation"
     ]
   },
+  "POST /api/teams/{team_id}/drive": {
+    "has_body": true,
+    "properties": [
+      "max_members"
+    ],
+    "required": []
+  },
   "POST /api/teams/{team_id}/goal": {
     "has_body": true,
     "properties": [
@@ -2067,6 +2079,7 @@
   "POST /api/teams/{team_id}/start": {
     "has_body": true,
     "properties": [
+      "autostart",
       "expected_version",
       "root_task_id"
     ],
@@ -2426,6 +2439,15 @@
     "has_body": false,
     "properties": [],
     "required": []
+  },
+  "POST /auth/guest/reclaim": {
+    "has_body": true,
+    "properties": [
+      "guest_id"
+    ],
+    "required": [
+      "guest_id"
+    ]
   },
   "POST /auth/guest/upgrade": {
     "has_body": true,

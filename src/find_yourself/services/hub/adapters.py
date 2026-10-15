@@ -1058,9 +1058,8 @@ class MarketSourceAdapter:
 
         parsed = urlparse(url)
         if parsed.scheme == "file":
-            from pathlib import Path as _Path
-
             import re as _re
+            from pathlib import Path as _Path
             # Windows：file:///C:/x → path 为 /C:/x，需去首斜杠。
             fs_path = parsed.path
             if _re.match(r"^/[A-Za-z]:", fs_path):

@@ -48,7 +48,9 @@ def test_marketplace_list_empty_then_lists_published(client: TestClient):
     headers = login_owner(client)
     r = client.get("/api/plugins/marketplace", headers=headers)
     assert r.status_code == 200
-    assert r.json() == {"items": [], "total": 0, "limit": 20, "offset": 0, "sort_by": "score"}
+    # I-12：``blocked`` 是「远程可见但不可安装」的独立清单（T8 远程市场源）。
+    assert r.json() == {"items": [], "blocked": [], "total": 0, "limit": 20,
+                        "offset": 0, "sort_by": "score"}
 
     sk_id = _stage_and_publish(client, headers, "http-listed")
     r = client.get("/api/plugins/marketplace", headers=headers)

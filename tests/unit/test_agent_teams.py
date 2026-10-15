@@ -28,8 +28,13 @@ from decimal import Decimal
 import pytest
 
 from find_yourself.db.models import BudgetReservation, Task
-from find_yourself.db.team_models import ModelBinding, TeamEvent
-from find_yourself.runtime.gateway import MockModelProvider, ModelGateway, ModelPricing
+from find_yourself.db.team_models import ModelBinding, TeamDefinition, TeamEvent
+from find_yourself.runtime.gateway import (
+    MockModelProvider,
+    ModelGateway,
+    ModelNotConfigured,
+    ModelPricing,
+)
 from find_yourself.services.agent_teams import AgentTeamService
 from find_yourself.services.budget import BudgetLimits, BudgetService
 from find_yourself.services.errors import Conflict, PermissionDenied, ValidationFailed
@@ -729,3 +734,127 @@ def test_spawn_adds_a_member_and_registers_its_session(teams, owner):
         teams.control(
             owner, team.id, operation="spawn", scope={"role": "auditor"}, reason="dup",
         )
+
+
+# ----------------------------------------------------------------------
+# P06 · 执行引擎：start_team 之后必须真有推进，终局必须落地
+# ----------------------------------------------------------------------
+def test_drive_once_advances_ready_members_and_settles_team(teams, owner, session):
+    """一轮推进：三个成员都执行、模型真被调用、团队落 completed（不再停在 running）。"""
+    team = engineering_team(teams, owner)
+    teams.start_team(owner, team.id, expected_version=1)
+    team_row = session.get(TeamDefinition, team.id)
+    assert team_row.state == "running"
+
+    snap = teams.drive_once(owner, team.id)
+
+    roles = {m["role"]: m for m in snap["members"]}
+    assert roles["coordinator"]["state"] == "completed"
+    assert roles["implementer"]["state"] == "completed"
+    assert roles["reviewer"]["state"] == "completed"
+    assert snap["team"]["state"] == "completed"
+    # 真实模型路径：mock provider 被调用过（不是假推进）。
+    assert teams.gateway.provider.last_call["prompt"]
+    ev_types = [e["event_type"] for e in snap["events"]]
+    assert ev_types.count("member.completed") == 3
+    assert "team.completed" in ev_types
+
+
+def test_drive_once_respects_dependencies_order(teams, owner, session):
+    """依赖顺序：a 先完成，b 才能执行（同一轮内按声明序成波推进）。"""
+    team = teams.create_team(
+        owner, name="依赖团队",
+        members=[{"role": "a"}, {"role": "b", "depends_on": ["a"]}],
+        default_binding={"provider_id": "local-synthetic", "model_id": "mock-deterministic"},
+        budget_ref={"root_budget_usd": 0.50, "member_reserve_cap_usd": 0.05},
+    )
+    teams.start_team(owner, team.id, expected_version=1)
+
+    snap = teams.drive_once(owner, team.id)
+
+    roles = {m["role"]: m for m in snap["members"]}
+    assert roles["a"]["state"] == "completed"
+    assert roles["b"]["state"] == "completed", "a 已完成，b 可在同一轮成波推进"
+    done = [e["details"]["role"] for e in snap["events"]
+            if e["event_type"] == "member.completed"]
+    assert done.index("a") < done.index("b"), "依赖方必须先于被依赖方完成"
+
+
+def test_drive_once_does_not_run_member_whose_dependency_failed(
+    teams, owner, session, monkeypatch
+):
+    """依赖失败则下游成员保持 running，绝不假装执行过。"""
+    team = teams.create_team(
+        owner, name="依赖失败团队",
+        members=[{"role": "a"}, {"role": "b", "depends_on": ["a"]}],
+        default_binding={"provider_id": "local-synthetic", "model_id": "mock-deterministic"},
+        budget_ref={"root_budget_usd": 0.50, "member_reserve_cap_usd": 0.05},
+    )
+    teams.start_team(owner, team.id, expected_version=1)
+
+    def boom(*args, **kwargs):
+        raise ModelNotConfigured("provider is not configured")
+
+    monkeypatch.setattr(teams.gateway, "complete", boom)
+    snap = teams.drive_once(owner, team.id)
+
+    roles = {m["role"]: m for m in snap["members"]}
+    assert roles["a"]["state"] == "failed"
+    assert roles["b"]["state"] == "running", "上游失败时下游不得被推进"
+    assert snap["team"]["state"] == "running", "还有成员未终结，团队不能假终局"
+
+
+def test_drive_once_marks_member_failed_and_team_failed_with_visible_reason(
+    teams, owner, session, monkeypatch
+):
+    """模型不可用（ModelNotConfigured）时成员 failed + 团队 failed，原因可见，不静默 running。"""
+    team = teams.create_team(
+        owner, name="无模型团队",
+        members=[{"role": "solo"}],
+        default_binding={"provider_id": "local-synthetic", "model_id": "mock-deterministic"},
+        budget_ref={"root_budget_usd": 0.50, "member_reserve_cap_usd": 0.05},
+    )
+    teams.start_team(owner, team.id, expected_version=1)
+
+    def boom(*args, **kwargs):
+        raise ModelNotConfigured("provider is not configured")
+
+    monkeypatch.setattr(teams.gateway, "complete", boom)
+    snap = teams.drive_once(owner, team.id)
+
+    solo = snap["members"][0]
+    assert solo["state"] == "failed"
+    assert solo["blocked_reason"], "失败必须给出可见原因"
+    assert snap["team"]["state"] == "failed"
+    assert "member.failed" in [e["event_type"] for e in snap["events"]]
+
+
+def test_drive_once_fails_member_that_exhausted_max_steps(teams, owner, session):
+    """步数用尽不再空转：标记 failed 并给原因。"""
+    team = engineering_team(teams, owner)
+    teams.start_team(owner, team.id, expected_version=1)
+    for inst in teams._members(team.id):
+        inst.steps = inst.max_steps
+    session.flush()
+
+    snap = teams.drive_once(owner, team.id)
+
+    assert all(m["state"] == "failed" for m in snap["members"])
+    assert snap["team"]["state"] == "failed"
+    assert all("max_steps_exhausted" in m["blocked_reason"] for m in snap["members"])
+
+
+def test_drive_once_rejects_team_that_is_not_running(teams, owner):
+    team = engineering_team(teams, owner)
+    with pytest.raises(ValidationFailed) as exc:
+        teams.drive_once(owner, team.id)
+    assert exc.value.code == "team_not_running"
+
+
+def test_drive_once_is_idempotent_after_completion(teams, owner):
+    """已完成团队不再推进（不会重复烧模型调用）。"""
+    team = engineering_team(teams, owner)
+    teams.start_team(owner, team.id, expected_version=1)
+    teams.drive_once(owner, team.id)
+    with pytest.raises(ValidationFailed):
+        teams.drive_once(owner, team.id)

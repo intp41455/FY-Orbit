@@ -22,6 +22,14 @@ class LocalDevTokenRequest(Strict):
     token: str = Field(min_length=1, max_length=200)
 
 
+class GuestReclaimBody(Strict):
+    """访客找回请求体（GA-01：逐字段声明，``extra=forbid`` 诚实拒绝多余字段）。
+
+    ``guest_id`` 是客户端本地留存的访客标记值；空串会被 422 挡在服务层之前。
+    """
+    guest_id: str = Field(min_length=1, max_length=64)
+
+
 class EmailPasswordBody(Strict):
     """邮箱 + 密码类请求体（注册 / 登录 / 访客升级共用同一形状）。
 

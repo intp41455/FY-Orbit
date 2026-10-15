@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...services.actor import Actor
@@ -76,6 +76,12 @@ class RoleBindingRequest(BaseModel):
 class StartTeamRequest(BaseModel):
     expected_version: int = Field(ge=1)
     root_task_id: str | None = None
+    #: P06：启动后立即后台驱动成员 DAG。默认 True——「启动」必须真的跑起来。
+    autostart: bool = True
+
+
+class DriveRequest(BaseModel):
+    max_members: int = Field(default=3, ge=1, le=32)
 
 
 class ControlRequestBody(BaseModel):
@@ -292,6 +298,7 @@ async def validate_team(
 async def start_team(
     team_id: str,
     body: StartTeamRequest,
+    request: Request,
     actor: Actor = Depends(csrf_protected),
     svc: Services = Depends(get_services),
 ) -> dict[str, Any]:
@@ -300,7 +307,55 @@ async def start_team(
         root_task_id=body.root_task_id,
     )
     svc.session.commit()
+    # P06：start 只建实例不干活，必须挂上后台驱动，否则团队永远停在「执行中」。
+    if body.autostart:
+        _autostart_team(request, svc, actor, team_id)
     return snap
+
+
+@router.post("/{team_id}/drive")
+async def drive_team(
+    team_id: str,
+    body: DriveRequest,
+    actor: Actor = Depends(csrf_protected),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """手动推进一轮：至多 max_members 个成员各执行一步（调试/单步排障用）。"""
+    snap = svc.teams.drive_once(actor, team_id, max_members=body.max_members)
+    svc.session.commit()
+    return snap
+
+
+def _autostart_team(request: Request, svc: Services, actor: Actor,
+                    team_id: str) -> bool:
+    """把团队交给后台轮次驱动（自己的 session，请求结束也能继续写状态）。
+
+    ``environment == "test"`` 时不起线程：测试里的库是共享内存库，后台线程写
+    状态会污染断言。测试要覆盖本路径时显式 monkeypatch runner 并断言被调用。
+    """
+    from ...services.agent_teams import AgentTeamService
+    from ...services.budget import BudgetService
+    from ...services.model_catalog import ModelCatalog
+    from ...services.team_runner import drive_team_background
+
+    settings = request.app.state.settings
+    if settings.environment == "test":
+        return False
+    session_maker = request.app.state.session_maker
+    audit = svc.audit
+
+    def service_factory(session):
+        # 后台线程用自己的 session；预算服务随之同 session，账目仍落在同一批行。
+        return AgentTeamService(
+            session, audit, budget=BudgetService(session, audit),
+            gateway=None, settings=settings,
+            catalog=ModelCatalog(settings=settings),
+        )
+
+    return drive_team_background(
+        session_maker=session_maker, team_id=team_id, owner_id=actor.owner_id,
+        service_factory=service_factory,
+    )
 
 
 # ----------------------------------------------------------------------

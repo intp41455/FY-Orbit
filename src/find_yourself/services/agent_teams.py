@@ -39,9 +39,10 @@ from ..db.team_models import (
 )
 from ..db.types import utcnow
 from ..runtime.gateway import ModelGateway
+from ..runtime.providers.base import ProviderError
 from .actor import Actor
 from .budget import BudgetService
-from .errors import Conflict, NotFound, PermissionDenied, ValidationFailed
+from .errors import Conflict, DomainError, NotFound, PermissionDenied, ValidationFailed
 from .model_catalog import ModelCatalog
 
 #: Roles the built-in team templates use. Not a closed set: custom roles are
@@ -690,6 +691,109 @@ class AgentTeamService:
             },
         )
         return self.get_snapshot(actor, team_id)
+
+    # ------------------------------------------------------------------
+    # P06 · 执行驱动。start_team 只建实例翻状态，真正干活的是这里：
+    # 按依赖顺序找出「可运行成员」（running + 依赖完成 + 步数未超），
+    # 复用 execute_member（冻结 binding + 预算归集 + 事件）各推进一步。
+    # 成功 → completed；失败 → failed + visible reason，绝不静默 running。
+    # ------------------------------------------------------------------
+    def drive_once(self, actor: Actor, team_id: str, *,
+                   max_members: int = 3) -> dict[str, Any]:
+        """推进一轮：至多让 max_members 个可运行成员各执行一步。"""
+        actor.require_authenticated()
+        team = self.get_team(actor, team_id)
+        if team.state != "running":
+            raise ValidationFailed(
+                "team_not_running",
+                f"团队当前为 {team.state}，只有 running 的团队可推进",
+            )
+        members = {m.role: m for m in self._members(team_id)}
+        advanced: list[dict[str, Any]] = []
+        for spec in team.members:
+            if len(advanced) >= max_members:
+                break
+            role = spec["role"]
+            inst = members.get(role)
+            if inst is None or inst.state != "running":
+                continue
+            if inst.steps >= inst.max_steps:
+                self._fail_member(actor, team, inst, "max_steps_exhausted")
+                advanced.append({"role": role, "ok": False, "error": inst.blocked_reason})
+                continue
+            deps = list(inst.depends_on or [])
+            if any(members.get(d) is None or members[d].state != "completed"
+                   for d in deps):
+                continue
+            advanced.append(self._drive_member(actor, team, inst, spec))
+        # 全员收敛：没有可运行成员且没有 failed 时把团队落到终态，
+        # 否则团队会永远停在「执行中」（P06 原始症状）。
+        self._settle_team(actor, team)
+        self.session.flush()
+        return self.get_snapshot(actor, team_id)
+
+    def _drive_member(self, actor: Actor, team, inst, spec) -> dict[str, Any]:
+        role = inst.role
+        goal = inst.current_goal or spec.get("goal") or team.name
+        prompt = (
+            f"[{role}] {goal}\n\n"
+            f"你是 {team.name} 团队的 {role}，请完成上述任务并直接给出结果正文。"
+        )
+        try:
+            out = self.execute_member(
+                actor, team.id, role, prompt=prompt, max_tokens=2000,
+                run_batch=inst.run_batch,
+            )
+        except DomainError as exc:
+            self._fail_member(actor, team, inst, f"{exc.code}: {exc.message}")
+            return {"role": role, "ok": False, "error": inst.blocked_reason}
+        except ProviderError as exc:
+            self._fail_member(actor, team, inst, f"provider_error: {exc}")
+            return {"role": role, "ok": False, "error": inst.blocked_reason}
+        inst.steps = (inst.steps or 0) + 1
+        inst.state = "completed"
+        inst.blocked_reason = ""
+        self._emit_event(
+            actor, team, "member.completed",
+            agent_instance_id=inst.id, run_batch=inst.run_batch,
+            details={"role": role, "steps": inst.steps,
+                     "effective_model": out.get("effective_model", "unknown"),
+                     "output_preview": str(out.get("text", ""))[:500]},
+        )
+        return {"role": role, "ok": True, "steps": inst.steps,
+                "effective_model": out.get("effective_model", "unknown")}
+
+    def _fail_member(self, actor: Actor, team, inst, reason: str) -> None:
+        inst.state = "failed"
+        inst.blocked_reason = reason[:500]
+        self._emit_event(
+            actor, team, "member.failed",
+            agent_instance_id=inst.id, run_batch=inst.run_batch,
+            details={"role": inst.role, "reason": inst.blocked_reason},
+        )
+
+    def _settle_team(self, actor: Actor, team) -> None:
+        insts = self._members(team.id)
+        states = [i.state for i in insts]
+        if not states:
+            return
+        # 还有成员在跑 / 被返工 / 被暂停：团队保持 running，不做假终局。
+        if any(s not in ("completed", "failed", "cancelled") for s in states):
+            return
+        if all(s == "completed" for s in states):
+            team.state = "completed"
+            self._emit_event(actor, team, "team.completed",
+                             details={"members": len(states)})
+        elif "failed" in states:
+            team.state = "failed"
+            self._emit_event(
+                actor, team, "team.failed",
+                details={"failed_roles": [i.role for i in insts if i.state == "failed"]},
+            )
+        else:
+            team.state = "cancelled"
+            self._emit_event(actor, team, "team.cancelled",
+                             details={"members": len(states)})
 
     def _ensure_instance(
         self, actor: Actor, team: TeamDefinition, spec: dict[str, Any], root_id: str

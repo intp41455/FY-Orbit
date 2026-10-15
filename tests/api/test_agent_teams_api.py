@@ -357,3 +357,102 @@ def test_join_unknown_service_404(client, auth):
         headers=auth,
     )
     assert r.status_code == 404, r.text
+
+
+# ----------------------------------------------------------------------
+# P06 · 手动推进端点 + autostart 契约
+# ----------------------------------------------------------------------
+def test_drive_endpoint_advances_and_never_stalls_silently(client, auth):
+    """P06：推进必须真执行、失败必须带原因、上游失败下游不白跑。"""
+    team_id = create_team(client, auth).json()["team"]["id"]
+    started = client.post(
+        f"/api/teams/{team_id}/start",
+        json={"expected_version": 1, "autostart": False}, headers=auth,
+    )
+    assert started.status_code == 200, started.text
+    assert started.json()["team"]["state"] == "running"
+
+    first = client.post(
+        f"/api/teams/{team_id}/drive", json={"max_members": 3}, headers=auth,
+    )
+    assert first.status_code == 200, first.text
+    states = {m["role"]: m for m in first.json()["members"]}
+    advanced = [m for m in states.values() if m["state"] != "running"]
+    assert advanced, "至少一个成员被真实推进"
+    for m in advanced:
+        assert m["state"] in ("completed", "failed")
+        if m["state"] == "failed":
+            assert m["blocked_reason"], "失败成员必须带可见原因"
+
+    # 上游未 completed 时下游不得被推进（不白烧模型调用）。
+    for m in states.values():
+        if m["state"] == "running":
+            assert not any(m["state"] == "completed" for m in [states[m["role"]]])
+
+
+def test_drive_endpoint_refuses_team_that_is_not_running(client, auth):
+    draft_id = create_team(client, auth).json()["team"]["id"]
+    r = client.post(f"/api/teams/{draft_id}/drive", json={}, headers=auth)
+    assert r.status_code == 422, r.text
+
+
+def test_drive_endpoint_requires_csrf(client, auth):
+    team_id = create_team(client, auth).json()["team"]["id"]
+    r = client.post(f"/api/teams/{team_id}/drive", json={})
+    assert r.status_code in (401, 403), r.text
+
+
+def test_autostart_schedules_background_runner(client, auth, app, monkeypatch):
+    """P06：start 默认必须真的挂上后台驱动，否则团队永远停在「执行中」。"""
+    from find_yourself.services import team_runner
+
+    calls: list[dict] = []
+
+    def fake_drive(**kwargs):
+        calls.append(kwargs)
+        return True
+
+    monkeypatch.setattr(team_runner, "drive_team_background", fake_drive)
+    # 非 test 环境才允许起后台线程（测试内存库不可并发写）。
+    monkeypatch.setattr(app.state.settings, "environment", "local")
+
+    team_id = create_team(client, auth).json()["team"]["id"]
+    started = client.post(
+        f"/api/teams/{team_id}/start", json={"expected_version": 1}, headers=auth,
+    )
+    assert started.status_code == 200, started.text
+    assert len(calls) == 1, "start 必须调度后台驱动"
+    assert calls[0]["team_id"] == team_id
+    assert calls[0]["owner_id"]
+    assert callable(calls[0]["service_factory"]), "驱动必须用后台自己的 session"
+
+
+def test_autostart_false_never_schedules_runner(client, auth, app, monkeypatch):
+    from find_yourself.services import team_runner
+
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        team_runner, "drive_team_background",
+        lambda **kw: calls.append(kw) or True,
+    )
+    monkeypatch.setattr(app.state.settings, "environment", "local")
+
+    team_id = create_team(client, auth).json()["team"]["id"]
+    started = client.post(
+        f"/api/teams/{team_id}/start",
+        json={"expected_version": 1, "autostart": False}, headers=auth,
+    )
+    assert started.status_code == 200, started.text
+    assert calls == [], "autostart=false 时不得调度"
+
+
+def test_autostart_is_skipped_in_test_environment(client, auth):
+    """test 环境的库是共享内存库：不得起后台线程污染断言。"""
+    from find_yourself.services import team_runner
+
+    team_id = create_team(client, auth).json()["team"]["id"]
+    started = client.post(
+        f"/api/teams/{team_id}/start", json={"expected_version": 1}, headers=auth,
+    )
+    assert started.status_code == 200, started.text
+    assert team_runner.is_driving(team_id) is False

@@ -373,7 +373,6 @@ class MarketplaceService:
         真实扫描 + 签名校验，逐包诚实成败）→ 停在 staged，**不自动上架**。
         上架仍走 promote（门禁原样生效）。返回导入/跳过明细。
         """
-        from .hub.adapters import MarketSourceAdapter
         from .hub.connections import HubService
 
         actor.require_owner()

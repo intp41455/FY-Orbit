@@ -28,7 +28,7 @@ from ...net import is_loopback
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied, ValidationFailed
 from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
-from ..schemas import EmailPasswordBody
+from ..schemas import EmailPasswordBody, GuestReclaimBody
 
 router = APIRouter(tags=["auth"])
 
@@ -142,17 +142,17 @@ async def upgrade_guest(body: EmailPasswordBody, request: Request,
 
 
 @router.post("/auth/guest/reclaim")
-async def reclaim_guest(body: dict, request: Request,
+async def reclaim_guest(body: GuestReclaimBody, request: Request,
                         svc: Services = Depends(get_services),
                         settings: Settings = Depends(get_settings)) -> Response:
     """找回过期的访客会话（I-13 R1.4）：客户端留存访客标记，凭标记认领原访客。
 
     只认“仍存在的 guest 行”（已升级/已删除无法找回，诚实 404）。
-    与创建同款双闸（local/test + loopback）：访客数据价值低但不可无成本枚举，
+    与创建同款双闸（local/test + loopback）：访客数据价值低但不可无成本枚举；
     落地前须过安全评审（Q1 注记）。
     """
     _require_local_guest(request, settings)
-    guest_id = str((body or {}).get("guest_id") or "").strip()
+    guest_id = body.guest_id.strip()
     if not guest_id:
         raise ValidationFailed("guest_id_required", "需要提供访客标记 guest_id")
     user, row = svc.auth.reclaim_guest_session(guest_id, ip=_client_ip(request))

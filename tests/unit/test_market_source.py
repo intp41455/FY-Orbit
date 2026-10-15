@@ -10,7 +10,6 @@ import json
 import pytest
 
 from find_yourself.db.hub_constants import HUB_KINDS
-from find_yourself.services.actor import Actor
 from find_yourself.services.audit import AuditService
 from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.grant import GrantService
