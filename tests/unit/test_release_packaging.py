@@ -103,10 +103,14 @@ def test_builder_does_not_call_datetime_now(builder):
 # 3. 版本号必须由 tag 决定（可复现发行链的前提）
 # ---------------------------------------------------------------------------
 
-def test_version_detection_prefers_explicit_then_tag(builder):
+def test_version_detection_prefers_explicit_then_tag(builder, monkeypatch):
     assert builder.detect_version("v2.5.1") == "2.5.1"
     assert builder.detect_version("2.5.1") == "2.5.1"
-    # 拿不到 tag 时必须退化成显眼的 dev 版本，而不是悄悄沿用旧版本号
+    # 有 tag 时拿 tag（与仓库当前 tag 无关，用替身锁定语义）。
+    monkeypatch.setattr(builder, "_git", lambda *a: "v9.9.9")
+    assert builder.detect_version() == "9.9.9"
+    # 拿不到 tag 时必须退化成显眼的 dev 版本，而不是悄悄沿用旧版本号。
+    monkeypatch.setattr(builder, "_git", lambda *a: None)
     assert builder.detect_version() == "0.0.0-dev"
 
 

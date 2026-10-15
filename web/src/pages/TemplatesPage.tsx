@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  checkSource,
   controllerCheck,
   exampleRun,
   expandToCode,
@@ -29,6 +30,7 @@ import type {
   ExampleRunResult,
   ExpandToCodeResult,
   InstantiateResult,
+  SourceStatus,
   TemplateCard,
   TemplateDetail,
 } from '../api/templates';
@@ -70,6 +72,7 @@ export function TemplatesPage() {
   const [draftTouched, setDraftTouched] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [result, setResult] = useState<InstantiateResult | null>(null);
+  const [sourceStatus, setSourceStatus] = useState<SourceStatus | null>(null);
   const [code, setCode] = useState<ExpandToCodeResult | null>(null);
   const [trial, setTrial] = useState<ExampleRunResult | null>(null);
   const [busy, setBusy] = useState(false);
@@ -81,6 +84,7 @@ export function TemplatesPage() {
     setDraftTouched(false);
     setWarnings([]);
     setResult(null);
+    setSourceStatus(null);
     setCode(null);
     setTrial(null);
     setActionError(null);
@@ -254,7 +258,10 @@ export function TemplatesPage() {
                                   ...(draftTouched ? { controller_prompt: controllerDraft } : {}),
                                 },
                               }),
-                            setResult,
+                            (r) => {
+                              setResult(r);
+                              setSourceStatus(null);
+                            },
                           )
                         : undefined
                     }
@@ -302,6 +309,39 @@ export function TemplatesPage() {
                            aria-label="创建结果">
                     <strong>{result.runnable ? '可以直接跑通一次完整任务' : '还差必填项，跑不通'}</strong>
                     <p>{result.message}</p>
+                    {/* G4-a 实体化引用：实例与源模板的关联 + 查新。 */}
+                    {result.source_ref && (
+                      <p className="muted" data-testid="source-ref-line">
+                        来源：{result.source_ref.template_id}（{result.source_ref.tier}档，
+                        schema {result.source_ref.schema_version}）
+                        {' '}
+                        <button
+                          type="button"
+                          className="small ghost"
+                          data-testid="source-check"
+                          disabled={busy}
+                          onClick={() =>
+                            result.source_ref &&
+                            run(
+                              () => checkSource(result.source_ref as Record<string, unknown>),
+                              (st) => setSourceStatus(st),
+                            )
+                          }
+                        >
+                          查新
+                        </button>
+                      </p>
+                    )}
+                    {sourceStatus && (
+                      <p
+                        className={sourceStatus.stale ? 'fy-tpl-warn-line' : 'muted'}
+                        data-testid="source-status"
+                      >
+                        {sourceStatus.stale
+                          ? `源模板已演进到 schema ${sourceStatus.current_schema_version}，该实例建于 ${sourceStatus.ref_schema_version ?? '未知版本'}，建议用新版重建。`
+                          : '与源模板一致，无更新。'}
+                      </p>
+                    )}
                     {result.unresolved.length > 0 && (
                       <ul>
                         {result.unresolved.map((u) => (

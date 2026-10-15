@@ -71,6 +71,14 @@ class ManualQualityBody(BaseModel):
     markdown: str = Field(min_length=1, max_length=2_000_000)
 
 
+class CheckSourceBody(BaseModel):
+    """G4-a 联动查询体：实例携带的 source_ref 原样送回比对。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source_ref: dict[str, Any]
+
+
 # ---------------------------------------------------------------------------
 # 读：契约与目录（静态路径必须先于 /{template_id} 声明）
 # ---------------------------------------------------------------------------
@@ -171,6 +179,19 @@ async def templates_instantiate(
     )
     svc.session.commit()
     return out
+
+
+@router.post("/check-source")
+async def templates_check_source(
+    body: CheckSourceBody,
+    actor: Actor = Depends(get_actor),
+    svc: Services = Depends(get_services),
+) -> dict[str, Any]:
+    """G4-a 联动入口：实例的 source_ref 对照当前注册表判 fresh/stale。
+
+    读操作（查新不写库），但要身份（读的是哪套注册表与属主域有关）。
+    """
+    return _svc(svc).source_status(body.source_ref)
 
 
 @router.post("/{template_id}/controller-check")

@@ -899,6 +899,13 @@ class ScaffoldTemplateService:
             "template_id": template_id,
             "created_from": "factory",
             "quality_tier": tier,
+            # G4-a 实体化引用：实例与源模板的关联落进输出（旧 template_id 原样保留）。
+            "source_ref": {
+                "template_id": template_id,
+                "tier": tier,
+                "schema_version": TEMPLATE_SCHEMA_VERSION,
+                "instantiated_at": datetime.now(timezone.utc).isoformat(),
+            },
             "system": system,
             "unresolved": unresolved,
             "warnings": warnings,
@@ -913,6 +920,30 @@ class ScaffoldTemplateService:
             "overridden": sorted(set(overrides) & set(ESSENTIAL_KEYS)),
         })
         return result
+
+    def source_status(self, source_ref: dict[str, Any] | None) -> dict[str, Any]:
+        """G4-a 联动入口：实例的源引用对照当前注册表，判 fresh/stale。
+
+        ``stale`` = 源模板的 schema_version 已演进（实例是按旧版建的，
+        建议用新版重建）；未知模板/坏形状诚实报错，不编造状态。
+        """
+        if not isinstance(source_ref, dict):
+            raise ValidationFailed("bad_source_ref", "source_ref 必须是对象")
+        template_id = source_ref.get("template_id")
+        if not isinstance(template_id, str) or not template_id:
+            raise ValidationFailed("bad_source_ref", "source_ref.template_id 缺失")
+        doc = self._templates().get(template_id)
+        if doc is None:
+            raise NotFound("template_not_found", f"模板不存在：{template_id}")
+        current = TEMPLATE_SCHEMA_VERSION
+        ref_version = source_ref.get("schema_version")
+        return {
+            "template_id": template_id,
+            "tier": source_ref.get("tier", "novice"),
+            "ref_schema_version": ref_version,
+            "current_schema_version": current,
+            "stale": ref_version != current,
+        }
 
     # -- 提示词体检与恢复出厂（需求 -02③④）--------------------------------
     def check_controller_prompt_draft(self, actor: Actor, template_id: str,

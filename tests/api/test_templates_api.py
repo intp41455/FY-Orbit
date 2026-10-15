@@ -240,3 +240,30 @@ def test_no_template_path_ends_with_plan(app):
     """护栏：``test_guest_account`` 断言「没有端点以 /plan 结尾」；模板路径必须避开。"""
     offenders = [p for p in app.openapi()["paths"] if p.endswith("/plan")]
     assert offenders == []
+
+
+def test_check_source_reports_fresh_for_current_instantiation(client):
+    """G4-a 联动：实例化输出的 source_ref 送回即 fresh；改旧版本号即 stale。"""
+    auth = login_owner(client)
+    out = client.post(
+        f"/api/templates/{TEMPLATE_ID}/instantiate", json={}, headers=auth,
+    ).json()
+    ref = out["source_ref"]
+    assert ref["template_id"] == TEMPLATE_ID
+    fresh = client.post(
+        "/api/templates/check-source", json={"source_ref": ref}, headers=auth,
+    )
+    assert fresh.status_code == 200, fresh.text
+    assert fresh.json()["stale"] is False
+    stale = client.post(
+        "/api/templates/check-source",
+        json={"source_ref": {**ref, "schema_version": "0.0.0-ancient"}},
+        headers=auth,
+    )
+    assert stale.json()["stale"] is True
+    missing = client.post(
+        "/api/templates/check-source",
+        json={"source_ref": {"template_id": "nope", "tier": "novice"}},
+        headers=auth,
+    )
+    assert missing.status_code == 404, missing.text

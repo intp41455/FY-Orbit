@@ -141,6 +141,13 @@ export interface InstantiateResult {
   template_id: string;
   created_from: string;
   quality_tier: string;
+  /** G4-a 实体化引用：实例与源模板的关联（旧 template_id 原样保留）。 */
+  source_ref?: {
+    template_id: string;
+    tier: string;
+    schema_version: string;
+    instantiated_at: string;
+  };
   system: Record<string, unknown>;
   /** 缺失的必填项（e.g. `termination` / `member_prompt:drafter`）。空 = 可跑通。 */
   unresolved: string[];
@@ -237,6 +244,24 @@ export function instantiate(templateId: string, body: InstantiateBody = {}): Pro
     `/api/templates/${encodeURIComponent(templateId)}/instantiate`,
     { method: 'POST', body },
   );
+}
+
+export interface SourceStatus {
+  template_id: string;
+  tier: string;
+  ref_schema_version: string | null;
+  current_schema_version: string;
+  stale: boolean;
+}
+
+/** G4-a 联动查询：实例的 source_ref 送回比对，判 fresh/stale。 */
+export function checkSource(
+  sourceRef: Record<string, unknown>,
+): Promise<SourceStatus> {
+  return request<SourceStatus>('/api/templates/check-source', {
+    method: 'POST',
+    body: { source_ref: sourceRef },
+  });
 }
 
 export function controllerCheck(templateId: string, draftPrompt: string): Promise<ControllerCheckResult> {
