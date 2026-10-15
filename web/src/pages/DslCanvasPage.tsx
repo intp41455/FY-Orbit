@@ -178,8 +178,11 @@ export function DslCanvasPage() {
 
   // 每次起手都换一个**新的对象引用**，两个画布才会真的把图换掉
   // （它们按引用变化载入，避免拖拽被回滚）。
+  // 顺带递增清错信号：起手模板成功载入即新状态，一句话生成的陈旧失败横幅清掉。
+  const [genClearSignal, setGenClearSignal] = useState(0);
   const applyTemplate = useCallback((next: DslDocument, templateId: string) => {    setDoc({ version: next.version, nodes: [...next.nodes], edges: [...next.edges] });
     setSourcePrompt(`模板：${templateId}`);
+    setGenClearSignal((n) => n + 1);
   }, []);
 
   /**
@@ -306,6 +309,7 @@ export function DslCanvasPage() {
           )}
           <GeneratePanel
             onGenerated={(next, prompt) => { setDoc(next); setSourcePrompt(prompt); }}
+            clearSignal={genClearSignal}
           />
           <FlowEditor
             initialDoc={doc}

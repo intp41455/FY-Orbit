@@ -11,6 +11,7 @@ import { Composer, type CommandId, type ComposerHandle } from '../components/cha
 import { ContextBar } from '../components/chatui/ContextBar';
 import { MessageBubble, formatTime } from '../components/chatui/MessageBubble';
 import { ContextMenu, type ContextMenuItem } from '../components/chatui/ContextMenu';
+import { ConfirmDialog } from '../components/workbench/ConfirmDialog';
 import { Modal } from '../components/chatui/Modal';
 import { HoverActions } from '../components/chatui/HoverActions';
 import { Skeleton } from '../components/chatui/Skeleton';
@@ -145,6 +146,8 @@ export function ChatPage() {
 
   const [menu, setMenu] = useState<{ convId: string; x: number; y: number } | null>(null);
   const [renameId, setRenameId] = useState<string | null>(null);
+  // 删除二次确认：待删会话 id（null = 无确认框）。菜单只负责弹框，不直接删。
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
   const [abortNote, setAbortNote] = useState<string | null>(null);
   const [entry, setEntry] = useState<ChatEntryState | null>(null);
@@ -515,7 +518,9 @@ export function ChatPage() {
         key: 'delete',
         label: '删除会话',
         icon: <LineIcon name="trash" size={16} />,
-        onSelect: () => deleteConversation(c.id),
+        // 二次确认：删除不可撤销（后端无恢复接口），点菜单只弹确认框，
+        // 真正执行在确认之后。此前一键即毁，P1-3。
+        onSelect: () => setConfirmDeleteId(c.id),
       },
       isArchived
         ? {
@@ -1098,6 +1103,28 @@ export function ChatPage() {
               saveAlias(renameId, v);
               setRenameId(null);
             }}
+          />
+        ) : null}
+
+        {confirmDeleteId ? (
+          <ConfirmDialog
+            title="删除这个会话？"
+            body={
+              <>
+                将永久删除「{(() => {
+                  const c = conversations.find((x) => x.id === confirmDeleteId);
+                  return c ? displayTitle(c) : confirmDeleteId;
+                })()}」及其全部消息，
+                不可撤销。后端没有恢复接口，撤销按钮无法实现，故删除前必须确认。
+              </>
+            }
+            confirmLabel="确认删除"
+            onConfirm={() => {
+              const id = confirmDeleteId;
+              setConfirmDeleteId(null);
+              deleteConversation(id);
+            }}
+            onCancel={() => setConfirmDeleteId(null)}
           />
         ) : null}
 

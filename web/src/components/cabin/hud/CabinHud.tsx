@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CABIN_BACKGROUNDS, type CabinBackgroundId, type TimeOfDay } from '../cabinConfig';
 import { craftLockReason, sortedBag, type LifeSnapshot } from '../gameplay/lifeApi';
 import { CozyFishingGame } from '../gameplay/CozyFishingGame';
@@ -101,6 +101,16 @@ export function CabinHud(props: CabinHudProps) {
     }
     onActiveModalChange?.(m);
   };
+
+  // Esc 关闭像素弹窗（此前只能点 ✕ 或遮罩，键盘用户关不掉）。
+  useEffect(() => {
+    if (!activeModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setActiveModal(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [activeModal]);
 
   const weatherIcon = timeOfDay === 'night' ? '🌙' : timeOfDay === 'dusk' ? '🌅' : '☀️';
 

@@ -51,4 +51,25 @@ describe('MemberDrawer 空模型目录', () => {
     expect(screen.queryByTestId('cv-node-model-empty')).not.toBeInTheDocument();
     expect(screen.getByLabelText('请求模型（节点覆盖）')).toBeInTheDocument();
   });
+
+  it('草稿态暂停/返工/取消禁用并说明原因（不让用户撞后端报错）', () => {
+    render(
+      <MemberDrawer
+        member={{ ...BASE_MEMBER, state: 'draft' }}
+        binding={null}
+        host={{ agent_host: 'find_yourself', supports_per_member_model: true } as never}
+        models={[]}
+        events={[]}
+        busy={false}
+        onClose={() => {}}
+        onApplyBinding={() => {}}
+        onSwitchModel={() => {}}
+        onControl={() => {}}
+      />,
+    );
+    expect(screen.getByTestId('cv-control-draft-hint')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '暂停' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '要求返工' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '取消' })).toBeDisabled();
+  });
 });

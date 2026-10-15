@@ -193,7 +193,7 @@ export function LegacyCanvas() {
       <div className="page-container">
         <header className="page-header">
           <div>
-            <h2>多 Agent 协作可视化画布 (05 Collaboration Canvas)</h2>
+            <h2>协作拓扑与派发记录</h2>
             <p className="subtext">
               统一编排拓扑与实机连接探测。支持私人事务 (Hermes) 与工作工程 (Codex) 模板，预算切片派发、结构化交接包与只读游标事件重放。
             </p>

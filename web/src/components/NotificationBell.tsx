@@ -131,8 +131,9 @@ export function NotificationBell() {
             width: 'min(320px, calc(100vw - 32px))',
             maxHeight: 'min(420px, calc(100vh - 32px))',
             overflowY: 'auto',
-            background: 'var(--bg-elevated, #1e293b)',
-            border: '1px solid var(--border, #334155)',
+            // 浅色主题（此前是 #1e293b 深色孤岛，正文 3.05:1 不达标）。
+            background: 'var(--ui-glass-2, #ffffff)',
+            border: '1px solid var(--ui-line-2)',
             borderRadius: '8px',
             boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
             padding: '10px',
@@ -140,12 +141,12 @@ export function NotificationBell() {
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <strong style={{ fontSize: '0.85rem' }}>通知</strong>
-            <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>未读: {unreadCount}</span>
+            <strong style={{ fontSize: '0.85rem', color: 'var(--ui-ink-1)' }}>通知</strong>
+            <span style={{ fontSize: '0.75rem', color: 'var(--ui-ink-3)' }}>未读: {unreadCount}</span>
           </div>
 
           {notifications.length === 0 ? (
-            <div style={{ fontSize: '0.8rem', color: '#94a3b8', padding: '12px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--ui-ink-3)', padding: '12px 0', textAlign: 'center' }}>
               暂无新通知
             </div>
           ) : (
@@ -158,9 +159,10 @@ export function NotificationBell() {
                   style={{
                     padding: '6px 8px',
                     borderRadius: '4px',
-                    background: n.read_at ? 'transparent' : 'rgba(59, 130, 246, 0.1)',
+                    background: n.read_at ? 'transparent' : 'rgba(56, 189, 248, 0.12)',
                     cursor: 'pointer',
                     fontSize: '0.8rem',
+                    color: 'var(--ui-ink-1)',
                   }}
                 >
                   <div className="notification-summary" data-testid="notification-summary">
@@ -170,7 +172,7 @@ export function NotificationBell() {
                     <div
                       className="notification-comment-detail"
                       data-testid="notification-comment-body"
-                      style={{ marginTop: '4px', padding: '4px 6px', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}
+                      style={{ marginTop: '4px', padding: '4px 6px', background: 'rgba(15, 23, 42, 0.05)', borderRadius: '4px' }}
                     >
                       {loadingBody ? '加载正文中...' : activeComment.body}
                     </div>

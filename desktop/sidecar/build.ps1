@@ -97,6 +97,8 @@ Write-Host "［sidecar］ running PyInstaller --onedir ..."
     --workpath $Work `
     --specpath $Work `
     --paths (Join-Path $ProjectRoot "src") `
+    --add-data "$ProjectRoot\migrations;migrations" `
+    --add-data "$ProjectRoot\alembic.ini;." `
     --hidden-import "uvicorn" `
     --hidden-import "uvicorn.logging" `
     --hidden-import "uvicorn.loops" `

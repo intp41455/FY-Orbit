@@ -54,6 +54,10 @@ export function MemberDrawer({
 
   const meta = statusMeta(member.state);
   const perMemberDisabled = !member.control.supports_per_member_model;
+  // 草稿态成员没有运行实例：暂停/返工/取消点了一定失败（后端 team_not_started）。
+  // 与其让用户撞英文报错，不如直接禁用并说明原因。
+  const notStarted = member.state === 'draft';
+  const controlDisabled = busy || notStarted;
 
   return (
     <aside
@@ -191,10 +195,16 @@ export function MemberDrawer({
       </div>
 
       <div className="cv-drawer__ft">
+        {notStarted && (
+          <p className="ui-hint" data-testid="cv-control-draft-hint" style={{ margin: '0 0 4px' }}>
+            草稿态：请先启动团队，暂停 / 返工 / 取消才能用。
+          </p>
+        )}
         <button
           type="button"
           className="ui-btn ui-btn--sm"
-          disabled={busy}
+          disabled={controlDisabled}
+          title={notStarted ? '草稿态不可用：请先启动团队' : undefined}
           onClick={() => onControl(member.state === 'paused' ? 'resume' : 'pause')}
         >
           <LineIcon name={member.state === 'paused' ? 'play' : 'pause'} size={16} />
@@ -203,7 +213,8 @@ export function MemberDrawer({
         <button
           type="button"
           className="ui-btn ui-btn--sm"
-          disabled={busy}
+          disabled={controlDisabled}
+          title={notStarted ? '草稿态不可用：请先启动团队' : undefined}
           onClick={() => onControl('rework', '要求返工')}
         >
           <LineIcon name="refresh" size={16} />
@@ -212,7 +223,8 @@ export function MemberDrawer({
         <button
           type="button"
           className="ui-btn ui-btn--sm ui-btn--danger"
-          disabled={busy}
+          disabled={controlDisabled}
+          title={notStarted ? '草稿态不可用：请先启动团队' : undefined}
           onClick={() => onControl('cancel', '用户取消')}
         >
           <LineIcon name="xCircle" size={16} />

@@ -345,7 +345,7 @@ export function WorkbenchPage() {
           <button type="button" className="ui-btn ui-btn--sm" onClick={() => setPaletteOpen(true)}>
             <LineIcon name="search" size={16} />
             搜索文件与命令
-            <span className="ui-kbd">⌘K</span>
+            <span className="ui-kbd">Ctrl+K</span>
           </button>
         </div>
 

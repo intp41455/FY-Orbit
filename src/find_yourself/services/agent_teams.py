@@ -1188,8 +1188,7 @@ class AgentTeamService:
                 if operation != "switch_model":
                     raise ValidationFailed(
                         "team_not_started",
-                        f"Operation '{operation}' needs a started member instance; "
-                        "start the team first.",
+                        f"成员尚未启动，无法{operation}：请先启动团队（当前为草稿态）。",
                     )
                 host_caps = self.native.get(
                     next(m for m in team.members if m["role"] == role).get("agent_host")
@@ -1198,7 +1197,7 @@ class AgentTeamService:
                 host_caps.require(operation)
                 raise ValidationFailed(
                     "team_not_started",
-                    "switch_model needs a started member instance; start the team first.",
+                    "成员尚未启动，无法切换模型：请先启动团队（当前为草稿态）。",
                 )
             host_caps = self.native.get(inst.agent_host)
             host_caps.require(operation)

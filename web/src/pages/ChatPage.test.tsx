@@ -12,7 +12,7 @@ import type { ConversationSummary, Message } from '../api/types';
 vi.mock('../api/conversations', () => ({
   conversationsApi: {
     list: vi.fn(), create: vi.fn(), get: vi.fn(), messages: vi.fn(), postMessage: vi.fn(),
-    reply: vi.fn(),
+    reply: vi.fn(), remove: vi.fn(),
   },
 }));
 // ChatPage 挂载时会拉模型目录与技能清单；这些模块未打桩时 request() 返回
@@ -207,5 +207,35 @@ describe('ChatPage 发送触发伴侣回复（BUG #4）', () => {
     );
     // 重取后 assistant 回复出现在消息区
     expect(screen.getByText('我听到了，我们慢慢来。')).toBeInTheDocument();
+  });
+});
+
+describe('ChatPage 删除会话二次确认（P1-3）', () => {
+  it('点菜单只弹确认框，不直接删；确认后才调 remove', async () => {
+    vi.mocked(conversationsApi.remove).mockResolvedValue(undefined as never);
+    render(<ChatPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }));
+
+    // 确认框出现，后端尚未调用。
+    expect(screen.getByText('删除这个会话？')).toBeInTheDocument();
+    expect(conversationsApi.remove).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '确认删除' }));
+    await flush();
+    expect(conversationsApi.remove).toHaveBeenCalledWith('c1');
+  });
+
+  it('点取消不删除', async () => {
+    render(<ChatPage />);
+    await flush();
+
+    fireEvent.click(screen.getByRole('button', { name: '更多操作' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }));
+    fireEvent.click(screen.getByRole('button', { name: '取消' }));
+    await flush();
+    expect(conversationsApi.remove).not.toHaveBeenCalled();
   });
 });

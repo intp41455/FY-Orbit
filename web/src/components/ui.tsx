@@ -42,13 +42,22 @@ export function OfflineBadge() {
   );
 }
 
-export function errorMessage(e: unknown): string {
-  if (e instanceof NetworkError) return e.message;
+/** 团队控制类错误码 → 中文（兜住旧版后端的英文 message，按 code 命中）。 */
+const TEAM_ERROR_CN: Record<string, string> = {
+  team_not_started: '成员尚未启动：请先启动团队（当前为草稿态）。',
+  automation_full_requires_ttl: '完全控制必须带有效期，请选择时长后重试。',
+  automation_bad_mode: '未知的自动化档位，请刷新后重试。',
+};
+export function errorMessage(e: unknown): string {  if (e instanceof NetworkError) return e.message;
   const status = (e as { status?: number }).status;
   const code = (e as { body?: { code?: string }; code?: string }).body?.code
     ?? (e as { code?: string }).code;
   const msg = (e as { body?: { message?: string }; message?: string }).body?.message
     ?? (e as Error).message;
+
+  // 团队控制类错误的中文映射（后端新版已直接返回中文；此表兜住旧版英文与
+  // 其它英文透传，避免界面出现裸英文异常。按 code 命中，与 message 语言无关）。
+  if (code && TEAM_ERROR_CN[code]) return TEAM_ERROR_CN[code];
 
   // 401 与 403 语义不同：401 是未登录/会话过期，403 是已登录但被拒
   // （CSRF 缺失、权限不足、配额超限……）。合并成一句话会丢掉真相，

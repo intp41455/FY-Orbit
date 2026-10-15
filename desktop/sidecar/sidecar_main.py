@@ -165,6 +165,22 @@ def main() -> int:
     if static_dir:
         os.environ["FY_STATIC_DIR"] = static_dir
 
+    # P0 save-500：冻结包也要 upgrade head（migrations 随包，见 build.ps1
+    # --add-data）。脚本缺失的老包/开发环境直接跑时给响亮告警并继续
+    # （总比静默 500 好），跑迁移本身失败则直接退出、不带坏库启动。
+    try:
+        from find_yourself.db.migrate import find_migrations_root, upgrade_head
+        if find_migrations_root() is None:
+            print("[FY Orbit] WARNING: migrations 未随包，跳过 upgrade head；"
+                  "存量库缺列会导致写入 500，请用带 migrations 的构建重装。")
+        else:
+            print(f"[FY Orbit] Database migrations at head: {upgrade_head()}")
+    except FileNotFoundError as e:
+        print(f"[FY Orbit] WARNING: {e}")
+    except Exception:
+        print("[FY Orbit] FATAL: 数据库迁移失败，拒绝启动（见上文 traceback）。")
+        raise
+
     url = f"http://{args.host}:{port}"
     print(f"[FY Orbit] Backend listening on {url}")
     if static_dir:

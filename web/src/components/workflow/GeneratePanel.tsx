@@ -9,7 +9,7 @@
  *    provider:model；发生降级时（``degraded_from`` 非空）**明确标注**，
  *    不让用户以为用的是他要求的那个模型。
  */
-import { useCallback, useEffect, useState, type Ref } from 'react';
+import { useCallback, useEffect, useRef, useState, type Ref } from 'react';
 import { ApiError } from '../../api/client';
 import { workflowGenApi, type DslDocument } from '../../api/workflowGen';
 import { useBase } from '../../hooks/useAutosave';
@@ -24,6 +24,11 @@ export interface GeneratePanelProps {
   testIdPrefix?: string;
   /** 需求输入框的 ref，父组件可在展开面板后把焦点直接交给它。 */
   promptRef?: Ref<HTMLTextAreaElement>;
+  /**
+   * 外部清错信号：父组件载入起手模板等“成功的新状态”时递增，
+   * 本面板清除陈旧的失败横幅（此前失败条一直残留，用户误以为刚那步也失败了）。
+   */
+  clearSignal?: number;
 }
 
 const EXAMPLES = [
@@ -36,6 +41,7 @@ export function GeneratePanel({
   onGenerated,
   testIdPrefix = 'flow',
   promptRef,
+  clearSignal = 0,
 }: GeneratePanelProps) {
   useBase({ surface: 'web/src/components/workflow/GeneratePanel' });
   const tid = (suffix: string) => `${testIdPrefix}-${suffix}`;
@@ -44,6 +50,14 @@ export function GeneratePanel({
   const [error, setError] = useState<{ message: string; hint: string } | null>(null);
   const [meta, setMeta] = useState('');
   const [configured, setConfigured] = useState<boolean | null>(null);
+
+  // 外部成功事件（起手模板载入等）到来即清陈旧横幅；挂载那次不算。
+  const firstSignal = useRef(true);
+  useEffect(() => {
+    if (firstSignal.current) { firstSignal.current = false; return; }
+    setError(null);
+    setMeta('');
+  }, [clearSignal]);
 
   // 先问后端「到底配没配模型」，如实显示，别让用户点了才撞 503。
   useEffect(() => {

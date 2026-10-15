@@ -50,6 +50,20 @@ def ensure_env_and_db() -> None:
     else:
         print("==> Note: web/dist not found. Running API backend only.")
 
+    # P0 save-500：存量库只被 create_all 建过表、迁移从未执行。
+    # 这里必须 upgrade head（幂等护栏，新库/旧库都收敛），否则草稿保存等
+    # 写入直接 500。失败即 fail-fast，不带着坏库启动。
+    # 注意：alembic 只认进程环境变量，不读 .env 文件——这里显式导出，
+    # 否则会升错库（默认库）而放过真正的业务库。
+    if not os.environ.get("FY_DATABASE_URL"):
+        for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+            if line.startswith("FY_DATABASE_URL="):
+                os.environ["FY_DATABASE_URL"] = line.split("=", 1)[1].strip()
+                break
+    from find_yourself.db.migrate import upgrade_head
+    head = upgrade_head()
+    print(f"==> Database migrations at head: {head}")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Find Yourself (FY Orbit) Unified Launcher")

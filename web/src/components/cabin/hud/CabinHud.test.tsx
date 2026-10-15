@@ -123,4 +123,39 @@ describe('A6 · UI 像素化重构 (CabinHud)', () => {
     fireEvent.click(screen.getByTestId('pixel-modal-close'));
     expect(screen.queryByTestId('pixel-modal-backpack')).not.toBeInTheDocument();
   });
+
+  it('Esc 关闭像素弹窗（键盘可达）', () => {
+    render(
+      <CabinHud
+        view="outdoor"
+        editMode={false}
+        onToggleDecorate={vi.fn()}
+        onNavigateBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('hud-btn-backpack'));
+    expect(screen.getByTestId('pixel-modal-backpack')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByTestId('pixel-modal-backpack')).not.toBeInTheDocument();
+  });
+
+  it('弹窗打开时点别的工具按钮是切换内容，而不是静默关闭', () => {
+    render(
+      <CabinHud
+        view="outdoor"
+        editMode={false}
+        onToggleDecorate={vi.fn()}
+        onNavigateBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('hud-btn-backpack'));
+    expect(screen.getByTestId('pixel-modal-backpack')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('hud-btn-craft'));
+    expect(screen.queryByTestId('pixel-modal-backpack')).not.toBeInTheDocument();
+    expect(screen.getByTestId('pixel-modal-craft')).toBeInTheDocument();
+  });
 });

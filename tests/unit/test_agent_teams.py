@@ -502,6 +502,18 @@ def test_control_is_idempotent_per_key(teams, owner):
     assert inst.state == "paused"
 
 
+def test_draft_control_fails_with_chinese_reason(teams, owner):
+    """草稿态点暂停/返工/取消：错误码 team_not_started 且理由是中文（不抛英文原文）."""
+    team = engineering_team(teams, owner)
+    for op in ("pause", "rework", "cancel"):
+        with pytest.raises(ValidationFailed) as exc_info:
+            teams.control(owner, team.id, operation=op, role="implementer",
+                          reason="draft click")
+        assert exc_info.value.code == "team_not_started"
+        assert "草稿" in str(exc_info.value.message)
+        assert "Operation" not in str(exc_info.value.message)
+
+
 # ----------------------------------------------------------------------
 # §8.6 : goal change propagation
 # ----------------------------------------------------------------------

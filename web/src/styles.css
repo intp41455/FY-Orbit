@@ -212,7 +212,7 @@ label { display: block; font-size: 0.82rem; color: var(--text-muted); margin-bot
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .nav a .nav-icon { font-size: 1rem; width: 1.2rem; text-align: center; }
-.nav a .nav-sub { display: block; font-size: 0.66rem; color: var(--text-faint); }
+.nav a .nav-sub { display: block; font-size: 12px; color: var(--ui-ink-3); }
 .nav a:hover {
   background: rgba(255, 255, 255, 0.65); color: var(--sky);
   border-color: rgba(255, 255, 255, 0.8); text-decoration: none;
@@ -3723,6 +3723,9 @@ html, body { overflow-x: clip; }
   bottom: 8px;
   left: 50%;
   transform: translateX(-50%);
+  /* 工具栏浮于遮罩之上（z 50）：弹窗打开时点别的工具按钮是切换内容，
+     而不是点中遮罩把弹窗关掉（此前“后续点击静默失效”即此因）。 */
+  z-index: 60;
   height: 40px;
   background: #fbf5e5;
   border: 2px solid #5a3825;

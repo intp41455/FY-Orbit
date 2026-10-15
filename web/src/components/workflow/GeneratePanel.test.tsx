@@ -175,4 +175,19 @@ describe('GeneratePanel 一句话生成 · 诚实契约', () => {
     await user.click(screen.getByTestId('flow-generate-run'));
     expect((await screen.findByTestId('flow-generate-error')).textContent).toContain('Failed to fetch');
   });
+
+  it('外部成功事件（起手模板载入）清除陈旧失败横幅', async () => {
+    const user = userEvent.setup();
+    vi.mocked(workflowGenApi.generate).mockRejectedValue(new TypeError('Failed to fetch'));
+    const { rerender } = render(<GeneratePanel onGenerated={vi.fn()} clearSignal={0} />);
+    await screen.findByTestId('flow-model-state');
+    await user.type(screen.getByTestId('flow-generate-prompt'), '每天读文件并发邮件');
+    await user.click(screen.getByTestId('flow-generate-run'));
+    await screen.findByTestId('flow-generate-error');
+    // 父组件载入起手模板 → 信号递增 → 旧横幅消失。
+    rerender(<GeneratePanel onGenerated={vi.fn()} clearSignal={1} />);
+    await waitFor(() => {
+      expect(screen.queryByTestId('flow-generate-error')).toBeNull();
+    });
+  });
 });

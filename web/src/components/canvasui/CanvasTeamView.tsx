@@ -442,7 +442,7 @@ export function CanvasTeamView() {
           <div className="ui-empty" style={{ height: '100%', justifyContent: 'center' }}>
             <LineIcon name="canvas" size={40} className="ui-hint" />
             <div className="ui-empty-title">还没有团队</div>
-            <p className="ui-empty-hint">在上方选择模板与默认模型，点「新建草稿」开始。</p>
+            <p className="ui-empty-hint">在上方选择模板与默认模型，点「新建团队草稿」开始。</p>
           </div>
         )}
       </div>
