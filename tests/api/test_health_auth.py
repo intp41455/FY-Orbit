@@ -56,6 +56,35 @@ def test_s03_cross_site_origin_rejected(client: TestClient):
     assert r.json()["error"]["code"] == "origin"
 
 
+def test_s03_loopback_origin_any_port_allowed_in_local(client: TestClient):
+    """换端口工作流：文档明确支持 --port 8080，本地写操作不得因端口不同被判跨站。
+
+    生产事故：Origin 校验按 FY_PUBLIC_URL 的 netloc 硬比对，用户按《使用说明》
+    换端口后所有写操作（建会话/发消息）全部 403 "Cross-site request rejected"。
+    local/test 环境下，任意 loopback Origin 都是同一台机器，必须放行；
+    跨站 Origin（非 loopback）仍被 test_s03_cross_site_origin_rejected 拒绝。
+    """
+    headers = login_owner(client)
+    headers["Origin"] = "http://127.0.0.1:8080"
+    r = client.post("/api/conversations", json={"title": "port-hop", "domain": "personal"},
+                    headers=headers)
+    assert r.status_code == 200, r.text
+
+    headers["Origin"] = "http://localhost:9999"
+    r2 = client.post("/api/conversations", json={"title": "port-hop-2", "domain": "personal"},
+                     headers=headers)
+    assert r2.status_code == 200, r2.text
+
+
+def test_s03_non_loopback_origin_still_rejected_even_with_valid_csrf(client: TestClient):
+    """同一台机器之外的 Origin，即使 CSRF 正确也必须拒绝（安全边界不放宽）。"""
+    headers = login_owner(client)
+    headers["Origin"] = "http://192.168.1.50:8000"
+    r = client.post("/api/conversations", json={"title": "x", "domain": "personal"}, headers=headers)
+    assert r.status_code == 403
+    assert r.json()["error"]["code"] == "origin"
+
+
 def test_s10_production_requires_oidc_and_strong_secret():
     base = dict(environment="production", session_secret="x" * 40,
                 database_url="postgresql://x", public_url="https://example.com",

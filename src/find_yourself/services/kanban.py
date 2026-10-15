@@ -46,6 +46,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db.models import (
+    COMPANION_TASK_PREFIX,
     TASK_STATUSES,
     BudgetReservation,
     Task,
@@ -163,11 +164,17 @@ class KanbanService:
         子任务与父任务同为 ``tasks`` 行（``parent_task_id`` 自关联），看板把
         **顶层任务**作为卡片、子任务作为详情里的清单——否则一条任务会在板上
         出现两次（父一次、子又是一次）。
+
+        陪伴对话的预算锚点行（id 前缀 ``companion:``，见 services/companion.py）
+        是记账脚手架，不是用户任务，永不上板。
         """
         if not actor.owner_id:
             raise PermissionDenied("owner_required", "Kanban requires an owner actor")
         rows = self.session.execute(
-            select(Task).where(Task.owner_id == actor.owner_id)
+            select(Task).where(
+                Task.owner_id == actor.owner_id,
+                ~Task.id.startswith(COMPANION_TASK_PREFIX),
+            )
         ).scalars().all()
         return list(rows)
 

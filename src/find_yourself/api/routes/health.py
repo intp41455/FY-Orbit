@@ -12,12 +12,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import text
 
+from ...net import is_loopback
 from ...services.task_reaper import degraded_markers
 from ..deps import Services, get_services
 
 router = APIRouter(tags=["health"])
-
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 @router.get("/health")
@@ -49,7 +48,7 @@ async def ready(request: Request, svc: Services = Depends(get_services)) -> JSON
 @router.get("/metrics")
 async def metrics(request: Request) -> PlainTextResponse:
     client = request.client.host if request.client else ""
-    if client not in LOOPBACK:
+    if not is_loopback(client):
         # Only internal network / loopback may scrape metrics.
         return PlainTextResponse("forbidden", status_code=403)
     from prometheus_client import CONTENT_TYPE_LATEST, generate_latest

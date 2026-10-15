@@ -16,6 +16,7 @@ API 用例复用 ``tests/api/conftest.py`` 的 ``client`` 夹具（其 ASGI scop
 from __future__ import annotations
 
 from datetime import timezone
+from pathlib import Path
 from typing import Iterator
 
 import pytest
@@ -101,7 +102,8 @@ def client(app: FastAPI) -> Iterator[TestClient]:
 # helpers
 # --------------------------------------------------------------------------- #
 def make_auth(session, environment: str = "local") -> AuthService:
-    return AuthService(session, AuditService(session), environment=environment)
+    return AuthService(session, AuditService(session), environment=environment,
+                       local_token=LOCAL_TOKEN)
 
 
 def guest_headers(client: TestClient) -> tuple[dict, dict]:
@@ -365,8 +367,6 @@ def test_api_guest_refused_outside_local_and_test(app: FastAPI):
     + S3. The gate under test is the route's environment check, so patching the
     one field it reads keeps the assertion honest and the fixture legal.
     """
-    from find_yourself.api.routes import guest as guest_routes
-
     with TestClient(_peer(app, "127.0.0.1")) as c:
         original = app.state.settings.environment
         try:
@@ -378,7 +378,10 @@ def test_api_guest_refused_outside_local_and_test(app: FastAPI):
             app.state.settings.environment = original
 
     # A non-loopback peer is refused independently of environment.
-    assert guest_routes.LOOPBACK == {"127.0.0.1", "localhost", "::1"}
+    from find_yourself.net import is_loopback
+
+    assert is_loopback("127.0.0.1") and is_loopback("::ffff:127.0.0.1")
+    assert not is_loopback("203.0.113.9")
 
 
 def test_api_guest_refused_from_non_loopback(app):
@@ -387,6 +390,69 @@ def test_api_guest_refused_from_non_loopback(app):
         r = c.post("/auth/guest")
         assert r.status_code == 403
         assert r.json()["error"]["code"] == "guest_loopback_only"
+
+
+# --------------------------------------------------------------------------- #
+# 双栈回归 · IPv4-mapped IPv6（生产事故：Docker/WSL 全新安装 100% 卡在登录墙）
+# --------------------------------------------------------------------------- #
+def test_is_loopback_accepts_every_local_spelling():
+    """服务端在双栈 socket 上会把本机请求报告成 ::ffff:127.0.0.1。
+
+    旧实现是字面量集合 {"127.0.0.1","localhost","::1"}，拒绝该形式，
+    导致 Docker/WSL/双栈监听下游客铸造与本地口令登录全部 403，
+    全新安装第一次打开只看到「请在设置中登录」死循环。
+    """
+    from find_yourself.net import is_loopback
+
+    for host in ("127.0.0.1", "::ffff:127.0.0.1", "::1", "localhost",
+                 "127.1.2.3", "::FFFF:127.0.0.1", " LOCALHOST "):
+        assert is_loopback(host) is True, host
+
+
+def test_is_loopback_refuses_remote_and_garbage():
+    from find_yourself.net import is_loopback
+
+    for host in ("203.0.113.9", "::ffff:203.0.113.9", "10.0.0.5", "",
+                 None, "not-an-ip", "192.168.1.1"):
+        assert is_loopback(host) is False, host
+
+
+def test_api_guest_accepted_from_mapped_loopback(app):
+    """红探针来源：真实 Docker/WSL 部署下 peer 报告的是映射形式。"""
+    with TestClient(_peer(app, "::ffff:127.0.0.1")) as c:
+        r = c.post("/auth/guest")
+        assert r.status_code == 200, r.text
+        assert r.json()["is_guest"] is True
+        assert c.get("/auth/me").status_code == 200
+
+
+def test_api_guest_refused_from_mapped_remote():
+    """映射形式的公网地址仍然必须被拒（安全边界不放宽）。"""
+    from find_yourself.api.app import create_app
+
+    eng = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    )
+    Base.metadata.create_all(eng)
+    maker = sessionmaker(bind=eng, expire_on_commit=False, future=True)
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        app = create_app(session_maker=maker, settings=_settings(Path(td)))
+        with TestClient(_peer(app, "::ffff:203.0.113.9")) as c:
+            r = c.post("/auth/guest")
+            assert r.status_code == 403
+            assert r.json()["error"]["code"] == "guest_loopback_only"
+
+
+def test_local_dev_token_accepted_from_mapped_loopback(session):
+    """本地口令登录通道同样受 loopback 门禁——必须识别映射形式。"""
+    auth = make_auth(session)
+    actor = auth.local_dev_actor(LOCAL_TOKEN, "::ffff:127.0.0.1")
+    assert actor.owner_id == "owner"
+
+    with pytest.raises(PermissionDenied):
+        auth.local_dev_actor(LOCAL_TOKEN, "::ffff:203.0.113.9")
 
 
 def test_api_account_reports_payment_disabled(client: TestClient, app: FastAPI):

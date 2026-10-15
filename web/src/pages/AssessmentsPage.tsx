@@ -23,6 +23,7 @@ export function AssessmentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<RealAssessmentSession | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [allIds, setAllIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
@@ -46,9 +47,32 @@ export function AssessmentsPage() {
       const s = await assessmentsApi.startSession(q.id);
       setSession(s);
       setAnswers({});
+      setAllIds([...s.missing]);
     } catch (e) {
       setError(errorMessage(e));
     }
+  }
+
+  // BUG #6：作答必须同步到服务端并刷新 session，否则 session.missing 永远是
+  // start 时的快照、提交永远被拒（服务端计分只认它 record 过的答案）。
+  function answer(id: string, raw: string) {
+    const v = raw === '' ? 0 : Number(raw);
+    const next = { ...answers, [id]: v };
+    setAnswers(next);
+    if (!session) return;
+    const payload: Record<string, number> = {};
+    for (const [k, val] of Object.entries(next)) {
+      if (val >= 1 && val <= 5) payload[k] = val;
+    }
+    void assessmentsApi.record(session.session_id, payload).then(
+      (s) => {
+        setSession(s);
+        setError(null);
+      },
+      (e) => {
+        setError(`作答同步失败（服务端未记录，请重试）：${errorMessage(e)}`);
+      },
+    );
   }
 
   async function submit() {
@@ -166,10 +190,12 @@ export function AssessmentsPage() {
                   }}
                 >
                   <p className="ui-hint">
-                    已答 {Object.keys(answers).length} / {session.missing.length}。
+                    已答 {Object.values(answers).filter((v) => v >= 1).length} / {allIds.length}。
                     题目标题为合成模板占位，不计入结论。
                   </p>
-                  {session.missing.map((id) => (
+                  {/* 渲染全部题目（含已作答，可修改；服务端按 key 合并）——
+                      只渲染 session.missing 会让答过的题消失、无法修正。 */}
+                  {allIds.map((id) => (
                     <div className="assess-item" key={id}>
                       <label className="assess-item-label" htmlFor={id}>
                         请评分（1=非常不同意 … 5=非常同意）
@@ -180,9 +206,7 @@ export function AssessmentsPage() {
                         className="ui-select assess-select"
                         aria-label={`请评分（题目 ${id}）`}
                         value={answers[id] ?? ''}
-                        onChange={(e) =>
-                          setAnswers((a) => ({ ...a, [id]: e.target.value === '' ? 0 : Number(e.target.value) }))
-                        }
+                        onChange={(e) => answer(id, e.target.value)}
                       >
                         <option value="">未作答</option>
                         {SCALE.map((v) => (
@@ -196,9 +220,10 @@ export function AssessmentsPage() {
                       {submitting ? '提交计分中…' : '提交（服务端计分）'}
                     </button>
                   </div>
-                  {session.missing.filter((id) => answers[id] === undefined).length > 0 ? (
+                  {/* 漏答口径以服务端 missing 为准（本地 answers 仅做输入态）。 */}
+                  {session.missing.length > 0 ? (
                     <p className="ui-hint">
-                      提示：仍有漏答；提交会被拒绝并要求补全，不会产生默认结果。
+                      提示：仍有 {session.missing.length} 题未作答；提交会被拒绝并要求补全，不会产生默认结果。
                     </p>
                   ) : null}
                 </form>

@@ -228,6 +228,14 @@ class Message(Base):
 # ---------------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------------
+#: 陪伴对话预算锚点任务的 id 前缀（由 services/companion.py 懒创建）。
+#: ModelGateway.complete() 的预算预留要求 task_id 在 tasks 表有真实行
+#: （BudgetReservation.task_id 是 FK），而对话本身没有编排任务行——于是
+#: companion 按会话惰性建一行「预算锚点」任务。看板与任务统计按此前缀
+#: 过滤，记账行永远不冒充用户任务卡片。
+COMPANION_TASK_PREFIX = "companion:"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 

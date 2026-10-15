@@ -63,6 +63,9 @@ web/**/.playwright-artifacts-*/
 *.log
 .srv*
 
+# 本机 QA/压测日志与截图（agent-browser 走查、uvicorn 实例日志），不入库。
+.logs/
+
 
 cloudflared.exe
 deploy/landing-dist/

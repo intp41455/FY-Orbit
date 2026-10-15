@@ -549,6 +549,22 @@ function buildEnvSnippet(draft: ModelDraft, keyProvided: boolean): string {
       .map((row) => ({ provider: row.provider, ...(row.model ? { model: row.model } : {}) }));
     lines.push(`FY_MODEL_FALLBACKS=${JSON.stringify(chain)}`);
   }
+  // 两个必踩坑：不显式声明就「配了 Key 也用不了」，且网关会诚实报错
+  // （503 offline_mode_remote_blocked / PriceUnknown），不是假装成功。
+  // 纯本地 ollama 场景保持 FY_OFFLINE_MODE=1 即可。
+  const localOnly = draft.provider === 'ollama'
+    && /^https?:\/\/(127\.0\.0\.1|localhost)/i.test(draft.baseUrl || '');
+  if (localOnly) {
+    lines.push('# 纯本地推理：保持在离线模式即可');
+    lines.push('FY_OFFLINE_MODE=1');
+  } else {
+    lines.push('FY_OFFLINE_MODE=0');
+  }
+  lines.push(
+    '# 单价未知时网关按 PriceUnknown 阻断调用（不得按零费用放行），',
+    '# 必须按供应商真实报价声明；本行是占位示例，请自行替换档位：',
+    'FY_MODEL_PRICE_OVERRIDES={"your-model-name": {"input_usd_per_1k": "0.0001", "output_usd_per_1k": "0.0004", "context_window": 128000}}',
+  );
   return lines.join('\n');
 }
 

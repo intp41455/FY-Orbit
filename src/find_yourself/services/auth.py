@@ -17,12 +17,12 @@ from sqlalchemy.orm import Session
 
 from ..db.models import USER_PLANS, AuthSession, ServiceIdentity, User, UserConsent
 from ..db.types import utcnow
+from ..net import is_loopback
 from .actor import Actor
 from .audit import AuditService
 from .errors import PermissionDenied, Unauthenticated, ValidationFailed
 from .passwords import hash_password, verify_password
 
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PASSWORD_MIN_LENGTH = 8
 LOGIN_MAX_FAILURES = 5
@@ -178,7 +178,7 @@ class AuthService:
         The bootstrap maps to the legacy single-owner id (settings.owner_id)."""
         if self.environment == "production":
             raise PermissionDenied("local_token_disabled", "Local dev token is disabled in production", 403)
-        if remote_addr not in LOOPBACK:
+        if not is_loopback(remote_addr):
             raise PermissionDenied("local_token_loopback", "Local dev token only allowed from loopback", 403)
         if not self.local_token or not secrets.compare_digest(token, self.local_token):
             raise Unauthenticated("bad_dev_token", "Invalid local dev token")

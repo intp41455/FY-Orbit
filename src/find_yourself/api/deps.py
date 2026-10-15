@@ -206,7 +206,15 @@ def enforce_csrf(request: Request, actor: Actor, settings: Settings) -> None:
     origin = request.headers.get("origin")
     if origin:
         from urllib.parse import urlparse
+
+        from ..net import is_loopback
         op = urlparse(origin)
+        # Local/test: any loopback Origin is the same machine (documented
+        # --port workflow changes the port; hard netloc match made every
+        # write fail with "Cross-site request rejected"). Non-loopback
+        # origins are still rejected — see test_s03_non_loopback_*.
+        if is_loopback(op.hostname) and settings.environment in ("local", "test"):
+            return
         if op.netloc.lower() != _trusted_origin_host(settings):
             raise PermissionDenied("origin", "Cross-site request rejected", 403)
 

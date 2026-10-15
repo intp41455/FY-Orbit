@@ -221,6 +221,29 @@ describe('SettingsPage 模型接入卡 (W4)', () => {
     expect(snippetText()).not.toContain('sk-super-secret');
   });
 
+  it('远程 provider 的片段必须带 FY_OFFLINE_MODE=0 与单价声明（两个必踩坑）', async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByTestId('provider-select')).toHaveValue('ollama'));
+    await user.selectOptions(screen.getByTestId('provider-select'), 'openai_compat');
+    await user.type(screen.getByTestId('base-url-input'), 'https://api.example.com');
+    await user.type(screen.getByTestId('model-input'), 'gpt-4o-mini');
+
+    const snippet = snippetText();
+    expect(snippet).toContain('FY_OFFLINE_MODE=0');
+    // 单价未声明时网关按 PriceUnknown 阻断，片段不得把用户带进这个坑
+    expect(snippet).toContain('FY_MODEL_PRICE_OVERRIDES=');
+  });
+
+  it('纯本机 ollama 的片段保持在离线模式（不外传数据）', async () => {
+    render(<SettingsPage />);
+    await waitFor(() => expect(screen.getByTestId('base-url-input')).toHaveValue(''));
+
+    const snippet = snippetText();
+    expect(snippet).not.toContain('FY_OFFLINE_MODE=0');
+    expect(snippet).toContain('FY_OFFLINE_MODE=1');
+  });
+
   it('系统配置状态卡仍然渲染（回归）', async () => {
     render(<SettingsPage />);
     await waitFor(() => expect(screen.getByText('系统配置状态')).toBeInTheDocument());

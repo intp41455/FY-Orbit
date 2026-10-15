@@ -14,9 +14,19 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from ..db.models import Conversation, Message, Proposal
+from ..db.models import (
+    COMPANION_TASK_PREFIX,
+    DOMAINS,
+    MODES,
+    Conversation,
+    Message,
+    Proposal,
+    Task,
+)
+from ..db.types import utcnow
 from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .audit import AuditService
@@ -133,6 +143,42 @@ class CompanionService:
             f"[用户最新消息]\nuser: {user_message}"
         )
 
+    def _ensure_budget_task(self, actor: Actor, conversation: Conversation) -> str:
+        """Materialise a real tasks row so budget reservations have an anchor.
+
+        ``ModelGateway.complete()`` reserves budget against ``task_id`` and
+        ``BudgetService.reserve`` requires a real tasks row (``BudgetReservation.task_id``
+        is a FK). Companion conversations have no orchestration task, so we lazily
+        create a budget-only anchor here — never a user-facing workflow task.
+        The kanban and task stats filter ids with ``COMPANION_TASK_PREFIX`` out of
+        their projections so this bookkeeping row never appears on the board.
+        """
+        task_id = f"{COMPANION_TASK_PREFIX}{conversation.id}"
+        if self.s.get(Task, task_id) is not None:
+            return task_id
+        mode = conversation.mode if conversation.mode in MODES else "listen"
+        domain = conversation.domain if conversation.domain in DOMAINS else "personal"
+        anchor = Task(
+            id=task_id,
+            owner_id=actor.owner_id or conversation.owner_id,
+            goal=f"陪伴对话预算锚点：{conversation.title or conversation.id}",
+            domain=domain,
+            mode=mode,
+            strategy="single",
+            status="running",
+            stage="requirements",
+            deadline=utcnow(),
+            idempotency_key=task_id,
+        )
+        try:
+            with self.s.begin_nested():
+                self.s.add(anchor)
+                self.s.flush()
+        except IntegrityError:
+            # 并发首条消息同时建锚点：后到者回读既有行即可。
+            pass
+        return task_id
+
     def _model_reply(self, actor: Actor, conversation: Conversation, user_message: str) -> tuple[str, str]:
         """Route the non-crisis paths through the governed model gateway.
 
@@ -140,10 +186,11 @@ class CompanionService:
         provider the caller gets a 503 telling them how to configure one.
         """
         gateway = self._gateway()
+        task_id = self._ensure_budget_task(actor, conversation)
         try:
             result = gateway.complete(
                 actor,
-                task_id=f"companion:{conversation.id}",
+                task_id=task_id,
                 model=self._model_name(),
                 prompt=self._compose_prompt(conversation, user_message),
                 target_domain="personal",

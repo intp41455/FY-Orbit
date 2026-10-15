@@ -24,13 +24,13 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from ...config import Settings
+from ...net import is_loopback
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied
 from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
 
 router = APIRouter(tags=["auth"])
 
-LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 SESSION_MAX_AGE = 8 * 3600
 
 
@@ -57,7 +57,7 @@ def _require_local_guest(request: Request, settings: Settings) -> None:
             403,
         )
     remote = _client_ip(request)
-    if remote not in LOOPBACK:
+    if not is_loopback(remote):
         raise PermissionDenied(
             "guest_loopback_only",
             "Guest sessions may only be created from 127.0.0.1",

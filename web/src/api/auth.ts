@@ -38,6 +38,20 @@ export const authApi = {
     consent_accepted: boolean;
     display_name?: string;
   }) => request<GuestResponse>('/auth/guest/upgrade', { method: 'POST', body }),
+  /**
+   * Register a brand-new account (email + password + explicit consent).
+   * Backend validates email shape, min 8-char password, consent_required,
+   * and 409 email_taken — all surfaced verbatim, never invented client-side.
+   */
+  register: (body: {
+    email: string;
+    password: string;
+    consent_accepted: boolean;
+    display_name?: string;
+  }) => request<{ status: string; owner_id: string; email: string; csrf_token: string }>(
+    '/auth/register',
+    { method: 'POST', body },
+  ),
   /** Settings account card: email, tier, and the honest payment flag. */
   account: () => request<AccountInfo>('/api/auth/account'),
 

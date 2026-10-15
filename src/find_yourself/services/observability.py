@@ -46,7 +46,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from ..db.canvas_models import CanvasEvent, CanvasInstance, DispatchRecord
-from ..db.models import AuditEvent, BudgetReservation, Task, TaskEvent
+from ..db.models import COMPANION_TASK_PREFIX, AuditEvent, BudgetReservation, Task, TaskEvent
 from ..db.team_models import AgentInstance, TeamDefinition, TeamEvent
 from ..db.types import utcnow
 from ..services.actor import Actor
@@ -628,9 +628,13 @@ class ObservabilityService:
         }
 
     def _task_counts(self, owner: str) -> dict[str, Any]:
+        # 陪伴对话的预算锚点行（companion: 前缀）是记账脚手架，不算用户任务，
+        # 与看板口径保持一致（kanban._owned_tasks 同样过滤）。
         rows = self.session.execute(
-            sa.select(Task.status, sa.func.count(Task.id)).where(Task.owner_id == owner)
-            .group_by(Task.status)
+            sa.select(Task.status, sa.func.count(Task.id)).where(
+                Task.owner_id == owner,
+                ~Task.id.startswith(COMPANION_TASK_PREFIX),
+            ).group_by(Task.status)
         ).all()
         by_status = {status: int(n) for status, n in rows}
         return {"by_status": by_status, "total": sum(by_status.values())}

@@ -53,7 +53,6 @@ import threading
 import urllib.parse
 import urllib.request
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -784,6 +783,11 @@ def _run_subflow_once(node_id: str, subflow: dict[str, Any], value: Any,
 
 def _exec_node_iteration(node_id: str, params: dict[str, Any], payload: Any,
                          resolvers: dict[str, Any]) -> Any:
+    """串行 map（N1：降级为 LangGraph 串行环执行，语义不变）。
+
+    校验（空输入拒收、max_items 闸门）留在此处——编译期已拦一遍，这里是
+    运行期纵深；取值抽取（item_field）同样前置，降级核只收干净 values。
+    """
     if payload is None:
         raise DslValidationError(f"节点 {node_id} iteration 需要上游输入（列表）")
     items = payload if isinstance(payload, list) else [payload]
@@ -792,34 +796,43 @@ def _exec_node_iteration(node_id: str, params: dict[str, Any], payload: Any,
         raise DslValidationError(
             f"节点 {node_id} iteration 待处理 {len(items)} 项超过 max_items={max_items}")
     item_field = params.get("item_field")
-    outputs: list[Any] = []
-    for idx, item in enumerate(items):
-        value = _lookup(item, item_field) if item_field else item
-        outputs.append(_run_subflow_once(
-            node_id, params["subflow"], value, resolvers, f"item{idx}"))
-    return outputs
+    values = [_lookup(item, item_field) if item_field else item for item in items]
+    return dsl_langgraph.run_iteration_lowered(
+        node_id=node_id,
+        values=values,
+        runner=lambda value, label: _run_subflow_once(
+            node_id, params["subflow"], value, resolvers, label),
+    )
 
 
 def _exec_node_loop(node_id: str, params: dict[str, Any], payload: Any,
                     resolvers: dict[str, Any]) -> Any:
+    """有界条件循环（N1：降级为 LangGraph 条件环执行，语义不变）。
+
+    until 判定闭包留在此处（_lookup/_compare 是本模块语义），降级核只收
+    纯函数 should_stop；返回形 {"iterations", "output", "reason"} 不变。
+    """
     max_iter = int(params.get("max_iterations", LOOP_DEFAULT_MAX_ITERATIONS))
     until_field = params.get("until_field")
     until_op = params.get("until_op")
     until_value = params.get("until_value")
-    current = payload
-    last: Any = None
-    iterations = 0
-    reason = "max_iterations"
-    while iterations < max_iter:
-        last = _run_subflow_once(
-            node_id, params["subflow"], current, resolvers, f"iter{iterations}")
-        iterations += 1
-        if until_field and until_op and \
-                _compare(_lookup(last, until_field), until_op, until_value):
-            reason = "until_met"
-            break
-        current = last
-    return {"iterations": iterations, "output": last, "reason": reason}
+    if max_iter < 1:
+        # 与解释器旧语义一致：上界 <1 时一轮不跑（编译期 _check_loop 已拒 <1，
+        # 此处只覆盖绕过编译直调 execute_node 的形状兼容）。
+        return {"iterations": 0, "output": None, "reason": "max_iterations"}
+
+    def should_stop(last: Any) -> bool:
+        return bool(until_field and until_op
+                    and _compare(_lookup(last, until_field), until_op, until_value))
+
+    return dsl_langgraph.run_loop_lowered(
+        node_id=node_id,
+        initial=payload,
+        max_iterations=max_iter,
+        should_stop=should_stop,
+        runner=lambda value, label: _run_subflow_once(
+            node_id, params["subflow"], value, resolvers, label),
+    )
 
 
 #: 命名子图库以**调用链显式传参**的方式流转（``run_dsl(subgraphs=...)`` →
@@ -829,33 +842,36 @@ def _exec_node_loop(node_id: str, params: dict[str, Any], payload: Any,
 
 def _exec_node_parallel(node_id: str, params: dict[str, Any], payload: Any,
                         resolvers: dict[str, Any]) -> Any:
-    """并行扇出/汇聚（对标 LangGraph 的并行边 + ``Send`` 式动态 map 扇出）。
+    """并行扇出/汇聚（N1：降级为 LangGraph Send 扇出 + reducer 汇聚，语义不变）。
 
-    与 ``iteration`` 的差别是**真并发**：``iteration`` 是串行逐项 map（有序、
-    单线程、便于逐步调试），``parallel`` 把多个命名分支丢进线程池同时跑，
-    再按分支声明顺序 fan-in 汇总（顺序稳定，与完成先后无关）。
+    与 ``iteration`` 的差别仍是**真并发**（Send worker 并发执行），再按分支
+    声明顺序 fan-in 汇总（顺序稳定，与完成先后无关）。
 
-    分支失败**如实上抛**：任一分支失败则本节点失败，绝不把失败分支当成
-    「已完成」混进汇聚结果（否则画布作者会拿到一份看起来齐全的假回执）。
+    分支失败**如实上抛**：任一分支失败则本节点失败（worker 异常原样穿透），
+    绝不把失败分支当成「已完成」混进汇聚结果。
+
+    分支解析（inline/ref）与 workers 下界校验留在此处——引用未定义子图、
+    非法 workers 仍是 DslValidationError，错误类型不变。
     """
     branches = params["branches"]
     workers = int(params.get("max_workers", len(branches)))
     if workers < 1:
         raise DslValidationError(f"节点 {node_id} parallel.max_workers 至少为 1")
-    # 扇出：每个分支一份独立深拷贝的子流程文档，避免并发下共享可变状态。
+    # 扇出：每个分支一份独立解析出的子流程文档（深拷贝仍由 _run_subflow_once
+    # 在每轮执行时做，避免并发下共享可变状态——与旧实现一致）。
     library = resolvers.get("subflows") or {}
-    docs: list[tuple[str, dict[str, Any]]] = []
+    resolved: list[tuple[str, dict[str, Any]]] = []
     for idx, branch in enumerate(branches):
-        docs.append((str(branch["name"]),
-                     _branch_subflow(node_id, branch, idx, library)))
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = [
-            pool.submit(_run_subflow_once, node_id, doc, payload, resolvers,
-                        f"branch{idx}:{name}")
-            for idx, (name, doc) in enumerate(docs)
-        ]
-        # 按声明顺序取结果（future 完成的先后不影响输出顺序）。
-        return [fut.result() for fut in futures]
+        resolved.append((str(branch["name"]),
+                         _branch_subflow(node_id, branch, idx, library)))
+    return dsl_langgraph.run_parallel_lowered(
+        node_id=node_id,
+        branches=resolved,
+        payload=payload,
+        max_workers=workers,
+        runner=lambda doc, value, label: _run_subflow_once(
+            node_id, doc, value, resolvers, label),
+    )
 
 
 def _branch_subflow(node_id: str, branch: Any, idx: int,
@@ -2578,6 +2594,7 @@ from find_yourself.db.types import ID as _FlowID  # noqa: E402
 from find_yourself.db.types import TZDateTime as _FlowTZ  # noqa: E402
 from find_yourself.db.types import utcnow as _flow_utcnow  # noqa: E402
 
+from . import dsl_langgraph  # noqa: E402  (N1：拓扑节点降级执行；单向依赖，无环)
 from .errors import Conflict as _FlowConflict  # noqa: E402
 from .errors import NotFound as _FlowNotFound  # noqa: E402
 from .errors import ValidationFailed as _FlowValidation  # noqa: E402

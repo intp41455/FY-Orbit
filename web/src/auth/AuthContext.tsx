@@ -23,6 +23,13 @@ export interface AuthState {
   loginWithToken: (token: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  /** 注册新账号：成功后 refresh() 拿服务端权威身份（register 响应无 subject_type）。 */
+  register: (input: {
+    email: string;
+    password: string;
+    consent_accepted: boolean;
+    display_name?: string;
+  }) => Promise<void>;
   /** W8: 游客就地升级为正式账号；成功后调用方应 refresh()。 */
   upgradeGuest: (input: {
     email: string;
@@ -157,6 +164,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [applyIdentity],
   );
 
+  const register = useCallback(
+    async (input: {
+      email: string;
+      password: string;
+      consent_accepted: boolean;
+      display_name?: string;
+    }) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await authApi.register(input);
+        if (res.csrf_token) setCsrfToken(res.csrf_token);
+        await refresh();
+      } catch (err: unknown) {
+        setError((err as { message?: string })?.message || '注册失败，请检查输入后重试。');
+        setLoading(false);
+        throw err;
+      }
+    },
+    [refresh],
+  );
+
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -171,8 +200,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest }),
-    [owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest],
+    () => ({ owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest, register }),
+    [owner, loading, error, isGuest, plan, login, loginWithToken, logout, refresh, upgradeGuest, register],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

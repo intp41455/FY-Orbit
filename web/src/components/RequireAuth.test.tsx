@@ -22,6 +22,7 @@ function state(over: Partial<AuthState> = {}): AuthState {
     logout: vi.fn(),
     refresh: vi.fn(),
     upgradeGuest: vi.fn(),
+    register: vi.fn(),
     ...over,
   };
 }

@@ -11,6 +11,7 @@ vi.mock('../api/assessments', () => ({
   assessmentsApi: {
     catalog: vi.fn(),
     startSession: vi.fn(),
+    record: vi.fn(),
     submit: vi.fn(),
   },
 }));
@@ -93,6 +94,46 @@ describe('AssessmentsPage (U05/U06)', () => {
 
     expect(screen.getByText(/\[非官方探索倾向: ENFP\]/)).toBeInTheDocument();
     expect(screen.getByText(/绝非官方 MBTI® 认证报告/)).toBeInTheDocument();
-    expect(screen.getByText(/无匹配常模，不提供人群百分位。/)).toBeInTheDocument();
+    expect(screen.getByText(/无匹配常模，不提供人群百分位/)).toBeInTheDocument();
+  });
+
+  it('BUG #6：作答同步到服务端并刷新 missing，答完可提交', async () => {
+    const afterI1: RealAssessmentSession = { ...session, missing: ['i2'] };
+    const afterI2: RealAssessmentSession = { ...session, missing: [] };
+    const scored: RealAssessmentSession = {
+      ...session,
+      missing: [],
+      status: 'scored',
+      result: { scales: { openness: 4.0 }, type_label: '合成占位', official_mbti: false },
+    };
+    vi.mocked(assessmentsApi.catalog).mockResolvedValue({ questionnaires: [q] });
+    vi.mocked(assessmentsApi.startSession).mockResolvedValue(session);
+    vi.mocked(assessmentsApi.record)
+      .mockResolvedValueOnce(afterI1)
+      .mockResolvedValueOnce(afterI2);
+    vi.mocked(assessmentsApi.submit).mockResolvedValue(scored);
+    const user = userEvent.setup();
+    render(<AssessmentsPage />);
+    await user.click(await screen.findByRole('button', { name: /开始测/ }));
+
+    // 作答 i1 → record 被调且 session 被刷新（missing 收缩）。
+    await user.selectOptions(screen.getByLabelText(/题目 i1/), '4');
+    await waitFor(() =>
+      expect(assessmentsApi.record).toHaveBeenCalledWith('s1', { i1: 4 }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByLabelText(/题目 i2/)).toBeInTheDocument(),
+    );
+
+    // 作答 i2 → missing 清零 → 提交放行并显示服务端结果。
+    await user.selectOptions(screen.getByLabelText(/题目 i2/), '5');
+    await waitFor(() =>
+      expect(assessmentsApi.record).toHaveBeenCalledWith('s1', { i1: 4, i2: 5 }),
+    );
+    await user.click(screen.getByRole('button', { name: /提交/ }));
+    await waitFor(() =>
+      expect(assessmentsApi.submit).toHaveBeenCalledWith('s1', { i1: 4, i2: 5 }),
+    );
+    expect(screen.getByText(/合成占位/)).toBeInTheDocument();
   });
 });

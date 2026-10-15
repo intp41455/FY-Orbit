@@ -234,6 +234,37 @@ Windows Defender SmartScreen 可能对首次运行的未知发布者弹出
 与 GitHub Release 页面公布的 SHA-256 比对一致即说明文件未被损坏或替换。
 （本包解出后的 verify.bat 校验的是包内文件与 SHA256SUMS.txt 的一致性。）
 
+【接入外部 AI 模型（可选，本地功能不强依赖）】
+首次启动会在程序目录自动生成 .env（含随机 FY_SESSION_SECRET / FY_LOCAL_TOKEN）。
+此时所有本地功能（画布编排 / 知识库 / 看板 / 个人空间）开箱即用，但
+「AI 对话 / 工作流一键生成」等需要外部模型的能力尚未接通。
+
+两种接入方式：
+
+  方式一（推荐）：打开工作台 → 设置 → 模型接入向导。填 Provider /
+    Base URL / API Key / 模型名，向导会生成一段 .env 配置片段，
+    把它整段粘到程序目录的 .env 末尾，保存后重启即可。
+    例（OpenAI 兼容端点）：
+      FY_MODEL_PROVIDER=openai_compat
+      FY_MODEL_BASE_URL=https://your-endpoint/v1
+      FY_MODEL_API_KEY=<你的密钥>
+      FY_MODEL_NAME=your-model-name
+
+  方式二：直接编辑 .env，打开包内 .env.example 有逐项注释的模板。
+
+⚠️ 两个必踩坑（不处理则「配了 Key 也用不了」，且界面会如实报错而非假装成功）：
+  1. 必须显式 FY_OFFLINE_MODE=0。本产品默认离线（.env 缺省 True），
+     远程调用会被离线门明确拒绝（503 offline_mode_remote_blocked）。
+     这是设计意图：未经授权不得向公网外传数据。
+  2. 必须声明 FY_MODEL_PRICE_OVERRIDES。价目表之外的模型单价未知时，
+     网关按 PriceUnknown 阻断调用（冻结契约：不得按零费用放行）。
+     例：
+      FY_MODEL_PRICE_OVERRIDES={{"your-model-name": {{"input_usd_per_1k": "0.0001", "output_usd_per_1k": "0.0004", "context_window": 128000}}}}
+     ⚠️ 单价必须按供应商真实报价填写，不得为跑通而填 0。
+
+本地 ollama 用户：Provider 选 ollama 且无需密钥；同样需要 FY_OFFLINE_MODE=0
+才会被允许访问本地以外的地址，纯本机 ollama 可保持 FY_OFFLINE_MODE=1。
+
 【进阶与参数说明】
 - 默认端口：8000；若被占用可通过命令行指定：FY-Orbit.bat --port 8080
 - 不需要自动打开窗口：FY-Orbit.bat --no-browser

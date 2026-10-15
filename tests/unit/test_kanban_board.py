@@ -670,3 +670,22 @@ def test_a_service_actor_cannot_read_someone_elses_board(svc, session):
     _task(session, "t", owner=OWNER)
     with pytest.raises(PermissionDenied):
         svc.board(Actor.service("svc-1", "worker"))
+
+
+def test_companion_budget_anchor_tasks_do_not_pollute_board(svc, session, owner):
+    """BUG #5 companion: budget-anchor rows (id prefix ``companion:``) stay off the board.
+
+    CompanionService lazily materialises a tasks row per conversation so
+    BudgetService can reserve against it; that bookkeeping row must never
+    surface as a user task card or inflate the board summary.
+    """
+    _task(session, "companion:conv-x", status="running")
+    _task(session, "user-task-1", status="queued")
+
+    board = svc.board(owner)
+    ids = [card["id"] for col in board["columns"] for card in col["cards"]]
+    assert "user-task-1" in ids
+    assert all(not i.startswith("companion:") for i in ids), ids
+    assert board["summary"]["total_cards"] == 1
+    # The anchor row itself still exists (the budget FK needs it).
+    assert session.get(Task, "companion:conv-x") is not None

@@ -12,9 +12,27 @@ import type { ConversationSummary, Message } from '../api/types';
 vi.mock('../api/conversations', () => ({
   conversationsApi: {
     list: vi.fn(), create: vi.fn(), get: vi.fn(), messages: vi.fn(), postMessage: vi.fn(),
+    reply: vi.fn(),
   },
 }));
+// ChatPage 挂载时会拉模型目录与技能清单；这些模块未打桩时 request() 返回
+// undefined，导致 .then() 崩溃。打桩为空数据，让测试聚焦被测行为。
+vi.mock('../api/models', () => ({
+  modelsApi: { catalog: vi.fn() },
+}));
+vi.mock('../api/catalog', () => ({
+  catalogApi: { skills: vi.fn() },
+}));
+// BUG #4: ChatPage.send() calls request() 直接发用户消息 + 触发 reply + 重取，
+// 现有测试未 mock ../api/client。这里打桩以便断言「发送后真的请求了 /reply」。
+vi.mock('../api/client', async () => {
+  const actual = await vi.importActual<typeof import('../api/client')>('../api/client');
+  return { ...actual, request: vi.fn() };
+});
 import { conversationsApi } from '../api/conversations';
+import { request } from '../api/client';
+import { modelsApi } from '../api/models';
+import { catalogApi } from '../api/catalog';
 
 const MSGS: Message[] = [
   {
@@ -73,6 +91,11 @@ beforeEach(() => {
   (HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = scrollSpy;
   vi.mocked(conversationsApi.list).mockResolvedValue([CONV]);
   vi.mocked(conversationsApi.messages).mockResolvedValue(MSGS);
+  vi.mocked(catalogApi.skills).mockResolvedValue([]);
+  vi.mocked(modelsApi.catalog).mockResolvedValue({
+    catalog_version: '', primary_provider_id: '', model_name: '', configured: false,
+    config_error: '', route_errors: [], chain: [], providers: [], models: [],
+  });
 });
 
 afterEach(() => {
@@ -143,5 +166,46 @@ describe('ChatPage 提问定位栏', () => {
     expect(items[0].className).toContain('in-view');
     expect(items[0]).toHaveTextContent('视口内');
     expect(items[1].className).not.toContain('in-view');
+  });
+});
+
+describe('ChatPage 发送触发伴侣回复（BUG #4）', () => {
+  it('在已有会话发送后：POST 用户消息 → 调 /reply → 重取消息', async () => {
+    const ASSISTANT: Message = {
+      id: 'm-reply', conversation_id: 'c1', role: 'assistant',
+      content: '我听到了，我们慢慢来。', source: 'companion',
+      created_at: '2026-10-01T08:02:00Z', version: 1,
+    };
+    const AFTER = [...MSGS, ASSISTANT];
+
+    // request() 被 send() 用来：①POST 用户消息 ②重取消息列表
+    vi.mocked(request).mockImplementation(async (path: string) => {
+      if (path.endsWith('/messages') && Array.isArray(AFTER)) return AFTER as never;
+      return {} as never;
+    });
+    vi.mocked(conversationsApi.reply).mockResolvedValue(ASSISTANT);
+
+    render(<ChatPage />);
+    await flush();
+
+    const textarea = screen.getByLabelText('消息内容');
+    fireEvent.change(textarea, { target: { value: '我现在觉得有点乱' } });
+    fireEvent.keyDown(textarea, { key: 'Enter' });
+
+    await flush();
+
+    // 用户消息已 POST（带 Idempotency-Key）
+    expect(request).toHaveBeenCalledWith(
+      '/api/conversations/c1/messages',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    // 核心断言：发送后真的请求了伴侣回复，且带上刚发的文本
+    expect(conversationsApi.reply).toHaveBeenCalledWith(
+      'c1',
+      { message: '我现在觉得有点乱' },
+      expect.anything(),
+    );
+    // 重取后 assistant 回复出现在消息区
+    expect(screen.getByText('我听到了，我们慢慢来。')).toBeInTheDocument();
   });
 });

@@ -32,6 +32,7 @@ import { DossierPage } from './pages/DossierPage';      // P15 任务档案库�
 import { TimelinePage } from './pages/TimelinePage';    // P4 任务存档回溯与时间线
 import { ObservabilityPage } from './pages/ObservabilityPage'; // P2/P3 统一可观测与成本仪表盘
 import { FortunePage } from './pages/FortunePage';             // B-Line 命理、每日签与塔罗启引
+import { LegalNoticePage } from './pages/LegalNoticePage';       // NEW-2 NOTICE 模块（公开）
 
 export default function App() {
   return (
@@ -41,6 +42,7 @@ export default function App() {
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/legal" element={<LegalNoticePage />} />  {/* NEW-2 开源授权声明，不要求登录 */}
             <Route path="/pet" element={<PetPage />} />  {/* W10 透明置顶宠物浮窗，不套 Layout/不要求登录 */}
             {/* I3 独立全屏形态：自有路由、不套 Layout（无侧栏），游戏核心与 /cabin 共用同一份 */}
             <Route

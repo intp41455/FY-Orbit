@@ -1,10 +1,9 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { LineIcon } from '../components/ui/LineIcon';
 import { BRAND } from '../brand';
 import '../styles/pages/system.css';
-import { BaseBound } from '../components/ui/SaveStatusIndicator';
 
 /**
  * `/login` · 不套 Layout。
@@ -33,10 +32,20 @@ const EDGES: Array<[number, number]> = [
 ];
 
 export function LoginPage() {
-  const { owner, loading, error, login, loginWithToken } = useAuth();
-  const [token, setToken] = useState('dev-token-secret');
+  const { owner, loading, error, login, loginWithToken, register } = useAuth();
+  // 登录口令默认留空：此前预填 'dev-token-secret' 会把有效密钥直接送进 HTML，
+  // 任何能读页面的人都不必再查配置。需要的人自己从 .env 复制。
+  const [token, setToken] = useState('');
   const [submittingToken, setSubmittingToken] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // 注册表单态（后端 POST /auth/register：邮箱格式 + ≥8 位密码 + 必须勾选同意）。
+  const [regEmail, setRegEmail] = useState('');
+  const [regName, setRegName] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regConsent, setRegConsent] = useState(false);
+  const [regError, setRegError] = useState<string | null>(null);
+  const [registering, setRegistering] = useState(false);
 
   if (loading) return <div className="main">Loading…</div>;
   if (owner) return <Navigate to="/chat" replace />;
@@ -52,9 +61,28 @@ export function LoginPage() {
     }
   }
 
+  async function handleRegister(e: React.FormEvent) {
+    e.preventDefault();
+    setRegError(null);
+    if (!regEmail.trim() || regPassword.length < 8 || !regConsent) return;
+    setRegistering(true);
+    try {
+      await register({
+        email: regEmail.trim(),
+        password: regPassword,
+        consent_accepted: regConsent,
+        display_name: regName.trim() || undefined,
+      });
+    } catch (err) {
+      // AuthContext 已把后端原话写进全局 error；这里再留一份就近提示。
+      setRegError((err as { message?: string })?.message || '注册失败，请检查输入后重试。');
+    } finally {
+      setRegistering(false);
+    }
+  }
+
   return (
-    <BaseBound surface="login" state="idle">
-      <div className="login-stage">
+    <div className="login-stage">
         {/* 装饰背景：纯 SVG，透明度 .35，aria-hidden 不进无障碍树 */}
         <div className="login-backdrop" aria-hidden="true">
           <svg preserveAspectRatio="xMidYMid slice" viewBox="0 0 100 100">
@@ -137,7 +165,7 @@ export function LoginPage() {
             在 127.0.0.1 环回地址运行，通过本地环境变量或配置文件授权。
           </p>
 
-          {/* 回车直接提交；默认值预填，免得用户先去查配置（最少点击第 3 条） */}
+          {/* 口令默认留空：不把有效密钥预填进 HTML */}
           <form onSubmit={handleLocalLogin} noValidate>
             <div className="login-field">
               <label className="ui-label" htmlFor="login-token">
@@ -148,7 +176,7 @@ export function LoginPage() {
                 ref={inputRef}
                 className="ui-input"
                 type="password"
-                placeholder="默认: dev-token-secret"
+                placeholder="从项目根目录 .env 复制 FY_LOCAL_TOKEN"
                 autoComplete="current-password"
                 value={token}
                 onChange={(e) => setToken(e.target.value)}
@@ -182,8 +210,80 @@ export function LoginPage() {
             <span className="ui-kbd">Enter</span> 提交 · <span className="ui-kbd">Tab</span>{' '}
             切换焦点，全键盘可完成登录
           </p>
+
+          <p className="login-foot">
+            {/* NEW-2：授权声明公开可读，无需先登录 */}
+            <Link to="/legal">开源授权声明（BSL 1.1）</Link>
+          </p>
+
+          <hr className="login-sep" />
+
+          {/* 注册入口：此前登录页零注册入口，后端 POST /auth/register 空转。
+              邮箱格式 + ≥8 位密码 + 必须勾选同意（后端原样校验，文案透出）。 */}
+          <h3 className="login-subtitle">注册新账号</h3>
+          <p className="login-note">
+            邮箱 + 密码注册；已有游客数据想保留请改走设置页「升级为正式账号」。
+          </p>
+          {regError && (
+            <div className="login-notice" role="alert">
+              <LineIcon name="alert" size={16} />
+              <span>{regError}</span>
+            </div>
+          )}
+          <form onSubmit={handleRegister} noValidate>
+            <div className="login-field">
+              <label className="ui-label" htmlFor="register-email">邮箱</label>
+              <input
+                id="register-email"
+                className="ui-input"
+                type="email"
+                autoComplete="email"
+                value={regEmail}
+                onChange={(e) => setRegEmail(e.target.value)}
+              />
+            </div>
+            <div className="login-field">
+              <label className="ui-label" htmlFor="register-name">昵称（可选）</label>
+              <input
+                id="register-name"
+                className="ui-input"
+                type="text"
+                autoComplete="nickname"
+                value={regName}
+                onChange={(e) => setRegName(e.target.value)}
+              />
+            </div>
+            <div className="login-field">
+              <label className="ui-label" htmlFor="register-password">密码（至少 8 位）</label>
+              <input
+                id="register-password"
+                className="ui-input"
+                type="password"
+                autoComplete="new-password"
+                value={regPassword}
+                onChange={(e) => setRegPassword(e.target.value)}
+              />
+            </div>
+            <div className="login-field">
+              <label className="ui-label" htmlFor="register-consent">
+                <input
+                  id="register-consent"
+                  type="checkbox"
+                  checked={regConsent}
+                  onChange={(e) => setRegConsent(e.target.checked)}
+                />{' '}
+                我已阅读并同意隐私政策（注册必须勾选，后端会校验）
+              </label>
+            </div>
+            <button
+              type="submit"
+              className="ui-btn ui-btn--block"
+              disabled={registering || !regEmail.trim() || regPassword.length < 8 || !regConsent}
+            >
+              {registering ? '注册中…' : '注册并登录'}
+            </button>
+          </form>
         </section>
       </div>
-    </BaseBound>
   );
 }

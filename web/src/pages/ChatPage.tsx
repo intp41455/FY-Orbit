@@ -355,7 +355,12 @@ export function ChatPage() {
         signal: controller.signal,
       });
       setText('');
-      // 发送后重取（同一 controller，可一并中止）
+      // BUG #4: 用户消息入库后，请求伴侣生成回复。之前只 POST 用户消息、从不
+      // 调 /reply，导致对话永远没有 AI 回复（核心陪伴功能断链）。
+      // 同一 controller，可随用户中止；503（未配置模型/离线）由下面 catch 分支
+      // 透出后端诚实文案，不静默吞掉。
+      await conversationsApi.reply(convId, { message: content }, controller.signal);
+      // 生成后重取（含用户 + 伴侣两条消息）
       const res = await request<Message[]>(`/api/conversations/${convId}/messages`, {
         signal: controller.signal,
       });

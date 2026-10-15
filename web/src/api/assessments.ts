@@ -40,6 +40,14 @@ export const assessmentsApi = {
   catalog: () => request<AssessmentCatalogResponse>('/api/assessments/catalog'),
   startSession: (questionnaireId: string) =>
     request<RealAssessmentSession>(`/api/assessments/${questionnaireId}/sessions`, { method: 'POST' }),
+  // BUG #6：作答必须落服务端。服务端是计分唯一真源（missing/合成分全在服务端算）；
+  // 只改本地 state 会导致 session.missing 永远不收缩、提交永远被拒。每次作答都
+  // POST 全量有效答案（服务端按 key 合并，乱序收敛，无需防抖）。
+  record: (sessionId: string, answers: Record<string, number>) =>
+    request<RealAssessmentSession>(`/api/assessments/sessions/${sessionId}/answers`, {
+      method: 'POST',
+      body: { answers },
+    }),
   submit: (sessionId: string, answers: Record<string, number>) =>
     request<RealAssessmentSession>(`/api/assessments/sessions/${sessionId}/submit`, {
       method: 'POST',
