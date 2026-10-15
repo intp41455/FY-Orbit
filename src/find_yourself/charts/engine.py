@@ -18,6 +18,7 @@ import zoneinfo
 from typing import Any
 from uuid import uuid4
 
+from . import astronomy
 from .models import (
     ChartRequest,
     ChartResult,
@@ -31,7 +32,10 @@ from .models import (
     TarotDrawResult,
 )
 
-ENGINE_VERSION = "1.0.0-deterministic"
+ENGINE_VERSION = "1.1.0-astronomical"
+
+#: 月柱 12 节的黄经（与 ``branch_order`` 寅起顺序对齐；时刻由 astronomy 真算）。
+MONTH_JIE_LONGITUDES = tuple(lon for _, lon in astronomy.MONTH_JIE)
 
 # Chinese Sexagenary cycle constants
 HEAVENLY_STEMS = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"]
@@ -140,18 +144,31 @@ class DeterministicChartEngine:
         utc_dt = local_dt.astimezone(datetime.timezone.utc)
 
         # 1. Year Pillar (Sexagenary cycle starting 4 CE = 甲子 year 0 offset)
-        # Accounting for Lichun (around Feb 4)
-        is_before_lichun = (month < 2) or (month == 2 and day < 4)
-        calc_year = year - 1 if is_before_lichun else year
+        # F04：立春用真实时刻（太阳视黄经 315°），不再是固定的 2 月 4 日。
+        lichun = astronomy.solar_term_moment_utc(year, 315.0)
+        calc_year = year - 1 if utc_dt < lichun else year
         year_offset = (calc_year - 4) % 60
         year_stem = HEAVENLY_STEMS[year_offset % 10]
         year_branch = EARTHLY_BRANCHES[year_offset % 12]
 
         # 2. Month Pillar
-        # Month branches: 寅(1=Feb), 卯(2=Mar)... 丑(12=Jan)
-        # Simplified solar terms mapping
+        # F04：月柱边界用当年 12 节的真实时刻（立春=寅月起 … 小寒=丑月起），
+        # 不再是「每月 5 日」固定切分。立春前出生用 calc_year 的节表
+        # （末区间上界取下一年立春，跨年无缝）。
+        jie_moments = [astronomy.solar_term_moment_utc(calc_year, lon)
+                       for lon in MONTH_JIE_LONGITUDES]
+        jie_moments.append(astronomy.solar_term_moment_utc(calc_year + 1, 315.0))
+        month_idx = 0
+        for i in range(12):
+            if jie_moments[i] <= utc_dt < jie_moments[i + 1]:
+                month_idx = i
+                break
+        else:
+            # 出生早于 calc_year 立春不可能发生（calc_year 已按立春回退），
+            # 但 fail-closed：兜底取首区间而非静默错柱。
+            month_idx = 0
+        # Month branches: 寅(立春起), 卯 … 丑(小寒起)
         branch_order = ["寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥", "子", "丑"]
-        month_idx = (month - 2) % 12 if day >= 5 else (month - 3) % 12
         month_branch = branch_order[month_idx]
 
         # 五虎遁月歌 (Year stem determines month stem)
@@ -278,18 +295,11 @@ class DeterministicChartEngine:
         utc_dt = local_dt.astimezone(datetime.timezone.utc)
         jd = _to_julian_day(utc_dt)
 
-        # Astronomical century T from J2000.0
-        t = (jd - 2451545.0) / 36525.0
-
-        # Deterministic Solar Longitude (Sun)
-        l0 = 280.46646 + 36000.76983 * t
-        m = 357.52911 + 35999.05029 * t
-        m_rad = math.radians(m % 360)
-        c = (1.914602 - 0.004817 * t) * math.sin(m_rad) + (0.019993 - 0.000101 * t) * math.sin(2 * m_rad)
-        sun_long = (l0 + c) % 360.0
-
-        # Lunar Longitude (Moon approximation)
-        moon_l = (218.316 + 13.176396 * (jd - 2451545.0)) % 360.0
+        # F04：太阳用视黄经真算；月亮用低精度月球理论（含主要摄动）；
+        # 水星~土星用开普勒轨道解真算 —— 此前版本是「太阳黄经 + 固定偏移」，
+        # 冲合时刻错得离谱（如 2025 火星冲日时距角本应 180°），已删除。
+        sun_long = astronomy.sun_apparent_longitude(jd)
+        moon_l = astronomy.moon_longitude(jd)
 
         # Helper to format zodiac
         def _get_zodiac(deg: float) -> dict[str, Any]:
@@ -304,19 +314,22 @@ class DeterministicChartEngine:
         planets = {
             "Sun": _get_zodiac(sun_long),
             "Moon": _get_zodiac(moon_l),
-            "Mercury": _get_zodiac((sun_long + 18.5) % 360),
-            "Venus": _get_zodiac((sun_long + 32.1) % 360),
-            "Mars": _get_zodiac((sun_long + 120.4) % 360),
-            "Jupiter": _get_zodiac((sun_long + 210.8) % 360),
-            "Saturn": _get_zodiac((sun_long + 295.2) % 360),
+            "Mercury": _get_zodiac(astronomy.planet_longitude(jd, "Mercury")),
+            "Venus": _get_zodiac(astronomy.planet_longitude(jd, "Venus")),
+            "Mars": _get_zodiac(astronomy.planet_longitude(jd, "Mars")),
+            "Jupiter": _get_zodiac(astronomy.planet_longitude(jd, "Jupiter")),
+            "Saturn": _get_zodiac(astronomy.planet_longitude(jd, "Saturn")),
         }
 
         ascendant = None
         if not request.unknown_time and request.birth_time and request.longitude is not None:
-            # Greenwhich Mean Sidereal Time (GMST)
-            gmst = (280.46061837 + 360.98564736629 * (jd - 2451545.0)) % 360.0
-            lmst = (gmst + request.longitude) % 360.0
-            ascendant = _get_zodiac((lmst + 90.0) % 360.0)
+            if request.latitude is None:
+                warnings.append("无地理纬度：上升点无法真算，已略去（不编造）。")
+            else:
+                # F04：上升点由本地恒星时 + 纬度按黄道交点公式真算
+                # （此前版本用 LMST+90° 固定偏移，属虚构，已删除）。
+                ascendant = _get_zodiac(astronomy.ascendant(
+                    jd, request.longitude, request.latitude))
 
         computed_data = {
             "system": "western",
