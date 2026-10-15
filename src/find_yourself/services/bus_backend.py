@@ -156,8 +156,8 @@ class LocalBusBackend:
             return self._read_all(room)
 
 
-def create_bus_backend(kind: str, **kwargs: Any) -> BusBackend:
-    """按种类建后端。
+def create_bus_backend(kind: str = "auto", **kwargs: Any) -> BusBackend:
+    """按种类建后端（缺省 ``auto``：有 Redis 基建自动升级，无则本地零依赖运行）。
 
     * ``"local"``：文件 JSONL（离线优先，永远可用）；
     * ``"redis"``：必须可达，否则 ``BackendUnavailable``（不静默降级）；

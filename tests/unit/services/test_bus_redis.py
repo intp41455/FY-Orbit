@@ -85,6 +85,12 @@ def test_auto_without_url_uses_local(monkeypatch, tmp_path) -> None:
     assert backend.backend_name == "local"
 
 
+def test_default_kind_is_auto(monkeypatch, tmp_path) -> None:
+    """缺省即 auto：零配置开箱 local，有基建自动升级（所有者裁定）。"""
+    monkeypatch.delenv("FY_BUS_REDIS_URL", raising=False)
+    assert create_bus_backend(room_dir=str(tmp_path)).backend_name == "local"
+
+
 def test_explicit_redis_unreachable_is_not_silently_downgraded(
         monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("FY_BUS_REDIS_URL", "redis://qa:6379/0")
