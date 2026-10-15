@@ -432,6 +432,19 @@ def assemble(version: str, out_dir: Path, *, keep_stage: bool = False) -> tuple[
 
     print("[4/5] 说明、启动器与完整性校验 ...")
     shutil.copy2(ROOT / "README.md", APP / "README.md")
+    # 法务文件随包（/api/legal/notice 与 NOTICE 声明一致；缺失则端点诚实 503）。
+    for _legal in ("NOTICE", "LICENSE"):
+        if (ROOT / _legal).is_file():
+            shutil.copy2(ROOT / _legal, APP / _legal)
+    # 第三方组件清单随包（NOTICE 指引 + /api/legal/notice 解析源；文本小文件）。
+    if (ROOT / "pyproject.toml").is_file():
+        shutil.copy2(ROOT / "pyproject.toml", APP / "pyproject.toml")
+    if (ROOT / "uv.lock").is_file():
+        shutil.copy2(ROOT / "uv.lock", APP / "uv.lock")
+    (APP / "web").mkdir(parents=True, exist_ok=True)
+    for _manifest in ("package.json", "package-lock.json"):
+        if (ROOT / "web" / _manifest).is_file():
+            shutil.copy2(ROOT / "web" / _manifest, APP / "web" / _manifest)
     if (ROOT / ".env.example").is_file():
         shutil.copy2(ROOT / ".env.example", APP / ".env.example")
     write_text(APP / "FY-Orbit.bat", LAUNCHER_BAT.format(version=version), encoding="gbk")

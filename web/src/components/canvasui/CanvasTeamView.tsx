@@ -337,7 +337,7 @@ export function CanvasTeamView() {
           </select>
         </div>
         <div className="cv-field">
-          <label>模板</label>
+          <label>团队模板</label>
           <select value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
             {catalog.templates.map((t) => (
               <option key={t.id} value={t.id}>{t.name}</option>

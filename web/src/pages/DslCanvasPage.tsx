@@ -4,7 +4,9 @@ import { FlowEditor } from '../components/workflow/FlowEditor';
 import { GeneratePanel } from '../components/workflow/GeneratePanel';
 import { ModeSwitcher, TemplateStarter, useDslModes } from '../components/workflow/ModeSwitcher';
 import type { DslDocument, DslMode } from '../api/dslCanvas';
+import { dslCanvasApi } from '../api/dslCanvas';
 import { takeDslHandoff } from '../api/dslHandoff';
+import { openDslRunStream } from '../api/dslRunStream';
 import { useDslDraft } from '../hooks/useDslDraft';
 import { LineIcon } from '../components/ui/LineIcon';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
@@ -29,6 +31,107 @@ import '../styles/pages/canvas.css';
 /** 两份 DSL 文档是否**逐字段等价**（回传防循环的唯一判据）。 */
 function sameDoc(a: DslDocument | null, b: DslDocument): boolean {
   return !!a && JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * G4-h 运行记录（跨会话实时）：列出本属主的 runs，附着到任意一条的 SSE 流。
+ * 附着不要求是发起会话——凭 run_id 订阅，后端按属主鉴权。
+ * 事件只追加展示（近 50 条），断开/切换即清流不留野引用。
+ */
+function RunHistoryPanel() {
+  const [runs, setRuns] = useState<Array<{ run_id: string; status: string }>>([]);
+  const [loading, setLoading] = useState(false);
+  const [attachedId, setAttachedId] = useState<string | null>(null);
+  const [feed, setFeed] = useState<string[]>([]);
+  const streamRef = useRef<{ close: () => void } | null>(null);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await dslCanvasApi.listRuns();
+      setRuns(Array.isArray(res.items) ? res.items : []);
+    } catch {
+      setRuns([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    return () => {
+      streamRef.current?.close();
+      streamRef.current = null;
+    };
+  }, [refresh]);
+
+  function detach() {
+    streamRef.current?.close();
+    streamRef.current = null;
+    setAttachedId(null);
+  }
+
+  function attach(runId: string) {
+    detach();
+    setFeed([]);
+    const stream = openDslRunStream(runId, {
+      onNodeStarted: (e) => setFeed((f) => [...f.slice(-49), `▶ ${e.node_id} 开始`]),
+      onNodeFinished: (e) =>
+        setFeed((f) => [...f.slice(-49), `■ ${e.node_id} ${e.status}`]),
+      onRunFinished: (e) =>
+        setFeed((f) => [...f.slice(-49), `✔ 运行结束 ${e.status}`]),
+      onError: () => setFeed((f) => [...f.slice(-49), '✖ 流断开']),
+    });
+    streamRef.current = stream;
+    setAttachedId(runId);
+  }
+
+  return (
+    <details className="ui-panel ui-panel--flat ui-panel--pad" data-testid="run-history">
+      <summary>
+        运行记录（跨会话实时{attachedId ? ` · 已附着 ${attachedId.slice(0, 8)}` : ''}）
+      </summary>
+      <div style={{ display: 'flex', gap: 8, margin: '8px 0' }}>
+        <button type="button" className="btn btn-sm" onClick={() => void refresh()} disabled={loading}>
+          {loading ? '刷新中…' : '刷新列表'}
+        </button>
+        {attachedId && (
+          <button type="button" className="btn btn-sm" onClick={detach} data-testid="run-detach">
+            断开附着
+          </button>
+        )}
+      </div>
+      {runs.length === 0 && !loading && <p className="ui-hint">还没有运行记录。</p>}
+      <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+        {runs.map((r) => (
+          <li key={r.run_id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+            <code>{r.run_id.slice(0, 12)}</code>
+            <span className="ui-badge">{r.status}</span>
+            {attachedId === r.run_id ? (
+              <span className="ui-hint">附着中</span>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-sm"
+                data-testid={`run-attach-${r.run_id.slice(0, 8)}`}
+                onClick={() => attach(r.run_id)}
+              >
+                附着
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+      {attachedId && (
+        <div data-testid="run-feed" style={{ marginTop: 8 }}>
+          {feed.length === 0 && <p className="ui-hint">等待事件…</p>}
+          {feed.map((line, i) => (
+            <div key={i} className="ui-hint">{line}</div>
+          ))}
+        </div>
+      )}
+    </details>
+  );
 }
 
 export function DslCanvasPage() {
@@ -75,8 +178,7 @@ export function DslCanvasPage() {
 
   // 每次起手都换一个**新的对象引用**，两个画布才会真的把图换掉
   // （它们按引用变化载入，避免拖拽被回滚）。
-  const applyTemplate = useCallback((next: DslDocument, templateId: string) => {
-    setDoc({ version: next.version, nodes: [...next.nodes], edges: [...next.edges] });
+  const applyTemplate = useCallback((next: DslDocument, templateId: string) => {    setDoc({ version: next.version, nodes: [...next.nodes], edges: [...next.edges] });
     setSourcePrompt(`模板：${templateId}`);
   }, []);
 
@@ -117,6 +219,8 @@ export function DslCanvasPage() {
       </div>
 
       <ModeSwitcher mode={mode} onSelect={setMode} overview={overview} />
+
+      <RunHistoryPanel />
 
       <div className="ui-tabs" role="tablist" aria-label="工作流工坊页签">
         <button

@@ -2604,6 +2604,22 @@ class DslRunStore:
             return [rid for rid in self._order
                     if self._owners.get(rid, "") == owner]
 
+    def list_runs(self, owner: str) -> list[dict[str, Any]]:
+        """G4-h：该属主的运行列表（按运行顺序），每条带状态。
+
+        前端“运行记录”面板凭此渲染，附着到任意 run 的 SSE 流——
+        跨会话实时不再要求是发起会话。
+        """
+        with self._lock:
+            rows = []
+            for rid in self._order:
+                if self._owners.get(rid, "") != owner:
+                    continue
+                payload = self._runs.get(rid) or {}
+                rows.append({"run_id": rid,
+                             "status": str(payload.get("status") or "unknown")})
+            return rows
+
 
 # ---------------------------------------------------------------------------
 # A-画布搭建器-05/06：flow_type 双形态 + 草稿/发布版本化 + 批量评估

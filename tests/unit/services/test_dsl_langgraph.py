@@ -349,3 +349,73 @@ def test_lowered_parallel_propagates_original_error_type() -> None:
     # 外层 run_dsl 把节点异常记成 failed；直接调 execute_node 时必须是原类型。
     with pytest.raises(DslValidationError):
         execute_node(doc["nodes"][1], "x")
+
+
+# --------------------------------------------------------------------------- #
+# B4 流式钩子：降级核 on_event（对标 run_dsl 的节点事件模式）
+# --------------------------------------------------------------------------- #
+
+def test_lowered_runners_emit_lifecycle_events() -> None:
+    from find_yourself.services import dsl_langgraph
+
+    events: list[tuple[str, dict]] = []
+
+    def _runner(value, label):
+        return f"{value}!"
+
+    dsl_langgraph.run_iteration_lowered(
+        node_id="it1", values=["a", "b"], runner=_runner,
+        on_event=lambda kind, payload: events.append((kind, payload)),
+    )
+    kinds = [k for k, _ in events]
+    # 启动 + 每个 item 的开始/结束 + 完成。
+    assert kinds[0] == "iteration_started"
+    assert kinds.count("item_started") == 2
+    assert kinds.count("item_finished") == 2
+    assert kinds[-1] == "iteration_finished"
+    assert events[-1][1]["outputs"] == ["a!", "b!"]
+
+
+def test_lowered_parallel_emits_branch_events_including_failures() -> None:
+    from find_yourself.services import dsl_langgraph
+
+    events: list[tuple[str, dict]] = []
+
+    def _runner(doc, value, label):
+        if doc.get("boom"):
+            raise ValueError("branch boom")
+        return f"ok:{value}"
+
+    with pytest.raises(ValueError, match="branch boom"):
+        dsl_langgraph.run_parallel_lowered(
+            node_id="pl1",
+            branches=[("ok", {}), ("bad", {"boom": True})],
+            payload="x", max_workers=2, runner=_runner,
+            on_event=lambda kind, payload: events.append((kind, payload)),
+        )
+    kinds = [k for k, _ in events]
+    assert "parallel_started" in kinds
+    assert "branch_failed" in kinds
+    assert "parallel_finished" not in kinds  # 失败即停，无完成事件（不造假完成）
+
+
+def test_lowered_loop_emits_per_round_events() -> None:
+    from find_yourself.services import dsl_langgraph
+
+    events: list[tuple[str, dict]] = []
+
+    def _should_stop(last):
+        return last >= 2
+
+    def _runner(value, label):
+        return value + 1
+
+    dsl_langgraph.run_loop_lowered(
+        node_id="lp1", initial=0, max_iterations=3,
+        should_stop=_should_stop, runner=_runner,
+        on_event=lambda kind, payload: events.append((kind, payload)),
+    )
+    rounds = [p["round"] for k, p in events if k == "round_finished"]
+    assert rounds == [1, 2]
+    assert events[-1][0] == "loop_finished"
+    assert events[-1][1]["reason"] == "until_met"

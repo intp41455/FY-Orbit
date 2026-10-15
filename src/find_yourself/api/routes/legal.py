@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import tomllib
 from pathlib import Path
 
@@ -19,8 +20,26 @@ from fastapi.responses import JSONResponse
 
 router = APIRouter(prefix="/api/legal", tags=["legal"])
 
-#: ``src/find_yourself/api/routes/legal.py`` → 上 4 级即仓库根。
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+#: ``src/find_yourself/api/routes/legal.py`` → 上 4 级即仓库根（源码运行）。
+#: 冻结包（PyInstaller onedir）下 ``__file__`` 指向 _MEI 临时目录，此时以
+#: 可执行文件所在包目录（``.../find-yourself-backend/..``）与 cwd 为准。
+#: 三处都找不到 NOTICE 即诚实 503（不编造文本）。
+_SOURCE_ROOT = Path(__file__).resolve().parents[4]
+
+
+def _repo_root() -> Path | None:
+    candidates: list[Path] = []
+    if getattr(sys, "frozen", False):
+        exe_dir = Path(sys.executable).resolve().parent
+        candidates += [exe_dir, exe_dir.parent]
+    candidates += [_SOURCE_ROOT, Path.cwd()]
+    for cand in candidates:
+        try:
+            if (cand / "NOTICE").is_file():
+                return cand
+        except OSError:
+            continue
+    return None
 
 _LICENSE_ID = "BSL-1.1"
 _LICENSE_HOLDER = "intp41455"
@@ -62,15 +81,16 @@ def _frontend_deps(root: Path) -> tuple[list[str], str]:
 
 @router.get("/notice")
 async def legal_notice() -> JSONResponse:
-    notice_file = _REPO_ROOT / "NOTICE"
-    if not notice_file.exists():
+    root = _repo_root()
+    if root is None:
         return JSONResponse(
             {"error": {"code": "notice_missing",
                        "message": "NOTICE file is missing from the distribution"}},
             status_code=503,
         )
-    backend, backend_src = _backend_deps(_REPO_ROOT)
-    frontend, frontend_src = _frontend_deps(_REPO_ROOT)
+    notice_file = root / "NOTICE"
+    backend, backend_src = _backend_deps(root)
+    frontend, frontend_src = _frontend_deps(root)
     return JSONResponse({
         "license": {
             "id": _LICENSE_ID,

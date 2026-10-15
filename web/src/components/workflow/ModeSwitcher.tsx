@@ -131,7 +131,7 @@ export function TemplateStarter({ templates, defaultTemplate, onPick }: Template
 
   return (
     <div className="ui-panel ui-panel--flat ui-panel--pad" data-testid="template-starter">
-      <strong>从模板起手</strong>
+      <strong>从起手模板开始</strong>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
         {templates.map((t) => (
           <button
@@ -149,7 +149,7 @@ export function TemplateStarter({ templates, defaultTemplate, onPick }: Template
         ))}
       </div>
       <p className="ui-hint" style={{ margin: '6px 0 0' }}>
-        模板就是后端产出的那张图；载入之后照旧可拖、可连线、可运行。
+        起手模板就是后端产出的那张图（区别于「开箱模板」整套系统与「团队模板」）；载入之后照旧可拖、可连线、可运行。
       </p>
     </div>
   );

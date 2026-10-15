@@ -21,6 +21,10 @@
 * ``runner(value, label)`` —— 跑一轮子流程并返回输出；失败时抛出 DSL
   自身的异常类型（调用方保证），本模块只负责透传。
 * ``should_stop(last_output)`` —— loop 的 until 判定（纯函数）。
+* ``on_event(kind, payload)`` —— B4 流式钩子（可选）：worker 生命周期事件
+  （started/finished + 输出快照），失败只发 ``*_failed`` 不发完成事件。
+  注意 ``execute_node`` 暂不透传本钩子：子流程事件进入外层 run_dsl 需要
+  命名空间扇入设计（否则内外事件混流），属后续项。
 """
 
 from __future__ import annotations
@@ -36,6 +40,16 @@ SubflowRunner = Callable[[Any, str], Any]
 
 #: loop 终止判定：``(last_output) -> bool``，必须是纯函数。
 StopPredicate = Callable[[Any], bool]
+
+#: B4 流式钩子：``(kind, payload) -> None``，对标 run_dsl 的节点事件模式。
+#: 回调内抛错不拦截执行（由调用方保证不抛；线程 worker 内抛错会污染汇聚）。
+#: execute_node 暂不透传（子流程事件需命名空间扇入设计，见模块文档）。
+OnEvent = Callable[[str, dict[str, Any]], None] | None
+
+
+def _emit(on_event: OnEvent, kind: str, payload: dict[str, Any]) -> None:
+    if on_event is not None:
+        on_event(kind, payload)
 
 
 # --------------------------------------------------------------------------- #
@@ -53,14 +67,21 @@ def run_iteration_lowered(
     node_id: str,
     values: list[Any],
     runner: SubflowRunner,
+    on_event: OnEvent = None,
 ) -> list[Any]:
     """串行 map：``values[i]`` 依次跑子流程，输出同序列表。"""
+    _emit(on_event, "iteration_started", {"node_id": node_id, "count": len(values)})
     if not values:
+        _emit(on_event, "iteration_finished",
+              {"node_id": node_id, "outputs": [], "rounds": 0})
         return []
 
     def worker(state: _IterState) -> dict:
         idx = state["index"]
+        _emit(on_event, "item_started", {"node_id": node_id, "index": idx})
         out = runner(state["values"][idx], f"item{idx}")
+        _emit(on_event, "item_finished",
+              {"node_id": node_id, "index": idx, "output": out})
         return {"acc": [out], "index": idx + 1}
 
     def router(state: _IterState) -> str:
@@ -76,7 +97,10 @@ def run_iteration_lowered(
         config={"recursion_limit": 2 * len(values) + 10,
                 "run_name": f"{node_id}:iteration"},
     )
-    return list(final["acc"])
+    outputs = list(final["acc"])
+    _emit(on_event, "iteration_finished",
+          {"node_id": node_id, "outputs": outputs, "rounds": len(outputs)})
+    return outputs
 
 
 # --------------------------------------------------------------------------- #
@@ -96,6 +120,7 @@ def run_loop_lowered(
     max_iterations: int,
     should_stop: StopPredicate,
     runner: SubflowRunner,
+    on_event: OnEvent = None,
 ) -> dict[str, Any]:
     """有界条件循环，返回 ``{"iterations", "output", "reason"}``。
 
@@ -106,8 +131,15 @@ def run_loop_lowered(
     if max_iterations < 1:
         raise ValueError(f"节点 {node_id} loop.max_iterations 至少为 1")
 
+    _emit(on_event, "loop_started",
+          {"node_id": node_id, "max_iterations": max_iterations})
+
     def step(state: _LoopState) -> dict:
+        round_no = state["iterations"] + 1
+        _emit(on_event, "round_started", {"node_id": node_id, "round": round_no})
         last = runner(state["current"], f"iter{state['iterations']}")
+        _emit(on_event, "round_finished",
+              {"node_id": node_id, "round": round_no, "output": last})
         return {"last": last, "current": last,
                 "iterations": state["iterations"] + 1}
 
@@ -129,6 +161,9 @@ def run_loop_lowered(
                 "run_name": f"{node_id}:loop"},
     )
     reason = "until_met" if should_stop(final["last"]) else "max_iterations"
+    _emit(on_event, "loop_finished",
+          {"node_id": node_id, "iterations": final["iterations"],
+           "reason": reason, "output": final["last"]})
     return {"iterations": final["iterations"], "output": final["last"],
             "reason": reason}
 
@@ -151,6 +186,7 @@ def run_parallel_lowered(
     payload: Any,
     max_workers: int,
     runner: Callable[[Any, Any, str], Any],
+    on_event: OnEvent = None,
 ) -> list[Any]:
     """``Send`` 扇出各命名分支，真并发；汇聚按声明顺序排序返回。
 
@@ -159,11 +195,23 @@ def run_parallel_lowered(
     ``max_workers`` 映射为 ``max_concurrency``。
     """
     if not branches:
+        _emit(on_event, "parallel_finished",
+              {"node_id": node_id, "outputs": [], "branches": 0})
         return []
 
     def worker(arg: dict) -> dict:
         idx = arg["index"]
-        out = runner(arg["doc"], payload, f"branch{idx}:{arg['name']}")
+        _emit(on_event, "branch_started",
+              {"node_id": node_id, "index": idx, "name": arg["name"]})
+        try:
+            out = runner(arg["doc"], payload, f"branch{idx}:{arg['name']}")
+        except Exception as exc:
+            _emit(on_event, "branch_failed",
+                  {"node_id": node_id, "index": idx, "name": arg["name"],
+                   "error": f"{type(exc).__name__}: {exc}"})
+            raise
+        _emit(on_event, "branch_finished",
+              {"node_id": node_id, "index": idx, "name": arg["name"], "output": out})
         return {"results": [(idx, out)]}
 
     def fanout(state: _ParState) -> list[Send]:
@@ -183,9 +231,15 @@ def run_parallel_lowered(
     graph.add_edge("worker", "gather")
     graph.add_edge("gather", END)
     app = graph.compile()
+    _emit(on_event, "parallel_started",
+          {"node_id": node_id,
+           "branches": [name for name, _doc in branches]})
     final = app.invoke(
         {"payload": payload, "jobs": list(branches), "results": []},
         config={"max_concurrency": max(1, max_workers),
                 "run_name": f"{node_id}:parallel"},
     )
-    return list(final["ordered"])
+    ordered = list(final["ordered"])
+    _emit(on_event, "parallel_finished",
+          {"node_id": node_id, "outputs": ordered, "branches": len(branches)})
+    return ordered

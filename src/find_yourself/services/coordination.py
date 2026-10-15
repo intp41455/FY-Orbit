@@ -174,10 +174,20 @@ def validate_spec(raw: dict[str, Any]) -> CoordinationSpec:
     if decomposition.mode == "pipeline" and len(stages) < 2:
         raise CoordinationValidationError(
             "pipeline 分解必须有 ≥2 的有序 stages（没阶段排什么序）")
-    if authority.mode == "hierarchical" or communication.mode == "tree":
+    if decomposition.mode == "delegation" and not links:
+        raise CoordinationValidationError(
+            "delegation 分解必须给出 parent_links（沿着组织树自顶向下委派）")
+    # 树形完整性：hierarchical/tree 形态与 delegation 执行都依赖一棵合法的树
+    # （无环、单根、全覆盖），否则委派会丢人或打转。
+    _tree_required = (
+        authority.mode == "hierarchical"
+        or communication.mode == "tree"
+        or decomposition.mode == "delegation"
+    )
+    if _tree_required:
         if not links:
             raise CoordinationValidationError(
-                "hierarchical/tree 拓扑必须给出 parent_links（边即组织）")
+                "hierarchical/tree/delegation 拓扑必须给出 parent_links（边即组织）")
         root, cyclic = _hierarchy_roots_and_cycle(members, dict(links))
         if cyclic:
             raise CoordinationValidationError("parent_links 存在 cycle（层级不能成环）")

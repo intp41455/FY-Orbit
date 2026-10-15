@@ -361,7 +361,7 @@ async def stream_run_events_route(
 async def list_runs(actor: Actor = Depends(get_actor)) -> dict:
     actor.require_authenticated()
     owner = _actor_identity(actor)
-    return {"items": [{"run_id": rid} for rid in _store.list_ids(owner)]}
+    return {"items": _store.list_runs(owner)}
 
 
 def reset_store_for_tests(archive_dir: str | None = None) -> None:

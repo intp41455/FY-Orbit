@@ -15,13 +15,19 @@ vi.mock('../api/dslCanvas', async (importOriginal) => ({
   dslCanvasApi: {
     validate: vi.fn(), schema: vi.fn(),
     modes: vi.fn(), run: vi.fn(), validateIr: vi.fn(),
-    // N3 切片 3：页面级草稿持久化会真的调这三个方法，缺一个就是 TypeError。
+    // N3 切片 3：页面级草稿持久化会真的调这三个方法，缺一个就报 TypeError。
     getFlow: vi.fn(), saveDraft: vi.fn(), createFlow: vi.fn(),
+    // G4-h：运行记录面板读 runs 列表（默认空，各用例按需覆盖）。
+    listRuns: vi.fn(),
   },
+}));
+vi.mock('../api/dslRunStream', () => ({
+  openDslRunStream: vi.fn(() => ({ close: vi.fn() })),
 }));
 
 import { workflowGenApi } from '../api/workflowGen';
 import { dslCanvasApi } from '../api/dslCanvas';
+import { openDslRunStream } from '../api/dslRunStream';
 import { writeDslHandoff } from '../api/dslHandoff';
 import { DslCanvasPage } from './DslCanvasPage';
 import type { DslDocument } from '../api/dslCanvas';
@@ -87,6 +93,7 @@ beforeEach(() => {
   });
   vi.mocked(dslCanvasApi.modes).mockResolvedValue({ modes: MODES });
   vi.mocked(dslCanvasApi.validateIr).mockResolvedValue({ valid: true, diagnostics: [] });
+  vi.mocked(dslCanvasApi.listRuns).mockResolvedValue({ items: [] });
   // N3 切片 3：草稿通道默认成功路径（用例要冲突时单独覆盖）。
   sessionStorage.clear();
   vi.mocked(dslCanvasApi.createFlow).mockResolvedValue({
@@ -519,5 +526,49 @@ describe('N3 · 草稿持久化与版本冲突的用户可见行为', () => {
     expect(loaded.nodes.map((n: { id: string }) => n.id)).toEqual(['tpl-in', 'tpl-out']);
     // 一次性消费：刷新不再重复载入（键已删）。
     expect(sessionStorage.getItem('fy-orbit.dsl-handoff')).toBeNull();
+  });
+
+  it('G4-l：起手模板与开箱模板/团队模板名实区分', async () => {
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+    // 工坊里的模板永远叫“起手模板”，不与开箱模板、团队模板混名。
+    expect(screen.getByTestId('template-starter')).toHaveTextContent('从起手模板开始');
+    expect(screen.getByTestId('template-starter')).toHaveTextContent('开箱模板');
+  });
+
+  it('G4-h：运行记录列出状态，附着后收事件流', async () => {
+    const user = userEvent.setup();
+    vi.mocked(dslCanvasApi.listRuns).mockResolvedValue({
+      items: [
+        { run_id: 'run-aaa111', status: 'succeeded' },
+        { run_id: 'run-bbb222', status: 'failed' },
+      ],
+    });
+    let handlers: { onNodeStarted?: (e: { node_id: string }) => void } = {};
+    vi.mocked(openDslRunStream).mockImplementation(((_runId: string, h: never) => {
+      handlers = h as never;
+      return { close: vi.fn() };
+    }) as never);
+    render(<DslCanvasPage />);
+    await screen.findByTestId('flow-editor-root');
+
+    // 列表带状态。
+    expect(await screen.findByTestId('run-history')).toBeInTheDocument();
+    expect(screen.getByText('run-aaa111'.slice(0, 12))).toBeInTheDocument();
+    expect(screen.getByText('succeeded')).toBeInTheDocument();
+
+    // 附着 → openDslRunStream 被 run_id 调用；模拟节点事件 → feed 出现。
+    await user.click(screen.getByTestId('run-attach-run-aaa1'));
+    await waitFor(() => expect(openDslRunStream).toHaveBeenCalledWith(
+      'run-aaa111', expect.anything(),
+    ));
+    handlers.onNodeStarted!({ node_id: 't' });
+    await waitFor(() =>
+      expect(screen.getByTestId('run-feed')).toHaveTextContent('t 开始'),
+    );
+
+    // 断开 → close 被调。
+    await user.click(screen.getByTestId('run-detach'));
+    expect(screen.queryByTestId('run-feed')).toBeNull();
   });
 });

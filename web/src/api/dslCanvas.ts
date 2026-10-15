@@ -323,6 +323,12 @@ export const dslCanvasApi = {
       method: 'POST', body: { dsl, execution_id: executionId } }),
   getRun: (runId: string) => request<DslRunResult>(`/api/dsl-canvas/runs/${runId}`),
   /**
+   * G4-h · 运行记录列表（跨会话附着的前提）：`[{run_id, status}]` 按运行顺序。
+   * 任何会话凭 run_id 都可订阅其 SSE 流，不再要求是发起会话。
+   */
+  listRuns: () => request<{ items: Array<{ run_id: string; status: string }> }>(
+    '/api/dsl-canvas/runs'),
+  /**
    * G4-d · 画布内联调参的即时重算：**执行但不落库**。
    *
    * 与 {@link dslCanvasApi.run} 的唯一区别是后端不做 `_store.save()`，所以不会把

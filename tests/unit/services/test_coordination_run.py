@@ -1,18 +1,18 @@
-"""B5 运行时首切片：CoordinationSpec 统一执行。
+"""B5 运行时：CoordinationSpec 统一执行（六形态全覆盖）。
 
 同一份 spec 驱动执行（拓扑即数据，不是注释）：
 * sequential：按 members 顺序串行，前者输出进后者；
 * parallel：全员并发，结果按 members 声明序；
 * pipeline：按 members 顺序流经（每成员即一站）；
-* map/delegation/market 等暂不支持 → 诚实抛 UnsupportedTopology（不静默降级）。
+* map：输入 list 按成员轮转扇出，按输入序汇聚；
+* delegation：沿 parent_links 自顶向下委派；
+* market：全员出价 + select 裁决（无 select 直接拒绝）。
 """
 
 from __future__ import annotations
 
-import pytest
-
 from find_yourself.services.coordination import validate_spec
-from find_yourself.services.coordination_run import UnsupportedTopology, run_spec
+from find_yourself.services.coordination_run import run_spec
 
 
 def _spec(**over) -> dict:
@@ -71,8 +71,24 @@ def test_pipeline_flows_through_members_as_stages() -> None:
     assert out["final"] == "in>boss>a>b"
 
 
-def test_unsupported_modes_raise_honestly() -> None:
-    with pytest.raises(UnsupportedTopology, match="market"):
-        run_spec(_spec(decomposition={"mode": "market"}), lambda m, d: d, initial="x")
-    with pytest.raises(UnsupportedTopology, match="map"):
-        run_spec(_spec(decomposition={"mode": "map"}), lambda m, d: d, initial="x")
+def test_all_six_modes_executable() -> None:
+    hierarchical = {
+        "authority": {"mode": "hierarchical"},
+        "communication": {"mode": "tree"},
+        "members": ["boss", "a", "b"],
+        "parent_links": {"a": "boss", "b": "boss"},
+    }
+    cases = [
+        ({"mode": "sequential"}, "go", {}),
+        ({"mode": "parallel"}, "go", {}),
+        ({"mode": "pipeline", "stages": ["s1", "s2"]}, "go", {}),
+        ({"mode": "map"}, [1, 2], {}),
+        ({"mode": "delegation"}, "go", {}),
+        ({"mode": "market"}, "go", {"select": lambda bids: bids[0]}),
+    ]
+    for decomposition, initial, kw in cases:
+        over = dict(hierarchical, decomposition=decomposition)
+        if decomposition["mode"] in ("sequential", "parallel", "pipeline"):
+            over = {"decomposition": decomposition}
+        out = run_spec(_spec(**over), lambda m, d: f"{m}!", initial, **kw)
+        assert out["results"], decomposition["mode"]

@@ -157,14 +157,141 @@ class LocalBusBackend:
 
 
 def create_bus_backend(kind: str, **kwargs: Any) -> BusBackend:
-    """按种类建后端。``local`` 即刻可用；``redis`` 诚实不可用（插槽）。"""
+    """按种类建后端。
+
+    * ``"local"``：文件 JSONL（离线优先，永远可用）；
+    * ``"redis"``：必须可达，否则 ``BackendUnavailable``（不静默降级）；
+    * ``"auto"``（缺省推荐）：``FY_BUS_REDIS_URL`` 有值且 ping 通用 redis，
+      否则回落 local——单机开箱零依赖，有基建自动升级。
+    * ``_client``：测试注入传输；生产勿传（走 ``build_redis_client``）。
+    """
+    import os
+
     name = (kind or "").strip().lower()
     if name == "local":
-        return LocalBusBackend(**kwargs)
+        return LocalBusBackend(**{k: v for k, v in kwargs.items()
+                                   if not k.startswith("_")})
     if name == "redis":
+        return _redis_or_raise(url=kwargs.get("url"), client=kwargs.get("_client"),
+                               timeout_seconds=float(kwargs.get("timeout_seconds", 2.0)))
+    if name == "auto":
+        url = kwargs.get("url") or os.environ.get("FY_BUS_REDIS_URL", "")
+        if url:
+            try:
+                return _redis_or_raise(url=url, client=kwargs.get("_client"),
+                                       timeout_seconds=float(
+                                           kwargs.get("timeout_seconds", 2.0)))
+            except BackendUnavailable:
+                pass  # auto 档回落 local（offline-first），不抛错
+        return LocalBusBackend(**{k: v for k, v in kwargs.items()
+                                   if not k.startswith("_")})
+    raise BackendUnavailable(f"未知的总线后端种类：{kind!r}", code="unknown_backend")
+
+
+def _redis_or_raise(*, url: Any, client: Any, timeout_seconds: float) -> BusBackend:
+    if client is not None:
+        try:
+            client.ping()
+        except Exception as exc:
+            raise BackendUnavailable(
+                f"Redis 传输 ping 不通：{type(exc).__name__}",
+                code="redis_unreachable",
+            ) from exc
+        return RedisBusBackend(client=client)
+    if not url:
         raise BackendUnavailable(
-            "redis backend 未接入：需部署 Redis 并配置 FY_BUS_REDIS_URL "
-            "（B8 后续项，当前只有 local 实现）",
+            "redis 后端需要 URL（参数 url 或 FY_BUS_REDIS_URL）",
             code="redis_not_configured",
         )
-    raise BackendUnavailable(f"未知的总线后端种类：{kind!r}", code="unknown_backend")
+    return RedisBusBackend(client=build_redis_client(str(url), timeout_seconds))
+
+
+class RedisBusBackend:
+    """Redis List 后端（与 LocalBusBackend 同一协议；B8 双模式之远程档）。
+
+    每房间一个 List（``bus:room:<quoted>``），publish = RPUSH，
+    history/replay = LRANGE。``client`` 须提供 ``rpush / lrange / ping``：
+    测试注内存 fake，生产传 ``redis.Redis``（``build_redis_client`` 懒加载
+    ``redis`` 包——pyproject 不硬依赖，无 server 时不装包也能跑 local）。
+    与 LocalBusBackend 同模块，避免两模块互指成环（N7 门禁）。
+    """
+
+    backend_name = "redis"
+
+    def __init__(self, client: Any, *, key_prefix: str = "bus:room:"):
+        self._client = client
+        self._prefix = key_prefix
+
+    def _key(self, room: str) -> str:
+        safe = quote(room, safe="")
+        if not safe:
+            raise ValueError("room 名为空")
+        return f"{self._prefix}{safe}"
+
+    def _decode(self, raw: Any) -> BusEnvelope:
+        if isinstance(raw, (bytes, bytearray)):
+            raw = raw.decode("utf-8")
+        data = json.loads(str(raw))
+        return BusEnvelope(
+            id=str(data["id"]), room=str(data["room"]),
+            sender=str(data["sender"]), kind=str(data["kind"]),
+            content=str(data["content"]), ts=str(data["ts"]),
+            seq=int(data.get("seq", 0)),
+            meta=dict(data.get("meta") or {}),
+        )
+
+    def _read_all(self, room: str) -> list[BusEnvelope]:
+        raws = self._client.lrange(self._key(room), 0, -1) or []
+        return [self._decode(r) for r in raws]
+
+    def publish(self, room: str, *, sender: str, kind: str,
+                content: str, meta: dict[str, Any] | None = None) -> BusEnvelope:
+        env = BusEnvelope(id=uuid4().hex, room=room, sender=sender, kind=kind,
+                          content=content, ts=_utcnow_iso(),
+                          meta=dict(meta or {}))
+        current = self._read_all(room)
+        env = BusEnvelope(id=env.id, room=env.room, sender=env.sender,
+                          kind=env.kind, content=env.content, ts=env.ts,
+                          seq=len(current) + 1, meta=env.meta)
+        self._client.rpush(self._key(room), json.dumps({
+            "id": env.id, "room": env.room, "sender": env.sender,
+            "kind": env.kind, "content": env.content, "ts": env.ts,
+            "seq": env.seq, "meta": env.meta,
+        }, ensure_ascii=False))
+        return env
+
+    def history(self, room: str, after_id: str = "",
+                limit: int = 100) -> list[BusEnvelope]:
+        all_msgs = self._read_all(room)
+        if after_id:
+            try:
+                idx = next(i for i, m in enumerate(all_msgs) if m.id == after_id)
+                all_msgs = all_msgs[idx + 1:]
+            except StopIteration:
+                return []
+        return all_msgs[:max(1, int(limit))]
+
+    def replay(self, room: str) -> list[BusEnvelope]:
+        return self._read_all(room)
+
+
+def build_redis_client(url: str, timeout_seconds: float = 2.0) -> Any:
+    """按 URL 建生产客户端；包缺失/连不上都抛 ``BackendUnavailable``（诚实）。"""
+    try:
+        import redis
+    except ImportError as exc:
+        raise BackendUnavailable(
+            "redis 包未安装：远程总线需 `pip install redis` 并部署 Redis "
+            "(FY_BUS_REDIS_URL)，当前只有 local 实现可用",
+            code="redis_not_installed",
+        ) from exc
+    try:
+        client = redis.Redis.from_url(url, socket_timeout=timeout_seconds,
+                                      socket_connect_timeout=timeout_seconds)
+        client.ping()
+        return client
+    except Exception as exc:
+        raise BackendUnavailable(
+            f"Redis 不可达（{url}）：{type(exc).__name__}",
+            code="redis_unreachable",
+        ) from exc
