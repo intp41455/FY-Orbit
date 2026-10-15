@@ -158,3 +158,67 @@ describe('PropertyPanel 参数枚举来自后端 schema（G4-j）', () => {
     expect(optionValues('prop-input-kind')).toEqual(['literal', 'text_lines']);
   });
 });
+
+// --------------------------------------------------------------------------- //
+// N5 · parallel.branches 对象数组控件（逐行增删改，不整体手改 JSON）。
+// --------------------------------------------------------------------------- //
+describe('PropertyPanel parallel 分支对象数组', () => {
+  const node = {
+    id: 'pl1',
+    type: 'parallel',
+    params: { branches: [{ name: 'a', ref: 'sub1' }], max_workers: 2 },
+    x: 0, y: 0,
+  } as unknown as EditorNode;
+
+  function setup(params?: Record<string, unknown>) {
+    const onChangeParams = vi.fn();
+    render(
+      <PropertyPanel
+        node={{ ...node, params: { ...(node.params as object), ...params } } as unknown as EditorNode}
+        onChange={vi.fn()}
+        onChangeParams={onChangeParams}
+      />,
+    );
+    return { onChangeParams };
+  }
+
+  it('既有分支逐行渲染（名 + 引用子图名）', () => {
+    setup();
+    expect(screen.getByTestId('prop-parallel-branches-row-0-name')).toHaveValue('a');
+    expect(screen.getByTestId('prop-parallel-branches-row-0-ref')).toHaveValue('sub1');
+  });
+
+  it('改名即提交合法数组', () => {
+    const { onChangeParams } = setup();
+    fireEvent.change(screen.getByTestId('prop-parallel-branches-row-0-name'), {
+      target: { value: 'b' },
+    });
+    expect(onChangeParams).toHaveBeenCalledWith({
+      branches: [{ name: 'b', ref: 'sub1' }],
+    });
+  });
+
+  it('空行与重名被拦下不上抛', () => {
+    const { onChangeParams } = setup();
+    fireEvent.click(screen.getByTestId('prop-parallel-branches-add'));
+    // 新行空引用 → 错误出现且不上抛。
+    expect(screen.getAllByTestId('prop-parallel-branches-error').length).toBeGreaterThan(0);
+    expect(onChangeParams).not.toHaveBeenCalled();
+    // 填名仍缺引用 → 依然不上抛。
+    fireEvent.change(screen.getByTestId('prop-parallel-branches-row-1-name'), {
+      target: { value: 'a' },
+    });
+    expect(screen.getAllByTestId('prop-parallel-branches-error').length).toBeGreaterThan(0);
+    expect(onChangeParams).not.toHaveBeenCalled();
+  });
+
+  it('删除分支即提交剩余数组', () => {
+    const { onChangeParams } = setup({
+      branches: [{ name: 'a', ref: 's1' }, { name: 'b', ref: 's2' }],
+    });
+    fireEvent.click(screen.getByTestId('prop-parallel-branches-row-0-delete'));
+    expect(onChangeParams).toHaveBeenCalledWith({
+      branches: [{ name: 'b', ref: 's2' }],
+    });
+  });
+});

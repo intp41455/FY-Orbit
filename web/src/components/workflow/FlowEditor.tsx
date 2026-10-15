@@ -24,6 +24,7 @@ import {
   type DslDiagnostic,
   type DslDocument,
   type DslEdge,
+  type DslEdgeCondition,
   type DslMode,
   type DslNode,
   type DslNodeType,
@@ -102,6 +103,8 @@ export function serializeGraph(nodes: DslNode[], edges: DslEdge[]): DslDocument 
       from: e.from,
       to: e.to,
       ...(e.condition ? { condition: e.condition } : {}),
+      ...(e.back_edge ? { back_edge: true } : {}),
+      ...(e.back_edge && e.max_rounds !== undefined ? { max_rounds: e.max_rounds } : {}),
     })),
   };
 }
@@ -124,6 +127,8 @@ export function graphFromDsl(doc: DslDocument, layout: Record<string, { x: numbe
     from: e.from,
     to: e.to,
     ...(e.condition ? { condition: e.condition } : {}),
+    ...(e.back_edge ? { back_edge: true } : {}),
+    ...(e.back_edge && e.max_rounds !== undefined ? { max_rounds: e.max_rounds } : {}),
   }));
   return { nodes, edges };
 }
@@ -318,6 +323,10 @@ export function defaultParams(type: DslNodeType): Record<string, unknown> {
       };
     case 'subgraph':
       return { name: 'shared' };
+    case 'join':
+      return { mode: 'list' };
+    case 'delay':
+      return { seconds: 0 };
     default:
       return {};
   }
@@ -908,6 +917,116 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
     </>
   );
 
+  // --- 边条件编辑（N5 条件边一等公民）：全部边集中可编辑 ------------------ //
+  // 画布连线本身不可点选（无边选择态），条件/回边在此统一编辑——与节点属性面板
+  // 同一交互口径（改完即进 doc，校验权威在后端 validate/run）。
+  function EdgeConditions() {
+    if (edges.length === 0) return null;
+    const patchEdge = (index: number, patch: Partial<EditorEdge>) => {
+      setEdges((es) => es.map((e, i) => (i === index ? { ...e, ...patch } : e)));
+    };
+    const parseValue = (text: string): unknown => {
+      const t = text.trim();
+      if (t === '') return t;
+      try {
+        return JSON.parse(t);
+      } catch {
+        return text;
+      }
+    };
+    return (
+      <div className="card" data-testid="flow-edges" style={{ marginTop: 8 }}>
+        <strong>边条件</strong>
+        <p className="muted">无条件恒通过；回边需显式声明（未声明的环会被拒绝）。</p>
+        {edges.map((e, i) => (
+          <div key={`${e.from}->${e.to}:${i}`} style={{ marginTop: 8 }}>
+            <div>
+              <code>{e.from} → {e.to}</code>{' '}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!e.condition}
+                  aria-label={`边 ${i + 1} 启用条件`}
+                  data-testid={`edge-${i}-cond-toggle`}
+                  onChange={(ev) => patchEdge(i, ev.target.checked
+                    ? { condition: { field: '', op: 'eq', value: '' } }
+                    : { condition: undefined })}
+                />{' '}
+                条件
+              </label>{' '}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={!!e.back_edge}
+                  aria-label={`边 ${i + 1} 声明为回边`}
+                  data-testid={`edge-${i}-backedge`}
+                  onChange={(ev) => patchEdge(i, { back_edge: ev.target.checked || undefined })}
+                />{' '}
+                回边
+              </label>
+            </div>
+            {e.condition && (
+              <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                <input
+                  aria-label={`边 ${i + 1} 条件字段`}
+                  data-testid={`edge-${i}-field`}
+                  value={e.condition.field}
+                  placeholder="字段"
+                  onChange={(ev) => patchEdge(i, {
+                    condition: { ...e.condition!, field: ev.target.value },
+                  })}
+                />
+                <select
+                  aria-label={`边 ${i + 1} 条件操作`}
+                  data-testid={`edge-${i}-op`}
+                  value={e.condition.op}
+                  onChange={(ev) => patchEdge(i, {
+                    condition: {
+                      ...e.condition!,
+                      op: ev.target.value as DslEdgeCondition['op'],
+                    },
+                  })}
+                >
+                  {(['eq', 'ne', 'gt', 'lt', 'contains'] as const).map((op) => (
+                    <option key={op} value={op}>{op}</option>
+                  ))}
+                </select>
+                <input
+                  aria-label={`边 ${i + 1} 条件值`}
+                  data-testid={`edge-${i}-value`}
+                  value={String(e.condition.value ?? '')}
+                  placeholder="值（JSON 或文本）"
+                  onChange={(ev) => patchEdge(i, {
+                    condition: { ...e.condition!, value: parseValue(ev.target.value) },
+                  })}
+                />
+              </div>
+            )}
+            {e.back_edge && (
+              <div style={{ marginTop: 4 }}>
+                <label>
+                  最大重入轮数{' '}
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label={`边 ${i + 1} 最大轮数`}
+                    data-testid={`edge-${i}-maxrounds`}
+                    value={e.max_rounds ?? ''}
+                    placeholder="默认 10"
+                    onChange={(ev) => patchEdge(i, {
+                      max_rounds: ev.target.value === '' ? undefined
+                        : Math.max(1, Math.floor(Number(ev.target.value) || 1)),
+                    })}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="fy-flow" data-testid="flow-editor-root">
       <NodePalette types={schemaTypes} onAdd={addNode} onDropNode={addNode} />
@@ -964,7 +1083,8 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
             {edges.map((e, i) => {
               const a = edgeAnchors(nodes.find((n) => n.id === e.from), nodes.find((n) => n.id === e.to));
               if (!a) return null;
-              return (
+
+  return (
                 <path
                   key={`${e.from}-${e.to}-${i}`}
                   d={bezierPath(a.x1, a.y1, a.x2, a.y2)}
@@ -1021,7 +1141,8 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
 
         <div className="fy-flow-toolbar">
           <span className="muted">
-            连线：点节点右侧「出」→ 点目标节点左侧「入」。成环会被拒绝并在顶部提示。
+            连线：点节点右侧「出」→ 点目标节点左侧「入」。未声明的环会被拒绝；
+            回边去下方「边条件」区显式声明。
           </span>
         </div>
       </div>
@@ -1035,6 +1156,8 @@ export function FlowEditor({ initialDoc, sourcePrompt, mode = 'technical', onDoc
           onChangeParams={(patch) =>
             selected && updateNode(selected.id, { params: { ...selected.params, ...patch } })}
         />
+
+        <EdgeConditions />
 
         {/* G4-d · 即时重算结果。放在属性面板正下方：改参数的人正在那儿，
             视线不需要跳到画布顶部。标题写明「预览不落库」，避免与运行结果混淆。 */}

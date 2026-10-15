@@ -12,6 +12,7 @@
  * 命中本节点某 `field_path` 的诊断会让该字段显示**红框 + 内联错误文案**
  * （`fy-field-invalid` / `role="alert"`），多字段同时出错时每个字段各自标错。
  */
+import { useState } from 'react';
 import type { DslDiagnostic, DslNodeType, DslSchemaResponse, DslTransformVerb } from '../../api/dslCanvas';
 import { DSL_TRANSFORM_VERBS } from '../../api/dslCanvas';
 import type { EditorNode } from './FlowEditor';
@@ -106,7 +107,7 @@ export function verbEnumFromSchema(
 // 需要注入式解析器的节点（llm / knowledge / tool / http / human_input）在未接通
 // 时**诚实失败**——面板里显式写明，不假装可用（需求「不伪造成功」）。
 
-type FieldKind = 'text' | 'multiline' | 'number' | 'enum' | 'json';
+type FieldKind = 'text' | 'multiline' | 'number' | 'enum' | 'json' | 'branches';
 
 interface NodeFieldSpec {
   key: string;
@@ -168,14 +169,20 @@ const NEW_NODE_FIELDS: Partial<Record<DslNodeType, readonly NodeFieldSpec[]>> = 
     { key: 'kind', label: '触发方式', kind: 'enum', options: TRIGGER_KINDS },
     { key: 'config', label: '触发配置（JSON，可选）', kind: 'json' },
   ],
-  // N5 两类拓扑节点：`NodeFieldSpec` 没有「数组 of 对象」这种控件，
-  // branches 用 `json`（与 iteration.subflow 同一口径）表达——只能整体手改JSON。
+  // N5 两类拓扑节点：branches 用结构化对象数组控件（逐行增删改），
+  // 不再整体手改 JSON。内联子流程仍按 JSON 文本编辑（与 iteration.subflow 同口径）。
   parallel: [
-    { key: 'branches', label: '并行分支（JSON 数组，每项 {name, inline|ref}）', kind: 'json' },
+    { key: 'branches', label: '并行分支', kind: 'branches' },
     { key: 'max_workers', label: '并发线程数（可选，1..8）', kind: 'number' },
   ],
   subgraph: [
     { key: 'name', label: '子图名（引用文档级 subgraphs）', kind: 'text' },
+  ],
+  join: [
+    { key: 'mode', label: '会合模式（list 收全部 / first|last 取首尾非空）', kind: 'enum', options: ['list', 'first', 'last'] },
+  ],
+  delay: [
+    { key: 'seconds', label: '等待秒数（0..300）', kind: 'number' },
   ],
 };
 
@@ -265,6 +272,192 @@ function JsonValueField({
         </span>
       )}
     </label>
+  );
+}
+
+/** 并行分支行内态（N5 对象数组控件）。 */
+interface BranchRow {
+  name: string;
+  mode: 'ref' | 'inline';
+  ref: string;
+  inlineText: string;
+}
+
+function parseBranchRow(raw: unknown, index: number): { row: BranchRow; error: string | null } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return {
+      row: { name: `branch${index}`, mode: 'ref', ref: '', inlineText: '{}' },
+      error: `第 ${index + 1} 项不是对象，已忽略原值（改动会覆盖它）`,
+    };
+  }
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === 'string' && r.name.trim() ? r.name : '';
+  if (typeof r.ref === 'string') {
+    return {
+      row: { name, mode: 'ref', ref: r.ref, inlineText: '{}' },
+      error: name ? null : `第 ${index + 1} 项缺少分支名`,
+    };
+  }
+  if (r.inline !== undefined) {
+    return {
+      row: { name, mode: 'inline', ref: '', inlineText: JSON.stringify(r.inline ?? {}, null, 1) },
+      error: name ? null : `第 ${index + 1} 项缺少分支名`,
+    };
+  }
+  return {
+    row: { name, mode: 'ref', ref: '', inlineText: '{}' },
+    error: `第 ${index + 1} 项既无 ref 也无 inline`,
+  };
+}
+
+function buildBranchValue(row: BranchRow): { ok: boolean; value?: Record<string, unknown>; error?: string } {
+  if (!row.name.trim()) return { ok: false, error: '分支名不能为空' };
+  if (row.mode === 'ref') {
+    if (!row.ref.trim()) return { ok: false, error: '引用分支必须填写子图名' };
+    return { ok: true, value: { name: row.name.trim(), ref: row.ref.trim() } };
+  }
+  try {
+    const parsed: unknown = JSON.parse(row.inlineText || '{}');
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return { ok: false, error: '内联子流程必须是 JSON 对象' };
+    }
+    return { ok: true, value: { name: row.name.trim(), inline: parsed } };
+  } catch {
+    return { ok: false, error: '内联 JSON 解析失败' };
+  }
+}
+
+/**
+ * N5 · parallel.branches 对象数组控件（逐行增删改，代替整体手改 JSON）。
+ *  fail-closed：任一行非法（空名/重名/空引用/坏 JSON）即整组显示错误且
+ * **不上抛**（不把半成品写进文档）。
+ */
+function BranchesField({
+  label, value, onCommit, testId, path, nodeId, diagnostics,
+}: {
+  label: string;
+  value: unknown;
+  onCommit: (v: unknown) => void;
+  testId?: string;
+  path: string;
+  nodeId: string;
+  diagnostics?: DslDiagnostic[];
+}) {
+  const diag = diagForField(diagnostics, nodeId, path);
+  const initial: BranchRow[] = Array.isArray(value)
+    ? (value as unknown[]).map((raw, i) => parseBranchRow(raw, i).row)
+    : [];
+  const [rows, setRows] = useState<BranchRow[]>(initial);
+  const [rowErrors, setRowErrors] = useState<Record<number, string>>(() => {
+    const errs: Record<number, string> = {};
+    if (Array.isArray(value)) {
+      (value as unknown[]).forEach((raw, i) => {
+        const pe = parseBranchRow(raw, i).error;
+        if (pe) errs[i] = pe;
+      });
+    }
+    return errs;
+  });
+
+  function commit(next: BranchRow[]) {
+    // 重名检查（后端同样会拒，先在前端拦下）。
+    const names = next.map((r) => r.name.trim()).filter(Boolean);
+    const dup = names.length !== new Set(names).size;
+    const built: Record<string, unknown>[] = [];
+    const errs: Record<number, string> = {};
+    next.forEach((row, i) => {
+      const b = buildBranchValue(row);
+      if (!b.ok || !b.value) {
+        errs[i] = b.error ?? '非法分支';
+      } else {
+        built.push(b.value);
+      }
+    });
+    if (dup) errs[-1] = '分支名重复';
+    setRows(next);
+    setRowErrors(errs);
+    if (Object.keys(errs).length === 0) {
+      onCommit(built);
+    }
+  }
+
+  function addRow() {
+    commit([...rows, {
+      name: `branch${rows.length}`, mode: 'ref', ref: '', inlineText: '{}',
+    }]);
+  }
+
+  return (
+    <div
+      className={`fy-flow-field${diag ? ' fy-field-invalid' : ''}`}
+      data-field-path={path}
+    >
+      <span>{label}</span>
+      {rows.map((row, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, marginTop: 6, alignItems: 'flex-start' }}>
+          <input
+            aria-label={`分支 ${i + 1} 名称`}
+            data-testid={`${testId}-row-${i}-name`}
+            value={row.name}
+            placeholder="分支名"
+            onChange={(e) => commit(rows.map((r, j) =>
+              j === i ? { ...r, name: e.target.value } : r))}
+          />
+          <select
+            aria-label={`分支 ${i + 1} 类型`}
+            data-testid={`${testId}-row-${i}-mode`}
+            value={row.mode}
+            onChange={(e) => commit(rows.map((r, j) =>
+              j === i ? { ...r, mode: e.target.value as 'ref' | 'inline' } : r))}
+          >
+            <option value="ref">引用子图</option>
+            <option value="inline">内联流程</option>
+          </select>
+          {row.mode === 'ref' ? (
+            <input
+              aria-label={`分支 ${i + 1} 子图名`}
+              data-testid={`${testId}-row-${i}-ref`}
+              value={row.ref}
+              placeholder="子图名"
+              onChange={(e) => commit(rows.map((r, j) =>
+                j === i ? { ...r, ref: e.target.value } : r))}
+            />
+          ) : (
+            <textarea
+              aria-label={`分支 ${i + 1} 内联 JSON`}
+              data-testid={`${testId}-row-${i}-inline`}
+              rows={2}
+              value={row.inlineText}
+              onChange={(e) => commit(rows.map((r, j) =>
+                j === i ? { ...r, inlineText: e.target.value } : r))}
+            />
+          )}
+          <button
+            type="button"
+            aria-label={`删除分支 ${i + 1}`}
+            data-testid={`${testId}-row-${i}-delete`}
+            onClick={() => commit(rows.filter((_, j) => j !== i))}
+          >
+            删除
+          </button>
+        </div>
+      ))}
+      <div style={{ marginTop: 6 }}>
+        <button type="button" data-testid={`${testId}-add`} onClick={addRow}>
+          + 添加分支
+        </button>
+      </div>
+      {Object.entries(rowErrors).map(([i, msg]) => (
+        <span key={i} className="fy-field-error-text" role="alert" data-testid={`${testId}-error`}>
+          {msg}
+        </span>
+      ))}
+      {diag && (
+        <span className="fy-field-error-text" role="alert" data-testid={`field-error-${path}`}>
+          {diag.code}: {diag.message}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -581,6 +774,20 @@ export function PropertyPanel({ node, onChange, onChangeParams, diagnostics, sch
                 return (
                   <JsonValueField
                     key={spec.key}
+                    label={spec.label}
+                    value={p[spec.key]}
+                    onCommit={(v) => onChangeParams({ [spec.key]: v })}
+                    testId={testId}
+                    path={path}
+                    nodeId={node.id}
+                    diagnostics={diagnostics}
+                  />
+                );
+              }
+              if (spec.kind === 'branches') {
+                return (
+                  <BranchesField
+                    key={`${node.id}-branches`}
                     label={spec.label}
                     value={p[spec.key]}
                     onCommit={(v) => onChangeParams({ [spec.key]: v })}

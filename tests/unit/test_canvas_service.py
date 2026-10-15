@@ -1302,7 +1302,11 @@ def test_budget_monthly_cap_covers_canvas_dispatches_and_settlement(
     canvas_service: CanvasService, owner: Actor, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """12 Review P0: Canvas dispatches (scope='canvas_dispatch') and settled actual expenses
-    must count towards the rolling monthly limit; triggers alert >= 80% and raises Conflict on breach."""
+    must count towards the rolling monthly limit; triggers alert >= 80% and raises Conflict on breach.
+
+    E02 两档语义：月预估达 95% 即暂停新 reservation（"paused"），100% 硬顶保留为后备。
+    本例 projected=105%，命中 95% 熔断档。
+    """
     from decimal import Decimal
 
     from find_yourself.services.errors import Conflict
@@ -1368,7 +1372,8 @@ def test_budget_monthly_cap_covers_canvas_dispatches_and_settlement(
     assert any(a.get("level") == "warning" for a in alerts)
 
     # Now month used = 0.35 + 0.40 = 0.75 settled.
-    # Dispatch 3: $0.30 reservation -> projected = 0.75 + 0.30 = 1.05 > 1.00 limit -> Must be rejected with Conflict!
+    # Dispatch 3: $0.30 reservation -> projected = 0.75 + 0.30 = 1.05 = 105%：
+    # E02 熔断先于 100% 硬顶触发 —— 新 reservation 被暂停（Conflict + "paused"）。
     t3 = create_task(session, owner, task_id="task-month-03", domain="personal")
     with pytest.raises(Conflict) as exc_info:
         canvas_service.dispatch_subtask(
@@ -1380,7 +1385,7 @@ def test_budget_monthly_cap_covers_canvas_dispatches_and_settlement(
             budget_slice=0.30,
             idempotency_key="m-disp-03",
         )
-    assert "Monthly budget exceeded" in str(exc_info.value)
+    assert "paused" in str(exc_info.value)
 
 
 def test_complete_subtask_distinguishes_manual_completion(

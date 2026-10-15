@@ -6,11 +6,11 @@ import { NodePalette } from './NodePalette';
 
 describe('NodePalette renders correct number of types', () => {
   // 单一真源：节点类型清单只在 api/dslCanvas 里维护一份（含 N5 新增的
-  // parallel / subgraph，共 18 类），测试不再另抄一份硬编码清单。
+  // parallel / subgraph，共 20 类），测试不再另抄一份硬编码清单。
   const ALL_TYPES = DSL_NODE_TYPES as readonly DslNodeType[];
 
-  it('renders 18 buttons when given all 18 types', () => {
-    expect(ALL_TYPES).toHaveLength(18);
+  it('renders 18 buttons when given all 20 types', () => {
+    expect(ALL_TYPES).toHaveLength(20);
 
     render(<NodePalette types={[...ALL_TYPES]} onAdd={() => {}} onDropNode={() => {}} />);
 
@@ -22,6 +22,6 @@ describe('NodePalette renders correct number of types', () => {
 
     // 总数必须正好是 18（多一个少一个都要被发现）
     const buttons = screen.getAllByTestId(/^flow-palette-/);
-    expect(buttons).toHaveLength(18);
+    expect(buttons).toHaveLength(20);
   });
 });

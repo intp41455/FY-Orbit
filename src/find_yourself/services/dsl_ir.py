@@ -331,12 +331,18 @@ def _validate_node_params(node: DslNode, diags: list[Diagnostic]) -> None:
         diags.extend(_pydantic_diags(exc, node_id=node.id, prefix="params."))
 
 
-def validate_ir(doc: Any) -> list[Diagnostic]:
+def validate_ir(doc: Any, *,
+                visible_subgraphs: dict[str, Any] | None = None) -> list[Diagnostic]:
     """校验 DSL 文档，返回**全部**类型诊断（合法时为空列表）。
 
     与 :func:`~find_yourself.services.dsl_canvas.validate_dsl`（遇错即抛）不同，
     本函数**收集**诊断，供调用方一次性拿到「哪个节点的哪个字段错在哪」，从而
     在**执行之前**给出可定位的反馈。全确定性，无副作用，无 LLM。
+
+    ``visible_subgraphs`` 是调用链上继承/外部注入可见的子图名表（与
+    ``compile_dsl`` 的同名参数同语义）：子图引用校验看「自声明 ∪ 可见」，
+    否则嵌套子流程继承父图库的合法文档会被 IR 闸门误杀（回归：
+    ``test_subflow_inherits_parent_subgraph_library``）。
     """
     diags: list[Diagnostic] = []
     if not isinstance(doc, dict):
@@ -411,10 +417,13 @@ def validate_ir(doc: Any) -> list[Diagnostic]:
 
     # N5 · subgraphs 引用检查（与执行期 ``_branch_subflow`` 同语义，
     # 但收集式：SDK/CodeWorkflow.validate 与编辑器一次拿全）。
+    # 可见库 = 本文档自声明 ∪ 调用链继承/注入（compile_dsl 透传）。
     library = doc.get("subgraphs")
     library_names: set[str] = (
         set(library.keys()) if isinstance(library, dict) else set()
     )
+    if isinstance(visible_subgraphs, dict):
+        library_names |= set(visible_subgraphs.keys())
     for raw in raw_nodes:
         if not isinstance(raw, dict):
             continue
@@ -456,9 +465,10 @@ def format_diagnostics(diags: list[Diagnostic]) -> str:
     return f"DSL 类型校验发现 {len(diags)} 处错误：{parts}"
 
 
-def assert_ir_valid(doc: Any) -> dict[str, Any]:
+def assert_ir_valid(doc: Any, *,
+                    visible_subgraphs: dict[str, Any] | None = None) -> dict[str, Any]:
     """类型校验闸门：有诊断即明确抛 :class:`DslValidationError`，绝不静默降级。"""
-    diags = validate_ir(doc)
+    diags = validate_ir(doc, visible_subgraphs=visible_subgraphs)
     if diags:
         raise DslValidationError(format_diagnostics(diags))
     return doc

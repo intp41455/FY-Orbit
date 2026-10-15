@@ -29,6 +29,8 @@ const TYPE_LABELS: Record<DslNodeType, string> = {
   trigger: '触发器 · 工作流的入口节点',
   parallel: '并行分支 · 同时扇出多个下游分支',
   subgraph: '子图引用 · 引用一个已命名的子图',
+  join: '会合 · 收多路上游为数组/首尾值',
+  delay: '延时 · 等待 N 秒后原样透传',
 };
 
 const TYPE_HINTS: Record<DslNodeType, string> = {
@@ -50,6 +52,8 @@ const TYPE_HINTS: Record<DslNodeType, string> = {
   trigger: '需要指定触发类型：手动/对话/定时/Webhook',
   parallel: '需要提供分支列表，可选指定最大并发数',
   subgraph: '需要提供被引用子图的名字',
+  join: '选择会合模式（list 收全部 / first|last 取值）',
+  delay: '等待秒数（0..300，0 即直通）',
 };
 
 export interface NodePaletteProps {

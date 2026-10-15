@@ -82,6 +82,9 @@ NODE_TYPES = (
     # -- N5「拓扑结构扩大数量，对标 LangGraph」新增 2 类 --------------------
     "parallel",               # 并行扇出/汇聚（对标 LangGraph 并行边 + Send API）
     "subgraph",               # 命名子图节点（对标 LangGraph 子图作为节点）
+    # -- B1 拓扑表达力补齐：join / delay 一等公民 ---------------------------
+    "join",                   # 多路上游会合（list 收全部 / first|last 取首尾非空）
+    "delay",                  # 等待 N 秒后原样透传（节奏控制，绝不吞数据）
 )
 #: 除既有三类之外的新增节点类型（A-画布搭建器-01 清单口径）。
 EXTENDED_NODE_TYPES: tuple[str, ...] = NODE_TYPES[3:]
@@ -125,6 +128,10 @@ LOOP_DEFAULT_MAX_ITERATIONS = 10
 LOOP_MAX_ITERATIONS_CAP = 1000
 #: ``parallel`` 分支数上界（并发扇出的规模闸门）。
 PARALLEL_MAX_BRANCHES = 8
+#: B1：``join`` 会合模式。
+JOIN_MODES = ("list", "first", "last")
+#: B1：``delay`` 等待秒数上界（节奏控制节点，绝不接受无界睡眠拖死执行器）。
+DELAY_MAX_SECONDS = 300
 #: B3 图级循环：回边默认最大重入轮数。回边是作者显式声明的（``back_edge: true``），
 #: 轮数耗尽 = 期望终止（正常收尾，不失败）；系统级无界防护另由 recursion_limit 承担。
 BACKEDGE_DEFAULT_MAX_ROUNDS = 10
@@ -918,6 +925,42 @@ def _exec_node_variable_aggregator(node_id: str, params: dict[str, Any],
     return candidates[0] if strategy == "first_non_null" else candidates[-1]
 
 
+def _exec_node_join(node_id: str, params: dict[str, Any],
+                    upstreams: list[Any]) -> Any:
+    """B1 会合节点：调度器已保证全部上游跑完（入度闸门），此处只负责汇聚形状。
+
+    * ``list``（缺省）：收全部上游为数组（fan-in 即数据）；
+    * ``first`` / ``last``：取首个 / 末个非空（与 variable_aggregator 同语义）；
+    * 上游全空即失败（会合了个寂寞必须诚实报错，不能回空数组假装成功）。
+    """
+    mode = params.get("mode", "list")
+    if mode not in JOIN_MODES:
+        raise DslValidationError(
+            f"节点 {node_id} join.mode 必须是 {list(JOIN_MODES)}，实际是 {mode!r}")
+    candidates = [u for u in upstreams if u is not None]
+    if not candidates:
+        raise DslValidationError(f"节点 {node_id} join 上游全部为空，无可会合")
+    if mode == "first":
+        return candidates[0]
+    if mode == "last":
+        return candidates[-1]
+    return candidates
+
+
+def _exec_node_delay(node_id: str, params: dict[str, Any], payload: Any) -> Any:
+    """B1 节奏节点：等待 N 秒后原样透传（不改数据、不吞数据）。"""
+    import time as _time
+
+    seconds = params.get("seconds", 0)
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) \
+            or not 0 <= seconds <= DELAY_MAX_SECONDS:
+        raise DslValidationError(
+            f"节点 {node_id} delay.seconds 必须在 0..{DELAY_MAX_SECONDS} 内")
+    if seconds > 0:
+        _time.sleep(float(seconds))
+    return payload
+
+
 def _exec_node_template(node_id: str, params: dict[str, Any], payload: Any) -> Any:
     """独立模板节点：与 transform.template 动词同一插值实现。"""
     tpl = params["template"]
@@ -1309,6 +1352,18 @@ def _check_subgraph(node_id: str, params: dict[str, Any],
             node_id=node_id, field_path="params.name")
 
 
+def _check_delay(node_id: str, params: dict[str, Any],
+                 library: dict[str, Any] | None = None) -> None:
+    """``delay.seconds`` 必须在 0..上界内（0 允许：测试与直通语义）。"""
+    seconds = params.get("seconds", 0)
+    if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) \
+            or not 0 <= seconds <= DELAY_MAX_SECONDS:
+        raise DslFieldError(
+            f"节点 {node_id} 的 delay.seconds 必须在 0..{DELAY_MAX_SECONDS} 内，"
+            f"实际是 {seconds!r}",
+            node_id=node_id, field_path="params.seconds")
+
+
 #: 非 transform 节点类型的编译期跨字段检查（由 validate_dsl 在参数校验后调用）。
 #: 第三个参数 ``library`` 是当前文档可见的子图名表（外层继承 + 本层声明）。
 NODE_PARAM_CHECKS: dict[str, Callable[[str, dict[str, Any], dict[str, Any]], None]] = {
@@ -1318,6 +1373,7 @@ NODE_PARAM_CHECKS: dict[str, Callable[[str, dict[str, Any], dict[str, Any]], Non
     "parameter_extractor": _check_parameter_extractor,
     "parallel": _check_parallel,
     "subgraph": _check_subgraph,
+    "delay": _check_delay,
 }
 
 
@@ -1544,6 +1600,18 @@ NODE_PARAMS_SCHEMAS: dict[str, dict[str, Any]] = {
         # 引用文档级 ``subgraphs`` 里的哪一张子图（对标 LangGraph 具名子图）。
         "name": {"type": "string", "minLength": 1},
     }, required=("name",)),
+    # ------------------------------------------------------------------
+    # B1 拓扑表达力补齐：join / delay 一等公民（与 parallel/subgraph 同口径，
+    # 范围语义交跨字段检查）。
+    # ------------------------------------------------------------------
+    "join": _obj({
+        # list=收全部上游为数组；first/last=取首个/末个非空（variable_aggregator 同语义）。
+        "mode": {"enum": list(JOIN_MODES)},
+    }),
+    "delay": _obj({
+        # 等待秒数；范围闸门在 _check_delay（0 允许：测试与直通语义）。
+        "seconds": {"type": "number"},
+    }),
 }
 
 
@@ -1963,7 +2031,8 @@ def compile_dsl(doc: Any, *,
     validate_dsl(doc, _visible_subgraphs=visible_subgraphs)
     # 局部导入：dsl_ir 反向依赖本模块的 VERB_REGISTRY，模块级导入会成环。
     from .dsl_ir import assert_ir_valid
-    assert_ir_valid(doc)
+    # IR 闸门同样看到调用链的可见库（否则继承/注入引用的合法文档被误杀）。
+    assert_ir_valid(doc, visible_subgraphs=visible_subgraphs)
     nodes = {n["id"]: n for n in doc["nodes"]}
     adjacency: dict[str, list[dict[str, Any]]] = {nid: [] for nid in nodes}
     indegree = {nid: 0 for nid in nodes}
@@ -2198,6 +2267,10 @@ def execute_node(node: dict[str, Any], payload: Any, *,
             http_resolver=http_resolver, human_input_provider=human_input_provider,
             confirm_decision=confirm_decision, approval_signal=approval_signal,
             subflows=subflows))
+    if ntype == "join":
+        return _exec_node_join(node["id"], params, list(upstreams or []))
+    if ntype == "delay":
+        return _exec_node_delay(node["id"], params, payload)
     if ntype == "variable_aggregator":
         return _exec_node_variable_aggregator(node["id"], params, payload,
                                               list(upstreams or []))

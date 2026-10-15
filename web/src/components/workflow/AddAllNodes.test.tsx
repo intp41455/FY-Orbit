@@ -15,12 +15,12 @@ import { FlowEditor } from './FlowEditor';
 describe('FlowEditor can add all 18 node types from palette', () => {
   // 单一真源：不在测试里另抄一份节点类型清单（后端/前端已扩到 18 类）。
   const ALL_TYPES = DSL_NODE_TYPES as readonly DslNodeType[];
-  const TYPE_COUNT = 18;
+  const TYPE_COUNT = 20;
 
   beforeEach(() => {
     vi.clearAllMocks();
     expect(ALL_TYPES).toHaveLength(TYPE_COUNT);
-    // Mock schema to return all 18 types
+    // Mock schema to return all 20 types
     vi.mocked(dslCanvasApi.schema).mockResolvedValue({
       schema: {},
       node_types: [...ALL_TYPES],
@@ -49,7 +49,7 @@ describe('FlowEditor can add all 18 node types from palette', () => {
       await new Promise(resolve => setTimeout(resolve, 50));
     }
 
-    // After adding all types, we expect 18 nodes in the canvas.
+    // After adding all types, we expect 20 nodes in the canvas.
     await waitFor(() => {
       const nodes = screen.getAllByTestId(/^flow-node-/);
       return nodes.length === TYPE_COUNT;

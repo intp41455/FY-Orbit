@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 // FlowEditor 依赖两个 API 模块。schema 决定左侧面板的节点类型（动态取自
@@ -564,5 +564,35 @@ describe('G4-c 从脚本载入画布', () => {
     expect((await screen.findByTestId('flow-error')).textContent).toContain('parse 炸了');
     // 当前画布原样保留。
     expect(screen.getByTestId('flow-node-in1')).toBeInTheDocument();
+  });
+});
+
+// =========================================================================== //
+// N5 · 条件边一等公民：边条件/回边在面板可编辑，进 doc 不靠手改 JSON。
+// =========================================================================== //
+describe('G4-c 边条件编辑', () => {
+  it('列出全部边并可声明条件，回边可设轮数', async () => {
+    const user = userEvent.setup();
+    const onDocChange = vi.fn();
+    render(<FlowEditor initialDoc={VALID_DSL} onDocChange={onDocChange} />);
+    await screen.findByTestId('flow-node-in1');
+
+    // 两条边都在列表里。
+    expect(screen.getByTestId('flow-edges')).toBeInTheDocument();
+    // 第一条边声明条件。
+    await user.click(screen.getByTestId('edge-0-cond-toggle'));
+    fireEvent.change(screen.getByTestId('edge-0-field'), { target: { value: 'score' } });
+    await user.selectOptions(screen.getByTestId('edge-0-op'), 'gt');
+    fireEvent.change(screen.getByTestId('edge-0-value'), { target: { value: '60' } });
+    await waitFor(() => expect(onDocChange).toHaveBeenCalled());
+    const last = onDocChange.mock.calls[onDocChange.mock.calls.length - 1][0];
+    const edge0 = last.edges[0];
+    expect(edge0.condition).toEqual({ field: 'score', op: 'gt', value: 60 });
+    // 第二条边声明为回边。
+    await user.click(screen.getByTestId('edge-1-backedge'));
+    await waitFor(() => {
+      const doc = onDocChange.mock.calls[onDocChange.mock.calls.length - 1][0];
+      expect(doc.edges[1].back_edge).toBe(true);
+    });
   });
 });

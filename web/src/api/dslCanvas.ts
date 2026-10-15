@@ -45,11 +45,13 @@ export const DSL_NODE_TYPES = [
   'code', 'tool', 'human_input', 'trigger',
   'parallel',    // 并行分支扇出（对标 LangGraph 并行边 + Send）
   'subgraph',    // 引用命名子图（对标 LangGraph 子图作为节点）
+  'join',        // B1 多路上游会合（list 收全部 / first|last 取首尾非空）
+  'delay',       // B1 等待 N 秒后原样透传（节奏控制）
 ] as const;
 
 export type DslNodeType = (typeof DSL_NODE_TYPES)[number];
 
-/** 3 类基础之外的节点（13 类新增 + 2 类拓扑；由单一真源切出，不另写清单）。 */
+/** 3 类基础之外的节点（13 类新增 + 2 类拓扑 + B1 的 2 类；由单一真源切出，不另写清单）。 */
 export const EXTENDED_NODE_TYPES: readonly DslNodeType[] =
   DSL_NODE_TYPES.slice(3);
 
@@ -130,6 +132,10 @@ export interface DslEdge {
   from: string;
   to: string;
   condition?: DslEdgeCondition;
+  /** B3 图级循环：显式回边（Kahn 排除在入度外，调度按轮重入）。 */
+  back_edge?: boolean;
+  /** 回边最大重入轮数（≥1，不填按后端默认 10）。 */
+  max_rounds?: number;
 }
 
 /** DSL 模型（语义）。坐标等视图状态放在 LayoutState，绝不进入 DSL。 */

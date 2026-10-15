@@ -64,15 +64,18 @@ def _status_and_output(doc: dict, **kwargs):
 # 节点库扩容与契约自洽
 # --------------------------------------------------------------------------- #
 
-def test_node_library_has_13_new_types() -> None:
-    # 16 = 基础 3 类 + A-画布搭建器-01 的 13 类；N5 又补 parallel/subgraph 两类。
-    assert len(NODE_TYPES) == 18
+def test_node_library_has_15_new_types() -> None:
+    # 20 = 基础 3 类 + A-画布搭建器-01 的 13 类 + N5 的 parallel/subgraph
+    #      + B1 的 join/delay。
+    assert len(NODE_TYPES) == 20
     assert set(EXTENDED_NODE_TYPES) == {
         "llm", "knowledge_retrieval", "question_classifier", "parameter_extractor",
         "iteration", "loop", "variable_aggregator", "template", "http_request",
         "code", "tool", "human_input", "trigger",
         # N5：并发扇出 / 命名子图复用
-        "parallel", "subgraph"}
+        "parallel", "subgraph",
+        # B1：多路会合 / 节奏延时
+        "join", "delay"}
 
 
 def test_every_node_type_has_closed_params_schema() -> None:
@@ -956,3 +959,80 @@ def test_ir_accepts_flow_type_field() -> None:
     doc = _flow([_literal("x"), _output()])
     doc["flow_type"] = "workflow"
     assert validate_ir(doc) == []
+
+
+# --------------------------------------------------------------------------- #
+# B1 · join / delay 一等公民
+# --------------------------------------------------------------------------- #
+
+def test_join_list_mode_collects_all_upstreams() -> None:
+    doc = {
+        "version": "1",
+        "nodes": [
+            {"id": "a", "type": "input", "params": {"kind": "literal", "value": 1}},
+            {"id": "b", "type": "input", "params": {"kind": "literal", "value": 2}},
+            {"id": "j", "type": "join", "params": {"mode": "list"}},
+            {"id": "out", "type": "output"},
+        ],
+        "edges": [
+            {"from": "a", "to": "j"},
+            {"from": "b", "to": "j"},
+            {"from": "j", "to": "out"},
+        ],
+    }
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    assert sorted(output) == [1, 2]
+
+
+def test_join_first_mode_picks_first_non_null() -> None:
+    doc = {
+        "version": "1",
+        "nodes": [
+            {"id": "a", "type": "input", "params": {"kind": "literal", "value": "x"}},
+            {"id": "j", "type": "join", "params": {"mode": "first"}},
+            {"id": "out", "type": "output"},
+        ],
+        "edges": [
+            {"from": "a", "to": "j"},
+            {"from": "j", "to": "out"},
+        ],
+    }
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    assert output == "x"
+
+
+def test_join_with_no_upstreams_fails_honestly() -> None:
+    doc = _flow([
+        {"id": "j", "type": "join", "params": {"mode": "list"}},
+        _output(),
+    ])
+    status, _ = _status_and_output(doc)
+    assert status == "failed"
+
+
+def test_delay_passes_payload_through() -> None:
+    doc = _flow([
+        _literal("hello"),
+        {"id": "d", "type": "delay", "params": {"seconds": 0}},
+        _output(),
+    ])
+    status, output = _status_and_output(doc)
+    assert status == "succeeded"
+    assert output == "hello"
+
+
+def test_delay_rejects_out_of_range_at_compile_time() -> None:
+    doc = _flow([
+        _literal("x"),
+        {"id": "d", "type": "delay", "params": {"seconds": 99999}},
+        _output(),
+    ])
+    with pytest.raises(DslValidationError):
+        compile_dsl(doc)
+
+
+def test_node_library_counts_join_and_delay() -> None:
+    assert "join" in NODE_TYPES and "delay" in NODE_TYPES
+    assert len(NODE_TYPES) == 20

@@ -78,6 +78,8 @@ const NODE_LABELS: Record<DslNodeType, string> = {
   trigger: '触发器 trigger',
   parallel: '并行分支 parallel',
   subgraph: '子图引用 subgraph',
+  join: '会合 join',
+  delay: '延时 delay',
 };
 
 /**
@@ -127,6 +129,8 @@ const NODE_COLORS: Record<DslNodeType, string> = {
   trigger: 'var(--ui-st-waiting)',
   parallel: 'var(--ui-sky-600)',
   subgraph: 'var(--ui-sky-600)',
+  join: 'var(--ui-sky-600)',
+  delay: 'var(--ui-sky-600)',
 };
 
 const CANVAS_W = 640;
