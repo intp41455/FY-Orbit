@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { useBase } from '../hooks/useAutosave';
 import { useAuth } from '../auth/AuthContext';
 import { Navigate, Link } from 'react-router-dom';
 import { LineIcon } from '../components/ui/LineIcon';
@@ -33,6 +34,8 @@ const EDGES: Array<[number, number]> = [
 
 export function LoginPage() {
   const { owner, loading, error, login, loginWithToken, register } = useAuth();
+  // 基座接入（A-基座质保-11）：/login 是 App 挂载的可编辑页面，按硬门禁必须声明。
+  useBase({ surface: 'web/src/pages/LoginPage' });
   // 登录口令默认留空：此前预填 'dev-token-secret' 会把有效密钥直接送进 HTML，
   // 任何能读页面的人都不必再查配置。需要的人自己从 .env 复制。
   const [token, setToken] = useState('');

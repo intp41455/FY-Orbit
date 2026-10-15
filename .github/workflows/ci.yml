@@ -68,9 +68,10 @@ jobs:
           #      存在阻塞违规即 exit 1，并逐条打 `::error::` 注解定位。
           # 本仓真实门禁在 base-contract-gate job 里跑（独立 job，失败信号不被
           # backend job 的其他步骤淹没）；此处保留一次调用作为 backend 内的早期反馈。
-          # 当前基线仍有 1 个**可编辑**页面（FortunePage.tsx）未接入基座，且按
-          # 「可编辑文件不得豁免」的硬规则不能被豁免，故门禁会如实报红 —— 这正是
-          # 要把「门禁能失败」暴露到 CI 上的原因；请勿把本步改成 advisory 或吞掉退出码。
+          # 本仓全部页面与可编辑组件均已接入基座（useBase / BaseBound）或持已审批
+          # 豁免，门禁应保持**绿灯**；若报红，说明新引入了未接线的页面/可编辑组件 ——
+          # 应补 useBase / BaseBound，或对纯展示页登记豁免；请勿把本步改成 advisory
+          # 或吞掉退出码。
           python scripts/p0/grant_base_exemptions.py
           python scripts/p0/run_base_contract_gate.py
 
@@ -176,7 +177,12 @@ jobs:
           version: "latest"
 
       - name: Install Dependencies (锁定安装)
-        run: uv sync --frozen --group dev
+        run: |
+          uv sync --frozen --group dev
+          # .venv/bin 必须显式进 PATH：否则 `python -m pytest` 解析到 runner 自带
+          # 的系统 Python，而 dev 组里的 pytest 装在 .venv 内 —— Gate Self-Test 会报
+          # `No module named pytest` 假红。backend job 一直有此步，本两处此前遗漏。
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Gate Self-Test (先证明这个门禁会红)
         run: |
@@ -194,8 +200,8 @@ jobs:
           # ① 豁免走真实服务接口登记，「可编辑文件不得豁免」等硬规则会被真校验；
           # ② 门禁 fail-closed：违规 exit 1 + `::error::` 逐条标注；
           # ③ 扫描面缺失 / 扫到 0 文件同样 exit 1（0 违规 ≠ 契约满足）。
-          # 当前基线有 1 个可编辑页面未接入（FortunePage.tsx），故本步**预期报红**——
-          # 这是接线清单，不是脚本故障。请勿加 `|| true` 或 continue-on-error。
+          # 本仓全部页面与可编辑组件均已接入基座或持已审批豁免，本步**预期为绿**；
+          # 报红即为接线清单有新增项。请勿加 `|| true` 或 continue-on-error。
           python scripts/p0/grant_base_exemptions.py
           python scripts/p0/run_base_contract_gate.py
 
@@ -223,7 +229,12 @@ jobs:
           version: "latest"
 
       - name: Install Dependencies (锁定安装)
-        run: uv sync --frozen --group dev
+        run: |
+          uv sync --frozen --group dev
+          # .venv/bin 必须显式进 PATH：否则 `python -m pytest` 解析到 runner 自带
+          # 的系统 Python，而 dev 组里的 pytest 装在 .venv 内 —— Gate Self-Test 会报
+          # `No module named pytest` 假红。backend job 一直有此步，本两处此前遗漏。
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
 
       - name: Gate Self-Test (先证明这个门禁会红)
         run: |

@@ -1,4 +1,4 @@
-"""P0-1 一次性工具：为 6 个纯展示页登记并审批基座豁免。
+"""P0-1 一次性工具：为 7 个纯展示页登记并审批基座豁免。
 
 走的是**真实服务接口**（`BaseContractService.request_exemption` + `approve_exemption`），
 不是手写 JSON —— 因此理由长度、scope 白名单、「可编辑文件不得豁免」三条硬规则
@@ -27,7 +27,7 @@ from find_yourself.services.quality.base_contract import (  # noqa: E402
     exemption_file,
 )
 
-#: 6 个纯展示页 + 逐页理由（≥10 字，且必须是**真的**：页面自身不含编辑控件）。
+#: 7 个纯展示页 + 逐页理由（≥10 字，且必须是**真的**：页面自身不含编辑控件）。
 EXEMPTIONS: dict[str, str] = {
     "web/src/pages/CanvasPage.tsx":
         "纯展示页：只读渲染多 Agent 画布快照与模板列表，页面自身不含任何编辑控件；"
@@ -45,6 +45,9 @@ EXEMPTIONS: dict[str, str] = {
     "web/src/pages/TimelinePage.tsx":
         "纯展示页：时间线只读展示（展示由已接入基座的时间线组件负责），"
         "页面自身不含任何编辑控件。",
+    "web/src/pages/LegalNoticePage.tsx":
+        "纯展示页：法律声明（NOTICE / 许可 / 免责）只读展示，页面自身不含任何编辑控件，"
+        "无表单、无输入、无状态写入。",
 }
 
 

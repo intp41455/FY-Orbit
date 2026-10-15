@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { useBase } from '../hooks/useAutosave';
 import { hitlApi } from '../api/hitl';
 import type { HitlQueueItem, HitlOption, HitlDecision } from '../types/hitl';
 import './HitlDecisionPanel.css';
@@ -21,6 +22,8 @@ export function HitlDecisionPanel({
   const [customResolution, setCustomResolution] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 基座接入（A-基座质保-11）：本面板含自定义裁决表单，属可编辑界面。
+  useBase({ surface: 'web/src/components/HitlDecisionPanel' });
 
   const handleDecide = useCallback(
     async (decision: HitlDecision['decision']) => {
