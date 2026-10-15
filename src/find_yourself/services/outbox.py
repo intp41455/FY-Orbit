@@ -30,7 +30,8 @@ class OutboxService:
         concurrency (S09/T04). Uses a SELECT subquery to deterministically
         select exactly one pending row to prevent MultipleResultsFound.
         """
-        from sqlalchemy import select, update as sql_update
+        from sqlalchemy import select
+        from sqlalchemy import update as sql_update
 
         # First, get the ID of the oldest pending operation using a SELECT
         # This ensures deterministic ordering and prevents MultipleResultsFound

@@ -416,3 +416,49 @@ class TestDiagnosticShape:
         text = format_diagnostics(diags)
         assert str(len(diags)) in text
         assert "t" in text and "params.op" in text
+
+
+# --------------------------------------------------------------------------- #
+# N5 · SDK/CodeWorkflow.validate 覆盖 subgraphs 引用（与执行期同语义）。
+# --------------------------------------------------------------------------- #
+def _subgraph_doc() -> dict:
+    return {
+        "version": "1",
+        "subgraphs": {
+            "lib1": {
+                "version": "1",
+                "nodes": [{"id": "si", "type": "input"}, {"id": "so", "type": "output"}],
+                "edges": [{"from": "si", "to": "so"}],
+            },
+        },
+        "nodes": [
+            {"id": "sg", "type": "subgraph", "params": {"name": "lib1"}},
+            {"id": "pl", "type": "parallel", "params": {
+                "branches": [
+                    {"name": "a", "ref": "lib1"},
+                    {"name": "b", "ref": "ghost"},
+                ],
+            }},
+            {"id": "out", "type": "output"},
+        ],
+        "edges": [
+            {"from": "sg", "to": "pl"},
+            {"from": "pl", "to": "out"},
+        ],
+    }
+
+
+def test_subgraph_refs_are_checked_collect_style() -> None:
+    diags = validate_ir(_subgraph_doc())
+    codes = {(d.node_id, d.field_path, d.code) for d in diags}
+    assert ("pl", "params.branches[1].ref", "unknown_subgraph_ref") in codes
+    # 合法的 lib1 引用不产生诊断。
+    assert not [d for d in diags if d.code == "unknown_subgraph_ref"
+                and "lib1" in d.message and "ghost" not in d.message]
+
+
+def test_valid_subgraph_refs_pass_clean() -> None:
+    doc = _subgraph_doc()
+    doc["nodes"][1]["params"] = {"branches": [{"name": "a", "ref": "lib1"}]}
+    diags = [d for d in validate_ir(doc) if d.code == "unknown_subgraph_ref"]
+    assert diags == []

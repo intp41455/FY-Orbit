@@ -409,6 +409,42 @@ def validate_ir(doc: Any) -> list[Diagnostic]:
             diags.append(Diagnostic(edge.from_id, "to", "dangling_edge",
                                     f"边 {edge.from_id!r}->{edge.to!r} 引用了未定义节点"))
 
+    # N5 · subgraphs 引用检查（与执行期 ``_branch_subflow`` 同语义，
+    # 但收集式：SDK/CodeWorkflow.validate 与编辑器一次拿全）。
+    library = doc.get("subgraphs")
+    library_names: set[str] = (
+        set(library.keys()) if isinstance(library, dict) else set()
+    )
+    for raw in raw_nodes:
+        if not isinstance(raw, dict):
+            continue
+        node_id = raw.get("id")
+        if not isinstance(node_id, str) or not node_id:
+            continue
+        params = raw.get("params")
+        if not isinstance(params, dict):
+            continue
+        if raw.get("type") == "subgraph":
+            name = params.get("name")
+            if isinstance(name, str) and name and name not in library_names:
+                diags.append(Diagnostic(
+                    node_id, "params.name", "unknown_subgraph_ref",
+                    f"子图 {name!r} 不在文档级 subgraphs 库中 "
+                    f"(可用: {sorted(library_names) or '空'})"))
+        if raw.get("type") == "parallel":
+            branches = params.get("branches")
+            if isinstance(branches, list):
+                for idx, branch in enumerate(branches):
+                    if not isinstance(branch, dict):
+                        continue
+                    ref = branch.get("ref")
+                    if isinstance(ref, str) and ref and ref not in library_names:
+                        diags.append(Diagnostic(
+                            node_id, f"params.branches[{idx}].ref",
+                            "unknown_subgraph_ref",
+                            f"分支 {branch.get('name')!r} 引用的子图 {ref!r} "
+                            f"不在文档级 subgraphs 库中"))
+
     # 确定性：按 (node_id, field_path, code, message) 稳定排序。
     diags.sort(key=lambda d: (d.node_id, d.field_path, d.code, d.message))
     return diags

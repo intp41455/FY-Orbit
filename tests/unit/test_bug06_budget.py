@@ -53,6 +53,31 @@ def test_cancel_propagates_and_releases(session, owner):
     assert session.get(Task, "task-2").status == "cancelled"
 
 
+def test_monthly_95_percent_forces_pause_with_distinct_code(session, owner):
+    """E02：月度用量达 95% 即强制暂停新预留（主链停摆），错误码区别于超限。"""
+    from decimal import Decimal
+
+    from find_yourself.services.budget import BudgetLimits
+
+    audit = AuditService(session)
+    b = BudgetService(session, audit,
+                      limits=BudgetLimits(per_task_usd=Decimal("20.00")))
+    _task(session)
+    b.reserve(owner, task_id="task-1", amount="9.00", idempotency_key="r1")
+    with pytest.raises(Conflict) as exc:
+        b.reserve(owner, task_id="task-1", amount="0.60", idempotency_key="r2")
+    assert exc.value.code == "monthly_budget_paused"
+    # 暂停线下仍可预留（94% 放行）。
+    b2 = BudgetService(session, audit,
+                       limits=BudgetLimits(per_task_usd=Decimal("20.00")))
+    _task2 = Task(id="task-9", owner_id="owner-1", goal="g", deadline=utcnow(),
+                  idempotency_key="k9")
+    session.add(_task2)
+    session.flush()
+    r = b2.reserve(owner, task_id="task-9", amount="0.40", idempotency_key="r9")
+    assert r.state == "reserved"
+
+
 def test_companion_reply_with_priced_gateway_reserves_budget(session, owner):
     """BUG #5: companion's synthetic task_id must not 404 inside budget.reserve.
 

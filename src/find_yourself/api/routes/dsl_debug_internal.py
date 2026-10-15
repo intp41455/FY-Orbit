@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -24,15 +23,14 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..deps import csrf_protected, get_actor
 from ...services.actor import Actor
 from ...services.dsl_canvas import (
     DslSuspended,
     DslValidationError,
     compile_dsl,
-    dsl_digest,
     execute_node,
 )
+from ..deps import csrf_protected, get_actor
 from . import dsl_canvas as _canvas_routes
 
 router = APIRouter(prefix="/api/dsl/debug", tags=["dsl-debug-internal"])

@@ -37,6 +37,9 @@ class BudgetLimits:
     per_task_usd: Decimal = Decimal("0.50")
     per_month_usd: Decimal = Decimal("10.00")
     warn_threshold_pct: Decimal = Decimal("80.0")
+    #: E02：月度用量达此线即强制暂停**新预留**（主链停摆），区别于 100%+ 的
+    #: 超限。暂停是期望内的熔断（留 5% 给已在途结算），不是事故。
+    pause_threshold_pct: Decimal = Decimal("95.0")
 
 
 class BudgetService:
@@ -186,9 +189,11 @@ class BudgetService:
         month_projected = month_used + amt
         month_pct = (month_projected / self.limits.per_month_usd) * Decimal("100")
 
-        # Threshold notification chain (O06): alert on >= warn_threshold_pct or hard breach
+        # Threshold notification chain (O06): alert on >= warn_threshold_pct or hard breach.
+        # E02: reaching pause_threshold_pct forces level critical (熔断在即).
+        paused = month_pct >= self.limits.pause_threshold_pct
         if task_pct >= self.limits.warn_threshold_pct or month_pct >= self.limits.warn_threshold_pct:
-            level = "warning" if (task_projected <= self.limits.per_task_usd and month_projected <= self.limits.per_month_usd) else "critical"
+            level = "warning" if (task_projected <= self.limits.per_task_usd and month_projected <= self.limits.per_month_usd and not paused) else "critical"
             alert_payload = {
                 "level": level,
                 "task_id": task_id,
@@ -210,6 +215,12 @@ class BudgetService:
 
         if task_projected > self.limits.per_task_usd:
             raise Conflict("task_budget_exceeded", f"Tree budget exceeded ({task_used}+{amt})")
+        if paused:
+            raise Conflict(
+                "monthly_budget_paused",
+                f"Monthly budget at {month_pct:.1f}% (>= {self.limits.pause_threshold_pct}%), "
+                f"new reservations paused ({month_used}+{amt})",
+            )
         if month_projected > self.limits.per_month_usd:
             raise Conflict("monthly_budget_exceeded", "Monthly budget exceeded")
 

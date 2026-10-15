@@ -26,8 +26,8 @@ from typing import Any, Callable, Literal, Mapping, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from ..identity import Actor
 from ..contracts import Conflict, NotFound, ValidationFailed
+from ..identity import Actor
 
 # ---------------------------------------------------------------------------
 # ADR-07: explicit, ORDERED route-criteria table.
