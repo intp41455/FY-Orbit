@@ -140,6 +140,17 @@ export function WorkbenchPage() {
     },
     [setLayoutState],
   );
+  // 中区三区段（编辑器/差异审查/Git 工作区）展开态：此前三个 WbSection 硬编码
+  // collapsed={false} + onToggle 空函数，标题栏折叠钮是摆设（点之无反应）。
+  // 与底部四区段同口径：本地 state（默认全展开，保持既有首屏行为）。
+  const [midSections, setMidSections] = useState<[boolean, boolean, boolean]>([true, true, true]);
+  const toggleMidSection = useCallback((i: number) => {
+    setMidSections((s) => {
+      const next = [...s] as typeof s;
+      next[i] = !next[i];
+      return next;
+    });
+  }, []);
   const sectionRefs = useRef<Array<HTMLDivElement | null>>([null, null, null, null]);
   const focusSection = useCallback(
     (i: number) => {
@@ -481,8 +492,8 @@ export function WorkbenchPage() {
                 title="编辑器 · 预览"
                 icon="code"
                 hotkey="1"
-                collapsed={false}
-                onToggle={() => {}}
+                collapsed={!midSections[0]}
+                onToggle={() => toggleMidSection(0)}
                 statusSlot={editorSectionStatus}
               >
                 {workspaceId ? (
@@ -512,14 +523,14 @@ export function WorkbenchPage() {
                 title="差异审查"
                 icon="flow"
                 hotkey="2"
-                collapsed={false}
-                onToggle={() => {}}
+                collapsed={!midSections[1]}
+                onToggle={() => toggleMidSection(1)}
               >
                 <DiffView />
               </WbSection>
 
               {/* 中区 ③ 差异审查 / Git */}
-              <WbSection index={3} title="Git 工作区" icon="branch" hotkey="3" collapsed={false} onToggle={() => {}}>
+              <WbSection index={3} title="Git 工作区" icon="branch" hotkey="3" collapsed={!midSections[2]} onToggle={() => toggleMidSection(2)}>
                 {workspaceId ? (
                   <GitPanel workspaceId={workspaceId} />
                 ) : (

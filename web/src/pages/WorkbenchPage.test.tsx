@@ -133,3 +133,46 @@ describe('WorkbenchPage 工作区选择', () => {
     expect(window.localStorage.getItem(KEY)).toBeNull();
   });
 });
+
+describe('WorkbenchPage 中区折叠', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    // 给一个工作区：中区 Git 区才会挂载真正的 GitPanel（空工作区时是占位文案）。
+    vi.mocked(workbenchApi.listWorkspaces).mockResolvedValue({
+      items: [ws('ws-1', 'toggle-ws')], count: 1,
+    });
+  });
+
+  afterEach(() => { window.localStorage.clear(); });
+
+  it('中区 差异审查 / Git 工作区标题栏可折叠展开（折叠开关不是摆设）', async () => {
+    const { container } = render(<MemoryRouter><WorkbenchPage /></MemoryRouter>);
+    await screen.findAllByTestId('diff-view');
+
+    // 中区三个 WbSection 的 data-index 为 1/2/3（底部四区段是另一套，
+    // data-index 1..4 且同样含一个差异审查——用是否含 git-panel 区分 Git 区，
+    // 用“第二个 diff-view 所在区”区分中区差异审查）。
+    const middleDiffSection = [...container.querySelectorAll('section[data-index="2"]')]
+      .find((s) => s.querySelector('[data-testid="diff-view"]'));
+    const middleGitSection = [...container.querySelectorAll('section[data-index="3"]')]
+      .find((s) => s.querySelector('[data-testid="git-panel"]'));
+    expect(middleDiffSection).toBeTruthy();
+    expect(middleGitSection).toBeTruthy();
+
+    for (const section of [middleDiffSection!, middleGitSection!]) {
+      const header = section.querySelector('button.wb-sec-bar');
+      expect(header).not.toBeNull();
+      // 初始展开。
+      expect(header!).toHaveAttribute('aria-expanded', 'true');
+      // 点一次折叠。
+      await userEvent.setup().click(header as Element);
+      expect(header!).toHaveAttribute('aria-expanded', 'false');
+      expect(section.className).toMatch(/is-collapsed/);
+      // 再点一次展开。
+      await userEvent.setup().click(header as Element);
+      expect(header!).toHaveAttribute('aria-expanded', 'true');
+      expect(section.className).not.toMatch(/is-collapsed/);
+    }
+  });
+});
