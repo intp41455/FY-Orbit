@@ -155,4 +155,7 @@ class SynastryResult(BaseModel):
     synergy_points: list[str]
     friction_points: list[str]
     actionable_advice: str
-    disclaimer: str = "【文化与娱乐参考】合盘能量基于古典五行比对，人际关系关键在于坦诚沟通与相互包容。"
+    # I-11（2026-10-16 裁定）：合盘评分仅供娱乐。启发式分数与文案保留，
+    # 但必须显著标注“仅供娱乐，勿当真”，且文案不得含具体事实断言。
+    disclaimer: str = ("【仅供娱乐，勿当真】合盘分数是古典五行计数对照的启发式数字，"
+                       "不是对两人关系的结论；人际关系关键在于坦诚沟通与相互包容。")

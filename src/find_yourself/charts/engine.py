@@ -572,14 +572,15 @@ class DeterministicChartEngine:
         elem_a = STEM_ELEMENTS.get(day_stem_a, "木")
         elem_b = STEM_ELEMENTS.get(day_stem_b, "土")
 
+        # I-11：文案只做计数层面的中性对照，不得含“默契度高”类事实断言。
         synergy_points = [
-            f"日主五行能量相得益彰（A: {elem_a} / B: {elem_b}），利于在决策与执行上形成互补闭环。",
-            "两人在认知模式上兼备大局视野与细节落地能力，配合默契度高。",
+            f"日主对照（A: {elem_a} / B: {elem_b}），五行分布见下表，供对照参考。",
+            "相同或互补的元素分布只说明计数结构，不说明协作效果。",
         ]
         friction_points = [
-            "在面临时间窗口紧张时，双方需建立显式的同步机制，避免各自行事导致的节奏脱节。",
+            "时间紧张时建议建立显式的同步节奏（本条为通用协作建议，非盘面推论）。",
         ]
-        advice = "建议在合作中明确各自的核心边界，一人主抓战略定向，一人主抓品控把关，互相授权与尊重。"
+        advice = "合作中可先明确各自的分工边界；本条为通用建议，非盘面推论。"
 
         return SynastryResult(
             compatibility_score=base_score,

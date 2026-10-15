@@ -24,11 +24,11 @@ const STATUS = {
 describe('ImaKnowledgeCard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api().imaStatus.mockResolvedValue(STATUS);
+    api().imaStatus!.mockResolvedValue(STATUS);
   });
 
   it('填写三件套并保存，调用 configureSource(ima) 并提示加密存储', async () => {
-    api().configureSource.mockResolvedValue({
+    api().configureSource!.mockResolvedValue({
       source_id: 'ima',
       configured: true,
       storage: 'hub_fernet',
@@ -41,7 +41,7 @@ describe('ImaKnowledgeCard', () => {
     fireEvent.change(screen.getByLabelText('ima-kb_id'), { target: { value: '999000111' } });
     fireEvent.click(screen.getByText('保存 ima 凭证'));
     await waitFor(() =>
-      expect(api().configureSource).toHaveBeenCalledWith('ima', {
+      expect(api().configureSource!).toHaveBeenCalledWith('ima', {
         kb_id: '999000111',
         app_id: 'app-1',
         api_key: 'key-1',
@@ -61,6 +61,6 @@ describe('ImaKnowledgeCard', () => {
     render(<ImaKnowledgeCard />);
     fireEvent.click(screen.getByText('保存 ima 凭证'));
     expect(await screen.findByTestId('ima-card-error')).toBeInTheDocument();
-    expect(api().configureSource).not.toHaveBeenCalled();
+    expect(api().configureSource!).not.toHaveBeenCalled();
   });
 });

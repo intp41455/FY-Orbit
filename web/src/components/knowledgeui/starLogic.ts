@@ -228,6 +228,7 @@ export function buildStarGraph(input: BuildGraphInput): BuildGraphResult {
     for (let i = 1; i < sorted.length; i += 1) {
       const a = sorted[i - 1];
       const b = sorted[i];
+      if (!a || !b) continue; // 循环界内恒命中，仅为类型收窄
       edges.push({
         id: `seq:${a.id}->${b.id}`,
         source: a.id,
@@ -243,11 +244,14 @@ export function buildStarGraph(input: BuildGraphInput): BuildGraphResult {
     // 单文档命中数可能很大，做星型连接（与第一个命中连）而不是全连接，避免边爆炸
     if (shown.length > 1) {
       const hub = shown[0];
+      if (!hub) continue; // 长度已保证恒命中，仅为类型收窄
       for (let i = 1; i < shown.length; i += 1) {
+        const target = shown[i];
+        if (!target) continue; // 循环界内恒命中，仅为类型收窄
         edges.push({
-          id: `cohit:${hub}:${shown[i]}`,
+          id: `cohit:${hub}:${target}`,
           source: hub,
-          target: shown[i],
+          target,
           kind: 'cohit',
           strength: 0.85,
         });
@@ -550,7 +554,7 @@ export const CLUSTER_VAR: readonly string[] = [
 ];
 
 export function clusterColor(cluster: number): string {
-  return CLUSTER_VAR[((cluster % CLUSTER_VAR.length) + CLUSTER_VAR.length) % CLUSTER_VAR.length];
+  return CLUSTER_VAR[((cluster % CLUSTER_VAR.length) + CLUSTER_VAR.length) % CLUSTER_VAR.length] ?? 'var(--ui-sky-500)';
 }
 
 /** 簇的中文名（图例与节点卡共用）。 */

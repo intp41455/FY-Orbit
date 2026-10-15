@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from ...adapters.assessments import scorer
 from ...services.actor import Actor
 from ..deps import csrf_protected, get_actor
+from ..schemas import AnswersBody
 
 router = APIRouter(prefix="/api/assessments", tags=["assessments"])
 
@@ -29,8 +30,8 @@ async def start_session(assessment_id: str, actor: Actor = Depends(csrf_protecte
 
 
 @router.post("/sessions/{session_id}/answers")
-async def record_answers(session_id: str, body: dict, actor: Actor = Depends(csrf_protected)) -> dict:
-    s = scorer.record_answers(session_id, body.get("answers", {}))
+async def record_answers(session_id: str, body: AnswersBody, actor: Actor = Depends(csrf_protected)) -> dict:
+    s = scorer.record_answers(session_id, body.answers)
     return s.to_public()
 
 

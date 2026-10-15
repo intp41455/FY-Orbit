@@ -104,9 +104,11 @@ export function CozyStargazingSystem({ onWishUponStar, onClose }: CozyStargazing
     const undiscovered = constellations.filter((c) => !c.discovered);
     if (undiscovered.length > 0) {
       const pick = undiscovered[0];
-      setConstellations((prev) =>
-        prev.map((c) => (c.id === pick.id ? { ...c, discovered: true } : c)),
-      );
+      if (pick) {
+        setConstellations((prev) =>
+          prev.map((c) => (c.id === pick.id ? { ...c, discovered: true } : c)),
+        );
+      }
     }
 
     if (onWishUponStar) {

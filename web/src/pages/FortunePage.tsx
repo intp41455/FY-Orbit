@@ -450,6 +450,17 @@ export function FortunePage() {
 
           {synData ? (
             <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: 24 }}>
+              <div
+                data-testid="synastry-entertainment-note"
+                style={{ background: 'rgba(250, 204, 21, 0.12)', border: '1px solid rgba(250, 204, 21, 0.45)', borderRadius: 8, padding: '8px 12px', fontSize: 13, fontWeight: 700, color: 'var(--ui-ink-1)', marginBottom: 12 }}
+              >
+                仅供娱乐，勿当真
+              </div>
+              {synData.disclaimer && (
+                <p className="muted" data-testid="synastry-disclaimer" style={{ fontSize: 12, margin: '0 0 12px' }}>
+                  {synData.disclaimer}
+                </p>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                 <div>
                   <h4 style={{ fontSize: 18, margin: 0 }}>双人协同契合度评估</h4>

@@ -344,7 +344,7 @@ export function MetaList({ rows }: { rows: MetaRow[] }) {
   return (
     <dl className="avatar-meta" style={{ margin: 0 }}>
       {rows.map((r, i) => {
-        const icon = ICONS[i % ICONS.length];
+        const icon = ICONS[i % ICONS.length] ?? 'target'; // 索引恒命中，?? 仅为类型收窄
         return (
           <div key={r.label}>
             <dt>

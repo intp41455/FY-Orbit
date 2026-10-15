@@ -286,7 +286,7 @@ describe('列表视图（需求 09）', () => {
     fireEvent.click(screen.getByTestId('kb-tab-list'));
     const rows = screen.getByTestId('kb-list').querySelectorAll<HTMLElement>('tbody tr');
     expect(rows).toHaveLength(2);
-    expect(within(rows[0]).getByText('关键')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('关键')).toBeInTheDocument();
   });
 
   it('可按更新时间/截止/进度排序', async () => {
@@ -300,7 +300,7 @@ describe('列表视图（需求 09）', () => {
     await screen.findByTestId('kb-board');
     fireEvent.click(screen.getByTestId('kb-tab-list'));
     fireEvent.click(screen.getByTestId('kb-sort-updated'));
-    const first = screen.getByTestId('kb-list').querySelectorAll<HTMLElement>('tbody tr')[0];
+    const first = screen.getByTestId('kb-list').querySelectorAll<HTMLElement>('tbody tr')[0]!;
     expect(within(first).getByText('B')).toBeInTheDocument();
   });
 
@@ -316,8 +316,8 @@ describe('列表视图（需求 09）', () => {
     fireEvent.click(screen.getByTestId('kb-tab-list'));
     fireEvent.click(screen.getByTestId('kb-sort-deadline'));
     const rows = screen.getByTestId('kb-list').querySelectorAll<HTMLElement>('tbody tr');
-    expect(within(rows[0]).getByText('快到期')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('未设置')).toBeInTheDocument();
+    expect(within(rows[0]!).getByText('快到期')).toBeInTheDocument();
+    expect(within(rows[1]!).getByText('未设置')).toBeInTheDocument();
   });
 });
 

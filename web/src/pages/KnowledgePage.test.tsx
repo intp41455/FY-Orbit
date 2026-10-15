@@ -104,14 +104,14 @@ function renderPage() {
 
 beforeEach(() => {
   const api = mocked();
-  api.listDocuments.mockResolvedValue({
+  api.listDocuments!.mockResolvedValue({
     documents: [],
     count: 0,
     limits: { max_bytes: 20 * 1024 * 1024, extensions: ['.md', '.txt', '.pdf', '.docx'] },
   });
-  api.listSources.mockResolvedValue({ sources: [IMA, BAIDU], count: 2 });
-  api.search.mockResolvedValue({ query: 'x', count: 0, results: [] });
-  api.remove.mockResolvedValue({ id: 'd1', deleted_chunks: 3 });
+  api.listSources!.mockResolvedValue({ sources: [IMA, BAIDU], count: 2 });
+  api.search!.mockResolvedValue({ query: 'x', count: 0, results: [] });
+  api.remove!.mockResolvedValue({ id: 'd1', deleted_chunks: 3 });
 });
 
 describe('KnowledgePage · 导入', () => {
@@ -121,7 +121,7 @@ describe('KnowledgePage · 导入', () => {
   });
 
   it('文档列表展示真实状态，failed 必须显示后端原因', async () => {
-    mocked().listDocuments.mockResolvedValue({
+    mocked().listDocuments!.mockResolvedValue({
       documents: [DOC_READY, DOC_FAILED],
       count: 2,
       limits: { max_bytes: 1, extensions: ['.md'] },
@@ -135,17 +135,17 @@ describe('KnowledgePage · 导入', () => {
 
   it('拖入文件走真实上传并回报切片数', async () => {
     const api = mocked();
-    api.upload.mockResolvedValue({ ...DOC_READY, chunk_count: 7 });
+    api.upload!.mockResolvedValue({ ...DOC_READY, chunk_count: 7 });
     renderPage();
     const input = await screen.findByTestId('kb-file-input');
     const file = new File(['# 小屋\n\n碰撞规则'], '小屋.md', { type: 'text/markdown' });
     await fireEvent.change(input, { target: { files: [file] } });
-    await waitFor(() => expect(api.upload).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.upload!).toHaveBeenCalledTimes(1));
     expect(await screen.findByTestId('kb-upload-log')).toHaveTextContent('已索引 7 个切片');
   });
 
   it('上传失败按后端 failed 原因显示，不写成「已导入」', async () => {
-    mocked().upload.mockResolvedValue(DOC_FAILED);
+    mocked().upload!.mockResolvedValue(DOC_FAILED);
     renderPage();
     const input = await screen.findByTestId('kb-file-input');
     await fireEvent.change(input, {
@@ -165,11 +165,11 @@ describe('KnowledgePage · 导入', () => {
       target: { files: [new File(['x'], 'photo.png', { type: 'image/png' })] },
     });
     expect(await screen.findByTestId('kb-upload-log')).toHaveTextContent('不支持的文件类型');
-    expect(api.upload).not.toHaveBeenCalled();
+    expect(api.upload!).not.toHaveBeenCalled();
   });
 
   it('删除文档后展示级联清理的切片数', async () => {
-    mocked().listDocuments.mockResolvedValue({
+    mocked().listDocuments!.mockResolvedValue({
       documents: [DOC_READY],
       count: 1,
       limits: { max_bytes: 1, extensions: ['.md'] },
@@ -182,7 +182,7 @@ describe('KnowledgePage · 导入', () => {
 
 describe('KnowledgePage · 检索', () => {
   it('命中时展示来源文档、得分与高亮', async () => {
-    mocked().search.mockResolvedValue({ query: '碰撞规则', count: 1, results: [HIT] });
+    mocked().search!.mockResolvedValue({ query: '碰撞规则', count: 1, results: [HIT] });
     renderPage();
     await fireEvent.change(await screen.findByLabelText('知识库检索词'), {
       target: { value: '碰撞规则' },
@@ -210,7 +210,7 @@ describe('KnowledgePage · 检索', () => {
     renderPage();
     await fireEvent.click(await screen.findByRole('button', { name: '检索' }));
     expect(await screen.findByText('请输入检索词')).toBeInTheDocument();
-    expect(api.search).not.toHaveBeenCalled();
+    expect(api.search!).not.toHaveBeenCalled();
   });
 });
 
@@ -233,13 +233,13 @@ describe('KnowledgePage · 适配器', () => {
 
   it('保存凭证后刷新状态并按存储位置提示（内存）', async () => {
     const api = mocked();
-    api.configureSource.mockResolvedValue({
+    api.configureSource!.mockResolvedValue({
       source_id: 'ima',
       configured: true,
       storage: 'memory',
       persist_restart: false,
     });
-    api.listSources.mockResolvedValue({
+    api.listSources!.mockResolvedValue({
       sources: [{ ...IMA, configured: true, available: true }, BAIDU],
       count: 2,
     });
@@ -250,12 +250,12 @@ describe('KnowledgePage · 适配器', () => {
     const card = screen.getByTestId('kb-source-ima');
     const save = [...card.querySelectorAll('button')].find((b) => b.textContent?.includes('保存凭证'));
     await fireEvent.click(save as HTMLButtonElement);
-    await waitFor(() => expect(api.configureSource).toHaveBeenCalledWith('ima', { api_key: 'secret-key' }));
+    await waitFor(() => expect(api.configureSource!).toHaveBeenCalledWith('ima', { api_key: 'secret-key' }));
     expect(await screen.findByText(/凭证已保存（仅内存/)).toBeInTheDocument();
   });
 
   it('适配器接口报错时展示真实错误文本', async () => {
-    mocked().listSources.mockRejectedValue(new Error('知识源清单读取失败（HTTP 503）'));
+    mocked().listSources!.mockRejectedValue(new Error('知识源清单读取失败（HTTP 503）'));
     renderPage();
     expect(await screen.findByText('知识源清单读取失败（HTTP 503）')).toBeInTheDocument();
   });

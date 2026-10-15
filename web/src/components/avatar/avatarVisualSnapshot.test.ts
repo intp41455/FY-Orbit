@@ -31,7 +31,7 @@ function fnv1a(input: Uint8ClampedArray | Uint8Array | string): string {
     }
   } else {
     for (let i = 0; i < input.length; i++) {
-      h ^= input[i];
+      h ^= input[i] ?? 0;
       h = Math.imul(h, 0x01000193);
     }
   }
@@ -68,13 +68,13 @@ describe('G5-3 · 视觉回归护栏（角色渲染快照）', () => {
     // 找到第一个不透明像素，翻转其 R 通道 = 改坏一个像素。
     let idx = -1;
     for (let i = 3; i < broken.length; i += 4) {
-      if (broken[i] > 0) {
+      if ((broken[i] ?? 0) > 0) {
         idx = i - 3;
         break;
       }
     }
     expect(idx, '应存在不透明像素').toBeGreaterThanOrEqual(0);
-    broken[idx] = (broken[idx] ^ 0xff) & 0xff;
+    broken[idx] = ((broken[idx] ?? 0) ^ 0xff) & 0xff;
     const h0 = hashRgba(snap);
     const h1 = fnv1a(broken);
     expect(h1, '改坏一个像素后哈希必须变化').not.toBe(h0);

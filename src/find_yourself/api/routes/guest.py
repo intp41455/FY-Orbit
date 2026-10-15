@@ -28,6 +28,7 @@ from ...net import is_loopback
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied
 from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
+from ..schemas import EmailPasswordBody
 
 router = APIRouter(tags=["auth"])
 
@@ -106,7 +107,7 @@ async def create_guest(request: Request,
 
 
 @router.post("/auth/guest/upgrade")
-async def upgrade_guest(body: dict, request: Request,
+async def upgrade_guest(body: EmailPasswordBody, request: Request,
                         actor: Actor = Depends(csrf_protected),
                         svc: Services = Depends(get_services),
                         settings: Settings = Depends(get_settings)) -> Response:
@@ -117,10 +118,10 @@ async def upgrade_guest(body: dict, request: Request,
     """
     user, row = svc.auth.upgrade_guest(
         actor,
-        email=str(body.get("email") or ""),
-        password=str(body.get("password") or ""),
-        consent_accepted=bool(body.get("consent_accepted")),
-        display_name=str(body.get("display_name") or ""),
+        email=body.email,
+        password=body.password,
+        consent_accepted=body.consent_accepted,
+        display_name=body.display_name,
         ip=_client_ip(request),
     )
     svc.session.commit()

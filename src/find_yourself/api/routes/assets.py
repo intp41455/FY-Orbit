@@ -190,15 +190,23 @@ async def raw_asset(
     svc: AssetService = Depends(_svc),
 ) -> FileResponse:
     path, row = svc.raw_file(actor, asset_id)
-    return FileResponse(
-        path,
-        media_type=row.mime or "application/octet-stream",
-        headers={
-            "Content-Disposition": f'inline; filename="{row.id}{_suffix(row.name)}"',
-            "X-Content-Type-Options": "nosniff",
-            "Cache-Control": "private, no-store",
-        },
-    )
+    # T1：SVG/HTML 是可执行内容，同源 inline 即存储型 XSS。
+    # 这类一律 attachment（浏览器下载不渲染）+ CSP sandbox（纵深）。
+    # 静态资源（png/wav 等）保持 inline，否则预览与播放全坏。
+    mime = (row.mime or "").lower()
+    name = (row.name or "").lower()
+    active = mime in ("image/svg+xml", "text/html", "application/xhtml+xml") \
+        or name.endswith((".svg", ".html", ".htm", ".xhtml"))
+    headers = {
+        "Content-Disposition": f'{"attachment" if active else "inline"}; '
+                               f'filename="{row.id}{_suffix(row.name)}"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store",
+    }
+    if active:
+        headers["Content-Security-Policy"] = "sandbox"
+    return FileResponse(path, media_type=row.mime or "application/octet-stream",
+                        headers=headers)
 
 
 def _suffix(name: str) -> str:

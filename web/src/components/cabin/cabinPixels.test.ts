@@ -68,7 +68,7 @@ describe('cabinPixels matrixToRgba：矩阵 → RGBA 快照', () => {
       expect(snap.data[11]).toBe(0); // ' '
       expect(snap.data[15]).toBe(0); // 未知 'x' 仍透明
       expect(spy).toHaveBeenCalledTimes(1);
-      expect(String(spy.mock.calls[0][0])).toContain('色键');
+      expect(String(spy.mock.calls[0]![0])).toContain('色键');
     } finally {
       spy.mockRestore();
     }
@@ -111,7 +111,7 @@ describe('cabinPixels bufferToTexture：RGBA → PIXI.Texture（mock 源）', ()
     expect(made.width).toBe(2);
     expect(made.height).toBe(2);
     expect(put).toHaveBeenCalledTimes(1);
-    const img = put.mock.calls[0][0] as { data: Uint8ClampedArray; width: number; height: number };
+    const img = put.mock.calls[0]![0] as { data: Uint8ClampedArray; width: number; height: number };
     expect(img.width).toBe(2);
     expect(img.height).toBe(2);
     expect(Array.from(img.data.slice(0, 4))).toEqual([1, 2, 3, 255]);
@@ -198,11 +198,11 @@ describe('cabinPixels PixelBuffer：程序化图层', () => {
   it('radialEllipse：中心 alpha 最高，边缘淡出', () => {
     const buf = new PixelBuffer(9, 9);
     buf.radialEllipse(4, 4, 4, 4, 0xabcdee, 1, 1.5);
-    const centerA = buf.data[(4 * 9 + 4) * 4 + 3];
-    const edgeA = buf.data[(4 * 9 + 8) * 4 + 3];
+    const centerA = buf.data[(4 * 9 + 4) * 4 + 3]!;
+    const edgeA = buf.data[(4 * 9 + 8) * 4 + 3]!;
     // 像素中心偏移 (±0.5) 使中心点 d≈0.177，alpha≈190；边缘像素 d>1 未被绘制
     expect(centerA).toBeGreaterThan(150);
-    expect(edgeA ?? 0).toBeLessThan(centerA);
+    expect(edgeA).toBeLessThan(centerA);
   });
 });
 
@@ -247,7 +247,7 @@ describe('cabinPixels vGradient：三通道各自 clamp255（G1-4 回归守卫�
     ];
     const rowDistinct = (buf: PixelBuffer, y: number): number => {
       const set = new Set<number>();
-      for (let x = 0; x < buf.width; x++) set.add(buf.data[(y * buf.width + x) * 4]);
+      for (let x = 0; x < buf.width; x++) set.add(buf.data[(y * buf.width + x) * 4]!);
       return set.size;
     };
     // 1px 宽（旧实现）：每行只有 1 个像素 → 横向拉伸后整行同值 → 水平亮带。

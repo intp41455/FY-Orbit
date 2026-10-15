@@ -69,7 +69,7 @@ describe('useAutosave · W2 四态', () => {
     });
 
     expect(save).toHaveBeenCalledTimes(1);
-    const ctx = save.mock.calls[0][1] as unknown as SaveContext;
+    const ctx = save.mock.calls[0]![1] as unknown as SaveContext;
     expect(ctx.key).toBe('k');
     expect(ctx.fallback).toBe(false);
 
@@ -246,7 +246,7 @@ describe('useAutosave · W4 磁盘写满 / 只读盘', () => {
       vi.advanceTimersByTime(3_000);
     });
     expect(save).toHaveBeenCalledTimes(1);
-    expect((save.mock.calls[0][0] as unknown as string)).toBe('d');  // 写的是最新值
+    expect((save.mock.calls[0]![0] as unknown as string)).toBe('d');  // 写的是最新值
     expect(result.current.storage).toBe('ok');
     expect(result.current.pendingChanges).toBe(0);
     expect(result.current.state).toBe('saved');

@@ -63,7 +63,7 @@ async function search(q = '八字') {
 describe('ImaPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    api().imaStatus.mockResolvedValue(STATUS);
+    api().imaStatus!.mockResolvedValue(STATUS);
   });
 
   it('展示来源标注', async () => {
@@ -72,18 +72,18 @@ describe('ImaPanel', () => {
   });
 
   it('搜索「八字」展示命中与 src: 出处，并可展开原文', async () => {
-    api().imaSearch.mockResolvedValue(response());
+    api().imaSearch!.mockResolvedValue(response());
     render(<ImaPanel />);
     await search();
     expect(await screen.findByTestId('ima-hit-m1')).toBeInTheDocument();
     expect(screen.getByTestId('ima-src-m1').textContent).toBe(`src: ima://${KB}/m1`);
-    expect(api().imaSearch).toHaveBeenCalledWith(expect.objectContaining({ query: '八字', page: 1 }));
+    expect(api().imaSearch!).toHaveBeenCalledWith(expect.objectContaining({ query: '八字', page: 1 }));
     fireEvent.click(screen.getByTestId('ima-open-m1'));
     expect(screen.getByText(/全文：日主强弱判断口诀/)).toBeInTheDocument();
   });
 
   it('有 origin_url 时才渲染外链', async () => {
-    api().imaSearch.mockResolvedValue(
+    api().imaSearch!.mockResolvedValue(
       response({ results: [{ ...HIT, origin_url: 'https://ima.qq.com/x' }] }),
     );
     render(<ImaPanel />);
@@ -93,7 +93,7 @@ describe('ImaPanel', () => {
   });
 
   it('离线缓存结果显示横幅，不冒充实时', async () => {
-    api().imaSearch.mockResolvedValue(
+    api().imaSearch!.mockResolvedValue(
       response({ cached: true, cache_time: '2026-10-07T08:00:00+00:00', channel: 'mcp+cache' }),
     );
     render(<ImaPanel />);
@@ -102,37 +102,37 @@ describe('ImaPanel', () => {
   });
 
   it('零命中如实显示空态', async () => {
-    api().imaSearch.mockResolvedValue(response({ total: 0, results: [], pages: 1 }));
+    api().imaSearch!.mockResolvedValue(response({ total: 0, results: [], pages: 1 }));
     render(<ImaPanel />);
     await search('不存在');
     expect(await screen.findByTestId('ima-empty')).toBeInTheDocument();
   });
 
   it('分页：下一页请求 page=2', async () => {
-    api().imaSearch.mockResolvedValue(response({ total: 20, pages: 2 }));
+    api().imaSearch!.mockResolvedValue(response({ total: 20, pages: 2 }));
     render(<ImaPanel />);
     await search();
     await screen.findByTestId('ima-hit-m1');
     fireEvent.click(screen.getByTestId('ima-next-page'));
     await waitFor(() =>
-      expect(api().imaSearch).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
+      expect(api().imaSearch!).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
     );
   });
 
   it('类型与标签过滤传给后端', async () => {
-    api().imaSearch.mockResolvedValue(response());
+    api().imaSearch!.mockResolvedValue(response());
     render(<ImaPanel />);
     fireEvent.change(screen.getByTestId('ima-type-filter'), { target: { value: '7' } });
     fireEvent.change(screen.getByTestId('ima-tag-filter'), { target: { value: '八字' } });
     await search();
     await screen.findByTestId('ima-hit-m1');
-    expect(api().imaSearch).toHaveBeenCalledWith(
+    expect(api().imaSearch!).toHaveBeenCalledWith(
       expect.objectContaining({ type: '7', tag: '八字' }),
     );
   });
 
   it('后端报错原样展示', async () => {
-    api().imaSearch.mockRejectedValue(new Error('ima 检索失败且无本地缓存'));
+    api().imaSearch!.mockRejectedValue(new Error('ima 检索失败且无本地缓存'));
     render(<ImaPanel />);
     await search();
     expect((await screen.findByTestId('ima-search-error')).textContent).toContain('无本地缓存');

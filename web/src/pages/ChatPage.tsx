@@ -272,7 +272,8 @@ export function ChatPage() {
           if (urlId && list.some((c) => c.id === urlId)) return urlId;
           const e = loadChatEntry();
           if (e && list.some((c) => c.id === e.convId)) return e.convId;
-          return list[0].id;
+          const first = list[0];
+          return first ? first.id : (prev ?? '');
         });
       }
     } catch (e) {
@@ -683,7 +684,7 @@ export function ChatPage() {
           e.key === 'ArrowDown'
             ? Math.min(filtered.length - 1, idx + 1)
             : Math.max(0, (idx < 0 ? 0 : idx) - 1);
-        setActiveId(filtered[nextIdx].id);
+        setActiveId(filtered[nextIdx]?.id ?? activeId ?? '');
       }
     }
     window.addEventListener('keydown', onKey);
@@ -693,7 +694,8 @@ export function ChatPage() {
 
   const lastAssistantId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === 'assistant') return messages[i].id;
+      const m = messages[i];
+      if (m?.role === 'assistant') return m.id;
     }
     return null;
   }, [messages]);

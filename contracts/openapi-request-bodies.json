@@ -1,0 +1,2622 @@
+{
+  "PATCH /api/collaboration/comments/{comment_id}": {
+    "has_body": true,
+    "properties": [
+      "body"
+    ],
+    "required": [
+      "body"
+    ]
+  },
+  "PATCH /api/hub/connections/{conn_id}": {
+    "has_body": true,
+    "properties": [
+      "capabilities",
+      "config",
+      "credentials",
+      "description",
+      "icon",
+      "name",
+      "preference",
+      "state"
+    ],
+    "required": []
+  },
+  "PATCH /api/review/notes/{note_id}": {
+    "has_body": true,
+    "properties": [
+      "note",
+      "state"
+    ],
+    "required": []
+  },
+  "PATCH /api/teams/{team_id}": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "patch",
+      "reason"
+    ],
+    "required": [
+      "expected_version",
+      "reason"
+    ]
+  },
+  "PATCH /api/teams/{team_id}/members/{role}/rename": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "reason",
+      "title"
+    ],
+    "required": [
+      "expected_version",
+      "title"
+    ]
+  },
+  "POST /a2a/v1/jsonrpc": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/agent-dispatch": {
+    "has_body": true,
+    "properties": [
+      "task",
+      "tools"
+    ],
+    "required": [
+      "task",
+      "tools"
+    ]
+  },
+  "POST /api/agents": {
+    "has_body": true,
+    "properties": [
+      "capabilities",
+      "domains",
+      "endpoint_key",
+      "max_concurrency",
+      "name",
+      "semantic_version"
+    ],
+    "required": [
+      "endpoint_key",
+      "name",
+      "semantic_version"
+    ]
+  },
+  "POST /api/agents/{agent_id}/drain": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/agents/{agent_id}/enable": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/agents/{agent_id}/health": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/agents/{agent_id}/leases": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/agents/{agent_id}/revoke": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/artifact-gates/versions": {
+    "has_body": true,
+    "properties": [
+      "artifact_id",
+      "artifact_kind",
+      "note",
+      "target_files",
+      "workspace_dir"
+    ],
+    "required": [
+      "artifact_id",
+      "artifact_kind",
+      "workspace_dir"
+    ]
+  },
+  "POST /api/artifact-gates/versions/{version_id}/checks": {
+    "has_body": true,
+    "properties": [
+      "check_name",
+      "detail",
+      "evidence",
+      "observed_digest",
+      "status"
+    ],
+    "required": [
+      "check_name",
+      "status"
+    ]
+  },
+  "POST /api/artifact-gates/versions/{version_id}/decision": {
+    "has_body": true,
+    "properties": [
+      "action",
+      "note"
+    ],
+    "required": [
+      "action"
+    ]
+  },
+  "POST /api/artifact-gates/versions/{version_id}/independent-test": {
+    "has_body": true,
+    "properties": [
+      "command",
+      "env",
+      "timeout_seconds"
+    ],
+    "required": [
+      "command"
+    ]
+  },
+  "POST /api/artifact-gates/versions/{version_id}/submit": {
+    "has_body": true,
+    "properties": [
+      "note"
+    ],
+    "required": []
+  },
+  "POST /api/assessments/sessions/{session_id}/answers": {
+    "has_body": true,
+    "properties": [
+      "answers"
+    ],
+    "required": []
+  },
+  "POST /api/assessments/sessions/{session_id}/submit": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/assessments/{assessment_id}/sessions": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/assets": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/assets/channels/{channel}/configure": {
+    "has_body": true,
+    "properties": [
+      "api_key",
+      "base_url",
+      "model"
+    ],
+    "required": [
+      "base_url"
+    ]
+  },
+  "POST /api/assets/generate/image": {
+    "has_body": true,
+    "properties": [
+      "model",
+      "prompt",
+      "size",
+      "task_id"
+    ],
+    "required": [
+      "prompt"
+    ]
+  },
+  "POST /api/assets/generate/music": {
+    "has_body": true,
+    "properties": [
+      "mood",
+      "name",
+      "seconds",
+      "seed"
+    ],
+    "required": [
+      "mood"
+    ]
+  },
+  "POST /api/assets/generate/speech": {
+    "has_body": true,
+    "properties": [
+      "model",
+      "name",
+      "text",
+      "voice"
+    ],
+    "required": [
+      "text"
+    ]
+  },
+  "POST /api/avatar/generate": {
+    "has_body": true,
+    "properties": [
+      "overrides",
+      "portrait"
+    ],
+    "required": []
+  },
+  "POST /api/avatar/preview": {
+    "has_body": true,
+    "properties": [
+      "overrides",
+      "portrait"
+    ],
+    "required": []
+  },
+  "POST /api/avatar/share-card": {
+    "has_body": true,
+    "properties": [
+      "badges",
+      "display_name",
+      "overrides"
+    ],
+    "required": []
+  },
+  "POST /api/bus/{room}/context": {
+    "has_body": true,
+    "properties": [
+      "entries"
+    ],
+    "required": []
+  },
+  "POST /api/bus/{room}/messages": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "kind",
+      "max_tokens",
+      "mention",
+      "refs"
+    ],
+    "required": [
+      "content"
+    ]
+  },
+  "POST /api/butler/dialogue": {
+    "has_body": true,
+    "properties": [
+      "context",
+      "personality",
+      "speaker"
+    ],
+    "required": [
+      "personality",
+      "speaker"
+    ]
+  },
+  "POST /api/cabin/life/action": {
+    "has_body": true,
+    "properties": [
+      "action",
+      "gift_id",
+      "giver",
+      "good_id",
+      "node_id",
+      "npc_id",
+      "price",
+      "qty",
+      "quest_id",
+      "recipe_id"
+    ],
+    "required": [
+      "action"
+    ]
+  },
+  "POST /api/cabin/life/save": {
+    "has_body": true,
+    "properties": [
+      "day",
+      "theme"
+    ],
+    "required": [
+      "theme"
+    ]
+  },
+  "POST /api/cabin/save/action": {
+    "has_body": true,
+    "properties": [
+      "action",
+      "person_name",
+      "personality",
+      "quest_id",
+      "quest_kind",
+      "spot_id",
+      "target",
+      "theme"
+    ],
+    "required": [
+      "action"
+    ]
+  },
+  "POST /api/canvas/benchmark/run": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/canvas/harness-cancel": {
+    "has_body": true,
+    "properties": [
+      "execution_id"
+    ],
+    "required": [
+      "execution_id"
+    ]
+  },
+  "POST /api/canvas/harness-run": {
+    "has_body": true,
+    "properties": [
+      "budget_limit_usd",
+      "deadline_seconds",
+      "ecc_skills",
+      "executor",
+      "goal",
+      "input_refs",
+      "task_id",
+      "workspace_dir"
+    ],
+    "required": [
+      "goal",
+      "task_id"
+    ]
+  },
+  "POST /api/canvas/instances": {
+    "has_body": true,
+    "properties": [
+      "orchestrator_id",
+      "project_name",
+      "template_id"
+    ],
+    "required": [
+      "project_name"
+    ]
+  },
+  "POST /api/canvas/instances/{id}/dispatch": {
+    "has_body": true,
+    "properties": [
+      "acceptance_criteria",
+      "auto_run",
+      "budget_slice",
+      "deadline",
+      "goal",
+      "input_ref",
+      "root_task_id",
+      "worker_id"
+    ],
+    "required": [
+      "goal",
+      "root_task_id",
+      "worker_id"
+    ]
+  },
+  "POST /api/canvas/instances/{id}/handoff": {
+    "has_body": true,
+    "properties": [
+      "artifact_refs",
+      "completed_items",
+      "evidence_refs",
+      "goal",
+      "next_steps",
+      "risks",
+      "source_task_id",
+      "source_worker_id",
+      "stage",
+      "target_worker_id",
+      "unresolved_issues"
+    ],
+    "required": [
+      "goal",
+      "source_task_id",
+      "source_worker_id",
+      "stage",
+      "target_worker_id"
+    ]
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/cancel": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/complete": {
+    "has_body": true,
+    "properties": [
+      "artifact_version",
+      "output",
+      "settled_budget",
+      "verification_id"
+    ],
+    "required": []
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/execute-verification": {
+    "has_body": true,
+    "properties": [
+      "command",
+      "target_files",
+      "timeout_seconds",
+      "workspace_dir"
+    ],
+    "required": [
+      "workspace_dir"
+    ]
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/resubmit": {
+    "has_body": true,
+    "properties": [
+      "artifacts",
+      "output"
+    ],
+    "required": []
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/rework": {
+    "has_body": true,
+    "properties": [
+      "criteria_unmet",
+      "feedback"
+    ],
+    "required": [
+      "feedback"
+    ]
+  },
+  "POST /api/canvas/instances/{id}/subtasks/{subtask_id}/verify": {
+    "has_body": true,
+    "properties": [
+      "artifact_hash",
+      "test_results"
+    ],
+    "required": []
+  },
+  "POST /api/charts/compute": {
+    "has_body": true,
+    "properties": [
+      "birth_date",
+      "birth_time",
+      "calendar",
+      "gender",
+      "house_system",
+      "latitude",
+      "location_name",
+      "longitude",
+      "system",
+      "timezone_str",
+      "unknown_time"
+    ],
+    "required": [
+      "birth_date"
+    ]
+  },
+  "POST /api/charts/fortune/daily": {
+    "has_body": true,
+    "properties": [
+      "birth_date",
+      "birth_time",
+      "target_date",
+      "timezone_str"
+    ],
+    "required": [
+      "birth_date"
+    ]
+  },
+  "POST /api/charts/import": {
+    "has_body": true,
+    "properties": [
+      "raw_json",
+      "raw_text",
+      "source_software",
+      "system"
+    ],
+    "required": []
+  },
+  "POST /api/charts/interpret": {
+    "has_body": true,
+    "properties": [
+      "authorized_domain",
+      "chart_id",
+      "include_personal_memory",
+      "include_web_search",
+      "perspective",
+      "user_notes"
+    ],
+    "required": [
+      "chart_id"
+    ]
+  },
+  "POST /api/charts/synastry": {
+    "has_body": true,
+    "properties": [
+      "chart_a",
+      "chart_b",
+      "relationship_type"
+    ],
+    "required": [
+      "chart_a",
+      "chart_b"
+    ]
+  },
+  "POST /api/charts/tarot/draw": {
+    "has_body": true,
+    "properties": [
+      "question",
+      "seed",
+      "spread"
+    ],
+    "required": []
+  },
+  "POST /api/clawtask/docs/parse": {
+    "has_body": true,
+    "properties": [
+      "text",
+      "verify"
+    ],
+    "required": [
+      "text"
+    ]
+  },
+  "POST /api/clawtask/docs/serialize": {
+    "has_body": true,
+    "properties": [
+      "doc",
+      "portable"
+    ],
+    "required": [
+      "doc"
+    ]
+  },
+  "POST /api/clawtask/docs/validate": {
+    "has_body": true,
+    "properties": [
+      "doc"
+    ],
+    "required": [
+      "doc"
+    ]
+  },
+  "POST /api/clawtask/hibernations": {
+    "has_body": true,
+    "properties": [
+      "artifacts",
+      "budget_percent",
+      "doc",
+      "reason",
+      "task_id",
+      "template_id",
+      "tier"
+    ],
+    "required": [
+      "reason"
+    ]
+  },
+  "POST /api/clawtask/hibernations/{hibernation_id}/wake": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/clawtask/market/publish": {
+    "has_body": true,
+    "properties": [
+      "doc",
+      "version"
+    ],
+    "required": [
+      "doc"
+    ]
+  },
+  "POST /api/clawtask/market/{item_id}/import": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/clawtask/tasks/{task_id}/export": {
+    "has_body": true,
+    "properties": [
+      "next_action",
+      "target_models",
+      "template_id",
+      "tier"
+    ],
+    "required": []
+  },
+  "POST /api/collaboration/comments": {
+    "has_body": true,
+    "properties": [
+      "body",
+      "record_id",
+      "record_kind"
+    ],
+    "required": [
+      "body",
+      "record_id",
+      "record_kind"
+    ]
+  },
+  "POST /api/collaboration/notifications/{notification_id}/read": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/collaboration/replies": {
+    "has_body": true,
+    "properties": [
+      "body",
+      "parent_comment_id",
+      "record_id",
+      "record_kind"
+    ],
+    "required": [
+      "body",
+      "parent_comment_id",
+      "record_id",
+      "record_kind"
+    ]
+  },
+  "POST /api/collaboration/roles": {
+    "has_body": true,
+    "properties": [
+      "expires_at",
+      "expires_in_days",
+      "record_id",
+      "record_kind",
+      "role",
+      "user_id"
+    ],
+    "required": [
+      "record_id",
+      "record_kind",
+      "user_id"
+    ]
+  },
+  "POST /api/collaboration/roles/revoke": {
+    "has_body": true,
+    "properties": [
+      "record_id",
+      "record_kind",
+      "user_id"
+    ],
+    "required": [
+      "record_id",
+      "record_kind",
+      "user_id"
+    ]
+  },
+  "POST /api/conversations": {
+    "has_body": true,
+    "properties": [
+      "domain",
+      "mode",
+      "title"
+    ],
+    "required": []
+  },
+  "POST /api/conversations/{conversation_id}/messages": {
+    "has_body": true,
+    "properties": [
+      "client_message_id",
+      "content",
+      "mode",
+      "role",
+      "source"
+    ],
+    "required": [
+      "client_message_id",
+      "content"
+    ]
+  },
+  "POST /api/conversations/{conversation_id}/reply": {
+    "has_body": true,
+    "properties": [
+      "message"
+    ],
+    "required": []
+  },
+  "POST /api/creative/execute": {
+    "has_body": true,
+    "properties": [
+      "approved",
+      "idempotency_key",
+      "params",
+      "task_id",
+      "tool_id"
+    ],
+    "required": [
+      "idempotency_key",
+      "task_id",
+      "tool_id"
+    ]
+  },
+  "POST /api/dossier/enterprise/{target}/adapt": {
+    "has_body": true,
+    "properties": [
+      "external",
+      "overrides"
+    ],
+    "required": [
+      "external"
+    ]
+  },
+  "POST /api/dossier/enterprise/{target}/mappings": {
+    "has_body": true,
+    "properties": [
+      "mappings"
+    ],
+    "required": [
+      "mappings"
+    ]
+  },
+  "POST /api/dossier/tasks/{task_id}/distill": {
+    "has_body": true,
+    "properties": [
+      "name",
+      "tags"
+    ],
+    "required": []
+  },
+  "POST /api/dsl-canvas/autosave/save": {
+    "has_body": true,
+    "properties": [
+      "canvas_id",
+      "checksum",
+      "content",
+      "version"
+    ],
+    "required": [
+      "canvas_id",
+      "version"
+    ]
+  },
+  "POST /api/dsl-canvas/export-code": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-canvas/import-code": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-canvas/preview": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-canvas/runs": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-canvas/validate": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-canvas/validate-ir": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl-lifecycle/flows": {
+    "has_body": true,
+    "properties": [
+      "doc",
+      "flow_type",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/dsl-lifecycle/flows/{flow_id}/evaluate-batch": {
+    "has_body": true,
+    "properties": [
+      "csv",
+      "runs_per_case",
+      "with_knowledge",
+      "with_llm",
+      "with_tools"
+    ],
+    "required": [
+      "csv"
+    ]
+  },
+  "POST /api/dsl-lifecycle/flows/{flow_id}/publish": {
+    "has_body": true,
+    "properties": [
+      "note"
+    ],
+    "required": []
+  },
+  "POST /api/dsl-lifecycle/flows/{flow_id}/rollback": {
+    "has_body": true,
+    "properties": [
+      "version"
+    ],
+    "required": [
+      "version"
+    ]
+  },
+  "POST /api/dsl-lifecycle/validate-assembly": {
+    "has_body": true,
+    "properties": [
+      "doc",
+      "flow_type"
+    ],
+    "required": [
+      "doc"
+    ]
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/breakpoint/{step_id}": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/continue": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/reset": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/step-into": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/step-next": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/debug/runs/{run_id}/node/{node_id}/step-over": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/runs": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/runs/{run_id}/node/{node_id}/run": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/dsl/runs/{run_id}/step": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/export": {
+    "has_body": true,
+    "properties": [
+      "confirm"
+    ],
+    "required": []
+  },
+  "POST /api/git-repo/workspaces": {
+    "has_body": true,
+    "properties": [
+      "default_branch",
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/git-repo/workspaces/{workspace}/commit": {
+    "has_body": true,
+    "properties": [
+      "message",
+      "paths"
+    ],
+    "required": [
+      "message",
+      "paths"
+    ]
+  },
+  "POST /api/git-repo/workspaces/{workspace}/push": {
+    "has_body": true,
+    "properties": [
+      "branch",
+      "remote",
+      "set_upstream"
+    ],
+    "required": [
+      "branch"
+    ]
+  },
+  "POST /api/git-repo/workspaces/{workspace}/remote": {
+    "has_body": true,
+    "properties": [
+      "remote",
+      "url"
+    ],
+    "required": [
+      "remote",
+      "url"
+    ]
+  },
+  "POST /api/git-repo/workspaces/{workspace}/stage": {
+    "has_body": true,
+    "properties": [
+      "paths"
+    ],
+    "required": [
+      "paths"
+    ]
+  },
+  "POST /api/hitl/interrupts": {
+    "has_body": true,
+    "properties": [
+      "checkpoint",
+      "context",
+      "execution_id",
+      "options",
+      "reason",
+      "timeout_seconds"
+    ],
+    "required": [
+      "checkpoint",
+      "execution_id",
+      "options"
+    ]
+  },
+  "POST /api/hitl/interrupts/{interrupt_id}/decision": {
+    "has_body": true,
+    "properties": [
+      "decision",
+      "expected_version",
+      "resolution"
+    ],
+    "required": [
+      "decision"
+    ]
+  },
+  "POST /api/hitl/interrupts/{interrupt_id}/vote": {
+    "has_body": true,
+    "properties": [
+      "candidates",
+      "question",
+      "tie_options"
+    ],
+    "required": [
+      "candidates"
+    ]
+  },
+  "POST /api/hitl/votes/{vote_id}/ballots": {
+    "has_body": true,
+    "properties": [
+      "option",
+      "reason",
+      "voter",
+      "weight"
+    ],
+    "required": [
+      "option",
+      "voter"
+    ]
+  },
+  "POST /api/hitl/votes/{vote_id}/cancel": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/hitl/votes/{vote_id}/close": {
+    "has_body": true,
+    "properties": [
+      "option",
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/hub/connections": {
+    "has_body": true,
+    "properties": [
+      "capabilities",
+      "config",
+      "credential_fields",
+      "credentials",
+      "description",
+      "icon",
+      "kind",
+      "manifest",
+      "name",
+      "params",
+      "preference",
+      "preset_id",
+      "secret_fields"
+    ],
+    "required": [
+      "kind",
+      "name"
+    ]
+  },
+  "POST /api/hub/connections/health-check-all": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/hub/connections/{conn_id}/capabilities": {
+    "has_body": true,
+    "properties": [
+      "aliases",
+      "description",
+      "name",
+      "tags"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/hub/connections/{conn_id}/health-check": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/hub/connections/{conn_id}/invoke": {
+    "has_body": true,
+    "properties": [
+      "action",
+      "params",
+      "timeout_seconds"
+    ],
+    "required": []
+  },
+  "POST /api/hub/manifest/import": {
+    "has_body": true,
+    "properties": [
+      "credentials",
+      "filename",
+      "name",
+      "text"
+    ],
+    "required": [
+      "text"
+    ]
+  },
+  "POST /api/hub/orchestrate": {
+    "has_body": true,
+    "properties": [
+      "aspects",
+      "kind",
+      "max_workers",
+      "mode",
+      "steps",
+      "summarize",
+      "summary_instruction",
+      "task",
+      "timeout_seconds"
+    ],
+    "required": [
+      "task"
+    ]
+  },
+  "POST /api/hub/orchestrate/pipeline": {
+    "has_body": true,
+    "properties": [
+      "stages",
+      "summarize",
+      "summary_instruction",
+      "timeout_seconds"
+    ],
+    "required": [
+      "stages"
+    ]
+  },
+  "POST /api/hub/route": {
+    "has_body": true,
+    "properties": [
+      "hint",
+      "include_unhealthy",
+      "kind",
+      "top_k"
+    ],
+    "required": [
+      "hint"
+    ]
+  },
+  "POST /api/inference/complete": {
+    "has_body": true,
+    "properties": [
+      "max_tokens",
+      "model",
+      "prompt",
+      "task_id"
+    ],
+    "required": [
+      "prompt"
+    ]
+  },
+  "POST /api/internal/maintenance/readonly": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/kanban/tasks/{task_id}/dependencies": {
+    "has_body": true,
+    "properties": [
+      "depends_on_task_id"
+    ],
+    "required": [
+      "depends_on_task_id"
+    ]
+  },
+  "POST /api/kanban/tasks/{task_id}/pause": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/kanban/tasks/{task_id}/resume": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/kanban/tasks/{task_id}/start": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/kanban/tasks/{task_id}/terminate": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/kb/documents": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/kb/search": {
+    "has_body": true,
+    "properties": [
+      "document_ids",
+      "query",
+      "top_k"
+    ],
+    "required": [
+      "query"
+    ]
+  },
+  "POST /api/kb/sources/{source_id}/configure": {
+    "has_body": true,
+    "properties": [
+      "api_key",
+      "app_id",
+      "app_key",
+      "app_secret",
+      "base_url",
+      "redirect_uri",
+      "secret_key"
+    ],
+    "required": []
+  },
+  "POST /api/kb/sources/{source_id}/probe": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/kb/sources/{source_id}/sync": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/knowledge/graph/build": {
+    "has_body": true,
+    "properties": [
+      "doc_ids",
+      "extractor",
+      "rebuild"
+    ],
+    "required": []
+  },
+  "POST /api/knowledge/ima/search": {
+    "has_body": true,
+    "properties": [
+      "kb_id",
+      "page",
+      "page_size",
+      "query",
+      "tag",
+      "type"
+    ],
+    "required": [
+      "query"
+    ]
+  },
+  "POST /api/knowledge/rag/compare": {
+    "has_body": true,
+    "properties": [
+      "document_ids",
+      "preset_ids",
+      "query",
+      "top_k"
+    ],
+    "required": [
+      "preset_ids",
+      "query"
+    ]
+  },
+  "POST /api/knowledge/rag/comparisons": {
+    "has_body": true,
+    "properties": [
+      "payload",
+      "preset_ids",
+      "query"
+    ],
+    "required": [
+      "payload",
+      "query"
+    ]
+  },
+  "POST /api/knowledge/rag/debug": {
+    "has_body": true,
+    "properties": [
+      "document_ids",
+      "params",
+      "preset_id",
+      "query",
+      "top_k"
+    ],
+    "required": [
+      "query"
+    ]
+  },
+  "POST /api/knowledge/rag/presets": {
+    "has_body": true,
+    "properties": [
+      "description",
+      "name",
+      "params",
+      "preset_id"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/lsp/definition": {
+    "has_body": true,
+    "properties": [
+      "character",
+      "include_declaration",
+      "line",
+      "path"
+    ],
+    "required": [
+      "character",
+      "line",
+      "path"
+    ]
+  },
+  "POST /api/lsp/references": {
+    "has_body": true,
+    "properties": [
+      "character",
+      "include_declaration",
+      "line",
+      "path"
+    ],
+    "required": [
+      "character",
+      "line",
+      "path"
+    ]
+  },
+  "POST /api/media/jobs": {
+    "has_body": true,
+    "properties": [
+      "estimated_cost_usd",
+      "idempotency_key",
+      "kind",
+      "task_id"
+    ],
+    "required": [
+      "idempotency_key",
+      "task_id"
+    ]
+  },
+  "POST /api/media/jobs/{job_id}/cancel": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/memory/{id}/deny": {
+    "has_body": true,
+    "properties": [
+      "message_id",
+      "reason"
+    ],
+    "required": [
+      "reason"
+    ]
+  },
+  "POST /api/models/credentials": {
+    "has_body": true,
+    "properties": [
+      "api_key",
+      "base_url",
+      "model",
+      "provider"
+    ],
+    "required": []
+  },
+  "POST /api/models/health-check": {
+    "has_body": true,
+    "properties": [
+      "providers",
+      "timeout_seconds"
+    ],
+    "required": []
+  },
+  "POST /api/plugins/cursor/analyze": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/cursor/assemble": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/cursor/search": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/marketplace/{skill_id}/install": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/marketplace/{skill_id}/publish": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/marketplace/{skill_id}/rate": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/templates/impact-preview": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/templates/import": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/templates/security-review": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/plugins/templates/{template_id}/rate": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/profiles/evidence/{id}/feedback": {
+    "has_body": true,
+    "properties": [
+      "action",
+      "feedback_text"
+    ],
+    "required": [
+      "action"
+    ]
+  },
+  "POST /api/profiles/imports": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "filename",
+      "privacy_domain",
+      "subject_id"
+    ],
+    "required": [
+      "content"
+    ]
+  },
+  "POST /api/profiles/imports/{id}/confirm-speakers": {
+    "has_body": true,
+    "properties": [
+      "mappings"
+    ],
+    "required": [
+      "mappings"
+    ]
+  },
+  "POST /api/profiles/subjects": {
+    "has_body": true,
+    "properties": [
+      "confirmed",
+      "description",
+      "kind",
+      "label"
+    ],
+    "required": [
+      "label"
+    ]
+  },
+  "POST /api/profiles/{subject_id}/runs": {
+    "has_body": true,
+    "properties": [
+      "rule_version"
+    ],
+    "required": []
+  },
+  "POST /api/prompts": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "description",
+      "name",
+      "owner",
+      "scope",
+      "variables_schema"
+    ],
+    "required": [
+      "content",
+      "name"
+    ]
+  },
+  "POST /api/prompts/{name}/apply": {
+    "has_body": true,
+    "properties": [
+      "digest",
+      "proposal_id"
+    ],
+    "required": [
+      "digest",
+      "proposal_id"
+    ]
+  },
+  "POST /api/prompts/{name}/disable": {
+    "has_body": true,
+    "properties": [
+      "expires_in_minutes",
+      "reason",
+      "rollback"
+    ],
+    "required": [
+      "reason"
+    ]
+  },
+  "POST /api/prompts/{name}/stage": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "expires_in_minutes",
+      "reason",
+      "rollback",
+      "variables_schema"
+    ],
+    "required": [
+      "content",
+      "reason"
+    ]
+  },
+  "POST /api/proposals": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "expires_in_minutes",
+      "operation",
+      "payload",
+      "reason",
+      "rollback",
+      "target_id"
+    ],
+    "required": [
+      "operation",
+      "reason",
+      "rollback"
+    ]
+  },
+  "POST /api/proposals/{proposal_id}/decision": {
+    "has_body": true,
+    "properties": [
+      "decision",
+      "digest"
+    ],
+    "required": [
+      "decision",
+      "digest"
+    ]
+  },
+  "POST /api/quality/base-contract/exemptions": {
+    "has_body": true,
+    "properties": [
+      "path",
+      "reason",
+      "scope"
+    ],
+    "required": [
+      "path",
+      "reason"
+    ]
+  },
+  "POST /api/quality/base-contract/exemptions/approve": {
+    "has_body": true,
+    "properties": [
+      "note",
+      "path"
+    ],
+    "required": [
+      "path"
+    ]
+  },
+  "POST /api/quality/base-contract/exemptions/revoke": {
+    "has_body": true,
+    "properties": [
+      "note",
+      "path"
+    ],
+    "required": [
+      "path"
+    ]
+  },
+  "POST /api/quality/logs/export": {
+    "has_body": true,
+    "properties": [
+      "level",
+      "preview",
+      "project",
+      "since_seq",
+      "surface",
+      "until_seq"
+    ],
+    "required": []
+  },
+  "POST /api/quality/performance-budget/evaluate": {
+    "has_body": true,
+    "properties": [
+      "samples",
+      "tier"
+    ],
+    "required": []
+  },
+  "POST /api/recovery/interruptions/{event_id}/resume": {
+    "has_body": true,
+    "properties": [
+      "confirm_provider_change"
+    ],
+    "required": []
+  },
+  "POST /api/release/update/apply": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/release/update/check": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/release/update/rollback": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/release/update/stage": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/review/route": {
+    "has_body": true,
+    "properties": [
+      "dom_path",
+      "dom_reachable",
+      "fallback_reason",
+      "mode",
+      "region",
+      "selector",
+      "tag",
+      "viewport"
+    ],
+    "required": []
+  },
+  "POST /api/review/route/batch": {
+    "has_body": true,
+    "properties": [
+      "dom_path",
+      "dom_reachable",
+      "fallback_reason",
+      "mode",
+      "region",
+      "selector",
+      "tag",
+      "viewport"
+    ],
+    "required": []
+  },
+  "POST /api/review/sessions": {
+    "has_body": true,
+    "properties": [
+      "page",
+      "route",
+      "title"
+    ],
+    "required": []
+  },
+  "POST /api/review/sessions/{session_id}/notes": {
+    "has_body": true,
+    "properties": [
+      "audio_ref",
+      "audio_transcript",
+      "dom_path",
+      "element_class",
+      "element_id",
+      "mode",
+      "note",
+      "page",
+      "region",
+      "selector",
+      "strokes",
+      "tag",
+      "text"
+    ],
+    "required": []
+  },
+  "POST /api/review/sessions/{session_id}/refresh": {
+    "has_body": true,
+    "properties": [
+      "note",
+      "state"
+    ],
+    "required": [
+      "state"
+    ]
+  },
+  "POST /api/runtime/run": {
+    "has_body": true,
+    "properties": [
+      "domain",
+      "goal",
+      "max_steps",
+      "route",
+      "task_id"
+    ],
+    "required": [
+      "goal"
+    ]
+  },
+  "POST /api/session-state/forks": {
+    "has_body": true,
+    "properties": [
+      "label",
+      "overrides",
+      "session_key",
+      "snapshot_id",
+      "source_checkpoint_id",
+      "source_thread_id"
+    ],
+    "required": [
+      "source_thread_id"
+    ]
+  },
+  "POST /api/session-state/forks/{fork_id}/compare": {
+    "has_body": true,
+    "properties": [
+      "left",
+      "right"
+    ],
+    "required": []
+  },
+  "POST /api/session-state/forks/{fork_id}/discard": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/session-state/snapshot": {
+    "has_body": true,
+    "properties": [
+      "conversation_id",
+      "keep_recent_turns",
+      "max_window_tokens",
+      "session_key"
+    ],
+    "required": [
+      "session_key"
+    ]
+  },
+  "POST /api/skills/sll/distill": {
+    "has_body": true,
+    "properties": [
+      "domain",
+      "task_goal",
+      "task_name",
+      "workflow_steps"
+    ],
+    "required": [
+      "task_goal",
+      "task_name"
+    ]
+  },
+  "POST /api/skills/stage": {
+    "has_body": true,
+    "properties": [
+      "domain",
+      "license",
+      "name",
+      "package",
+      "semantic_version",
+      "source"
+    ],
+    "required": [
+      "domain",
+      "license",
+      "name",
+      "semantic_version",
+      "source"
+    ]
+  },
+  "POST /api/skills/{skill_id}/disable": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/skills/{skill_id}/evaluate": {
+    "has_body": true,
+    "properties": [
+      "dynamic_passed",
+      "functional_passed",
+      "report",
+      "static_passed"
+    ],
+    "required": [
+      "functional_passed",
+      "static_passed"
+    ]
+  },
+  "POST /api/skills/{skill_id}/invoke": {
+    "has_body": true,
+    "properties": [
+      "tool_call"
+    ],
+    "required": []
+  },
+  "POST /api/skills/{skill_id}/promote": {
+    "has_body": true,
+    "properties": [
+      "evaluation_id"
+    ],
+    "required": [
+      "evaluation_id"
+    ]
+  },
+  "POST /api/skills/{skill_id}/sandbox-evaluate": {
+    "has_body": true,
+    "properties": [
+      "command",
+      "timeout_s",
+      "workspace"
+    ],
+    "required": []
+  },
+  "POST /api/skills/{skill_id}/trusted-evaluate": {
+    "has_body": true,
+    "properties": [
+      "package"
+    ],
+    "required": []
+  },
+  "POST /api/stash": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "content_type",
+      "metadata",
+      "title"
+    ],
+    "required": [
+      "content"
+    ]
+  },
+  "POST /api/streaming/chat": {
+    "has_body": true,
+    "properties": [
+      "max_tokens",
+      "message_id",
+      "model",
+      "prompt",
+      "task_id",
+      "template_name",
+      "template_version",
+      "tools",
+      "variables"
+    ],
+    "required": [
+      "prompt"
+    ]
+  },
+  "POST /api/sync/config": {
+    "has_body": true,
+    "properties": [
+      "device_id",
+      "enabled_categories",
+      "mode",
+      "paused"
+    ],
+    "required": []
+  },
+  "POST /api/sync/conflicts/{conflict_id}/resolve": {
+    "has_body": true,
+    "properties": [
+      "resolution"
+    ],
+    "required": [
+      "resolution"
+    ]
+  },
+  "POST /api/sync/pull": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/sync/push": {
+    "has_body": true,
+    "properties": [
+      "client_device_id",
+      "items"
+    ],
+    "required": [
+      "items"
+    ]
+  },
+  "POST /api/tasks": {
+    "has_body": true,
+    "properties": [
+      "deadline",
+      "domain",
+      "goal",
+      "idempotency_key",
+      "mode",
+      "strategy"
+    ],
+    "required": [
+      "goal",
+      "idempotency_key"
+    ]
+  },
+  "POST /api/tasks/{task_id}/cancel": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/team-approvals/requests": {
+    "has_body": true,
+    "properties": [
+      "checkpoint",
+      "detail",
+      "execution_id",
+      "required_role",
+      "supersedes_id",
+      "team_id",
+      "timeout_seconds",
+      "title"
+    ],
+    "required": [
+      "checkpoint",
+      "execution_id",
+      "team_id"
+    ]
+  },
+  "POST /api/team-approvals/requests/{request_id}/decision": {
+    "has_body": true,
+    "properties": [
+      "decision",
+      "note",
+      "resolution"
+    ],
+    "required": [
+      "decision"
+    ]
+  },
+  "POST /api/team-approvals/teams": {
+    "has_body": true,
+    "properties": [
+      "name"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/team-approvals/teams/{team_id}/members": {
+    "has_body": true,
+    "properties": [
+      "role",
+      "user_id"
+    ],
+    "required": [
+      "user_id"
+    ]
+  },
+  "POST /api/team-approvals/teams/{team_id}/members/revoke": {
+    "has_body": true,
+    "properties": [
+      "user_id"
+    ],
+    "required": [
+      "user_id"
+    ]
+  },
+  "POST /api/teams": {
+    "has_body": true,
+    "properties": [
+      "budget_ref",
+      "canvas_instance_id",
+      "default_binding",
+      "members",
+      "mode",
+      "name",
+      "permission_ref",
+      "reason",
+      "role_bindings",
+      "root_task_id",
+      "template_id"
+    ],
+    "required": [
+      "name"
+    ]
+  },
+  "POST /api/teams/{team_id}/budget/reserve": {
+    "has_body": true,
+    "properties": [
+      "amount_usd",
+      "role"
+    ],
+    "required": [
+      "amount_usd",
+      "role"
+    ]
+  },
+  "POST /api/teams/{team_id}/control": {
+    "has_body": true,
+    "properties": [
+      "agent_instance_id",
+      "expected_version",
+      "idempotency_key",
+      "operation",
+      "reason",
+      "role",
+      "scope"
+    ],
+    "required": [
+      "operation"
+    ]
+  },
+  "POST /api/teams/{team_id}/goal": {
+    "has_body": true,
+    "properties": [
+      "goal",
+      "reason"
+    ],
+    "required": [
+      "goal"
+    ]
+  },
+  "POST /api/teams/{team_id}/join": {
+    "has_body": true,
+    "properties": [
+      "agent_host",
+      "depends_on",
+      "expected_version",
+      "role",
+      "service_id",
+      "title"
+    ],
+    "required": [
+      "expected_version",
+      "role",
+      "service_id"
+    ]
+  },
+  "POST /api/teams/{team_id}/members/execute": {
+    "has_body": true,
+    "properties": [
+      "max_tokens",
+      "prompt",
+      "role",
+      "run_batch"
+    ],
+    "required": [
+      "prompt",
+      "role"
+    ]
+  },
+  "POST /api/teams/{team_id}/members/result": {
+    "has_body": true,
+    "properties": [
+      "evidence_refs",
+      "output",
+      "role",
+      "run_batch",
+      "status"
+    ],
+    "required": [
+      "role",
+      "run_batch"
+    ]
+  },
+  "POST /api/teams/{team_id}/start": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "root_task_id"
+    ],
+    "required": [
+      "expected_version"
+    ]
+  },
+  "POST /api/templates/check-source": {
+    "has_body": true,
+    "properties": [
+      "source_ref"
+    ],
+    "required": [
+      "source_ref"
+    ]
+  },
+  "POST /api/templates/import-code": {
+    "has_body": true,
+    "properties": [
+      "base_template_id",
+      "code",
+      "name"
+    ],
+    "required": [
+      "code"
+    ]
+  },
+  "POST /api/templates/manual-quality": {
+    "has_body": true,
+    "properties": [
+      "markdown"
+    ],
+    "required": [
+      "markdown"
+    ]
+  },
+  "POST /api/templates/{template_id}/controller-check": {
+    "has_body": true,
+    "properties": [
+      "draft_prompt"
+    ],
+    "required": [
+      "draft_prompt"
+    ]
+  },
+  "POST /api/templates/{template_id}/expand-to-code": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/templates/{template_id}/instantiate": {
+    "has_body": true,
+    "properties": [
+      "name",
+      "overrides",
+      "tier"
+    ],
+    "required": []
+  },
+  "POST /api/templates/{template_id}/restore-factory": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/tools/mcp/servers": {
+    "has_body": true,
+    "properties": [
+      "headers",
+      "key",
+      "reconnect",
+      "trust_level",
+      "url"
+    ],
+    "required": [
+      "key",
+      "url"
+    ]
+  },
+  "POST /api/tools/register": {
+    "has_body": true,
+    "properties": [
+      "description",
+      "entry",
+      "name",
+      "parameters"
+    ],
+    "required": [
+      "description",
+      "entry",
+      "name"
+    ]
+  },
+  "POST /api/tools/{tool_name}/invoke": {
+    "has_body": true,
+    "properties": [
+      "arguments"
+    ],
+    "required": []
+  },
+  "POST /api/workbench/orchestrator/dispatch-check": {
+    "has_body": true,
+    "properties": [
+      "fencing_token",
+      "orchestrator_id",
+      "root_task_id"
+    ],
+    "required": [
+      "orchestrator_id",
+      "root_task_id"
+    ]
+  },
+  "POST /api/workbench/orchestrator/lease": {
+    "has_body": true,
+    "properties": [
+      "capabilities",
+      "connector_stage",
+      "orchestrator_id",
+      "root_task_id"
+    ],
+    "required": [
+      "orchestrator_id",
+      "root_task_id"
+    ]
+  },
+  "POST /api/workbench/orchestrator/takeover": {
+    "has_body": true,
+    "properties": [
+      "new_capabilities",
+      "new_connector_stage",
+      "new_orchestrator_id",
+      "root_task_id"
+    ],
+    "required": [
+      "new_orchestrator_id",
+      "root_task_id"
+    ]
+  },
+  "POST /api/workbench/orchestrator/takeover/resume": {
+    "has_body": true,
+    "properties": [
+      "capabilities",
+      "connector_stage",
+      "orchestrator_id",
+      "root_task_id"
+    ],
+    "required": [
+      "orchestrator_id",
+      "root_task_id"
+    ]
+  },
+  "POST /api/workbench/preview/{session_id}/stop": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/workbench/terminals/{session_id}/enforce-timeout": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/workbench/terminals/{session_id}/resize": {
+    "has_body": true,
+    "properties": [
+      "cols",
+      "rows"
+    ],
+    "required": [
+      "cols",
+      "rows"
+    ]
+  },
+  "POST /api/workbench/terminals/{session_id}/stop": {
+    "has_body": true,
+    "properties": [
+      "reason"
+    ],
+    "required": []
+  },
+  "POST /api/workbench/terminals/{session_id}/write": {
+    "has_body": true,
+    "properties": [
+      "data"
+    ],
+    "required": [
+      "data"
+    ]
+  },
+  "POST /api/workbench/workspaces": {
+    "has_body": true,
+    "properties": [
+      "authorized_root",
+      "branch",
+      "data_domain",
+      "mode",
+      "project_name",
+      "task_refs"
+    ],
+    "required": [
+      "authorized_root",
+      "project_name"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/delete": {
+    "has_body": true,
+    "properties": [
+      "expected_revision"
+    ],
+    "required": []
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/file": {
+    "has_body": true,
+    "properties": [
+      "content",
+      "encoding",
+      "expected_revision",
+      "source_task_id"
+    ],
+    "required": [
+      "content"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/git/commit": {
+    "has_body": true,
+    "properties": [
+      "message",
+      "paths"
+    ],
+    "required": [
+      "message",
+      "paths"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/git/diff": {
+    "has_body": true,
+    "properties": [
+      "paths"
+    ],
+    "required": [
+      "paths"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/git/revert": {
+    "has_body": true,
+    "properties": [
+      "paths"
+    ],
+    "required": [
+      "paths"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/git/revert-preview": {
+    "has_body": true,
+    "properties": [
+      "paths"
+    ],
+    "required": [
+      "paths"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/git/stage": {
+    "has_body": true,
+    "properties": [
+      "paths"
+    ],
+    "required": [
+      "paths"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/preview": {
+    "has_body": true,
+    "properties": [
+      "command",
+      "entry_path",
+      "kind",
+      "lease_seconds",
+      "rel_cwd",
+      "target_port"
+    ],
+    "required": [
+      "command"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/preview-sources": {
+    "has_body": true,
+    "properties": [
+      "kind",
+      "path"
+    ],
+    "required": [
+      "kind",
+      "path"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/rename": {
+    "has_body": true,
+    "properties": [
+      "expected_revision",
+      "new_path"
+    ],
+    "required": [
+      "new_path"
+    ]
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/terminals": {
+    "has_body": true,
+    "properties": [
+      "cols",
+      "rel_cwd",
+      "rows",
+      "shell",
+      "timeout_seconds"
+    ],
+    "required": []
+  },
+  "POST /api/workbench/workspaces/{workspace_id}/terminals/reap": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /api/workflow/export": {
+    "has_body": true,
+    "properties": [
+      "dsl",
+      "dsl_text",
+      "filename",
+      "prompt"
+    ],
+    "required": []
+  },
+  "POST /api/workflow/generate": {
+    "has_body": true,
+    "properties": [
+      "prompt"
+    ],
+    "required": [
+      "prompt"
+    ]
+  },
+  "POST /api/workflow/graph/from-dsl": {
+    "has_body": true,
+    "properties": [
+      "dsl",
+      "dsl_text",
+      "layout"
+    ],
+    "required": []
+  },
+  "POST /api/workflow/graph/to-dsl": {
+    "has_body": true,
+    "properties": [
+      "edges",
+      "nodes"
+    ],
+    "required": []
+  },
+  "POST /auth/guest": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /auth/guest/upgrade": {
+    "has_body": true,
+    "properties": [
+      "consent_accepted",
+      "display_name",
+      "email",
+      "password"
+    ],
+    "required": [
+      "email",
+      "password"
+    ]
+  },
+  "POST /auth/local/dev-token": {
+    "has_body": true,
+    "properties": [
+      "token"
+    ],
+    "required": [
+      "token"
+    ]
+  },
+  "POST /auth/login": {
+    "has_body": true,
+    "properties": [
+      "consent_accepted",
+      "display_name",
+      "email",
+      "password"
+    ],
+    "required": [
+      "email",
+      "password"
+    ]
+  },
+  "POST /auth/logout": {
+    "has_body": false,
+    "properties": [],
+    "required": []
+  },
+  "POST /auth/register": {
+    "has_body": true,
+    "properties": [
+      "consent_accepted",
+      "display_name",
+      "email",
+      "password"
+    ],
+    "required": [
+      "email",
+      "password"
+    ]
+  },
+  "PUT /api/assets/{asset_id}/mount": {
+    "has_body": true,
+    "properties": [
+      "role"
+    ],
+    "required": []
+  },
+  "PUT /api/automation/permissions": {
+    "has_body": true,
+    "properties": [
+      "mode",
+      "ttl_seconds"
+    ],
+    "required": [
+      "mode"
+    ]
+  },
+  "PUT /api/avatar/confirm": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "is_house_avatar",
+      "likeness_note",
+      "likeness_score"
+    ],
+    "required": [
+      "expected_version"
+    ]
+  },
+  "PUT /api/cabin/exterior/{house_id}": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "removed_ids"
+    ],
+    "required": [
+      "expected_version"
+    ]
+  },
+  "PUT /api/cabin/interiors/{house_id}": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "layout"
+    ],
+    "required": [
+      "expected_version",
+      "layout"
+    ]
+  },
+  "PUT /api/cabin/life/save": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "settings"
+    ],
+    "required": []
+  },
+  "PUT /api/cabin/save": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "settings"
+    ],
+    "required": [
+      "expected_version"
+    ]
+  },
+  "PUT /api/dsl-lifecycle/flows/{flow_id}/draft": {
+    "has_body": true,
+    "properties": [
+      "doc",
+      "expected_version",
+      "flow_type"
+    ],
+    "required": [
+      "doc"
+    ]
+  },
+  "PUT /api/kanban/tasks/{task_id}/progress": {
+    "has_body": true,
+    "properties": [
+      "critical",
+      "progress_percent",
+      "weight"
+    ],
+    "required": []
+  },
+  "PUT /api/kanban/tasks/{task_id}/schedule": {
+    "has_body": true,
+    "properties": [
+      "planned_end",
+      "planned_start"
+    ],
+    "required": []
+  },
+  "PUT /api/prompts/{name}": {
+    "has_body": true,
+    "properties": [
+      "description",
+      "scope",
+      "version"
+    ],
+    "required": []
+  },
+  "PUT /api/prompts/{name}/activate": {
+    "has_body": true,
+    "properties": [
+      "expires_in_minutes",
+      "reason",
+      "rollback",
+      "version"
+    ],
+    "required": [
+      "reason",
+      "version"
+    ]
+  },
+  "PUT /api/teams/{team_id}/members/{role}/binding": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "model_id",
+      "params",
+      "provider_id",
+      "reason"
+    ],
+    "required": []
+  },
+  "PUT /api/teams/{team_id}/roles/{role}/binding": {
+    "has_body": true,
+    "properties": [
+      "expected_version",
+      "model_id",
+      "provider_id",
+      "reason"
+    ],
+    "required": []
+  }
+}

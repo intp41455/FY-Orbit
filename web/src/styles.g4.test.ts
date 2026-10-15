@@ -106,7 +106,7 @@ describe('G4-6 glow overflow guard', () => {
 describe('G4-7 crisp pixel edges', () => {
   it('the LAST .cabin-canvas rule resolves to pixelated only', () => {
     const blocks = [...css.matchAll(/\.cabin-canvas\s*\{([\s\S]*?)\}/g)];
-    const last = blocks[blocks.length - 1][1];
+    const last = blocks[blocks.length - 1]![1];
     expect(last).toMatch(/image-rendering:\s*pixelated/);
     expect(last).not.toContain('crisp-edges');
   });

@@ -50,8 +50,8 @@ const api = notificationsApi as unknown as Record<string, ReturnType<typeof vi.f
 beforeEach(() => {
   (globalThis as Record<string, unknown>).EventSource = FakeEventSource;
   FakeEventSource.last = null;
-  api.unreadCount.mockResolvedValue(2);
-  api.list.mockResolvedValue({
+  api.unreadCount!.mockResolvedValue(2);
+  api.list!.mockResolvedValue({
     count: 1,
     items: [
       {
@@ -69,8 +69,8 @@ beforeEach(() => {
       },
     ],
   });
-  api.markRead.mockResolvedValue({ id: 'nt-001', read_at: '2026-10-05T00:01:00Z' });
-  api.fetchCommentBody.mockResolvedValue('这是走既有评论 API 拉取到的正文内容');
+  api.markRead!.mockResolvedValue({ id: 'nt-001', read_at: '2026-10-05T00:01:00Z' });
+  api.fetchCommentBody!.mockResolvedValue('这是走既有评论 API 拉取到的正文内容');
 });
 
 afterEach(() => {
@@ -128,7 +128,7 @@ describe('NotificationBell 前端订阅与红点交互', () => {
     await user.click(item);
 
     // 验证调用了独立评论接口 fetchCommentBody，且正文来自该接口
-    expect(api.fetchCommentBody).toHaveBeenCalledWith('memory', 'm-100', 'cm-200');
+    expect(api.fetchCommentBody!).toHaveBeenCalledWith('memory', 'm-100', 'cm-200');
     await waitFor(() => {
       expect(screen.getByTestId('notification-comment-body')).toHaveTextContent(
         '这是走既有评论 API 拉取到的正文内容',
@@ -137,7 +137,7 @@ describe('NotificationBell 前端订阅与红点交互', () => {
   });
 
   it('X4: 收到 gap 帧触发全量重新拉取', async () => {
-    api.unreadCount.mockResolvedValueOnce(2).mockResolvedValueOnce(9);
+    api.unreadCount!.mockResolvedValueOnce(2).mockResolvedValueOnce(9);
     render(<NotificationBell />);
 
     await waitFor(() => {

@@ -147,7 +147,7 @@ export function AiAvatarGeneratorModal({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [selectedPresetIndex, setSelectedPresetIndex] = useState(0);
-  const [customName, setCustomName] = useState(PERSONA_PRESETS[0].name);
+  const [customName, setCustomName] = useState(PERSONA_PRESETS[0]?.name ?? '');
   const [generating, setGenerating] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -164,14 +164,14 @@ export function AiAvatarGeneratorModal({
   // 当前激活的模块化小人实体
   const [modularAvatar, setModularAvatar] = useState<ModularAvatar>(() => {
     return generateRandomModularAvatar('init_seed_0', {
-      mbti: PERSONA_PRESETS[0].mbti,
-      bazi_element: PERSONA_PRESETS[0].element,
-      mood: PERSONA_PRESETS[0].mood,
-      name: PERSONA_PRESETS[0].name,
+      mbti: PERSONA_PRESETS[0]?.mbti ?? 'INFJ',
+      bazi_element: PERSONA_PRESETS[0]?.element ?? '木',
+      mood: PERSONA_PRESETS[0]?.mood ?? 'calm',
+      name: PERSONA_PRESETS[0]?.name ?? '',
     } as any);
   });
 
-  const preset = PERSONA_PRESETS[selectedPresetIndex] ?? PERSONA_PRESETS[0];
+  const preset = (PERSONA_PRESETS[selectedPresetIndex] ?? PERSONA_PRESETS[0]) as PersonaPreset;
 
   // 绘制微像素预览画布 (24×48 nearest-neighbor 5x 放大预览)
   const drawAvatarPreview = useCallback((av: ModularAvatar) => {
@@ -255,7 +255,7 @@ export function AiAvatarGeneratorModal({
   const handleRandomSpark = () => {
     const nextIdx = (selectedPresetIndex + 1 + Math.floor(Math.random() * (PERSONA_PRESETS.length - 1))) % PERSONA_PRESETS.length;
     setSelectedPresetIndex(nextIdx);
-    const nextPreset = PERSONA_PRESETS[nextIdx];
+    const nextPreset = (PERSONA_PRESETS[nextIdx] ?? preset) as PersonaPreset;
     setCustomName(nextPreset.name);
 
     // 随机组合生成
@@ -640,12 +640,13 @@ export function AiAvatarGeneratorModal({
                   onChange={(e) => {
                     const idx = Number(e.target.value);
                     setSelectedPresetIndex(idx);
-                    setCustomName(PERSONA_PRESETS[idx].name);
+                    const sel = (PERSONA_PRESETS[idx] ?? preset) as PersonaPreset;
+                    setCustomName(sel.name);
                     const newAv = generateRandomModularAvatar(`preset_${idx}`, {
-                      mbti: PERSONA_PRESETS[idx].mbti,
-                      bazi_element: PERSONA_PRESETS[idx].element,
-                      mood: PERSONA_PRESETS[idx].mood,
-                      name: PERSONA_PRESETS[idx].name,
+                      mbti: sel.mbti,
+                      bazi_element: sel.element,
+                      mood: sel.mood,
+                      name: sel.name,
                     } as any);
                     setSelectedHairStyle(newAv.traits.hairStyle);
                     setSelectedHairTone(newAv.traits.hairTone);

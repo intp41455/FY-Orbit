@@ -30,7 +30,7 @@ describe('hubApi', () => {
   it('GET 列表带 same-origin Cookie，不带 CSRF 头（读操作）', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ connections: [], count: 0 }));
     await hubApi.listConnections();
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toContain('/api/hub/connections');
     expect(init.method).toBeUndefined();
     expect(init.credentials).toBe('same-origin');
@@ -40,7 +40,7 @@ describe('hubApi', () => {
   it('写操作必发 X-CSRF-Token 与 JSON 头', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ connection: { id: 'c1' } }));
     await hubApi.createConnection({ name: 'x', kind: 'openai_chat' });
-    const [, init] = fetchMock.mock.calls[0];
+    const [, init] = fetchMock.mock.calls[0]!;
     expect(init.method).toBe('POST');
     expect(init.headers['X-CSRF-Token']).toBe('tok-123');
     expect(init.headers['Content-Type']).toBe('application/json');
@@ -84,24 +84,24 @@ describe('hubApi', () => {
   it('删除走 DELETE 方法', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ id: 'c1', deleted: true }));
     await hubApi.deleteConnection('c1');
-    const [, init] = fetchMock.mock.calls[0];
+    const [, init] = fetchMock.mock.calls[0]!;
     expect(init.method).toBe('DELETE');
   });
 
   it('移除能力时能力名做 URL 编码', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ connection_id: 'c1', capabilities: [] }));
     await hubApi.unregisterCapability('c1', 'a/b c');
-    expect(String(fetchMock.mock.calls[0][0])).toContain('a%2Fb%20c');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('a%2Fb%20c');
   });
 
   it('能力清单在无 kind 时不带空查询参数', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ capabilities: [], count: 0 }));
     await hubApi.listCapabilities();
-    expect(String(fetchMock.mock.calls[0][0])).not.toContain('kind=');
+    expect(String(fetchMock.mock.calls[0]![0])).not.toContain('kind=');
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(jsonResponse({ capabilities: [], count: 0 }));
     await hubApi.listCapabilities('mcp_server');
-    expect(String(fetchMock.mock.calls[0][0])).toContain('kind=mcp_server');
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('kind=mcp_server');
   });
 
   it('非 JSON 响应体也不会炸，落到 HTTP 状态文案', async () => {

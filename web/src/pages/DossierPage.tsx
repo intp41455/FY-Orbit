@@ -338,8 +338,9 @@ function EnterpriseView() {
   const adapters = (catalog.data as EnterpriseCatalog | undefined)?.adapters ?? [];
 
   useEffect(() => {
-    if (adapters.length > 0 && !adapters.some((a) => a.target === target)) {
-      setTarget(adapters[0].target);
+    const first = adapters[0];
+    if (first && !adapters.some((a) => a.target === target)) {
+      setTarget(first.target);
     }
   }, [adapters, target]);
 

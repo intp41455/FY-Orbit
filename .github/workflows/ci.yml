@@ -283,3 +283,48 @@ jobs:
       - name: Build Web Production Assets
         run: |
           npm --prefix web run build
+
+  adjudicated-gates:
+    name: Adjudicated Gates T6 (GA-01/02/04/07/08 + W regressions)
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+      FY_ENVIRONMENT: test
+      FY_OFFLINE_MODE: "true"
+      FY_SESSION_SECRET: ci-only-session-secret-0123456789abcdef0123456789
+      FY_LOCAL_TOKEN: ci-only-local-token-0123456789abcdef0123456789
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+
+      - name: Install Dependencies (锁定安装)
+        run: |
+          uv sync --frozen --group dev
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+
+      - name: Gate Self-Tests (先证明每个门禁真会红)
+        run: |
+          # 与 base/layering 门禁同口径：子进程调真实脚本，断言退出码。
+          # 没有这一步，门禁可能是永远绿的装饰品。
+          python -m pytest tests/unit/scripts/test_ga01_contract.py tests/unit/scripts/test_ga02_response_shape.py tests/unit/scripts/test_ga04_render_robustness.py tests/unit/scripts/test_ga07_dead_code.py tests/unit/scripts/test_ga08_promo_consistency.py -q
+
+      - name: Real-tree scans (fail-closed, 不许 || true)
+        run: |
+          python scripts/ga01_contract.py --check
+          python scripts/ga02_response_shape.py
+          python scripts/ga07_dead_code.py
+          python scripts/ga08_promo_consistency.py
+
+      - name: W regressions (GA-03/05/06 空态/上传/信封)
+        run: |
+          python -m pytest tests/api/test_ga03_empty_states.py tests/api/test_asset_raw_security.py tests/api/test_error_envelope.py -q

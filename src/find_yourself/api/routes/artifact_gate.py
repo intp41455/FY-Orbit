@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from ...services.actor import Actor
@@ -64,8 +64,6 @@ def _svc(svc: Services) -> ArtifactGateService:
     return ArtifactGateService(svc.session, svc.audit)
 
 
-def _translate(exc: DomainError) -> HTTPException:
-    return HTTPException(status_code=exc.http_status, detail=exc.message)
 
 
 @router.post("/versions", status_code=201)
@@ -87,7 +85,7 @@ async def register_version(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -104,7 +102,7 @@ async def list_versions(
             actor, artifact_kind=artifact_kind, artifact_id=artifact_id, state=state
         )
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
     svc.session.commit()
     return {"count": len(items), "items": items}
 
@@ -118,7 +116,7 @@ async def get_version(
     try:
         return _svc(svc).get(actor, version_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.post("/versions/{version_id}/submit")
@@ -133,7 +131,7 @@ async def submit(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -158,7 +156,7 @@ async def record_check(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -181,7 +179,7 @@ async def run_independent_test(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -198,7 +196,7 @@ async def decide(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -211,7 +209,7 @@ async def list_checks(
     try:
         items = _svc(svc).list_checks(actor, version_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
     svc.session.commit()
     return {"count": len(items), "items": items}
 
@@ -226,4 +224,4 @@ async def gate(
     try:
         return _svc(svc).evaluate(actor, version_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc

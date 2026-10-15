@@ -30,7 +30,7 @@ describe('RegionSelectOverlay · A-点哪评哪-06', () => {
     fireEvent.mouseUp(overlay);
 
     expect(onSelect).toHaveBeenCalledTimes(1);
-    const region = onSelect.mock.calls[0][0];
+    const region = onSelect.mock.calls[0]![0];
     expect(region.w).toBeGreaterThan(0);
     expect(region.h).toBeGreaterThan(0);
     // 归一化：所有值落在 0~1
@@ -93,7 +93,7 @@ describe('AnnotationCanvas · A-点哪评哪-07', () => {
 
     fireEvent.click(screen.getByTestId('annotation-submit'));
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    const payload = onSubmit.mock.calls[0][0];
+    const payload = onSubmit.mock.calls[0]![0];
     expect(payload.strokes.length).toBe(1);
     // 归一化点集
     expect(payload.strokes[0].points[0].x).toBeLessThanOrEqual(1);
@@ -133,7 +133,7 @@ describe('AnnotationCanvas · A-点哪评哪-07', () => {
       target: { value: '这里往左挪' },
     });
     fireEvent.click(screen.getByTestId('annotation-submit'));
-    expect(onSubmit.mock.calls[0][0].audio_transcript).toBe('这里往左挪');
+    expect(onSubmit.mock.calls[0]![0].audio_transcript).toBe('这里往左挪');
   });
 });
 

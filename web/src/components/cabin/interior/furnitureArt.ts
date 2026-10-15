@@ -555,7 +555,12 @@ export function getColorway(furnitureId: string, index: number): Colorway {
     throw new Error(`furnitureArt: 未知家具 id '${furnitureId}'（注册表与美术不一致）`);
   }
   const i = Math.min(list.length - 1, Math.max(0, Math.floor(index)));
-  return list[i];
+  const colorway = list[i];
+  if (!colorway) {
+    // 上方已保证 list 非空且 i 已钳制，此处仅为类型收窄
+    throw new Error(`furnitureArt: 配色索引越界 '${furnitureId}[${index}]'（注册表与美术不一致）`);
+  }
+  return colorway;
 }
 
 export function getColorwayCount(furnitureId: string): number {

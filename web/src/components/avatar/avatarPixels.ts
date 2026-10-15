@@ -49,9 +49,11 @@ export function hexToRgbInt(hex: string): number {
   const raw = hex.trim().replace(/^#/, '');
   const expand = (s: string): string => (s.length === 1 ? s + s : s);
   if (raw.length === 3) {
-    const r = expand(raw[0]);
-    const g = expand(raw[1]);
-    const b = expand(raw[2]);
+    // 注：noUncheckedIndexedAccess 下索引访问为 string | undefined；
+    // 此处 length 已校验为 3，?? '' 永不触发，仅为类型收窄。
+    const r = expand(raw[0] ?? '');
+    const g = expand(raw[1] ?? '');
+    const b = expand(raw[2] ?? '');
     return parseInt(r + g + b, 16);
   }
   if (raw.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(raw)) {
@@ -103,7 +105,7 @@ export function compositeLayers(layers: AvatarLayers): string[] {
     for (let x = 0; x < AVATAR_WIDTH; x++) {
       let ch = '.';
       for (const name of LAYER_NAMES) {
-        const row = layers[name][y] ?? '';
+        const row = layers[name]?.[y] ?? '';
         const c = row[x] ?? '.';
         if (c !== '.' && c !== ' ') ch = c;
       }
@@ -179,7 +181,8 @@ function makeIdleFrame(layers: AvatarLayers, variant: IdleVariant): AvatarFrame 
   const index = VARIANT_INDEX[variant];
   const moved: AvatarLayers = {} as AvatarLayers;
   for (const name of LAYER_NAMES) {
-    const src = layers[name];
+    // 注：调用方传入的应为完整 8 层；缺层时按空层处理（compositeLayers 会另行抛错）。
+    const src = layers[name] ?? [];
     if (variant === 'neutral') {
       moved[name] = src.map((r) => r.slice());
     } else if (variant === 'breathe') {
@@ -214,7 +217,7 @@ function shrinkShadow(rows: readonly string[]): string[] {
 function swayHair(rows: readonly string[]): string[] {
   const out = shiftLayer(rows, 1, 0); // 整层横移 1px
   for (let y = out.length - 2; y < out.length; y++) {
-    out[y] = shiftRowRight(out[y], 1); // 发梢额外横移 1px
+    out[y] = shiftRowRight(out[y] ?? '', 1); // 发梢额外横移 1px
   }
   return out;
 }
@@ -241,11 +244,11 @@ function makeWalkFrame(layers: AvatarLayers, phase: 0 | 1): AvatarFrame {
   const moved: AvatarLayers = {};
   for (const name of LAYER_NAMES) {
     if (name === 'shadow') {
-      moved[name] = shiftLayer(layers[name], 0, dx);
+      moved[name] = shiftLayer(layers[name] ?? [], 0, dx);
     } else if (name === 'body' || name === 'hair' || name === 'face') {
-      moved[name] = shiftRowsUp(layers[name], dy);
+      moved[name] = shiftRowsUp(layers[name] ?? [], dy);
     } else {
-      moved[name] = layers[name].map((r) => r.slice());
+      moved[name] = (layers[name] ?? []).map((r) => r.slice());
     }
   }
   return { index: phase, layers: moved, matrix: compositeLayers(moved) };
@@ -256,12 +259,12 @@ function shiftLayer(rows: readonly string[], dx: number, dy = 0): string[] {
   return rows.map((_row, y) => {
     const srcY = y - dy;
     if (srcY < 0 || srcY >= rows.length) return '.'.repeat(AVATAR_WIDTH);
-    if (dx === 0) return rows[srcY];
-    const src = rows[srcY];
+    if (dx === 0) return rows[srcY] ?? '';
+    const src = rows[srcY] ?? '';
     let out = '';
     for (let x = 0; x < AVATAR_WIDTH; x++) {
       const sx = x - dx;
-      out += sx < 0 || sx >= src.length ? '.' : src[sx];
+      out += sx < 0 || sx >= src.length ? '.' : (src[sx] ?? '.');
     }
     return out;
   });
@@ -276,12 +279,12 @@ function shiftRowsUp(rows: readonly string[], dy: number): string[] {
   if (dy === 0) return out;
   for (let y = 0; y < rows.length; y++) {
     const srcY = y - dy;
-    out[y] = srcY >= 0 && srcY < rows.length ? rows[srcY] : '.'.repeat(AVATAR_WIDTH);
+    out[y] = srcY >= 0 && srcY < rows.length ? (rows[srcY] ?? '.'.repeat(AVATAR_WIDTH)) : '.'.repeat(AVATAR_WIDTH);
   }
   // 身体层上移后，脚（原来的最后几行）会缺失：把脚留在原地，否则人没有脚。
   if (dy < 0) {
     for (let y = rows.length + dy; y < rows.length; y++) {
-      out[y] = rows[y];
+      out[y] = rows[y] ?? '.'.repeat(AVATAR_WIDTH);
     }
   }
   return out;
@@ -383,9 +386,9 @@ export function buildShareCardPlan(input: ShareCardInput): ShareCardPlan {
   const spriteX = Math.round((W - spriteW) / 2);
   const spriteY = 160;
   for (let y = 0; y < input.matrix.length; y++) {
-    const row = input.matrix[y];
+    const row = input.matrix[y] ?? '';
     for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
+      const ch = row[x] ?? '.';
       if (ch === '.' || ch === ' ') continue;
       const hex = input.palette[ch];
       if (!hex) continue;

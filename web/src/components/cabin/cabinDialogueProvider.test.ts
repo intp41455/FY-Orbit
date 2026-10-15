@@ -17,7 +17,7 @@ afterEach(() => {
   // 恢复默认池 provider（等价于 cabinConfig 的出厂默认）
   setDialogueProvider((speaker, personality) => {
     const pool = DIALOGUE_LINES[personality][speaker];
-    return pool[0];
+    return pool[0] ?? '';
   });
 });
 

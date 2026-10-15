@@ -259,7 +259,8 @@ export function StarGraph({
     // 生长动画：前 STAGGER_LIMIT 个节点按索引错开，其余同时出现
     const staggerIdx = new Map<string, number>();
     for (let i = 0; i < Math.min(nodes.length, STAGGER_LIMIT); i += 1) {
-      staggerIdx.set(nodes[i].id, i);
+      const n = nodes[i];
+      if (n) staggerIdx.set(n.id, i); // 循环界内恒命中，仅为类型收窄
     }
 
     for (const n of visNodes) {
@@ -480,8 +481,10 @@ export function StarGraph({
       if (kbSelectable.length === 0) return;
       const next = (focusIndexRef.current + delta + kbSelectable.length) % kbSelectable.length;
       focusIndexRef.current = next;
-      const node = kbSelectable[next];
+      const node = kbSelectable[next] ?? null;
       onSelect(node);
+      if (!node) return; // 越界恒不发生，仅为类型收窄
+      if (!node) return; // 索引已钳制恒命中，仅为类型收窄
       // 同步把该节点平移进视口，键盘用户不用自己找
       viewRef.current = centerOn(node, viewRef.current);
       requestDraw();

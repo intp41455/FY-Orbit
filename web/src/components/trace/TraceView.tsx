@@ -231,7 +231,7 @@ export function TraceView() {
                 const x1 = PAD_LEFT + i * NODE_STEP + NODE_W / 2;
                 const x2 = PAD_LEFT + (i + 1) * NODE_STEP + NODE_W / 2;
                 const y1 = laneY.get(n.lane) ?? PAD_TOP;
-                const y2 = laneY.get(next.lane) ?? PAD_TOP;
+                const y2 = laneY.get(next?.lane ?? '') ?? PAD_TOP;
                 return (
                   <line
                     key={`link-${i}`}

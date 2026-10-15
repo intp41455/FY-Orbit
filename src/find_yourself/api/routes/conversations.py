@@ -19,7 +19,7 @@ from ...db.types import utcnow
 from ...services.actor import Actor
 from ...services.errors import NotFound
 from ..deps import Services, csrf_protected, get_actor, get_services, get_settings
-from ..schemas import ConversationCreate, MessageCreate
+from ..schemas import ConversationCreate, MessageCreate, ReplyBody
 
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
@@ -174,13 +174,13 @@ async def list_messages(conversation_id: str, actor: Actor = Depends(get_actor),
 
 @router.post("/{conversation_id}/reply")
 async def generate_reply(conversation_id: str,
-                         body: dict | None = None,
+                         body: ReplyBody | None = None,
                          actor: Actor = Depends(csrf_protected),
                          svc: Services = Depends(get_services),
                          settings: Settings = Depends(get_settings)) -> dict:
     from ...services.companion import CompanionService
     c = _get_owned(svc, actor, conversation_id)
-    user_text = (body or {}).get("message")
+    user_text = (body.message if body else "") or None
     if not user_text:
         last_user = svc.session.execute(
             select(Message).where(Message.conversation_id == c.id, Message.role == "user", Message.deleted_at.is_(None))

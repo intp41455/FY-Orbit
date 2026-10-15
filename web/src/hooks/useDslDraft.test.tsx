@@ -78,7 +78,7 @@ describe('N3 · useDslDraft 乐观锁', () => {
 
     expect(dslCanvasApi.createFlow).toHaveBeenCalledTimes(1);
     expect(dslCanvasApi.saveDraft).toHaveBeenCalledTimes(1);
-    const [flowId, doc, opts] = vi.mocked(dslCanvasApi.saveDraft).mock.calls[0];
+    const [flowId, doc, opts] = vi.mocked(dslCanvasApi.saveDraft).mock.calls[0]!;
     expect(flowId).toBe('flow-1');
     expect(doc).toEqual(DOC_B);
     // 建流程返回 draft_version=1 → 第一次保存必须带 expected_version: 1
@@ -105,8 +105,8 @@ describe('N3 · useDslDraft 乐观锁', () => {
     });
     await act(async () => { vi.advanceTimersByTime(FLUSH); });
 
-    expect(vi.mocked(dslCanvasApi.saveDraft).mock.calls[0][2]).toEqual({ expected_version: 1 });
-    expect(vi.mocked(dslCanvasApi.saveDraft).mock.calls[1][2]).toEqual({ expected_version: 2 });
+    expect(vi.mocked(dslCanvasApi.saveDraft).mock.calls[0]![2]).toEqual({ expected_version: 1 });
+    expect(vi.mocked(dslCanvasApi.saveDraft).mock.calls[1]![2]).toEqual({ expected_version: 2 });
   });
 
   it('409 → conflict 置位、自动保存停摆、**不再发任何保存请求**（无静默覆盖）', async () => {

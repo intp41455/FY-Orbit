@@ -56,14 +56,15 @@ export function renderMarkdown(src: string): string {
   let i = 0;
 
   while (i < lines.length) {
-    const line = lines[i];
+    // 注：循环条件保证 i 有效，?? '' 仅为类型收窄（noUncheckedIndexedAccess）。
+    const line = lines[i] ?? '';
 
     // 围栏代码块
     if (/^```/.test(line)) {
       const buf: string[] = [];
       i += 1;
-      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
-        buf.push(lines[i]);
+      while (i < lines.length && !/^```\s*$/.test(lines[i] ?? '')) {
+        buf.push(lines[i] ?? '');
         i += 1;
       }
       i += 1; // 跳过收尾围栏（或到达 EOF）
@@ -74,8 +75,8 @@ export function renderMarkdown(src: string): string {
     // 标题
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
-      const level = h[1].length;
-      out.push(`<h${level}>${renderInline(escapeHtml(h[2]), ctx)}</h${level}>`);
+      const level = (h[1] ?? '').length;
+      out.push(`<h${level}>${renderInline(escapeHtml(h[2] ?? ''), ctx)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -90,8 +91,8 @@ export function renderMarkdown(src: string): string {
     // 引用块
     if (/^\s*>\s?/.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && /^\s*>\s?/.test(lines[i])) {
-        buf.push(lines[i].replace(/^\s*>\s?/, ''));
+      while (i < lines.length && /^\s*>\s?/.test(lines[i] ?? '')) {
+        buf.push((lines[i] ?? '').replace(/^\s*>\s?/, ''));
         i += 1;
       }
       out.push(`<blockquote>${renderParagraph(buf, ctx).slice(3, -4)}</blockquote>`);
@@ -101,8 +102,8 @@ export function renderMarkdown(src: string): string {
     // 无序列表
     if (/^\s*[-*+]\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*[-*+]\s+/, ''));
+      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i] ?? '')) {
+        items.push((lines[i] ?? '').replace(/^\s*[-*+]\s+/, ''));
         i += 1;
       }
       out.push(`<ul>${items.map((it) => `<li>${renderInline(escapeHtml(it), ctx)}</li>`).join('')}</ul>`);
@@ -112,8 +113,8 @@ export function renderMarkdown(src: string): string {
     // 有序列表
     if (/^\s*\d+[.)]\s+/.test(line)) {
       const items: string[] = [];
-      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) {
-        items.push(lines[i].replace(/^\s*\d+[.)]\s+/, ''));
+      while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i] ?? '')) {
+        items.push((lines[i] ?? '').replace(/^\s*\d+[.)]\s+/, ''));
         i += 1;
       }
       out.push(`<ol>${items.map((it) => `<li>${renderInline(escapeHtml(it), ctx)}</li>`).join('')}</ol>`);
@@ -128,8 +129,8 @@ export function renderMarkdown(src: string): string {
 
     // 段落：聚合到下一个块级结构或空行
     const buf: string[] = [];
-    while (i < lines.length && !/^\s*$/.test(lines[i]) && !BLOCK_START.test(lines[i])) {
-      buf.push(lines[i]);
+    while (i < lines.length && !/^\s*$/.test(lines[i] ?? '') && !BLOCK_START.test(lines[i] ?? '')) {
+      buf.push(lines[i] ?? '');
       i += 1;
     }
     out.push(renderParagraph(buf, ctx));

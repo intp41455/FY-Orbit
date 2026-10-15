@@ -71,8 +71,9 @@ export function ProfilesPage() {
     try {
       const res = await profilesApi.listSubjects();
       setSubjects(res.items);
-      if (res.items.length > 0 && !activeSubject) {
-        void selectSubject(res.items[0]);
+      const first = res.items[0];
+      if (first && !activeSubject) {
+        void selectSubject(first);
       }
     } catch (err) {
       setError(errorMessage(err));
@@ -94,13 +95,9 @@ export function ProfilesPage() {
     try {
       const revRes = await profilesApi.listRevisions(subj.id);
       setRevisions(revRes.items);
-      if (revRes.items.length > 0) {
-        setActiveRevision(revRes.items[0]);
-        setSelectedNode(revRes.items[0].clusters?.[0]?.nodes?.[0] ?? null);
-      } else {
-        setActiveRevision(null);
-        setSelectedNode(null);
-      }
+      const rev0 = revRes.items[0] ?? null;
+      setActiveRevision(rev0);
+      setSelectedNode(rev0?.clusters?.[0]?.nodes?.[0] ?? null);
     } catch (err) {
       setError(errorMessage(err));
     }
@@ -745,9 +742,9 @@ export function ProfilesPage() {
                 type="button"
                 className="ui-btn ui-btn--primary"
                 style={{ marginTop: 'var(--ui-s-2)' }}
-                onClick={() => void selectSubject(subjects[0])}
+                onClick={() => { const s0 = subjects[0]; if (s0) void selectSubject(s0); }}
               >
-                选中「{subjects[0].label}」
+                选中「{subjects[0]?.label ?? ''}」
               </button>
             </section>
           )

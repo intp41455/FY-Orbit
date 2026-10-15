@@ -42,8 +42,9 @@ function drawFrame(
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   for (let y = 0; y < h; y++) {
     const row = rows[y];
+    if (!row) continue; // 空行跳过（静态矩阵恒非空，仅为类型收窄）
     for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
+      const ch = row[x] ?? '';
       if (ch === '.' || ch === ' ') continue;
       const hex = palette[ch];
       // 缺色不画：宁可少一块也不画错颜色（诚实：配色漂移应由测试发现，而不是被画面掩盖）
@@ -75,7 +76,9 @@ export function AvatarPreview({
   useEffect(() => {
     const canvas = ref.current;
     if (!canvas) return;
-    drawFrame(canvas, frames[tick % frames.length], palette, scale);
+    const frame = frames[tick % frames.length] ?? frames[0];
+    if (!frame) return; // 空帧集时静默跳过（调用方恒传非空，仅为类型收窄）
+    drawFrame(canvas, frame, palette, scale);
   }, [frames, palette, scale, tick]);
 
   return (

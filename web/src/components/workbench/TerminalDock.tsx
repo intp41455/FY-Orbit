@@ -133,7 +133,7 @@ export function TerminalDock({ workspaceId, hotRequest = 0, onSessionStopped, on
       stored.length > 0 ? stored.slice(0, MAX_TABS) : [{ id: 'term-1', scope: '', label: '终端 1' }];
     setTabs(initial);
     setDetached(readJson<TerminalTab[]>(detachedKey(workspaceId), []).slice(-4));
-    setActiveId((cur) => (initial.some((t) => t.id === cur) ? cur : initial[0].id));
+    setActiveId((cur) => (initial.some((t) => t.id === cur) ? cur : (initial[0]?.id ?? 'term-1')));
   }, [workspaceId]);
 
   useEffect(() => {
@@ -172,7 +172,7 @@ export function TerminalDock({ workspaceId, hotRequest = 0, onSessionStopped, on
         const victim = cur.find((t) => t.id === id);
         if (victim) setDetached((d) => [...d.filter((x) => x.id !== id), victim].slice(-4));
         const next = cur.filter((t) => t.id !== id);
-        setActiveId((a) => (a === id ? next[0].id : a));
+        setActiveId((a) => (a === id ? (next[0]?.id ?? a) : a));
         return next;
       });
     },
@@ -183,6 +183,7 @@ export function TerminalDock({ workspaceId, hotRequest = 0, onSessionStopped, on
     setDetached((d) => {
       if (d.length === 0) return d;
       const back = d[d.length - 1];
+      if (!back) return d; // 空栈已守卫恒命中，仅为类型收窄
       setTabs((cur) => (cur.length >= MAX_TABS || cur.some((t) => t.id === back.id) ? cur : [...cur, back]));
       if (back) setActiveId(back.id);
       return d.slice(0, -1);

@@ -68,15 +68,18 @@ export const CozyFishingGame: React.FC<CozyFishingGameProps> = ({ onCatchFish, o
   // 玩家按下提竿
   const handleStrike = () => {
     if (state !== 'bite') return;
-    // 随机选一条鱼
+    // 随机选一条鱼（鱼谱静态 6 条恒非空，?? 仅为满足 noUncheckedIndexedAccess）
+    const fallbackFish: FishCatch = FISH_CATALOG[0] ?? {
+      id: 'silver_minnow', name: '晨光银鱼', rarity: 'common', weight: 0.8, coinsValue: 15, icon: '🐟', description: '林间清泉常见的小鱼。',
+    };
     const rand = Math.random();
-    let picked: FishCatch;
-    if (rand < 0.5) picked = FISH_CATALOG[0];
-    else if (rand < 0.75) picked = FISH_CATALOG[1];
-    else if (rand < 0.90) picked = FISH_CATALOG[2];
-    else if (rand < 0.96) picked = FISH_CATALOG[3];
-    else if (rand < 0.99) picked = FISH_CATALOG[4];
-    else picked = FISH_CATALOG[5];
+    let picked: FishCatch = fallbackFish;
+    if (rand < 0.5) picked = FISH_CATALOG[0] ?? fallbackFish;
+    else if (rand < 0.75) picked = FISH_CATALOG[1] ?? fallbackFish;
+    else if (rand < 0.90) picked = FISH_CATALOG[2] ?? fallbackFish;
+    else if (rand < 0.96) picked = FISH_CATALOG[3] ?? fallbackFish;
+    else if (rand < 0.99) picked = FISH_CATALOG[4] ?? fallbackFish;
+    else picked = FISH_CATALOG[5] ?? fallbackFish;
 
     // 附带微小浮动重量
     const finalFish: FishCatch = {

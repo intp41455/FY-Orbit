@@ -222,10 +222,11 @@ export function evaluateTrailAtDepth(
 
   // 沿控制点折线插值
   // controlPoints 顺序：depth 1.0 -> 0.0
-  let worldX = pts[0].worldX;
+  let worldX = pts[0]?.worldX ?? 0;
   for (let i = 0; i < pts.length - 1; i++) {
     const p0 = pts[i];
     const p1 = pts[i + 1];
+    if (!p0 || !p1) continue;
     // p0.depth >= clampedDepth >= p1.depth
     if (clampedDepth <= p0.depth && clampedDepth >= p1.depth) {
       const span = p0.depth - p1.depth;
@@ -250,7 +251,7 @@ export function evaluateHorizonRidgeOffset(
   worldX: number,
   pathDef: WindingPathThemeDef,
 ): number {
-  const passX = pathDef.controlPoints[pathDef.controlPoints.length - 1].worldX;
+  const passX = pathDef.controlPoints[pathDef.controlPoints.length - 1]?.worldX ?? 0;
   const distToPass = Math.abs(worldX - passX);
 
   // 基础波浪起伏 (±10px 虚拟像素)
@@ -295,24 +296,24 @@ export function buildWindingPathGraphics(
 
   // 1. 绘制小径边缘柔和青苔/泥土/石质镶边（稍宽 4px）
   g.beginPath();
-  g.moveTo(ribbonLeft[0].x - 3, ribbonLeft[0].y);
+  g.moveTo((ribbonLeft[0]?.x ?? 0) - 3, ribbonLeft[0]?.y ?? 0);
   for (let i = 1; i <= STEPS; i++) {
-    g.lineTo(ribbonLeft[i].x - 3, ribbonLeft[i].y);
+    g.lineTo((ribbonLeft[i]?.x ?? 0) - 3, ribbonLeft[i]?.y ?? 0);
   }
   for (let i = STEPS; i >= 0; i--) {
-    g.lineTo(ribbonRight[i].x + 3, ribbonRight[i].y);
+    g.lineTo((ribbonRight[i]?.x ?? 0) + 3, ribbonRight[i]?.y ?? 0);
   }
   g.closePath();
   g.fill({ color: pathDef.colors.pathBorder, alpha: 0.75 });
 
   // 2. 绘制小道主体路面
   g.beginPath();
-  g.moveTo(ribbonLeft[0].x, ribbonLeft[0].y);
+  g.moveTo(ribbonLeft[0]?.x ?? 0, ribbonLeft[0]?.y ?? 0);
   for (let i = 1; i <= STEPS; i++) {
-    g.lineTo(ribbonLeft[i].x, ribbonLeft[i].y);
+    g.lineTo(ribbonLeft[i]?.x ?? 0, ribbonLeft[i]?.y ?? 0);
   }
   for (let i = STEPS; i >= 0; i--) {
-    g.lineTo(ribbonRight[i].x, ribbonRight[i].y);
+    g.lineTo(ribbonRight[i]?.x ?? 0, ribbonRight[i]?.y ?? 0);
   }
   g.closePath();
   g.fill({ color: pathDef.colors.pathSurface, alpha: 0.95 });

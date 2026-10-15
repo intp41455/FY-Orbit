@@ -43,10 +43,10 @@ describe('DslDiagnostics', () => {
     expect(screen.getByTestId('dsl-ir-diagnostics').getAttribute('role')).toBe('alert');
     // 每条都可见且含 code / node / field_path / message
     items.forEach((el) => expect(el).toBeVisible());
-    expect(items[0].textContent).toContain('a');
-    expect(items[0].textContent).toContain('params.bogus');
-    expect(items[1].textContent).toContain('b');
-    expect(items[1].textContent).toContain('params.nope');
+    expect(items[0]!.textContent).toContain('a');
+    expect(items[0]!.textContent).toContain('params.bogus');
+    expect(items[1]!.textContent).toContain('b');
+    expect(items[1]!.textContent).toContain('params.nope');
   });
 
   it('3 条（含文档级 node_id 为空）诊断：全部显示，空 node_id 显示「(文档)」', () => {

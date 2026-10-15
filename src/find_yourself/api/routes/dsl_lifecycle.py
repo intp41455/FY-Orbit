@@ -40,8 +40,6 @@ from ..deps import Services, csrf_protected, get_actor, get_services, get_settin
 router = APIRouter(prefix="/api/dsl-lifecycle", tags=["dsl-lifecycle"])
 
 
-def _translate(exc: DomainError) -> HTTPException:
-    return HTTPException(status_code=exc.http_status, detail=exc.message)
 
 
 def _store(svc: Services) -> DslFlowStore:
@@ -142,7 +140,7 @@ async def create_flow(body: FlowCreateBody,
         svc.session.commit()
         return view
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.get("/flows")
@@ -151,7 +149,7 @@ async def list_flows(actor: Actor = Depends(get_actor),
     try:
         return {"items": _store(svc).list_flows(actor)}
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.get("/flows/{flow_id}")
@@ -161,7 +159,7 @@ async def get_flow(flow_id: str,
     try:
         return _store(svc).get_flow(actor, flow_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.put("/flows/{flow_id}/draft")
@@ -179,7 +177,7 @@ async def save_draft(flow_id: str, body: DraftBody,
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.post("/flows/{flow_id}/publish")
@@ -195,7 +193,7 @@ async def publish_flow(flow_id: str, body: PublishBody,
     except DslValidationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.get("/flows/{flow_id}/versions")
@@ -205,7 +203,7 @@ async def list_versions(flow_id: str,
     try:
         return {"items": _store(svc).list_versions(actor, flow_id)}
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.get("/flows/{flow_id}/versions/{version}")
@@ -215,7 +213,7 @@ async def get_version(flow_id: str, version: int,
     try:
         return _store(svc).get_version(actor, flow_id, version)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.post("/flows/{flow_id}/rollback")
@@ -229,7 +227,7 @@ async def rollback_flow(flow_id: str, body: RollbackBody,
         svc.session.commit()
         return view
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.post("/flows/{flow_id}/evaluate-batch")
@@ -257,7 +255,7 @@ async def evaluate_batch(flow_id: str, body: BatchEvalBody,
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.post("/validate-assembly")

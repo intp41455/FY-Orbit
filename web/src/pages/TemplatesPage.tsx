@@ -59,7 +59,8 @@ export function TemplatesPage() {
 
   // 首次加载后自动选中第一套模板，避免右侧空着。
   useEffect(() => {
-    if (!selectedId && cards.length > 0) setSelectedId(cards[0].template_id);
+    const first = cards[0];
+    if (!selectedId && first) setSelectedId(first.template_id);
   }, [cards, selectedId]);
 
   const detail = useAsync<TemplateDetail | null>(

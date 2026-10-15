@@ -54,19 +54,20 @@ export function sha256Hex(input: string): string {
   for (let off = 0; off < msg.length; off += 64) {
     for (let t = 0; t < 16; t++) {
       const j = off + t * 4;
-      w[t] = ((msg[j] << 24) | (msg[j + 1] << 16) | (msg[j + 2] << 8) | msg[j + 3]) >>> 0;
+      // 注：off 按 64 字节分块，j+3 恒有效；?? 0 仅为类型收窄（noUncheckedIndexedAccess）。
+      w[t] = (((msg[j] ?? 0) << 24) | ((msg[j + 1] ?? 0) << 16) | ((msg[j + 2] ?? 0) << 8) | (msg[j + 3] ?? 0)) >>> 0;
     }
     for (let t = 16; t < 64; t++) {
-      const s0 = rotr(w[t - 15], 7) ^ rotr(w[t - 15], 18) ^ (w[t - 15] >>> 3);
-      const s1 = rotr(w[t - 2], 17) ^ rotr(w[t - 2], 19) ^ (w[t - 2] >>> 10);
-      w[t] = (w[t - 16] + s0 + w[t - 7] + s1) >>> 0;
+      const s0 = rotr(w[t - 15] ?? 0, 7) ^ rotr(w[t - 15] ?? 0, 18) ^ ((w[t - 15] ?? 0) >>> 3);
+      const s1 = rotr(w[t - 2] ?? 0, 17) ^ rotr(w[t - 2] ?? 0, 19) ^ ((w[t - 2] ?? 0) >>> 10);
+      w[t] = ((w[t - 16] ?? 0) + s0 + (w[t - 7] ?? 0) + s1) >>> 0;
     }
 
     let a = h0, b = h1, c = h2, d = h3, e = h4, f = h5, g = h6, h = h7;
     for (let t = 0; t < 64; t++) {
       const S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
       const ch = (e & f) ^ (~e & g);
-      const temp1 = (h + S1 + ch + K[t] + w[t]) >>> 0;
+      const temp1 = (h + S1 + ch + (K[t] ?? 0) + (w[t] ?? 0)) >>> 0;
       const S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
       const maj = (a & b) ^ (a & c) ^ (b & c);
       const temp2 = (S0 + maj) >>> 0;

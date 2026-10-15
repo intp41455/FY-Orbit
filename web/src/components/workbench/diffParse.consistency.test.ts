@@ -97,7 +97,7 @@ describe('P1-11 一致性：parseUnifiedDiff vs 子进程 git diff 原文', () =
     for (const line of numstatRaw.split('\n')) {
       if (!line.trim()) continue;
       const [a, d, p] = line.split('\t');
-      numstat.set(p, [Number(a), Number(d)]);
+      numstat.set(p!, [Number(a), Number(d)]);
     }
     for (const f of parsed.files) {
       const [a, d] = numstat.get(f.newPath) ?? [0, 0];

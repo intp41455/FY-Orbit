@@ -291,7 +291,7 @@ describe('A-三重模式-01/04 · 模式壳与小白起手', () => {
     await user.click(screen.getByTestId('flow-run'));
     expect(await screen.findByTestId('flow-run-ok')).toBeInTheDocument();
     expect(screen.getByTestId('flow-run-output').textContent).toContain('甲');
-    expect(vi.mocked(dslCanvasApi.run).mock.calls[0][0]).toEqual(TEMPLATE_DSL);
+    expect(vi.mocked(dslCanvasApi.run).mock.calls[0]![0]).toEqual(TEMPLATE_DSL);
   });
 
   it('运行失败如实报错，不假装跑通', async () => {
@@ -426,7 +426,7 @@ describe('N3 · 草稿持久化与版本冲突的用户可见行为', () => {
     expect(await screen.findByTestId('flow-node-src')).toBeInTheDocument();
 
     await waitFor(() => expect(dslCanvasApi.saveDraft).toHaveBeenCalled(), { timeout: 4000 });
-    const call = vi.mocked(dslCanvasApi.saveDraft).mock.calls[0];
+    const call = vi.mocked(dslCanvasApi.saveDraft).mock.calls[0]!;
     expect(call[0]).toBe('flow-1');
     expect(call[2]).toEqual({ expected_version: 1 });
     await waitFor(() => expect(screen.queryByTestId('save-unlinked-badge')).toBeNull());

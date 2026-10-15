@@ -16,7 +16,8 @@ import type { GradientStop, PixelPalette } from './cabinPixels';
 
 export function hexToNumber(hex: string): number {
   const m = /^#?([0-9a-fA-F]{6})$/.exec(hex);
-  return m ? parseInt(m[1], 16) : 0x4fc3f7;
+  const body = m?.[1] ?? ''; // 正则命中时分组恒存在，?? 仅为类型收窄
+  return body ? parseInt(body, 16) : 0x4fc3f7;
 }
 
 export function shade(color: number, factor: number): number {
@@ -52,7 +53,7 @@ export const HOUSE_PERSON_RATIO = 2.0;
  * 保证比例恒定达标，且不受分辨率 / 窗口高度影响。
  */
 export function houseScaleFactor(houseId: CabinHouseId): number {
-  const personWorldH = PERSON_WALK_FRAMES[0].length * PERSON_SCALE;
+  const personWorldH = (PERSON_WALK_FRAMES[0]?.length ?? 0) * PERSON_SCALE;
   return (personWorldH * HOUSE_PERSON_RATIO) / CABIN_HOUSE_ART[houseId].rows.length;
 }
 

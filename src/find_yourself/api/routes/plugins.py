@@ -86,7 +86,9 @@ async def list_marketplace(
             offset=offset,
         )
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.get("/marketplace/{skill_id}")
@@ -98,7 +100,9 @@ async def get_marketplace_package(
     try:
         return market.get_package(actor, skill_id)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.post("/marketplace/{skill_id}/publish")
@@ -117,7 +121,9 @@ async def publish_package(
     try:
         skill = market.publish(actor, skill_id, payload["evaluation_id"])
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
     market.s.commit()
     return {
         "skill_id": skill.id,
@@ -145,7 +151,9 @@ async def install_package(
     try:
         card = market.install(actor, skill_id, grant_id=grant_id)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
     market.s.commit()
     return card
 
@@ -169,7 +177,9 @@ async def rate_marketplace_package(
     try:
         res = market.rate_package(actor, skill_id, rating_val, comment=comment_val)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
     market.s.commit()
     return res
 
@@ -186,7 +196,9 @@ async def get_marketplace_package_ratings(
     try:
         return market.get_package_ratings(actor, skill_id, limit=limit, offset=offset)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +215,9 @@ async def get_templates_hierarchy(
     try:
         return tpl_market.get_hierarchy(actor)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.get("/templates/market")
@@ -229,7 +243,9 @@ async def list_templates_market(
             offset=offset,
         )
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.post("/templates/impact-preview")
@@ -250,7 +266,9 @@ async def preview_template_switch_impact(
             actor, payload["from_template_id"], payload["to_template_id"]
         )
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.post("/templates/{template_id}/rate")
@@ -272,7 +290,9 @@ async def rate_template(
             actor, template_id, payload["rating"], comment=payload.get("comment")
         )
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.get("/templates/{template_id}/ratings")
@@ -287,7 +307,9 @@ async def get_template_ratings(
     try:
         return tpl_market.get_template_ratings(actor, template_id, limit=limit, offset=offset)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.get("/templates/{template_id}/export")
@@ -302,7 +324,9 @@ async def export_template_package(
     try:
         return tpl_market.export_package(actor, template_id, author=author, notes=notes)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.post("/templates/security-review")
@@ -319,7 +343,9 @@ async def security_review_template(
     try:
         return tpl_market.security_review(actor, payload)
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 @router.post("/templates/import")
@@ -343,7 +369,9 @@ async def import_template_package(
             actor, pkg_data, confirmed_tools=confirmed_tools, custom_name=custom_name
         )
     except DomainError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+        # GA-06：直接重抛，让 app 级 handler 包统一信封（含 code），
+        # 不得转成丢 code 的 HTTPException(detail=message)。
+        raise exc from None
 
 
 # ---------------------------------------------------------------------------

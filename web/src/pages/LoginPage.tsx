@@ -93,10 +93,10 @@ export function LoginPage() {
               <line
                 key={`e${i}`}
                 className="ln-edge"
-                x1={STARS[a].x}
-                y1={STARS[a].y}
-                x2={STARS[b].x}
-                y2={STARS[b].y}
+                x1={STARS[a]?.x ?? 0}
+                y1={STARS[a]?.y ?? 0}
+                x2={STARS[b]?.x ?? 0}
+                y2={STARS[b]?.y ?? 0}
               />
             ))}
             {STARS.map((s, i) => (

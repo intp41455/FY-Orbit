@@ -158,7 +158,7 @@ describe('cabinThemedWorlds · 大地图专属环境特征与特色交互植物 
   describe('convertPlantToGatherRow 适配器', () => {
     it('正确将交互植物转为生命模拟 GatherRow，计算距离与在范围标志', () => {
       const plants = getInteractivePlantsForTheme('forest');
-      const mushroom = plants[0];
+      const mushroom = plants[0]!;
       expect(mushroom).toBeDefined();
 
       // 当玩家在植物所在瓦片附近 (如 [18, 52]，植物默认在 [18, 52])

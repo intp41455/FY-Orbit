@@ -144,7 +144,7 @@ describe('W11 · 逐项同意：只提交勾选项', () => {
     await screen.findByText(/还没有生成角色/);
     await user.click(screen.getByRole('button', { name: /生成我的小人/ }));
     await waitFor(() => expect(api.generateAvatar).toHaveBeenCalledTimes(1));
-    expect(api.generateAvatar.mock.calls[0][0]).toEqual({});
+    expect(api.generateAvatar.mock.calls[0]![0]).toEqual({});
   });
 
   it('勾哪项才发哪项，未勾的一律不发', async () => {
@@ -159,7 +159,7 @@ describe('W11 · 逐项同意：只提交勾选项', () => {
     await user.click(screen.getByRole('button', { name: /生成我的小人/ }));
 
     await waitFor(() => expect(api.generateAvatar).toHaveBeenCalled());
-    expect(api.generateAvatar.mock.calls[0][0]).toEqual({ mbti: 'ESTJ' });
+    expect(api.generateAvatar.mock.calls[0]![0]).toEqual({ mbti: 'ESTJ' });
   });
 
   it('未勾选的输入框是禁用的（视觉上也表达「这条不提交」）', async () => {
@@ -233,7 +233,7 @@ describe('W11 · 微调与还原', () => {
     await screen.findByText(/中性默认/);
     await user.click(screen.getByRole('button', { name: /还原 AI 底稿/ }));
     await waitFor(() => expect(api.generateAvatar).toHaveBeenCalled());
-    expect(api.generateAvatar.mock.calls[0][1]).toEqual({});
+    expect(api.generateAvatar.mock.calls[0]![1]).toEqual({});
   });
 
   it('未微调时如实显示「未微调」', async () => {
@@ -254,7 +254,7 @@ describe('W11 · 确认与分享卡', () => {
 
     await user.click(screen.getByRole('button', { name: /确认这个角色/ }));
     await waitFor(() => expect(api.confirmAvatar).toHaveBeenCalled());
-    const arg = api.confirmAvatar.mock.calls[0][0] as Record<string, unknown>;
+    const arg = api.confirmAvatar.mock.calls[0]![0] as Record<string, unknown>;
     expect(arg.expectedVersion).toBe(1);
     expect(arg.likenessScore).toBe(7);           // 默认值
     expect(arg.isHouseAvatar).toBe(true);       // 默认勾上
@@ -308,7 +308,7 @@ describe('W11 · 确认与分享卡', () => {
     await user.click(screen.getByRole('button', { name: /生成分享卡/ }));
 
     await waitFor(() => expect(api.createShareCard).toHaveBeenCalled());
-    expect(api.createShareCard.mock.calls[0][0].badges).toEqual(['mbti']);
+    expect(api.createShareCard.mock.calls[0]![0].badges).toEqual(['mbti']);
     // 生成后展示分享卡短码与「已隐藏 N 项」
     //短码会出现在元信息区和分享卡区，故用 getAllByText 断言「至少出现一次」
     await waitFor(() => expect(screen.getAllByText('6D73FAA1').length).toBeGreaterThan(0));

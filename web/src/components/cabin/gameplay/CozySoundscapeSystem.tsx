@@ -60,7 +60,11 @@ export function CozySoundscapeSystem({ onClose }: CozySoundscapeSystemProps) {
   const oscRef = useRef<OscillatorNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
 
-  const currentTrack = SOUND_TRACKS[selectedTrackIndex] ?? SOUND_TRACKS[0];
+  // 静态曲目恒非空，兜底取首曲（仅为满足 noUncheckedIndexedAccess，运行时恒命中）
+  const fallbackTrack: SoundTrackDef = SOUND_TRACKS[0] ?? {
+    id: 'breeze', name: '🍃 森林微风与落叶', category: '自然白噪', desc: '温柔穿过松针与山毛榉叶的微风。', toneFrequency: 220,
+  };
+  const currentTrack: SoundTrackDef = SOUND_TRACKS[selectedTrackIndex] ?? fallbackTrack;
 
   const stopAudio = () => {
     try {

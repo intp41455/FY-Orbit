@@ -40,7 +40,7 @@ const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5] as const;
 
 /** 归一化抖动阈值 (0..1)，参数取任意整数像素坐标。 */
 export function bayer4(x: number, y: number): number {
-  return (BAYER4[(x & 3) + (y & 3) * 4] + 0.5) / 16;
+  return ((BAYER4[(x & 3) + (y & 3) * 4] ?? 0) + 0.5) / 16;
 }
 
 function clamp255(v: number): number {
@@ -85,9 +85,9 @@ export function matrixToRgba(
 
   const unknown = new Set<string>();
   for (let my = 0; my < h; my++) {
-    const row = rows[my];
+    const row = rows[my] ?? '';
     for (let mx = 0; mx < row.length; mx++) {
-      const ch = row[mx];
+      const ch = row[mx] ?? '.';
       if (ch === '.' || ch === ' ') continue;
       const color = palette[ch];
       if (color === undefined) {
@@ -113,7 +113,7 @@ export function matrixToRgba(
     // 快照填充结果，避免描边互相串联；8-邻接保证凸角处描边连续无缺口
     const filled: boolean[] = [];
     for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) filled[y * width + x] = data[(y * width + x) * 4 + 3] > 0;
+      for (let x = 0; x < width; x++) filled[y * width + x] = (data[(y * width + x) * 4 + 3] ?? 0) > 0;
     }
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
@@ -125,7 +125,7 @@ export function matrixToRgba(
             const nx = x + dx;
             const ny = y + dy;
             if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-            near = filled[ny * width + nx];
+            near = filled[ny * width + nx] ?? false;
           }
         }
         if (near) write(x, y, outline);
@@ -177,11 +177,11 @@ export class PixelBuffer implements RgbaSnapshot {
       d[i + 3] = Math.round(sa * 255);
       return;
     }
-    const da = d[i + 3] / 255;
+    const da = (d[i + 3] ?? 0) / 255;
     const oa = sa + da * (1 - sa);
-    d[i] = clamp255((((color >> 16) & 0xff) * sa + d[i] * da * (1 - sa)) / oa);
-    d[i + 1] = clamp255((((color >> 8) & 0xff) * sa + d[i + 1] * da * (1 - sa)) / oa);
-    d[i + 2] = clamp255(((color & 0xff) * sa + d[i + 2] * da * (1 - sa)) / oa);
+    d[i] = clamp255((((color >> 16) & 0xff) * sa + (d[i] ?? 0) * da * (1 - sa)) / oa);
+    d[i + 1] = clamp255((((color >> 8) & 0xff) * sa + (d[i + 1] ?? 0) * da * (1 - sa)) / oa);
+    d[i + 2] = clamp255(((color & 0xff) * sa + (d[i + 2] ?? 0) * da * (1 - sa)) / oa);
     d[i + 3] = clamp255(oa * 255);
   }
 
@@ -202,9 +202,10 @@ export class PixelBuffer implements RgbaSnapshot {
     for (let iy = 0; iy < h; iy++) {
       const t = h <= 1 ? 0 : iy / (h - 1);
       let i = 0;
-      while (i < sorted.length - 2 && t > sorted[i + 1].t) i++;
+      while (i < sorted.length - 2 && t > (sorted[i + 1]?.t ?? Number.POSITIVE_INFINITY)) i++;
       const s0 = sorted[i];
       const s1 = sorted[i + 1];
+      if (!s0 || !s1) continue;
       const f = s1.t <= s0.t ? 0 : Math.min(1, Math.max(0, (t - s0.t) / (s1.t - s0.t)));
       const c = mixColor(s0.color, s1.color, f);
       for (let ix = 0; ix < w; ix++) {
@@ -250,8 +251,8 @@ export class PixelBuffer implements RgbaSnapshot {
     for (let sy = 0; sy < snap.height; sy++) {
       for (let sx = 0; sx < snap.width; sx++) {
         const i = (sy * snap.width + sx) * 4;
-        if (snap.data[i + 3] === 0) continue;
-        const color = (snap.data[i] << 16) | (snap.data[i + 1] << 8) | snap.data[i + 2];
+        if ((snap.data[i + 3] ?? 0) === 0) continue;
+        const color = ((snap.data[i] ?? 0) << 16) | ((snap.data[i + 1] ?? 0) << 8) | (snap.data[i + 2] ?? 0);
         for (let by = 0; by < scale; by++) {
           for (let bx = 0; bx < scale; bx++) {
             this.setPx(x + sx * scale + bx, y + sy * scale + by, color);

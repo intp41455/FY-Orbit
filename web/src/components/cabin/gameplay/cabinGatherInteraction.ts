@@ -291,7 +291,7 @@ export async function executeGatherCycle(
   }
 
   // 3. 计算产出物入背包
-  const [lo] = node.qty_range ?? [1, 2];
+  const [lo = 1] = node.qty_range ?? [1, 2];
   const rolledQty = Math.max(1, lo); // 基础保底
   const bagAfter = { ...playerBag };
   bagAfter[node.material] = (bagAfter[node.material] ?? 0) + rolledQty;

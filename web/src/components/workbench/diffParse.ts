@@ -85,8 +85,8 @@ export function parseUnifiedDiff(text: string): ParsedDiff {
     if (line.startsWith('diff --git ')) {
       const m = DIFF_GIT_RE.exec(line);
       file = {
-        oldPath: cleanPath(m ? m[1] : line.slice('diff --git '.length)),
-        newPath: cleanPath(m ? m[2] : ''),
+        oldPath: cleanPath(m?.[1] ?? line.slice('diff --git '.length)),
+        newPath: cleanPath(m?.[2] ?? ''),
         hunks: [],
         isBinary: false,
         additions: 0,
@@ -172,16 +172,19 @@ function markModifiedPairs(files: DiffFile[]): void {
     for (const h of f.hunks) {
       let i = 0;
       while (i < h.lines.length) {
-        if (h.lines[i].kind !== 'del') { i += 1; continue; }
+        const cur = h.lines[i];
+        if (!cur || cur.kind !== 'del') { i += 1; continue; }
         let delEnd = i;
-        while (delEnd < h.lines.length && h.lines[delEnd].kind === 'del') delEnd += 1;
+        while (delEnd < h.lines.length && h.lines[delEnd]?.kind === 'del') delEnd += 1;
         let addEnd = delEnd;
-        while (addEnd < h.lines.length && h.lines[addEnd].kind === 'add') addEnd += 1;
+        while (addEnd < h.lines.length && h.lines[addEnd]?.kind === 'add') addEnd += 1;
         if (addEnd > delEnd) {
           const pairs = Math.min(delEnd - i, addEnd - delEnd);
           for (let k = 0; k < pairs; k += 1) {
-            h.lines[i + k].modified = true;
-            h.lines[delEnd + k].modified = true;
+            const delLine = h.lines[i + k];
+            const addLine = h.lines[delEnd + k];
+            if (delLine) delLine.modified = true;
+            if (addLine) addLine.modified = true;
           }
         }
         i = addEnd > i ? addEnd : i + 1;

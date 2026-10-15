@@ -31,12 +31,12 @@ const CLUSTER_CSS = ['#38bdf8', '#2dd4bf', '#c084fc', '#0284c7', '#34d399', '#a8
 
 function getClusterHex(cluster: number): number {
   const idx = ((cluster % CLUSTER_HEX.length) + CLUSTER_HEX.length) % CLUSTER_HEX.length;
-  return CLUSTER_HEX[idx];
+  return CLUSTER_HEX[idx] ?? 0x38bdf8; // 索引恒命中，?? 仅为类型收窄
 }
 
 function getClusterCss(cluster: number): string {
   const idx = ((cluster % CLUSTER_CSS.length) + CLUSTER_CSS.length) % CLUSTER_CSS.length;
-  return CLUSTER_CSS[idx];
+  return CLUSTER_CSS[idx] ?? '#38bdf8'; // 索引恒命中，?? 仅为类型收窄
 }
 
 export function KnowledgeGraph3D({
@@ -191,11 +191,14 @@ export function KnowledgeGraph3D({
       // Connect sequential or proximate nodes
       for (let i = 0; i < nodeObjects.length; i++) {
         for (let j = i + 1; j < nodeObjects.length; j++) {
-          const p1 = nodeObjects[i].basePos;
-          const p2 = nodeObjects[j].basePos;
+          const a = nodeObjects[i];
+          const b = nodeObjects[j];
+          if (!a || !b) continue; // 循环界内恒命中，仅为类型收窄
+          const p1 = a.basePos;
+          const p2 = b.basePos;
           const d = p1.distanceTo(p2);
           // Connect if close enough or sharing cluster
-          if (d < 240 || (nodeObjects[i].node.cluster === nodeObjects[j].node.cluster && d < 320)) {
+          if (d < 240 || (a.node.cluster === b.node.cluster && d < 320)) {
             linePoints.push(p1.x, p1.y, p1.z);
             linePoints.push(p2.x, p2.y, p2.z);
           }
@@ -235,8 +238,9 @@ export function KnowledgeGraph3D({
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(nodeObjects.map((o) => o.mesh));
 
-      if (intersects.length > 0) {
-        const hit = intersects[0].object.userData.node as StarNode;
+      const firstHit = intersects[0];
+      if (firstHit) {
+        const hit = firstHit.object.userData.node as StarNode;
         setHoveredNode(hit);
         container.style.cursor = 'pointer';
       } else {
@@ -275,8 +279,9 @@ export function KnowledgeGraph3D({
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(nodeObjects.map((o) => o.mesh));
 
-      if (intersects.length > 0) {
-        const hit = intersects[0].object.userData.node as StarNode;
+      const firstHit = intersects[0];
+      if (firstHit) {
+        const hit = firstHit.object.userData.node as StarNode;
         onSelect(hit);
       }
     };

@@ -39,14 +39,14 @@ describe('微像素高精角色部件库 (cabinModularAvatar)', () => {
     expect(avatar.layers).toBeDefined();
     expect(avatar.matrix).toBeDefined();
     expect(avatar.matrix.length).toBe(AVATAR_HEIGHT);
-    expect(avatar.matrix[0].length).toBe(AVATAR_WIDTH);
+    expect(avatar.matrix[0]!.length).toBe(AVATAR_WIDTH);
 
     // 校验每个图层的尺寸
     const layerNames = ['shadow', 'body', 'hair', 'face', 'outfit', 'accessory', 'hand_item', 'outline'];
     for (const name of layerNames) {
       expect(avatar.layers[name]).toBeDefined();
-      expect(avatar.layers[name].length).toBe(AVATAR_HEIGHT);
-      expect(avatar.layers[name][0].length).toBe(AVATAR_WIDTH);
+      expect(avatar.layers[name]!.length).toBe(AVATAR_HEIGHT);
+      expect(avatar.layers[name]![0]!.length).toBe(AVATAR_WIDTH);
     }
 
     // 调色板全覆盖，不可有未定义的漏色字符
@@ -102,7 +102,7 @@ describe('微像素高精角色部件库 (cabinModularAvatar)', () => {
     // 验证待机动画的 4 帧都符合 24×48 规范
     for (const frame of exported.idleMatrixFrames) {
       expect(frame.length).toBe(AVATAR_HEIGHT);
-      expect(frame[0].length).toBe(AVATAR_WIDTH);
+      expect(frame[0]!.length).toBe(AVATAR_WIDTH);
       expect(() => {
         assertPaletteCoversMatrix(frame, exported.charPalette);
       }).not.toThrow();
@@ -111,7 +111,7 @@ describe('微像素高精角色部件库 (cabinModularAvatar)', () => {
     // 验证行走动画的 2 帧
     for (const frame of exported.walkMatrixFrames) {
       expect(frame.length).toBe(AVATAR_HEIGHT);
-      expect(frame[0].length).toBe(AVATAR_WIDTH);
+      expect(frame[0]!.length).toBe(AVATAR_WIDTH);
       expect(() => {
         assertPaletteCoversMatrix(frame, exported.charPalette);
       }).not.toThrow();

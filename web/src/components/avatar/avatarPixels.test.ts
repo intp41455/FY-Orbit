@@ -53,7 +53,7 @@ describe('W11 · 色板转换', () => {
   it('字符色板整体转换为 PixelPalette（20 个语义色 = 20 个字符键）', () => {
     const p = toPixelPalette(palette);
     expect(Object.keys(p)).toHaveLength(20);
-    expect(p.s).toBe(hexToRgbInt(palette.s));
+    expect(p.s).toBe(hexToRgbInt(palette.s!));
     // 矩阵里真的用到的每个字符都必须有颜色
     for (const ch of new Set(matrix.join(''))) {
       if (ch === '.') continue;
@@ -70,7 +70,7 @@ describe('W11 · 8 层矩阵契约', () => {
 
   it('每层都是 48 行 × 24 列', () => {
     for (const name of LAYER_NAMES) {
-      const rows = layers[name];
+      const rows = layers[name]!;
       expect(rows, name).toHaveLength(AVATAR_HEIGHT);
       for (const r of rows) expect(r, name).toHaveLength(AVATAR_WIDTH);
     }
@@ -110,7 +110,7 @@ describe('W11 · 渲染成像素', () => {
   it('至少一个不透明像素（真的画出了东西，不是全空）', () => {
     const snap = renderAvatar(layers, palette);
     let opaque = 0;
-    for (let i = 3; i < snap.data.length; i += 4) if (snap.data[i] > 0) opaque += 1;
+    for (let i = 3; i < snap.data.length; i += 4) if (snap.data[i]! > 0) opaque += 1;
     expect(opaque).toBeGreaterThan(200);
   });
 });
@@ -128,14 +128,14 @@ describe('W11 · 四帧待机生命感', () => {
   it('四帧各不相同（呼吸/发摆/眨眼/中性，真的在动）', () => {
     const frames = idleFrames(layers);
     for (let i = 1; i < frames.length; i++) {
-      expect(frames[i].matrix, `帧 ${i} 与中性帧不同`).not.toEqual(frames[0].matrix);
+      expect(frames[i]!.matrix, `帧 ${i} 与中性帧不同`).not.toEqual(frames[0]!.matrix);
     }
   });
 
   it('呼吸帧影子与中性帧不同（G5-1 影子联动：身体上抬时接触面收窄）', () => {
     const frames = idleFrames(layers);
     // frames[0]=neutral，frames[1]=breathe
-    expect(frames[1].layers.shadow).not.toEqual(frames[0].layers.shadow);
+    expect(frames[1]!.layers.shadow).not.toEqual(frames[0]!.layers.shadow);
   });
 
   it('结果确定：同样输入两次派生逐字节相同', () => {

@@ -125,8 +125,8 @@ describe('cabinNpcSystem · 全地图专属手绘 NPC 与互动好感系统 (T5.
 
   describe('每日赠礼系统与喜好判定 (T5.2)', () => {
     it('赠送最爱礼物 (+50) 触发 loved 独家答谢台词', () => {
-      const npc = EXCLUSIVE_NPCS.forest_elder_pine;
-      const lovedGift = npc.gifts.loved[0]; // e.g. 'lingzhi'
+      const npc = EXCLUSIVE_NPCS.forest_elder_pine!;
+      const lovedGift = npc.gifts.loved[0]!; // e.g. 'lingzhi'
       const res = giveGiftToNpc('forest_elder_pine', lovedGift, '灵芝仙菇', 1);
       expect(res.success).toBe(true);
       expect(res.gainedPoints).toBe(50);
@@ -135,8 +135,8 @@ describe('cabinNpcSystem · 全地图专属手绘 NPC 与互动好感系统 (T5.
     });
 
     it('赠送喜欢礼物 (+35) 触发 liked 答谢台词', () => {
-      const npc = EXCLUSIVE_NPCS.forest_elder_pine;
-      const likedGift = npc.gifts.liked[0]; // e.g. 'mint_herb'
+      const npc = EXCLUSIVE_NPCS.forest_elder_pine!;
+      const likedGift = npc.gifts.liked[0]!; // e.g. 'mint_herb'
       const res = giveGiftToNpc('forest_elder_pine', likedGift, '薄荷野草', 1);
       expect(res.success).toBe(true);
       expect(res.gainedPoints).toBe(35);
@@ -145,8 +145,8 @@ describe('cabinNpcSystem · 全地图专属手绘 NPC 与互动好感系统 (T5.
     });
 
     it('赠送厌恶礼物 (+5) 触发 disliked 答谢台词', () => {
-      const npc = EXCLUSIVE_NPCS.forest_elder_pine;
-      const dislikedGift = npc.gifts.disliked[0]; // e.g. 'alloy_ore'
+      const npc = EXCLUSIVE_NPCS.forest_elder_pine!;
+      const dislikedGift = npc.gifts.disliked[0]!; // e.g. 'alloy_ore'
       const res = giveGiftToNpc('forest_elder_pine', dislikedGift, '合金矿', 1);
       expect(res.success).toBe(true);
       expect(res.gainedPoints).toBe(5);
@@ -168,7 +168,7 @@ describe('cabinNpcSystem · 全地图专属手绘 NPC 与互动好感系统 (T5.
 
   describe('convertNpcToNpcRow 转换器', () => {
     it('正确将专属 NPC 元数据转换为 HUD 兼容 NpcRow 规格', () => {
-      const npc = EXCLUSIVE_NPCS.stream_fisherman_hermit;
+      const npc = EXCLUSIVE_NPCS.stream_fisherman_hermit!;
       const row = convertNpcToNpcRow(npc, {
         npcId: npc.id,
         points: 350,

@@ -29,7 +29,7 @@ from ..deps import (
     get_settings,
 )
 from ..oidc import OIDCClient, OIDCSession
-from ..schemas import AuthMe, LocalDevTokenRequest
+from ..schemas import AuthMe, EmailPasswordBody, LocalDevTokenRequest
 
 router = APIRouter(tags=["auth"])
 
@@ -158,15 +158,15 @@ def _client_ip(request: Request) -> str:
 
 
 @router.post("/auth/register")
-async def register(body: dict, request: Request,
+async def register(body: EmailPasswordBody, request: Request,
                    svc: Services = Depends(get_services),
                    settings: Settings = Depends(get_settings)) -> Response:
     """Create a user account: email + password + explicit privacy consent."""
     user, row = svc.auth.register_user(
-        email=str(body.get("email") or ""),
-        password=str(body.get("password") or ""),
-        consent_accepted=bool(body.get("consent_accepted")),
-        display_name=str(body.get("display_name") or ""),
+        email=body.email,
+        password=body.password,
+        consent_accepted=body.consent_accepted,
+        display_name=body.display_name,
         ip=_client_ip(request),
     )
     svc.session.commit()
@@ -180,13 +180,13 @@ async def register(body: dict, request: Request,
 
 
 @router.post("/auth/login")
-async def login_local(body: dict, request: Request,
+async def login_local(body: EmailPasswordBody, request: Request,
                       svc: Services = Depends(get_services),
                       settings: Settings = Depends(get_settings)) -> Response:
     """Email+password login with per-(email, ip) failure throttling."""
     user, row = svc.auth.login_user(
-        email=str(body.get("email") or ""),
-        password=str(body.get("password") or ""),
+        email=body.email,
+        password=body.password,
         ip=_client_ip(request),
     )
     svc.session.commit()

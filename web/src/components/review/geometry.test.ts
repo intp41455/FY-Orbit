@@ -65,8 +65,8 @@ describe('geometry · A-点哪评哪-07 笔迹归一化', () => {
 
   it('越界点被裁剪到 0~1', () => {
     const s = normalizeStroke([{ x: -50, y: 900 }], VP);
-    expect(s.points[0].x).toBe(0);
-    expect(s.points[0].y).toBe(1);
+    expect(s.points[0]!.x).toBe(0);
+    expect(s.points[0]!.y).toBe(1);
   });
 });
 
@@ -103,7 +103,7 @@ describe('geometry · A-点哪评哪-10 DOM 结构路径', () => {
 
   it('同层多同类元素加 nth-of-type 消歧', () => {
     document.body.innerHTML = '<div><span>a</span><span>b</span></div>';
-    const second = document.querySelectorAll('span')[1];
+    const second = document.querySelectorAll('span')[1]!;
     const p = computeDomPath(second);
     expect(p[p.length - 1]).toContain('nth-of-type(2)');
   });

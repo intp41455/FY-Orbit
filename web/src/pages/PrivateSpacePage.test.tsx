@@ -120,21 +120,21 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  api().list.mockResolvedValue({
+  api().list!.mockResolvedValue({
     assets: [],
     count: 0,
     kinds: ['image', 'audio', 'music', 'doc'],
     max_bytes_by_kind: { image: 10 * 1024 * 1024, audio: 20 * 1024 * 1024, music: 20 * 1024 * 1024, doc: 50 * 1024 * 1024 },
   });
-  api().channels.mockResolvedValue(OVERVIEW_OFFLINE);
-  api().upload.mockImplementation((file: File) =>
+  api().channels!.mockResolvedValue(OVERVIEW_OFFLINE);
+  api().upload!.mockImplementation((file: File) =>
     Promise.resolve(makeAsset({ id: `up-${file.name}`, name: file.name })),
   );
-  api().remove.mockResolvedValue({ ...makeAsset(), deleted: true, file_removed: true });
-  api().setMount.mockImplementation((id: string, role: string) =>
+  api().remove!.mockResolvedValue({ ...makeAsset(), deleted: true, file_removed: true });
+  api().setMount!.mockImplementation((id: string, role: string) =>
     Promise.resolve({ asset: makeAsset({ id, meta: { cabin_mount: role } }) }),
   );
-  api().generateMusic.mockResolvedValue({
+  api().generateMusic!.mockResolvedValue({
     asset: makeAsset({
       id: 'm1',
       kind: 'music',
@@ -143,9 +143,9 @@ beforeEach(() => {
       meta: { provider: 'local_synth', mood_label: '平静' },
     }),
   });
-  api().generateImage.mockResolvedValue({ asset: makeAsset({ id: 'gen1' }) });
-  api().configureChannel.mockResolvedValue({
-    ...OVERVIEW_OFFLINE.channels[0],
+  api().generateImage!.mockResolvedValue({ asset: makeAsset({ id: 'gen1' }) });
+  api().configureChannel!.mockResolvedValue({
+    ...OVERVIEW_OFFLINE.channels[0]!,
     configured: true,
   });
 });
@@ -159,7 +159,7 @@ describe('PrivateSpacePage · 加载与空态', () => {
   });
 
   it('列表真实返回的图片渲染缩略图与体积', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [makeAsset()],
       count: 1,
       kinds: ['image'],
@@ -186,20 +186,20 @@ describe('PrivateSpacePage · 图片通道诚实性', () => {
   });
 
   it('配置后可生成图片，成功后网格出现新资产', async () => {
-    api().channels.mockResolvedValue(OVERVIEW_IMAGE_ON);
+    api().channels!.mockResolvedValue(OVERVIEW_IMAGE_ON);
     renderPage();
     const prompt = await screen.findByTestId('asset-image-prompt');
     await userEvent.type(prompt, '像素风雪夜小屋');
     await userEvent.click(screen.getByTestId('asset-image-generate'));
     await waitFor(() =>
-      expect(api().generateImage).toHaveBeenCalledWith({ prompt: '像素风雪夜小屋', size: '1024x1024' }),
+      expect(api().generateImage!).toHaveBeenCalledWith({ prompt: '像素风雪夜小屋', size: '1024x1024' }),
     );
     expect(await screen.findByText(/图片已生成并入库/)).toBeInTheDocument();
   });
 
   it('生成失败原样展示后端 code，不假装成功', async () => {
-    api().channels.mockResolvedValue(OVERVIEW_IMAGE_ON);
-    api().generateImage.mockRejectedValue(
+    api().channels!.mockResolvedValue(OVERVIEW_IMAGE_ON);
+    api().generateImage!.mockRejectedValue(
       new AssetApiError(503, 'image_provider_not_configured', '未接入图片生成服务'),
     );
     renderPage();
@@ -213,7 +213,7 @@ describe('PrivateSpacePage · 图片通道诚实性', () => {
 
 describe('PrivateSpacePage · 音乐模块（零 key 真实产出）', () => {
   it('合成后卡片标注「本地合成」并提供播放控件', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [
         makeAsset({
           id: 'm1',
@@ -231,7 +231,7 @@ describe('PrivateSpacePage · 音乐模块（零 key 真实产出）', () => {
     renderPage();
     await userEvent.click(await screen.findByTestId('asset-music-generate'));
     await waitFor(() =>
-      expect(api().generateMusic).toHaveBeenCalledWith({ mood: 'calm', seconds: 12 }),
+      expect(api().generateMusic!).toHaveBeenCalledWith({ mood: 'calm', seconds: 12 }),
     );
     const card = await screen.findByTestId('asset-m1');
     expect(within(card).getByText(/本地合成 · 平静/)).toBeInTheDocument();
@@ -249,12 +249,12 @@ describe('PrivateSpacePage · 上传 / 删除 / 挂载', () => {
     const input = await screen.findByTestId('asset-file-input');
     const file = new File([new Uint8Array([1, 2, 3])], '照片.png', { type: 'image/png' });
     await userEvent.upload(input, file);
-    await waitFor(() => expect(api().upload).toHaveBeenCalledWith(file, 'image'));
+    await waitFor(() => expect(api().upload!).toHaveBeenCalledWith(file, 'image'));
     expect(await screen.findByText(/已入库：照片\.png/)).toBeInTheDocument();
   });
 
   it('删除后卡片消失并说明文件是否真被删', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [makeAsset()],
       count: 1,
       kinds: ['image'],
@@ -262,12 +262,12 @@ describe('PrivateSpacePage · 上传 / 删除 / 挂载', () => {
     });
     renderPage();
     await userEvent.click(await screen.findByTestId('asset-delete-img1'));
-    await waitFor(() => expect(api().remove).toHaveBeenCalledWith('img1'));
+    await waitFor(() => expect(api().remove!).toHaveBeenCalledWith('img1'));
     expect(await screen.findByText(/记录 \+ 磁盘文件/)).toBeInTheDocument();
   });
 
   it('图片可挂小屋墙，音乐可设为 BGM（按钮态可切换）', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [
         makeAsset(),
         makeAsset({ id: 'm1', kind: 'music', name: 'bgm.wav', mime: 'audio/wav' }),
@@ -278,15 +278,15 @@ describe('PrivateSpacePage · 上传 / 删除 / 挂载', () => {
     });
     renderPage();
     await userEvent.click(await screen.findByTestId('asset-wall-img1'));
-    await waitFor(() => expect(api().setMount).toHaveBeenCalledWith('img1', 'wall'));
+    await waitFor(() => expect(api().setMount!).toHaveBeenCalledWith('img1', 'wall'));
     expect(await screen.findByText(/挂到小屋墙上/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId('asset-bgm-m1'));
-    await waitFor(() => expect(api().setMount).toHaveBeenCalledWith('m1', 'bgm'));
+    await waitFor(() => expect(api().setMount!).toHaveBeenCalledWith('m1', 'bgm'));
   });
 
   it('文档类资产不提供挂载按钮（不会给出无效入口）', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [makeAsset({ id: 'd1', kind: 'doc', name: 'note.txt', mime: 'text/plain' })],
       count: 1,
       kinds: ['doc'],
@@ -299,7 +299,7 @@ describe('PrivateSpacePage · 上传 / 删除 / 挂载', () => {
   });
 
   it('超限文件不上传并提示上限', async () => {
-    api().list.mockResolvedValue({
+    api().list!.mockResolvedValue({
       assets: [],
       count: 0,
       kinds: ['image'],
@@ -311,7 +311,7 @@ describe('PrivateSpacePage · 上传 / 删除 / 挂载', () => {
     Object.defineProperty(big, 'size', { value: 11 * 1024 * 1024 });
     await userEvent.upload(input, big);
     expect(await screen.findByTestId('asset-generate-error')).toHaveTextContent('超过图片上限 10MB');
-    expect(api().upload).not.toHaveBeenCalled();
+    expect(api().upload!).not.toHaveBeenCalled();
   });
 });
 
@@ -321,7 +321,7 @@ describe('PrivateSpacePage · 通道配置', () => {
     await userEvent.type(await screen.findByTestId('asset-channel-base-url'), 'http://127.0.0.1:7860/v1');
     await userEvent.click(screen.getByTestId('asset-channel-save'));
     await waitFor(() =>
-      expect(api().configureChannel).toHaveBeenCalledWith('image', {
+      expect(api().configureChannel!).toHaveBeenCalledWith('image', {
         base_url: 'http://127.0.0.1:7860/v1',
         api_key: '',
         model: '',

@@ -204,12 +204,12 @@ describe('隐藏宝箱契约', () => {
 
   it('档位越高金币越高', () => {
     const tiers = fixture.chest_tiers as Record<string, { coins: number[] }>;
-    expect(tiers.t1.coins[1]).toBeLessThan(tiers.t2.coins[0]);
-    expect(tiers.t2.coins[1]).toBeLessThan(tiers.t3.coins[0]);
+    expect(tiers.t1!.coins[1]!).toBeLessThan(tiers.t2!.coins[0]!);
+    expect(tiers.t2!.coins[1]!).toBeLessThan(tiers.t3!.coins[0]!);
   });
 
   it('visibleChests 只返回已发现的（未发现的不许预画）', () => {
-    const first = chests[0];
+    const first = chests[0]!;
     expect(visibleChests(chests, [first.id])).toEqual([first]);
     expect(visibleChests(chests, [])).toEqual([]);
   });
@@ -232,7 +232,7 @@ describe('秘密区域', () => {
   });
 
   it('nearbySecrets 只给附近的', () => {
-    const near = nearbySecrets(secrets, secrets[0].tile);
+    const near = nearbySecrets(secrets, secrets[0]!.tile);
     expect(near).toContain(secrets[0]);
     expect(nearbySecrets(secrets, [world.cols - 1, 0])).toEqual([]);
   });

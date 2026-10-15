@@ -183,3 +183,17 @@ def test_synastry_energy_balance_b_line() -> None:
     assert 50 <= res.compatibility_score <= 100
     assert len(res.synergy_points) > 0
 
+
+def test_synastry_entertainment_label_and_neutral_copy() -> None:
+    """I-11：合盘保留启发式，但标注仅供娱乐且文案无事实断言。"""
+    from find_yourself.charts.models import SynastryRequest
+    req = SynastryRequest(
+        chart_a=ChartRequest(birth_date="1992-05-18"),
+        chart_b=ChartRequest(birth_date="1995-10-24"),
+    )
+    res = DeterministicChartEngine.compute_synastry(req)
+    assert "仅供娱乐" in res.disclaimer
+    blob = "\n".join([*res.synergy_points, *res.friction_points, res.actionable_advice])
+    for banned in ("默契度高", "相得益彰", "互补闭环"):
+        assert banned not in blob
+

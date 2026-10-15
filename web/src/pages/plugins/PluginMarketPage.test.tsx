@@ -65,8 +65,8 @@ const FAKE_HIERARCHY = {
       label: '技术可拆层（透明调试）',
       portal: {
         first_class_entry: true,
-        description: '开发者与高级工程师专属入口，支持直视 Prompt、AST 上下文与调试',
-        supported_verbs: ['view_prompt', 'debug_ast', 'inspect_context', 'disassemble_pipeline'],
+        description: '开发者与高级工程师专属入口，支持直视 Prompt、IR 上下文与调试',
+        supported_verbs: ['view_prompt', 'debug_ir', 'inspect_context', 'disassemble_pipeline'],
         features: [
           { id: 'prompt_visibility', label: 'Prompt 完全可见与导出' },
           { id: 'cursor_context', label: 'Cursor 上下文装配引擎' },
@@ -139,8 +139,8 @@ describe('PluginMarketPage 列表', () => {
     render(<PluginMarketPage />);
     const scans = await screen.findAllByTestId('plugin-scan-summary');
     expect(scans).toHaveLength(2);
-    expect(scans[0].textContent).toContain('发现 0 条');
-    expect(scans[1].textContent).toContain('发现 3 条');
+    expect(scans[0]!.textContent).toContain('发现 0 条');
+    expect(scans[1]!.textContent).toContain('发现 3 条');
   });
 
   it('搜索框提交把 query 传给 API', async () => {
@@ -223,8 +223,8 @@ describe('PluginMarketPage 评分体系 (A-工具市场-03)', () => {
     render(<PluginMarketPage />);
     const badges = await screen.findAllByTestId('plugin-rating-badge');
     expect(badges.length).toBeGreaterThanOrEqual(1);
-    expect(badges[0].textContent).toContain('★ 4.5');
-    expect(badges[0].textContent).toContain('10评价');
+    expect(badges[0]!.textContent).toContain('★ 4.5');
+    expect(badges[0]!.textContent).toContain('10评价');
   });
 
   it('切换排序方式调用带 sortBy 参数的 API', async () => {

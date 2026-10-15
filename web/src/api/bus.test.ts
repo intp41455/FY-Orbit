@@ -107,7 +107,7 @@ describe('subscribeBus', () => {
     const un = subscribeBus('team-1', () => {}, 0);
     await vi.advanceTimersByTimeAsync(3_100);
     expect(req).toHaveBeenCalledTimes(1);
-    expect(req.mock.calls[0][0]).toBe('/api/bus/team-1/messages');
+    expect(req.mock.calls[0]![0]).toBe('/api/bus/team-1/messages');
 
     await vi.advanceTimersByTimeAsync(6_000);
     expect(req).toHaveBeenCalledTimes(3);
@@ -141,9 +141,9 @@ describe('subscribeBus', () => {
     expect(es.url).toBe('/api/bus/team-1/stream?after_id=5&max_events=0');
 
     const payload = msg({ id: 9, from_identity: 'agent:implementer', content: '收到' });
-    es.listeners.message.forEach((cb) => cb({ data: JSON.stringify(payload) }));
+    es.listeners.message!.forEach((cb) => cb({ data: JSON.stringify(payload) }));
     expect(seen).toHaveLength(1);
-    expect(seen[0].content).toBe('收到');
+    expect(seen[0]!.content).toBe('收到');
 
     un();
     expect(es.closed).toBe(true);
@@ -157,7 +157,7 @@ describe('subscribeBus', () => {
       auto_reply_enabled: true,
     });
     await busApi.send('team-1', { content: 'hi', kind: 'text', mention: 'agent:implementer' });
-    const body = req.mock.calls[0][1]?.body as Record<string, unknown>;
+    const body = req.mock.calls[0]![1]?.body as Record<string, unknown>;
     expect(body).toBeDefined();
     expect(Object.keys(body)).not.toContain('from_identity');
     expect(body.mention).toBe('agent:implementer');

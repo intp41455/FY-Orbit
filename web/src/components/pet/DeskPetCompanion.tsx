@@ -141,8 +141,9 @@ function drawMatrix(
 
   for (let y = 0; y < h; y++) {
     const row = matrix[y];
+    if (!row) continue; // 空行跳过（静态矩阵恒非空，仅为类型收窄）
     for (let x = 0; x < row.length; x++) {
-      const ch = row[x];
+      const ch = row[x] ?? '';
       if (ch === '.' || ch === ' ') continue;
       const color = palette[ch];
       if (!color) continue;
@@ -325,7 +326,7 @@ export function DeskPetCompanion() {
     if (isInsideCabin || !enabled) return;
     const actTimer = window.setInterval(() => {
       const activities: CompanionActivity[] = ['idle', 'idle', 'walking', 'sleepy', 'stretching', 'reading'];
-      const nextAct = activities[Math.floor(Math.random() * activities.length)]!;
+      const nextAct = activities[Math.floor(Math.random() * activities.length)] ?? 'idle'; // 静态 6 项恒命中，?? 仅为类型收窄
       setActivity(nextAct);
 
       // 如果动作变化且气泡未固定，恢复默认心境台词

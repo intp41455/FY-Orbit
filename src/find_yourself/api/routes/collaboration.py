@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -76,8 +76,6 @@ def _svc(svc: Services) -> CollaborationService:
     return CollaborationService(svc.session, svc.audit, grants=svc.grants)
 
 
-def _translate(exc: DomainError) -> HTTPException:
-    return HTTPException(status_code=exc.http_status, detail=exc.message)
 
 
 def _resolve_expiry(body: AssignRoleBody) -> datetime:
@@ -109,7 +107,7 @@ async def assign_role(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -126,7 +124,7 @@ async def revoke_role(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -140,7 +138,7 @@ async def list_roles(
     try:
         items = _svc(svc).list_roles(actor, record_kind=record_kind, record_id=record_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
     return {"count": len(items), "items": items}
 
 
@@ -160,7 +158,7 @@ async def add_comment(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return result
 
 
@@ -182,7 +180,7 @@ async def add_reply(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return result
 
 
@@ -203,7 +201,7 @@ async def list_comments(
             limit=limit, offset=offset, order=order,
         )
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
     return page
 
 
@@ -220,7 +218,7 @@ async def edit_comment(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return result
 
 
@@ -236,7 +234,7 @@ async def delete_comment(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -277,7 +275,7 @@ async def mark_notification_read(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 

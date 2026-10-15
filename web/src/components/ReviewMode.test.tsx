@@ -66,7 +66,7 @@ describe('ReviewMode · 开关与面板', () => {
     render(<ReviewMode />);
     fireEvent.click(screen.getByTestId('review-toggle'));
     await waitFor(() => expect(openReviewSession).toHaveBeenCalled());
-    expect(vi.mocked(openReviewSession).mock.calls[0][0].page).toBe(window.location.pathname);
+    expect(vi.mocked(openReviewSession).mock.calls[0]![0].page).toBe(window.location.pathname);
   });
 
   it('三种模式切换按钮存在', async () => {
@@ -119,7 +119,7 @@ describe('ReviewMode · 圈选落库（A-点哪评哪-06）', () => {
     fireEvent.mouseUp(overlay);
 
     await waitFor(() => expect(addReviewNote).toHaveBeenCalled());
-    const [sid, payload] = vi.mocked(addReviewNote).mock.calls[0];
+    const [sid, payload] = vi.mocked(addReviewNote).mock.calls[0]!;
     expect(sid).toBe('s1');
     expect(payload.mode).toBe('region');
     expect(payload.region?.w).toBeGreaterThan(0);
@@ -144,7 +144,7 @@ describe('ReviewMode · 批注落库（A-点哪评哪-07）', () => {
     fireEvent.click(screen.getByTestId('annotation-submit'));
 
     await waitFor(() => expect(addReviewNote).toHaveBeenCalled());
-    const [, payload] = vi.mocked(addReviewNote).mock.calls[0];
+    const [, payload] = vi.mocked(addReviewNote).mock.calls[0]!;
     expect(payload.mode).toBe('freehand');
     expect(payload.strokes?.length).toBe(1);
   });

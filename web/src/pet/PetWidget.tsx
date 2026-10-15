@@ -54,7 +54,7 @@ const WALK_INTERVAL_MS = 420;
 function paintFrame(canvas: HTMLCanvasElement, frameIdx: number): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return; // jsdom 无 canvas：静默跳过（不报错）。
-  const rows = PET_FRAMES[frameIdx];
+  const rows = PET_FRAMES[frameIdx] ?? PET_FRAMES[0] ?? []; // 静态两帧恒非空，?? 仅为类型收窄
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   for (const cell of frameToCells(rows, PET_COLORS)) {
     ctx.fillStyle = colorToCss(cell.color);
@@ -77,7 +77,7 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
 
   useEffect(() => {
     if (canvasRef.current) {
-      const rows = PET_FRAMES[0];
+      const rows = PET_FRAMES[0] ?? []; // 静态两帧恒非空，?? 仅为类型收窄
       const { width, height } = frameSize(rows);
       canvasRef.current.width = width * PIXEL_SCALE;
       canvasRef.current.height = height * PIXEL_SCALE;
@@ -123,7 +123,7 @@ export function PetWidget({ bridge }: { bridge?: PetBridge }) {
       style={{
         // 透明窗：根节点不设背景，让 Tauri transparent 生效。
         position: 'relative',
-        width: PET_FRAMES[0][0].length * PIXEL_SCALE,
+        width: (PET_FRAMES[0]?.[0]?.length ?? 0) * PIXEL_SCALE,
         fontFamily: 'system-ui, sans-serif',
         userSelect: 'none',
         cursor: 'pointer',

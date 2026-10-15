@@ -54,21 +54,21 @@ function msg(id: number, over: Partial<BusMessage> = {}): BusMessage {
 }
 
 function okList(items: BusMessage[]) {
-  bus.list.mockResolvedValue({ room: 'team-1', kind: 'team', items, count: items.length, next_after_id: items.length });
+  bus.list!.mockResolvedValue({ room: 'team-1', kind: 'team', items, count: items.length, next_after_id: items.length });
 }
 function okEmpty() {
-  bus.handoffs.mockResolvedValue({ room: 'team-1', kind: 'team', edges: {}, total: 0 });
-  bus.context.mockResolvedValue({ room: 'team-1', kind: 'team', items: [], count: 0 });
+  bus.handoffs!.mockResolvedValue({ room: 'team-1', kind: 'team', edges: {}, total: 0 });
+  bus.context!.mockResolvedValue({ room: 'team-1', kind: 'team', items: [], count: 0 });
 }
 
 beforeEach(() => {
   emit = null;
   unsubscribeCalled = 0;
-  bus.list.mockReset();
-  bus.send.mockReset();
-  bus.handoffs.mockReset();
-  bus.context.mockReset();
-  bus.addContext.mockReset();
+  bus.list!.mockReset();
+  bus.send!.mockReset();
+  bus.handoffs!.mockReset();
+  bus.context!.mockReset();
+  bus.addContext!.mockReset();
   subscribe.mockReset();
   subscribe.mockImplementation((_room: string, cb: (m: BusMessage) => void) => {
     emit = cb;
@@ -97,20 +97,20 @@ describe('BusPanel', () => {
     expect(who).toEqual(['我', '编码专家', '系统']);
     expect(screen.getByText('@编码专家')).toBeInTheDocument();
     expect(screen.getByText('模型未配置，无法回应。')).toBeInTheDocument();
-    expect(bus.list).toHaveBeenCalledWith('team-1', 0);
+    expect(bus.list!).toHaveBeenCalledWith('team-1', 0);
   });
 
   it('以本人身份发言并点名成员：返回消息入列，提示已点名', async () => {
     okList([]);
     const sent = msg(1, { content: '@编码专家 请把这个函数实现一下', mention: 'agent:implementer' });
-    bus.send.mockResolvedValue({
+    bus.send!.mockResolvedValue({
       message: sent,
       triggered: ['implementer'],
       scheduled: true,
       auto_reply_enabled: true,
     });
     render(<BusPanel room="team-1" members={MEMBERS} />);
-    await waitFor(() => expect(bus.list).toHaveBeenCalled());
+    await waitFor(() => expect(bus.list!).toHaveBeenCalled());
 
     await userEvent.type(screen.getByLabelText('以本人身份发言'), '@编码专家 请把这个函数实现一下');
     await userEvent.selectOptions(screen.getByLabelText(/点名成员/), 'agent:implementer');
@@ -119,8 +119,8 @@ describe('BusPanel', () => {
     await waitFor(() =>
       expect(screen.getByText(/已点名 implementer/)).toBeInTheDocument(),
     );
-    expect(bus.send).toHaveBeenCalledTimes(1);
-    const body = bus.send.mock.calls[0][1] as Record<string, unknown>;
+    expect(bus.send!).toHaveBeenCalledTimes(1);
+    const body = bus.send!.mock.calls[0]![1] as Record<string, unknown>;
     expect(Object.keys(body)).not.toContain('from_identity');
     expect(body.mention).toBe('agent:implementer');
     expect(screen.getByText('@编码专家 请把这个函数实现一下')).toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('BusPanel', () => {
 
   it('handoff 交接在连线徽标上计数（后端 handoffs 端点）', async () => {
     okList([]);
-    bus.handoffs.mockResolvedValue({
+    bus.handoffs!.mockResolvedValue({
       room: 'team-1',
       kind: 'team',
       edges: { 'o1>reviewer': 2, 'coordinator>implementer': 1 },
@@ -143,7 +143,7 @@ describe('BusPanel', () => {
   });
 
   it('越权房间：错误原样暴露为 alert，不假装空房间', async () => {
-    bus.list.mockRejectedValue(
+    bus.list!.mockRejectedValue(
       Object.assign(new Error('Request failed'), {
         status: 403,
         body: { code: 'bus_room_forbidden', message: '无权访问' },

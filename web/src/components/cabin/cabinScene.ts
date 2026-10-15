@@ -206,7 +206,7 @@ function toTexture(buf: PixelBuffer, label: string): PixelTexture {
 /** 高度数组 → 逐列填充剪影带。 */
 function fillBand(buf: PixelBuffer, heights: readonly number[], color: number): void {
   for (let x = 0; x < buf.width; x++) {
-    const h = heights[x];
+    const h = heights[x] ?? 0;
     if (h > 0) buf.rect(x, buf.height - h, 1, h, color);
   }
 }
@@ -425,7 +425,7 @@ function buildThemeTextures(bg: CabinBackgroundId): ThemeTextures {
       stampSilhouetteWrapped(
         farBuf,
         x,
-        FAR_VH - backH[x] + 2,
+        FAR_VH - (backH[x] ?? 0) + 2,
         farCfg.treeColor,
         farCfg.trees ? 'tree' : 'spire',
         prng,
@@ -483,7 +483,8 @@ function buildThemeTextures(bg: CabinBackgroundId): ThemeTextures {
     const x = Math.floor(prng() * GROUND_TILE_VW);
     const y = Math.floor(prng() * GROUND_VH);
     if (g.water && y >= g.water.from - 1 && y <= g.water.to) continue;
-    groundBuf.setPx(x, y, g.speckles[i % g.speckles.length]);
+    const sp = g.speckles[i % g.speckles.length];
+    if (sp !== undefined) groundBuf.setPx(x, y, sp);
   }
   const ground = tiled(toTexture(groundBuf, `cabin-ground-${bg}`));
 
@@ -771,8 +772,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     }
     return pool;
   };
-  const midSegs = makeSegPool(MID_SEG_SLOTS, currentTextures.mid[0]);
-  const nearSegs = makeSegPool(NEAR_SEG_SLOTS, currentTextures.near[0]);
+  const midSegs = makeSegPool(MID_SEG_SLOTS, currentTextures.mid[0] ?? currentTextures.ground);
+  const nearSegs = makeSegPool(NEAR_SEG_SLOTS, currentTextures.near[0] ?? currentTextures.ground);
   /** 中景/近景当前需要的可见段数（resize 时重算）。 */
   let midSegNeed = 1;
   let nearSegNeed = 1;
@@ -906,7 +907,13 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   timeOverlay.blendMode = 'multiply';
 
   const applyTimeOfDay = (time: TimeOfDay = config.timeOfDay ?? 'day') => {
-    const meta = TIME_OF_DAY_LIST.find((t) => t.id === time) ?? TIME_OF_DAY_LIST[1];
+    // 白天为默认时段（列表第 2 项），兜底保证昼夜叠加层可计算
+    const meta = TIME_OF_DAY_LIST.find((t) => t.id === time) ?? TIME_OF_DAY_LIST[1] ?? {
+      id: 'day' as TimeOfDay,
+      label: '白天',
+      tint: 0xffffff,
+      alpha: 0,
+    };
     if (meta.alpha <= 0) {
       timeOverlay.visible = false;
     } else {
@@ -1009,6 +1016,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       for (let c = bounds.col0; c <= bounds.col1 && c < MAP_COLS; c++) {
         if (idx >= tileSprites.length) break;
         const spr = tileSprites[idx++];
+        if (!spr) break;
         const tid = worldGrid.tiles[worldRow]?.[c] ?? 'grass';
         spr.texture = createTerrainTileTexture(tid, config.background).texture;
         spr.scale.set(worldScale);
@@ -1020,7 +1028,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       }
     }
     for (; idx < tileSprites.length; idx++) {
-      tileSprites[idx].visible = false;
+      const s = tileSprites[idx];
+      if (s) s.visible = false;
     }
   };
 
@@ -1174,13 +1183,16 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
 
   const petFrame = (colorId: string, base: number, frame: number): Texture =>
     spriteFromMatrix(
-      PET_WALK_FRAMES[frame],
+      PET_WALK_FRAMES[frame] ?? PET_WALK_FRAMES[0] ?? [],
       petPalette(base),
       { autoOutline: shade(base, 0.4), label: `pet-${colorId}-${frame}` },
       `pet:${colorId}:${frame}`,
     ).texture;
 
-  const petColorMeta = () => PET_COLORS.find((c) => c.id === config.petColor) ?? PET_COLORS[0];
+  // 宠物颜色缺省回退天空蓝，保证换肤纹理可生成
+  const petColorMeta = () =>
+    PET_COLORS.find((c) => c.id === config.petColor) ??
+    PET_COLORS[0] ?? { id: 'sky', label: '天空蓝', hex: '#4fc3f7' };
 
   function syncTinySwords(assets: TinySwordsAssets): void {
     if (!useCustomPerson && assets.pawnYellow) {
@@ -1251,6 +1263,7 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
   ) => {
     for (let i = 0; i < pool.length; i++) {
       const s = pool[i];
+      if (!s) continue;
       const on = i < need;
       s.visible = on;
       if (!on) continue;
@@ -1457,20 +1470,25 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
     let idx = 0;
     for (let si = 0; si < sets.length; si++) {
       const k = sets[si];
+      const d = drawn[si];
+      if (!k || !d) continue;
       for (let n = 0; n < k.count && idx < particles.length; n++, idx++) {
         const st = particles[idx];
+        if (!st) continue;
         st.kind = k.kind;
         st.spr.visible = true;
-        st.spr.texture = drawn[si].tex;
-        st.spr.blendMode = drawn[si].additive ? 'add' : 'normal';
-        st.spr.scale.set(drawn[si].scale);
+        st.spr.texture = d.tex;
+        st.spr.blendMode = d.additive ? 'add' : 'normal';
+        st.spr.scale.set(d.scale);
         st.spr.alpha = 1;
       }
     }
     // 池内剩余槽位（合计 < PARTICLE_POOL 时）保持隐藏，避免上一主题粒子残留。
     for (; idx < particles.length; idx++) {
-      particles[idx].kind = '';
-      particles[idx].spr.visible = false;
+      const rest = particles[idx];
+      if (!rest) continue;
+      rest.kind = '';
+      rest.spr.visible = false;
     }
   };
 
@@ -1492,10 +1510,12 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       groundFillSpr.tint = currentTextures.horizonColor;
       // 中景/近景分段：每槽一张不同变体（变体数 < 槽位数时才循环）
       midSegs.forEach((s, i) => {
-        s.texture = currentTextures.mid[i % currentTextures.mid.length].texture;
+        const tex = currentTextures.mid[i % currentTextures.mid.length];
+        if (tex) s.texture = tex.texture;
       });
       nearSegs.forEach((s, i) => {
-        s.texture = currentTextures.near[i % currentTextures.near.length].texture;
+        const tex = currentTextures.near[i % currentTextures.near.length];
+        if (tex) s.texture = tex.texture;
       });
       worldGrid = generateDeterministicWorldGrid('player', config.background);
       rebuildFurnitureSprites();
@@ -1785,7 +1805,8 @@ export async function createCabinScene(options: CreateCabinSceneOptions): Promis
       personBody.scale.set(personBaseScaleX, personBaseScaleY);
     } else {
       const frame = walking ? Math.floor(timeMs / 150) % 2 : 0;
-      personBody.texture = walkFrames[frame];
+      const wf = walkFrames[frame] ?? walkFrames[0];
+      if (wf) personBody.texture = wf;
       personBody.scale.set(1, 1);
     }
 

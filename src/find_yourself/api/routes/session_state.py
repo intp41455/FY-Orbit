@@ -287,7 +287,7 @@ async def compare_fork(
     fork_id: str,
     actor: object = Depends(csrf_protected),
     db: Session = Depends(get_db),
-    body: dict[str, Any] | None = Body(default=None),
+    body: CompareQuery | None = Body(default=None),
 ) -> dict:
     """分支对比（A-存档回溯-05）：逐键比对两侧执行结果。
 
@@ -295,11 +295,10 @@ async def compare_fork(
     两侧结果。这是**真比对**，不回显调用方传入的「预期差异」。
     """
     svc = _fork_service(db, actor)
-    payload = body or {}
     return svc.compare(
         fork_id,
-        left_runs=payload.get("left"),
-        right_runs=payload.get("right"),
+        left_runs=body.left if body else None,
+        right_runs=body.right if body else None,
     )
 
 

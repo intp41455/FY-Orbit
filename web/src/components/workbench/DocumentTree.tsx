@@ -90,11 +90,19 @@ export function DocumentTree({ workspaceId }: Props) {
     async (entry: TreeEntry) => {
       const cur = dirs[entry.path];
       if (cur?.expanded && cur.children) {
-        setDirs((s) => ({ ...s, [entry.path]: { ...s[entry.path], expanded: false } }));
+        setDirs((s) => {
+          const prev = s[entry.path];
+          if (!prev) return s; // 展开态恒有记录，仅为类型收窄
+          return { ...s, [entry.path]: { ...prev, expanded: false } };
+        });
         return;
       }
       if (cur?.children) {
-        setDirs((s) => ({ ...s, [entry.path]: { ...s[entry.path], expanded: true } }));
+        setDirs((s) => {
+          const prev = s[entry.path];
+          if (!prev) return s; // 有 children 恒有记录，仅为类型收窄
+          return { ...s, [entry.path]: { ...prev, expanded: true } };
+        });
         return;
       }
       setDirs((s) => ({

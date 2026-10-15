@@ -82,10 +82,10 @@ describe('P1-12 布局算法', () => {
     const g = layoutCommits(HISTORY);
     expect(g.nodes).toHaveLength(6);
     // 线性链 1→2→3→4 全在 lane 0
-    expect(g.nodes[0].lane).toBe(0);
-    expect(g.nodes[1].lane).toBe(0);
-    expect(g.nodes[2].lane).toBe(0);
-    expect(g.nodes[3].lane).toBe(0);
+    expect(g.nodes[0]!.lane).toBe(0);
+    expect(g.nodes[1]!.lane).toBe(0);
+    expect(g.nodes[2]!.lane).toBe(0);
+    expect(g.nodes[3]!.lane).toBe(0);
     // 第二父 SHA(6) 在另一条 lane
     const branch = g.nodes.find((n) => n.sha === SHA(6));
     expect(branch?.lane).toBeGreaterThan(0);
@@ -121,7 +121,7 @@ describe('P1-12 渲染与点击联动', () => {
     await userEvent.type(screen.getByTestId('commit-graph-ws-input'), 'p12-demo');
     await userEvent.click(screen.getByTestId('commit-graph-load'));
     const nodes = await screen.findAllByTestId('commit-node');
-    await userEvent.click(nodes[0]);
+    await userEvent.click(nodes[0]!);
 
     const detail = await screen.findByTestId('commit-detail');
     expect(detail).toHaveTextContent(`${SHA(1).slice(0, 7)} ↔ 前驱`);
@@ -138,8 +138,8 @@ describe('P1-12 渲染与点击联动', () => {
     await userEvent.type(screen.getByTestId('commit-graph-ws-input'), 'p12-demo');
     await userEvent.click(screen.getByTestId('commit-graph-load'));
     const nodes = await screen.findAllByTestId('commit-node');
-    await userEvent.click(nodes[0]);
-    await userEvent.click(nodes[2]);
+    await userEvent.click(nodes[0]!);
+    await userEvent.click(nodes[2]!);
     await waitFor(() =>
       expect(gitRepoApi.getDiff).toHaveBeenLastCalledWith('p12-demo', SHA(3), SHA(1)),
     );

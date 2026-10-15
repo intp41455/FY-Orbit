@@ -68,9 +68,9 @@ describe('B10 · 大世界瓦片系统真数据验证 (判据 R5)', () => {
 
     let totalTiles = 0;
     for (let r = 0; r < 100; r += 1) {
-      expect(grid.tiles[r].length).toBe(160);
+      expect(grid.tiles[r]!.length).toBe(160);
       for (let c = 0; c < 160; c += 1) {
-        const tid = grid.tiles[r][c];
+        const tid = grid.tiles[r]![c];
         expect(TERRAIN_IDS).toContain(tid);
         totalTiles += 1;
       }
@@ -152,7 +152,7 @@ describe('R3 · 镜头跟随与居中平滑性', () => {
 
     // 插值递减收敛，绝无反向跳动或剧烈尖峰
     for (let i = 1; i < deltas.length; i += 1) {
-      expect(deltas[i]).toBeLessThanOrEqual(deltas[i - 1] + 0.001);
+      expect(deltas[i]!).toBeLessThanOrEqual(deltas[i - 1]! + 0.001);
     }
     expect(camX).toBeGreaterThan(1995);
     expect(camX).toBeLessThanOrEqual(targetX);
@@ -179,7 +179,7 @@ describe('R4 · 8 屏无缝滚动无周期重复', () => {
     // 比较整列地形切片，绝不可能完全相同
     let sameCount = 0;
     for (let r = 0; r < 100; r += 1) {
-      if (grid.tiles[r][screen1Col] === grid.tiles[r][screen2Col]) sameCount += 1;
+      if (grid.tiles[r]![screen1Col] === grid.tiles[r]![screen2Col]) sameCount += 1;
     }
     // 100 行中随机匹配率正常在 30%-60%，绝不会 100% 相同（完全相同说明是 1 屏粗糙重复复制）
     expect(sameCount).toBeLessThan(95);
@@ -214,7 +214,7 @@ describe('R2 · 帧预算性能基准实测（模拟 16.6ms 预算内开销）',
       const bounds = getVisibleTileBounds(camX, 0, 640, 360);
       for (let r = bounds.row0; r <= bounds.row1 && r < grid.rows; r += 1) {
         for (let c = bounds.col0; c <= bounds.col1 && c < grid.cols; c += 1) {
-          const t = grid.tiles[r][c];
+          const t = grid.tiles[r]![c];
           if (t === 'grass') dummy += 1;
         }
       }

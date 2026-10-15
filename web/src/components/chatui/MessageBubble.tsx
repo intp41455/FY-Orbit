@@ -27,7 +27,7 @@ export function parseCitations(content: string, refs: KBDocument[]): KBDocument[
   const re = /@《([^》]+)》/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(content)) !== null) {
-    const name = m[1].trim();
+    const name = m[1]?.trim() ?? '';
     const hit = refs.find((d) => d.name === name);
     if (hit && !out.some((d) => d.id === hit.id)) out.push(hit);
   }

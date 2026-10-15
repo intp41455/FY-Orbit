@@ -59,7 +59,11 @@ export function MindEchoFountain({ onGainCoins, onClose }: MindEchoFountainProps
   const handleCastBottle = () => {
     setCasting(true);
     setTimeout(() => {
-      const pick = ECHO_MESSAGES_POOL[Math.floor(Math.random() * ECHO_MESSAGES_POOL.length)];
+      const pick = ECHO_MESSAGES_POOL[Math.floor(Math.random() * ECHO_MESSAGES_POOL.length)] ?? ECHO_MESSAGES_POOL[0];
+      if (!pick) {
+        setCasting(false); // 静态池恒非空，仅为类型收窄
+        return;
+      }
       setCurrentEcho(pick);
       setEchoHistory((prev) => [pick, ...prev.filter((p) => p.id !== pick.id)]);
       setCasting(false);

@@ -22,6 +22,29 @@ class LocalDevTokenRequest(Strict):
     token: str = Field(min_length=1, max_length=200)
 
 
+class EmailPasswordBody(Strict):
+    """邮箱 + 密码类请求体（注册 / 登录 / 访客升级共用同一形状）。
+
+    GA-01：此前三条路由用无类型 ``body: dict``，openapi 请求体无字段声明，
+    前端无法逐字段比对。此处收敛为单一模型（display_name 仅注册/升级用，
+    登录时多传即 422 —— extra=forbid 的诚实语义）。
+    """
+    email: str = Field(min_length=1, max_length=320)
+    password: str = Field(min_length=1, max_length=200)
+    consent_accepted: bool = False
+    display_name: str = Field(default="", max_length=100)
+
+
+class AnswersBody(Strict):
+    """测评作答（GA-01：此前无类型 dict）。"""
+    answers: dict[str, int] = Field(default_factory=dict)
+
+
+class ReplyBody(Strict):
+    """对话伴侣回复触发（GA-01：此前无类型 dict；message 缺省读最后一条用户消息）。"""
+    message: str = Field(default="", max_length=8000)
+
+
 class AuthMe(BaseModel):
     subject_type: str
     owner_id: str = ""

@@ -256,6 +256,7 @@ export function BurndownChart({
   const actualPath = sampledIdx
     .map((k, n) => {
       const p = data.actual[k];
+      if (!p) return ''; // 采样索引恒命中，仅为类型收窄
       return `${n === 0 ? 'M' : 'L'}${x(k).toFixed(1)},${y(p.remaining_weight).toFixed(1)}`;
     })
     .join(' ');

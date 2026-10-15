@@ -85,13 +85,16 @@ export function layoutCommits(commits: GitCommit[]): GraphLayout {
     if (parents.length === 0) {
       lanes[lane] = null;
     } else {
-      const firstTaken = lanes.indexOf(parents[0]);
-      lanes[lane] = firstTaken === -1 ? parents[0] : null;
+      const p0 = parents[0];
+      const firstTaken = p0 === undefined ? -1 : lanes.indexOf(p0);
+      lanes[lane] = firstTaken === -1 ? (p0 ?? null) : null;
       for (let i = 1; i < parents.length; i++) {
-        if (lanes.indexOf(parents[i]) === -1) {
+        const p = parents[i];
+        if (p === undefined) continue; // 稀疏数组防御，正常恒命中
+        if (lanes.indexOf(p) === -1) {
           const free = lanes.findIndex((x) => x === null);
-          if (free === -1) lanes.push(parents[i]);
-          else lanes[free] = parents[i];
+          if (free === -1) lanes.push(p);
+          else lanes[free] = p;
         }
       }
     }
@@ -127,7 +130,7 @@ export function relativeTime(iso: string): string {
 }
 
 function laneColor(lane: number): string {
-  return LANE_COLORS[lane % LANE_COLORS.length];
+  return LANE_COLORS[lane % LANE_COLORS.length] ?? '#38bdf8'; // 索引恒命中，?? 仅为类型收窄
 }
 
 interface DiffState {

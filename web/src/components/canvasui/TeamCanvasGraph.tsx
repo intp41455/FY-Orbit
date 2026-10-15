@@ -458,9 +458,11 @@ export function TeamCanvasGraph({
 
         {layout[coordRole] &&
           renderNode(coordRole, layout[coordRole], coordMember ?? null, 'coord')}
-        {members.map((m) =>
-          layout[m.role] ? renderNode(m.role, layout[m.role], m, 'member') : null,
-        )}
+        {members.map((m) => {
+          // 命中才渲染：未命中布局的角色不画节点（与之前三元行为一致）
+          const geom = layout[m.role];
+          return geom ? renderNode(m.role, geom, m, 'member') : null;
+        })}
         {layout[VERIFIER_KEY] && renderNode(VERIFIER_KEY, layout[VERIFIER_KEY], null, 'verifier')}
       </div>
 

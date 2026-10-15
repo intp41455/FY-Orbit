@@ -129,7 +129,7 @@ describe('lifeApi · 采集提示（3 秒规则）', () => {
   });
 
   it('范围外不给提示（不假装能交互）', () => {
-    expect(gatherPrompt({ ...gatherRows[0], in_range: false })).toBeNull();
+    expect(gatherPrompt({ ...gatherRows[0]!, in_range: false })).toBeNull();
     expect(gatherPrompt(null)).toBeNull();
   });
 });
@@ -144,7 +144,7 @@ describe('lifeApi · 制作台', () => {
   });
 
   it('已解锁行显示已解锁', () => {
-    expect(craftLockReason({ ...craftRows[0], unlocked: true })).toBe('已解锁');
+    expect(craftLockReason({ ...craftRows[0]!, unlocked: true })).toBe('已解锁');
   });
 });
 

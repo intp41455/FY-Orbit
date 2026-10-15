@@ -88,7 +88,8 @@ function normalizePmi(doc: unknown): NormalizedTrace {
     events = [];
   }
 
-  const traceId = events.length > 0 ? str(events[0].trace_id, null as unknown as string) || null : null;
+  const firstEvent = events[0];
+  const traceId = firstEvent ? str(firstEvent.trace_id, null as unknown as string) || null : null;
   const nodes: TimelineNode[] = [];
   const laneSet: string[] = [];
 

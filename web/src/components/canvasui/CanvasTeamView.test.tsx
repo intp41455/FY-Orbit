@@ -39,13 +39,13 @@ describe('CanvasTeamView 同名团队页签', () => {
         matches: false, addEventListener: () => {}, removeEventListener: () => {},
       }),
     });
-    api.catalog.mockResolvedValue(CATALOG);
-    api.get.mockRejectedValue(new Error('no team'));
-    api.events.mockResolvedValue({ items: [], next_cursor: 0 });
+    api.catalog!.mockResolvedValue(CATALOG);
+    api.get!.mockRejectedValue(new Error('no team'));
+    api.events!.mockResolvedValue({ items: [], next_cursor: 0 });
   });
 
   it('重名页签后缀 id 前 6 位区分，不重名保持干净', async () => {
-    api.list.mockResolvedValue({
+    api.list!.mockResolvedValue({
       items: [
         summary('abcdef123456', '工程团队'),
         summary('123456abcdef', '工程团队'),
@@ -81,11 +81,11 @@ describe('CanvasTeamView 同名团队页签', () => {
         blockers: [], warnings: [], real_model_configured: false,
       },
     };
-    api.list.mockResolvedValue({
+    api.list!.mockResolvedValue({
       items: [{ ...summary('t-legend', '图例团队') }],
       count: 1,
     });
-    api.get.mockResolvedValue(snap);
+    api.get!.mockResolvedValue(snap);
     render(<CanvasTeamView />);
     const btn = await screen.findByRole('button', { name: '图例' });
     fireEvent.click(btn);

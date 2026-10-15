@@ -112,7 +112,7 @@ describe('DslCanvas 拖拽生成 DSL → 执行', () => {
         .toContain('你好，张三！你今年 34 岁。');
     });
     expect(dslCanvasApi.run).toHaveBeenCalledTimes(1);
-    const submitted = vi.mocked(dslCanvasApi.run).mock.calls[0][0];
+    const submitted = vi.mocked(dslCanvasApi.run).mock.calls[0]![0];
     expect(submitted.version).toBe('1');
     expect(submitted.edges).toHaveLength(2);
     // 逐步日志回显三个节点
@@ -179,8 +179,8 @@ describe('DslCanvas 消费 IR 诊断（P1）', () => {
     items.forEach((el) => expect(el).toBeVisible());
     expect(screen.getByTestId('dsl-ir-count').textContent).toBe('2');
     // 每条都带 code 与 message（悬停 title 亦然）
-    expect(items[0].getAttribute('title')).toContain('extra_field');
-    expect(items[1].getAttribute('title')).toContain('string_type');
+    expect(items[0]!.getAttribute('title')).toContain('extra_field');
+    expect(items[1]!.getAttribute('title')).toContain('string_type');
     expect(screen.getByTestId('dsl-ir-diagnostics').textContent)
       .toContain('params.template');
   });
@@ -190,9 +190,9 @@ describe('DslCanvas 消费 IR 诊断（P1）', () => {
     vi.mocked(dslCanvasApi.validateIr).mockImplementation(async (doc) => ({
       valid: false,
       diagnostics: [
-        { node_id: doc.nodes[0].id, field_path: 'params.value',
+        { node_id: doc.nodes[0]!.id, field_path: 'params.value',
           code: 'extra_field', message: 'Extra inputs are not permitted' },
-        { node_id: doc.nodes[1].id, field_path: 'params.template',
+        { node_id: doc.nodes[1]!.id, field_path: 'params.template',
           code: 'string_type', message: 'Input should be a valid string' },
       ],
     }));
@@ -203,7 +203,7 @@ describe('DslCanvas 消费 IR 诊断（P1）', () => {
 
     const dots = await screen.findAllByTestId(/^dsl-node-diag-/);
     expect(dots).toHaveLength(2);           // 两个节点各一枚红点
-    expect(dots[0].textContent).toContain('1');
+    expect(dots[0]!.textContent).toContain('1');
     const titles = dots.map((d) => d.getAttribute('title') ?? '');
     const all = titles.join('|');
     expect(all).toContain('params.value');

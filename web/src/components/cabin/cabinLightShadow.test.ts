@@ -65,17 +65,17 @@ describe('A5 · 光影体系（统一左上光源、物体阴影与昼夜色温�
       buf.radialEllipse(32, 16, 20, 8, 0x0f172a, 0.4, 1.4);
 
       // 中心点 alpha 接近 0.4
-      const centerAlpha = buf.data[(16 * 64 + 32) * 4 + 3] / 255;
+      const centerAlpha = buf.data[(16 * 64 + 32) * 4 + 3]! / 255;
       expect(centerAlpha).toBeGreaterThan(0.3);
       expect(centerAlpha).toBeLessThanOrEqual(0.45);
 
       // 边缘点平滑渐淡（非全黑生硬边界）
-      const edgeAlpha = buf.data[(16 * 64 + 48) * 4 + 3] / 255;
+      const edgeAlpha = buf.data[(16 * 64 + 48) * 4 + 3]! / 255;
       expect(edgeAlpha).toBeGreaterThan(0);
       expect(edgeAlpha).toBeLessThan(centerAlpha);
 
       // 外部点完全透明
-      const outsideAlpha = buf.data[(16 * 64 + 58) * 4 + 3] / 255;
+      const outsideAlpha = buf.data[(16 * 64 + 58) * 4 + 3]! / 255;
       expect(outsideAlpha).toBe(0);
     });
 
@@ -108,7 +108,7 @@ describe('A5 · 光影体系（统一左上光源、物体阴影与昼夜色温�
       buf.stamp(snap, x, y, scale);
 
       // 断言在物体右下地面区域存在投影半透明像素
-      const shadowSampleAlpha = buf.data[(shadowCy * 120 + shadowCx) * 4 + 3] / 255;
+      const shadowSampleAlpha = buf.data[(shadowCy * 120 + shadowCx) * 4 + 3]! / 255;
       expect(shadowSampleAlpha).toBeGreaterThan(0.2);
     });
   });

@@ -126,7 +126,7 @@ export interface AccessoryDef {
 /* 部件资源库（发型 10 / 发色 10 / 服装 10 / 神态 8 / 饰品 8）       */
 /* ------------------------------------------------------------------ */
 
-export const MODULAR_HAIRSTYLES: HairstyleDef[] = [
+export const MODULAR_HAIRSTYLES: [HairstyleDef, ...HairstyleDef[]] = [
   { id: 'twin_tail', name: '双马尾', desc: '俏皮灵动的元气双马尾，发尾系着浅色丝带', tags: ['cute', 'energetic'] },
   { id: 'wavy_long', name: '微卷长发', desc: '温婉柔和的波浪长卷发，随风轻拂', tags: ['gentle', 'elegant'] },
   { id: 'short_neat', name: '清爽短发', desc: '干练洒脱的层次短发，发梢微翘', tags: ['crisp', 'calm'] },
@@ -139,7 +139,7 @@ export const MODULAR_HAIRSTYLES: HairstyleDef[] = [
   { id: 'curly_horns', name: '羊角甜卷', desc: '两侧如可爱羊角般盘旋的小卷发', tags: ['playful', 'fantasy'] },
 ];
 
-export const MODULAR_HAIR_TONES: HairToneDef[] = [
+export const MODULAR_HAIR_TONES: [HairToneDef, ...HairToneDef[]] = [
   { id: 'mint', name: '薄荷绿', colorName: '清爽薄荷', baseHex: '#7fb69a', shadowHex: '#52836b', highlightHex: '#a9dbc1' },
   { id: 'mist_blue', name: '雾霾蓝', colorName: '静谧雾蓝', baseHex: '#6c8fa8', shadowHex: '#476980', highlightHex: '#9fc0d8' },
   { id: 'champagne_gold', name: '香槟金', colorName: '耀目香槟', baseHex: '#e6c875', shadowHex: '#b29446', highlightHex: '#fbf0b5' },
@@ -152,7 +152,7 @@ export const MODULAR_HAIR_TONES: HairToneDef[] = [
   { id: 'caramel_tea', name: '焦糖暖棕', colorName: '甜郁焦糖', baseHex: '#c47d48', shadowHex: '#8d4d23', highlightHex: '#e8a572' },
 ];
 
-export const MODULAR_OUTFITS: OutfitDef[] = [
+export const MODULAR_OUTFITS: [OutfitDef, ...OutfitDef[]] = [
   {
     id: 'forest_robe',
     name: '森系长袍',
@@ -273,7 +273,7 @@ export const MODULAR_OUTFITS: OutfitDef[] = [
   },
 ];
 
-export const MODULAR_EXPRESSIONS: ExpressionDef[] = [
+export const MODULAR_EXPRESSIONS: [ExpressionDef, ...ExpressionDef[]] = [
   { id: 'vivid_clear', name: '清澈灵动', desc: '眸光清亮含笑，透着对世界的好奇与希冀', moodBias: 'sunny' },
   { id: 'deep_thinker', name: '沉静思考', desc: '眼神从容深邃，唇角微平，静水流深', moodBias: 'focused' },
   { id: 'energetic_smile', name: '元气微笑', desc: '弯月般明媚的笑眼，嘴角上扬，活力四射', moodBias: 'sunny' },
@@ -284,7 +284,7 @@ export const MODULAR_EXPRESSIONS: ExpressionDef[] = [
   { id: 'dreamy_sleepy', name: '慵懒朦胧', desc: '眼睑半垂含笑，如同初醒的小猫般惬意', moodBias: 'melancholy' },
 ];
 
-export const MODULAR_ACCESSORIES: AccessoryDef[] = [
+export const MODULAR_ACCESSORIES: [AccessoryDef, ...AccessoryDef[]] = [
   { id: 'star_wand', name: '魔法星杖', desc: '顶端镶嵌五角光芒星的施法手杖', handItemName: '星芒之杖' },
   { id: 'butterfly_clip', name: '蝴蝶发卡', desc: '停留在鬓角的虹彩磷光蝶，微翅轻颤', handItemName: '魔法卷轴' },
   { id: 'healing_parasol', name: '治愈小伞', desc: '蕾丝雕花的林间小遮阳伞，驱散微雨', handItemName: '晴雨小伞' },
@@ -315,7 +315,8 @@ class PixelLayerCanvas {
 
   px(x: number, y: number, ch: string) {
     if (x >= 0 && x < AVATAR_WIDTH && y >= 0 && y < AVATAR_HEIGHT && ch !== '.') {
-      this.grid[y][x] = ch;
+      const row = this.grid[y];
+      if (row) row[x] = ch;
     }
   }
 
@@ -411,7 +412,8 @@ function drawHair(styleId: string): string[] {
       const dx = (x + 0.5 - cx) / 6.2;
       const dy = (y + 0.5 - FACE_CY) / 6.2;
       if (dx * dx + dy * dy <= 0.85) {
-        c.grid[y][x] = '.';
+        const row = c.grid[y];
+        if (row) row[x] = '.';
       }
     }
   }
@@ -850,7 +852,9 @@ function drawOutline(layers: string[][]): string[] {
   for (const l of layers) {
     for (let y = 0; y < AVATAR_HEIGHT; y++) {
       for (let x = 0; x < AVATAR_WIDTH; x++) {
-        if (l[y][x] !== '.') solid[y][x] = true;
+        const lrow = l[y];
+        const srow = solid[y];
+        if (lrow && srow && lrow[x] !== '.') srow[x] = true;
       }
     }
   }
@@ -858,12 +862,12 @@ function drawOutline(layers: string[][]): string[] {
   const c = new PixelLayerCanvas();
   for (let y = 0; y < AVATAR_HEIGHT; y++) {
     for (let x = 0; x < AVATAR_WIDTH; x++) {
-      if (solid[y][x]) continue;
+      if (solid[y]?.[x]) continue;
       const isNeighbor =
-        (x > 0 && solid[y][x - 1]) ||
-        (x < AVATAR_WIDTH - 1 && solid[y][x + 1]) ||
-        (y > 0 && solid[y - 1][x]) ||
-        (y < AVATAR_HEIGHT - 1 && solid[y + 1][x]);
+        (x > 0 && solid[y]?.[x - 1]) ||
+        (x < AVATAR_WIDTH - 1 && solid[y]?.[x + 1]) ||
+        (y > 0 && solid[y - 1]?.[x]) ||
+        (y < AVATAR_HEIGHT - 1 && solid[y + 1]?.[x]);
       if (isNeighbor && y < 45) {
         c.px(x, y, 'x');
       }
@@ -895,7 +899,12 @@ export function buildModularPalette(
     火: { skin: '#ffe5d4', skinShadow: '#e2ba9f', glow: '#ffd6c4' },
     土: { skin: '#f4e4cf', skinShadow: '#d3bfa0', glow: '#faebd2' },
   };
-  const skinData = skinByElement[element] ?? skinByElement['木'];
+  // 根据五行基调微调肤色与光晕（缺省回退为木行肤色，保证调色板完整）
+  const skinData = skinByElement[element] ?? skinByElement['木'] ?? {
+    skin: '#f7edd8',
+    skinShadow: '#decaa8',
+    glow: '#d1f2d9',
+  };
 
   const charPalette: AvatarCharPalette = {
     s: skinData.skin,
@@ -921,26 +930,26 @@ export function buildModularPalette(
   };
 
   const palette: AvatarPalette = {
-    skin: charPalette.s,
-    skin_shadow: charPalette.S,
-    hair: charPalette.h,
-    hair_shadow: charPalette.H,
-    hair_highlight: charPalette.G,
-    outfit_base: charPalette.o,
-    outfit_shadow: charPalette.O,
-    outfit_highlight: charPalette.F,
-    cape: charPalette.c,
-    cape_shadow: charPalette.C,
-    eye_ink: charPalette.e,
-    eye_highlight: charPalette.E,
-    blush: charPalette.b,
-    trim: charPalette.t,
-    hand_item: charPalette.g,
-    shoe: charPalette.w,
-    legwear: charPalette.L,
-    rim_light: charPalette.x,
-    emblem_bg: charPalette.a,
-    ground_shadow: charPalette.z,
+    skin: charPalette.s ?? '',
+    skin_shadow: charPalette.S ?? '',
+    hair: charPalette.h ?? '',
+    hair_shadow: charPalette.H ?? '',
+    hair_highlight: charPalette.G ?? '',
+    outfit_base: charPalette.o ?? '',
+    outfit_shadow: charPalette.O ?? '',
+    outfit_highlight: charPalette.F ?? '',
+    cape: charPalette.c ?? '',
+    cape_shadow: charPalette.C ?? '',
+    eye_ink: charPalette.e ?? '',
+    eye_highlight: charPalette.E ?? '',
+    blush: charPalette.b ?? '',
+    trim: charPalette.t ?? '',
+    hand_item: charPalette.g ?? '',
+    shoe: charPalette.w ?? '',
+    legwear: charPalette.L ?? '',
+    rim_light: charPalette.x ?? '',
+    emblem_bg: charPalette.a ?? '',
+    ground_shadow: charPalette.z ?? '',
   };
 
   const pixelPalette = toPixelPalette(charPalette);
@@ -1186,19 +1195,22 @@ export function generateRandomModularAvatar(
   const mbti = (
     (profile as PortraitInput)?.mbti ??
     (profile as AvatarProfile)?.portrait?.mbti ??
-    ['INFP', 'INFJ', 'ENFP', 'INTJ', 'ENTP', 'ISFJ'][Math.floor(rng() * 6)]
+    ['INFP', 'INFJ', 'ENFP', 'INTJ', 'ENTP', 'ISFJ'][Math.floor(rng() * 6)] ??
+    'INFP'
   ).toString().toUpperCase();
 
   const element = (
     (profile as PortraitInput)?.bazi_element ??
     (profile as AvatarProfile)?.portrait?.bazi_element ??
-    ['木', '火', '土', '金', '水'][Math.floor(rng() * 5)]
+    ['木', '火', '土', '金', '水'][Math.floor(rng() * 5)] ??
+    '木'
   ).toString();
 
   const mood = (
     (profile as PortraitInput)?.mood ??
     (profile as AvatarProfile)?.portrait?.mood ??
-    ['calm', 'sunny', 'focused', 'melancholy'][Math.floor(rng() * 4)]
+    ['calm', 'sunny', 'focused', 'melancholy'][Math.floor(rng() * 4)] ??
+    'calm'
   ).toString();
 
   // 根据画像建立偏好映射 (软引导同时保留随机惊喜)
@@ -1249,11 +1261,11 @@ export function generateRandomModularAvatar(
 
   const accIdx = Math.floor(rng() * MODULAR_ACCESSORIES.length);
 
-  const selectedHairStyle = MODULAR_HAIRSTYLES[hairStyleIdx];
-  const selectedHairTone = MODULAR_HAIR_TONES[hairToneIdx];
-  const selectedOutfit = MODULAR_OUTFITS[outfitIdx];
-  const selectedExpr = MODULAR_EXPRESSIONS[exprIdx];
-  const selectedAcc = MODULAR_ACCESSORIES[accIdx];
+  const selectedHairStyle = MODULAR_HAIRSTYLES[hairStyleIdx] ?? MODULAR_HAIRSTYLES[0];
+  const selectedHairTone = MODULAR_HAIR_TONES[hairToneIdx] ?? MODULAR_HAIR_TONES[0];
+  const selectedOutfit = MODULAR_OUTFITS[outfitIdx] ?? MODULAR_OUTFITS[0];
+  const selectedExpr = MODULAR_EXPRESSIONS[exprIdx] ?? MODULAR_EXPRESSIONS[0];
+  const selectedAcc = MODULAR_ACCESSORIES[accIdx] ?? MODULAR_ACCESSORIES[0];
 
   const charId = `modular_${seedNum.toString(16)}`;
   const roleName = (profile as any)?.name?.trim() || `${selectedHairTone.name}的${selectedHairStyle.name}`;

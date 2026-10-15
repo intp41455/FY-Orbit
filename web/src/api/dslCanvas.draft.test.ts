@@ -43,7 +43,7 @@ function json(body: unknown, status = 200): Promise<Response> {
 }
 
 function bodyOf(index = 0): Record<string, unknown> {
-  const init = fetchMock.mock.calls[index][1];
+  const init = fetchMock.mock.calls[index]![1];
   return JSON.parse(String(init?.body)) as Record<string, unknown>;
 }
 
@@ -59,7 +59,7 @@ describe('N3 · 草稿保存带上乐观锁版本', () => {
 
     const view = await dslCanvasApi.saveDraft('flow-1', DOC, { expected_version: 4 });
 
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url, init] = fetchMock.mock.calls[0]!;
     expect(String(url)).toBe('/api/dsl-lifecycle/flows/flow-1/draft');
     expect(init?.method).toBe('PUT');
     // 核心断言：版本号真的进了请求体（缺了它就等于没有乐观锁）。
@@ -89,8 +89,8 @@ describe('N3 · 草稿保存带上乐观锁版本', () => {
   it('GET 读草稿拿回 draft_version（乐观锁的版本来源）', async () => {
     fetchMock.mockReturnValue(json(FLOW_VIEW));
     const view = await dslCanvasApi.getFlow('flow-1');
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/dsl-lifecycle/flows/flow-1');
-    expect(fetchMock.mock.calls[0][1]?.method ?? 'GET').toBe('GET');
+    expect(String(fetchMock.mock.calls[0]![0])).toBe('/api/dsl-lifecycle/flows/flow-1');
+    expect(fetchMock.mock.calls[0]![1]?.method ?? 'GET').toBe('GET');
     expect(view.draft_version).toBe(4);
     expect(view.draft_doc).toEqual(DOC);
   });
@@ -149,8 +149,8 @@ describe('N3 · 首次保存前先建流程（不带空图，避开空图校验�
   it('createFlow 只在给了 doc 时才带上 doc', async () => {
     fetchMock.mockReturnValue(json({ ...FLOW_VIEW, draft_doc: null }));
     await dslCanvasApi.createFlow({ name: '未命名流程' });
-    expect(String(fetchMock.mock.calls[0][0])).toBe('/api/dsl-lifecycle/flows');
-    expect(fetchMock.mock.calls[0][1]?.method).toBe('POST');
+    expect(String(fetchMock.mock.calls[0]![0])).toBe('/api/dsl-lifecycle/flows');
+    expect(fetchMock.mock.calls[0]![1]?.method).toBe('POST');
     expect(bodyOf()).toEqual({ name: '未命名流程', flow_type: 'workflow' });
   });
 

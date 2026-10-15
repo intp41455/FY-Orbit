@@ -44,16 +44,16 @@ export function computeCardinalMask(
 ): number {
   let mask = 0;
   const rows = grid.length;
-  const cols = rows > 0 ? grid[0].length : 0;
+  const cols = rows > 0 ? (grid[0]?.length ?? 0) : 0;
 
   // North (row - 1)
-  if (row > 0 && grid[row - 1][col] === matchId) mask |= 1;
+  if (row > 0 && grid[row - 1]?.[col] === matchId) mask |= 1;
   // East (col + 1)
-  if (col < cols - 1 && grid[row][col + 1] === matchId) mask |= 2;
+  if (col < cols - 1 && grid[row]?.[col + 1] === matchId) mask |= 2;
   // South (row + 1)
-  if (row < rows - 1 && grid[row + 1][col] === matchId) mask |= 4;
+  if (row < rows - 1 && grid[row + 1]?.[col] === matchId) mask |= 4;
   // West (col - 1)
-  if (col > 0 && grid[row][col - 1] === matchId) mask |= 8;
+  if (col > 0 && grid[row]?.[col - 1] === matchId) mask |= 8;
 
   return mask;
 }
@@ -154,12 +154,12 @@ export function populateTilemapGrid(
 ): void {
   const rows = grid.length;
   if (rows === 0) return;
-  const cols = grid[0].length;
+  const cols = grid[0]?.length ?? 0;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const tileVal = grid[r][c];
-      if (tileVal === 0 || tileVal === '') continue;
+      const tileVal = grid[r]?.[c];
+      if (tileVal === 0 || tileVal === '' || tileVal === undefined) continue;
 
       const tex = atlas.getTileTexture(tileVal);
       if (!tex) continue;

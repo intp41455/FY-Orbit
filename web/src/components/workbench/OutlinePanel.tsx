@@ -40,7 +40,7 @@ export function parseMarkdownOutline(content: string): OutlineHeading[] {
     }
     if (inFence) return;
     const m = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(raw);
-    if (m) out.push({ level: m[1].length, text: m[2].trim(), line: i + 1 });
+    if (m) out.push({ level: (m[1] ?? '').length, text: (m[2] ?? '').trim(), line: i + 1 });
   });
   return out;
 }

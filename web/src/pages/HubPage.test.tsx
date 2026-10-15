@@ -109,24 +109,24 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  mocked().listConnections.mockResolvedValue({ connections: [conn()], count: 1 });
-  mocked().listPresets.mockResolvedValue({ presets: [PRESET, PRESET_SKELETON], count: 2 });
-  mocked().listCapabilities.mockResolvedValue({ capabilities: [CAP_ROW], count: 1 });
-  mocked().healthCheck.mockResolvedValue({
+  mocked().listConnections!.mockResolvedValue({ connections: [conn()], count: 1 });
+  mocked().listPresets!.mockResolvedValue({ presets: [PRESET, PRESET_SKELETON], count: 2 });
+  mocked().listCapabilities!.mockResolvedValue({ capabilities: [CAP_ROW], count: 1 });
+  mocked().healthCheck!.mockResolvedValue({
     connection: conn(),
     report: { ok: true, detail: 'HTTP 200', latency_ms: 12 },
   });
-  mocked().invoke.mockResolvedValue({
+  mocked().invoke!.mockResolvedValue({
     connection_id: 'c1',
     action: 'invoke',
     result: { ok: true, output: { text: '你好' }, error: '', latency_ms: 8, meta: {} },
   });
-  mocked().route.mockResolvedValue({ hint: '聊天', candidates: [CANDIDATE], count: 1 });
+  mocked().route!.mockResolvedValue({ hint: '聊天', candidates: [CANDIDATE], count: 1 });
 });
 
 describe('HubPage', () => {
   it('空态提示创建入口，不用假连接冒充已接入', async () => {
-    mocked().listConnections.mockResolvedValue({ connections: [], count: 0 });
+    mocked().listConnections!.mockResolvedValue({ connections: [], count: 0 });
     renderPage();
     expect(await screen.findByTestId('hub-empty')).toBeTruthy();
   });
@@ -144,8 +144,8 @@ describe('HubPage', () => {
     const failed = conn({
       health: { ok: false, checked_at: '2026-10-04T00:00:00Z', latency_ms: null, detail: 'Connection refused' },
     });
-    mocked().listConnections.mockResolvedValue({ connections: [failed], count: 1 });
-    mocked().healthCheck.mockResolvedValue({
+    mocked().listConnections!.mockResolvedValue({ connections: [failed], count: 1 });
+    mocked().healthCheck!.mockResolvedValue({
       connection: failed,
       report: { ok: false, detail: 'Connection refused', latency_ms: 0 },
     });
@@ -160,7 +160,7 @@ describe('HubPage', () => {
   });
 
   it('调用失败（200 + ok:false）展示 error 与原始 output', async () => {
-    mocked().invoke.mockResolvedValue({
+    mocked().invoke!.mockResolvedValue({
       connection_id: 'c1',
       action: 'invoke',
       result: { ok: false, output: { code: 401 }, error: 'invalid api key', latency_ms: 3, meta: {} },
@@ -175,7 +175,7 @@ describe('HubPage', () => {
   });
 
   it('缺凭证的连接禁用「调用测试」按钮', async () => {
-    mocked().listConnections.mockResolvedValue({
+    mocked().listConnections!.mockResolvedValue({
       connections: [conn({ state: 'needs_credentials' })],
       count: 1,
     });
@@ -209,7 +209,7 @@ describe('HubPage', () => {
   });
 
   it('提交表单把加密字段送进 credentials、明文字段留在 config', async () => {
-    mocked().createConnection.mockResolvedValue({ connection: conn() });
+    mocked().createConnection!.mockResolvedValue({ connection: conn() });
     renderPage();
     await screen.findByTestId('hub-new');
     fireEvent.click(screen.getByTestId('hub-new'));
@@ -229,22 +229,22 @@ describe('HubPage', () => {
     fireEvent.click(screen.getByTestId('hub-form-submit'));
 
     await waitFor(() => {
-      expect(mocked().createConnection).toHaveBeenCalled();
+      expect(mocked().createConnection!).toHaveBeenCalled();
     });
-    const payload = mocked().createConnection.mock.calls[0][0];
+    const payload = mocked().createConnection!.mock.calls[0]![0];
     expect(payload.config.base_url).toBe('https://api.example.com');
     expect(payload.credentials.api_key).toBe('sk-plain-value');
     expect(payload.secret_fields).toContain('api_key');
   });
 
   it('能力清单渲染 + 移除调用', async () => {
-    mocked().unregisterCapability.mockResolvedValue({ connection_id: 'c1', capabilities: [] });
+    mocked().unregisterCapability!.mockResolvedValue({ connection_id: 'c1', capabilities: [] });
     renderPage();
     const table = await screen.findByTestId('hub-capability-table');
     expect(within(table).getByText('chat')).toBeTruthy();
     fireEvent.click(screen.getByTestId('hub-cap-drop-c1-chat'));
     await waitFor(() => {
-      expect(mocked().unregisterCapability).toHaveBeenCalledWith('c1', 'chat');
+      expect(mocked().unregisterCapability!).toHaveBeenCalledWith('c1', 'chat');
     });
   });
 
@@ -258,7 +258,7 @@ describe('HubPage', () => {
   });
 
   it('路由无命中时明确说明，不显示空白列表', async () => {
-    mocked().route.mockResolvedValue({ hint: 'x', candidates: [], count: 0 });
+    mocked().route!.mockResolvedValue({ hint: 'x', candidates: [], count: 0 });
     renderPage();
     fireEvent.change(screen.getByTestId('hub-route-hint'), { target: { value: 'x' } });
     fireEvent.click(screen.getByTestId('hub-route-run'));
@@ -266,14 +266,14 @@ describe('HubPage', () => {
   });
 
   it('列表接口失败时展示真实错误并保留重试路径', async () => {
-    mocked().listConnections.mockRejectedValue(new Error('后端不可达'));
+    mocked().listConnections!.mockRejectedValue(new Error('后端不可达'));
     renderPage();
     expect(await screen.findByTestId('hub-list-error')).toBeTruthy();
     expect(screen.getByTestId('hub-list-error').textContent).toContain('后端不可达');
   });
 
   it('manifest 导入失败时把后端原因原样透出', async () => {
-    mocked().importManifest.mockRejectedValue(new Error('缺少必填字段 url'));
+    mocked().importManifest!.mockRejectedValue(new Error('缺少必填字段 url'));
     renderPage();
     fireEvent.click(screen.getByTestId('hub-manifest-open'));
     fireEvent.change(await screen.findByTestId('hub-manifest-text'), {
@@ -285,7 +285,7 @@ describe('HubPage', () => {
   });
 
   it('分组筛选只显示该组连接', async () => {
-    mocked().listConnections.mockResolvedValue({
+    mocked().listConnections!.mockResolvedValue({
       connections: [conn(), conn({ id: 'c2', name: '飞书机器人', kind: 'http_webhook', group: 'tool' })],
       count: 2,
     });

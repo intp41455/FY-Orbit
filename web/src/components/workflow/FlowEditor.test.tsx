@@ -94,7 +94,7 @@ describe('FlowEditor 纯函数 · 模型与视图严格分离', () => {
     const { nodes, edges } = graphFromDsl(VALID_DSL);
     expect(nodes.map((n) => n.id)).toEqual(['in1', 'tf1', 'out1']);
     // transform 节点缺 verb 时补默认 template，避免下游 serialize 产非法 DSL
-    expect(nodes[1].verb).toBe('template');
+    expect(nodes[1]!.verb).toBe('template');
     // 传入 layout 时用外部坐标，DSL 本身不带坐标
     const placed = graphFromDsl(VALID_DSL, { tf1: { x: 5, y: 6 } });
     expect(placed.nodes[1]).toMatchObject({ x: 5, y: 6 });
@@ -357,7 +357,7 @@ describe('FlowEditor 组件 · 画布交互', () => {
     await user.click(screen.getByTestId('flow-export'));
     await waitFor(() => expect(workflowGenApi.exportScript).toHaveBeenCalled());
     // 传给后端的是纯 DSL，没有坐标
-    expect(vi.mocked(workflowGenApi.exportScript).mock.calls[0][0]).toEqual(VALID_DSL);
+    expect(vi.mocked(workflowGenApi.exportScript).mock.calls[0]![0]).toEqual(VALID_DSL);
     const notice = await screen.findByTestId('flow-notice');
     expect(notice.textContent).toContain('fy_workflow.py');
     expect(notice.textContent).toContain('{{FY_BASE_URL}}');
@@ -410,7 +410,7 @@ describe('FlowEditor · G4-d 内联调参即时重算', () => {
     const user = userEvent.setup();
     // 回显用的后端：它返回什么，画布就必须显示什么。
     vi.mocked(dslCanvasApi.preview).mockImplementation(
-      async (d) => previewOk(`收到模板：${(d.nodes[1].params as { template: string }).template}`) as never,
+      async (d) => previewOk(`收到模板：${(d.nodes[1]!.params as { template: string }).template}`) as never,
     );
     render(<FlowEditor initialDoc={VALID_DSL} />);
     await screen.findByTestId('flow-node-in1');
@@ -465,7 +465,7 @@ describe('FlowEditor · G4-d 内联调参即时重算', () => {
   it('预览请求失败时作废旧结果并如实报错，不拿上一份参数的输出冒充', async () => {
     const user = userEvent.setup();
     vi.mocked(dslCanvasApi.preview).mockImplementation(
-      async (d) => previewOk(`旧：${(d.nodes[1].params as { template: string }).template}`) as never,
+      async (d) => previewOk(`旧：${(d.nodes[1]!.params as { template: string }).template}`) as never,
     );
     render(<FlowEditor initialDoc={VALID_DSL} />);
     await screen.findByTestId('flow-node-in1');
@@ -585,13 +585,13 @@ describe('G4-c 边条件编辑', () => {
     await user.selectOptions(screen.getByTestId('edge-0-op'), 'gt');
     fireEvent.change(screen.getByTestId('edge-0-value'), { target: { value: '60' } });
     await waitFor(() => expect(onDocChange).toHaveBeenCalled());
-    const last = onDocChange.mock.calls[onDocChange.mock.calls.length - 1][0];
+    const last = onDocChange.mock.calls[onDocChange.mock.calls.length - 1]![0];
     const edge0 = last.edges[0];
     expect(edge0.condition).toEqual({ field: 'score', op: 'gt', value: 60 });
     // 第二条边声明为回边。
     await user.click(screen.getByTestId('edge-1-backedge'));
     await waitFor(() => {
-      const doc = onDocChange.mock.calls[onDocChange.mock.calls.length - 1][0];
+      const doc = onDocChange.mock.calls[onDocChange.mock.calls.length - 1]![0];
       expect(doc.edges[1].back_edge).toBe(true);
     });
   });

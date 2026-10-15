@@ -61,7 +61,8 @@ export function LegacyCanvas() {
       setConnectors(connRes.items);
       setInstances(instRes.items);
       if (instRes.items.length > 0) {
-        selectInstance(instRes.items[0], tmplRes.items);
+        const first = instRes.items[0];
+        if (first) selectInstance(first, tmplRes.items);
       }
     } catch (err) {
       setError(errorMessage(err));
@@ -78,9 +79,10 @@ export function LegacyCanvas() {
       const tmplList = currentTemplates ?? templates;
       const tmpl = tmplList.find((t) => t.id === inst.template_id);
       if (tmpl && tmpl.workers.length > 0) {
-        setDispatchWorker(tmpl.workers[0]);
+        const w0 = tmpl.workers[0] ?? ''; // 长度已守卫恒命中，?? 仅为类型收窄
+        setDispatchWorker(w0);
         setHandoffFrom(inst.orchestrator_id);
-        setHandoffTo(tmpl.workers[0]);
+        setHandoffTo(w0);
       }
     } catch (err) {
       setError(errorMessage(err));

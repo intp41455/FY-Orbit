@@ -140,6 +140,8 @@ export function CozyWorldMapSystem({
     }, 450);
   };
 
+  if (!activeEntry) return null; // 静态 9 场景恒非空，仅为类型收窄
+
   return (
     <div className="pixel-modal-backdrop" data-testid="world-map-backdrop" onClick={onClose}>
       <div

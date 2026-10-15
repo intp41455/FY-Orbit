@@ -85,7 +85,7 @@ describe('备份当前文件', () => {
     await user.click(screen.getByTestId('backup-btn'));
 
     await waitFor(() => expect(stashApi.stage).toHaveBeenCalledTimes(1));
-    const body = vi.mocked(stashApi.stage).mock.calls[0][0];
+    const body = vi.mocked(stashApi.stage).mock.calls[0]![0];
     expect(body.content).toBe(ORIGINAL);
     expect(body.title).toMatch(/^demo\.md · \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(body.metadata).toMatchObject({ path: PATH, workspace_id: WS, sha256: ORIGINAL_HASH });
@@ -215,7 +215,7 @@ describe('列表分页 / 删除 / 清空', () => {
     vi.mocked(stashApi.remove).mockResolvedValue({ status: 'ok', deleted: 'ws_rec_1' });
     const user = userEvent.setup();
     render(<BackupRestorePanel workspaceId={WS} path={PATH} />);
-    await user.click((await screen.findAllByRole('button', { name: '删除' }))[0]);
+    await user.click((await screen.findAllByRole('button', { name: '删除' }))[0]!);
     await waitFor(() => expect(stashApi.remove).toHaveBeenCalledWith('ws_rec_1'));
   });
 

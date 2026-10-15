@@ -113,8 +113,8 @@ describe('ChatPage 提问定位栏', () => {
     expect(items).toHaveLength(2);
     expect(items[0]).toHaveTextContent('帮我总结这段经历中的关键转折');
 
-    const summary3 = items[1].querySelector('.qnav-summary')?.textContent ?? '';
-    const expected = MSGS[2].content.replace(/\s+/g, ' ').slice(0, 40);
+    const summary3 = items[1]!.querySelector('.qnav-summary')?.textContent ?? '';
+    const expected = MSGS[2]!.content.replace(/\s+/g, ' ').slice(0, 40);
     expect(summary3).toBe(`${expected}…`);
 
     // assistant 消息不出现在定位栏（出现在消息区不算）
@@ -131,7 +131,7 @@ describe('ChatPage 提问定位栏', () => {
 
     // fake timers 与 userEvent 不兼容，这里用 fireEvent 同步派发点击
     const items = screen.getAllByTestId('qnav-item');
-    fireEvent.click(items[1]);
+    fireEvent.click(items[1]!);
 
     const target = document.getElementById('msg-m3') as HTMLElement;
     expect(target).not.toBeNull();
@@ -163,9 +163,9 @@ describe('ChatPage 提问定位栏', () => {
     });
 
     const items = screen.getAllByTestId('qnav-item');
-    expect(items[0].className).toContain('in-view');
+    expect(items[0]!.className).toContain('in-view');
     expect(items[0]).toHaveTextContent('视口内');
-    expect(items[1].className).not.toContain('in-view');
+    expect(items[1]!.className).not.toContain('in-view');
   });
 });
 

@@ -183,7 +183,7 @@ describe('TimelinePage（三条款集成）', () => {
   it('creates a fork via the form', async () => {
     vi.mocked(createFork).mockResolvedValue({
       status: 'ok',
-      fork: FORKS[0],
+      fork: FORKS[0]!,
     });
     render(<TimelinePage />);
     await waitFor(() => expect(screen.getByTestId('fork-form')).toBeInTheDocument());

@@ -52,7 +52,8 @@ export const PetInteractionSystem: React.FC<PetInteractionProps> = ({
 
     setTimeout(() => {
       setIsForaging(false);
-      const gift = PET_GIFTS[Math.floor(Math.random() * PET_GIFTS.length)];
+      const gift = PET_GIFTS[Math.floor(Math.random() * PET_GIFTS.length)] ?? PET_GIFTS[0];
+      if (!gift) return; // 静态礼物池恒非空，仅为类型收窄
       setLastGift(gift);
       setActionMessage(`汪！${petName} 摇着尾巴叼回来了一个礼物：${gift.icon} ${gift.name}！`);
       onReceiveGift(gift);

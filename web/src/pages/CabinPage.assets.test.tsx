@@ -85,10 +85,10 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  api().mounted.mockImplementation((role: string) =>
+  api().mounted!.mockImplementation((role: string) =>
     Promise.resolve({ role, assets: [], count: 0 }),
   );
-  api().setMount.mockResolvedValue({ asset: makeAsset({ meta: { cabin_mount: '' } }) });
+  api().setMount!.mockResolvedValue({ asset: makeAsset({ meta: { cabin_mount: '' } }) });
 });
 
 describe('CabinPage · W9 资产联动', () => {
@@ -101,7 +101,7 @@ describe('CabinPage · W9 资产联动', () => {
   });
 
   it('墙上挂画渲染为 DOM 覆盖层并指向鉴权 raw 端点', async () => {
-    api().mounted.mockImplementation((role: string) =>
+    api().mounted!.mockImplementation((role: string) =>
       Promise.resolve(
         role === 'wall'
           ? { role, assets: [makeAsset()], count: 1 }
@@ -115,7 +115,7 @@ describe('CabinPage · W9 资产联动', () => {
   });
 
   it('取下挂画会调 setMount(id, "") 并刷新', async () => {
-    api().mounted.mockImplementation((role: string) =>
+    api().mounted!.mockImplementation((role: string) =>
       Promise.resolve(
         role === 'wall'
           ? { role, assets: [makeAsset()], count: 1 }
@@ -124,12 +124,12 @@ describe('CabinPage · W9 资产联动', () => {
     );
     renderPage();
     await userEvent.click(await screen.findByTestId('w9-wall-remove'));
-    await waitFor(() => expect(api().setMount).toHaveBeenCalledWith('a1', ''));
-    await waitFor(() => expect(api().mounted).toHaveBeenCalledWith('wall'));
+    await waitFor(() => expect(api().setMount!).toHaveBeenCalledWith('a1', ''));
+    await waitFor(() => expect(api().mounted!).toHaveBeenCalledWith('wall'));
   });
 
   it('BGM 资产渲染播放钮与 <audio>（raw 端点、循环、不预取）', async () => {
-    api().mounted.mockImplementation((role: string) =>
+    api().mounted!.mockImplementation((role: string) =>
       Promise.resolve(
         role === 'bgm'
           ? {

@@ -1109,7 +1109,10 @@ export function getExclusiveNpcByTheme(themeId: string): ExclusiveNpcMeta {
   ) as CanonicalThemeId;
 
   const found = Object.values(EXCLUSIVE_NPCS).find((npc) => npc.themeId === canonical);
-  return found ?? EXCLUSIVE_NPCS.forest_elder_pine;
+  if (found) return found;
+  const fallback = EXCLUSIVE_NPCS.forest_elder_pine;
+  if (!fallback) throw new Error('cabinNpcSystem: 缺少默认 NPC forest_elder_pine');
+  return fallback;
 }
 
 /** 获取所有 5 大专属 NPC 列表 */
@@ -1195,11 +1198,12 @@ export function resolveNpcMicroDialogue(
   title: string;
 } {
   const npc = EXCLUSIVE_NPCS[npcId] ?? EXCLUSIVE_NPCS.forest_elder_pine;
+  if (!npc) throw new Error('cabinNpcSystem: 缺少默认 NPC forest_elder_pine');
   const expr = options.expression ?? 'greet';
 
   const exprPool = npc.microExpressions[expr] ?? npc.microExpressions.greet;
   const lines = exprPool.lines;
-  const text = lines[Math.floor(Math.random() * lines.length)] || lines[0];
+  const text = lines[Math.floor(Math.random() * lines.length)] ?? lines[0] ?? '';
 
   return {
     text: `【${npc.title}】${text}`,
@@ -1283,6 +1287,7 @@ export function giveGiftToNpc(
   reason?: string;
 } {
   const npc = EXCLUSIVE_NPCS[npcId] ?? EXCLUSIVE_NPCS.forest_elder_pine;
+  if (!npc) throw new Error('cabinNpcSystem: 缺少默认 NPC forest_elder_pine');
   const state = getNpcState(npcId, currentDay);
 
   if (state.giftsToday >= MAX_GIFTS_PER_DAY) {

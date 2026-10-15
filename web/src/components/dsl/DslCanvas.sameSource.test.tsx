@@ -77,8 +77,8 @@ describe('FY-N4 同源派生 · 代码视图与画布视图共用一份 source',
     // 画布上 3 个节点 / 2 条连线 → 代码视图逐条对应
     expect(dsl.nodes).toHaveLength(3);
     expect(dsl.edges).toEqual([
-      { from: dsl.nodes[0].id, to: dsl.nodes[1].id },
-      { from: dsl.nodes[1].id, to: dsl.nodes[2].id },
+      { from: dsl.nodes[0]!.id, to: dsl.nodes[1]!.id },
+      { from: dsl.nodes[1]!.id, to: dsl.nodes[2]!.id },
     ]);
   });
 
@@ -94,7 +94,7 @@ describe('FY-N4 同源派生 · 代码视图与画布视图共用一份 source',
     expect(dsl.nodes).toHaveLength(2);
     // 级联删边：input 的出边也没了
     expect(dsl.edges).toEqual([
-      { from: dsl.nodes[0].id, to: dsl.nodes[1].id },
+      { from: dsl.nodes[0]!.id, to: dsl.nodes[1]!.id },
     ]);
   });
 
@@ -107,7 +107,7 @@ describe('FY-N4 同源派生 · 代码视图与画布视图共用一份 source',
     await waitFor(() => expect(dslCanvasApi.run).toHaveBeenCalledTimes(1));
 
     // 断言「不是碰巧一样」，而是拿两边实际值做严格相等
-    expect(vi.mocked(dslCanvasApi.run).mock.calls[0][0]).toEqual(readDsl());
+    expect(vi.mocked(dslCanvasApi.run).mock.calls[0]![0]).toEqual(readDsl());
   });
 
   it('代码视图字段集合与共享序列化实现 serializeGraph 完全一致', async () => {

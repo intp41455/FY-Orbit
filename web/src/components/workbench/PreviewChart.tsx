@@ -84,7 +84,7 @@ function specFromCsv(content: string): ChartSpec {
     throw new ChartSpecError('CSV 图表数据至少需要表头行与一行数据');
   }
   const split = (line: string) => line.split(',');
-  const header = split(rows[0]);
+  const header = split(rows[0] ?? ''); // 行数已守卫恒命中，?? 仅为类型收窄
   if (header.length < 2) {
     throw new ChartSpecError('CSV 图表数据至少需要两列（标签, 数值）');
   }
@@ -97,7 +97,7 @@ function specFromCsv(content: string): ChartSpec {
     if (Number.isNaN(value)) {
       throw new ChartSpecError(`CSV 第 ${i + 2} 行第二列 ${JSON.stringify(cells[1])} 不是数值`);
     }
-    return { label: cells[0], value };
+    return { label: cells[0] ?? '', value };
   });
   return { chart: 'bar', series };
 }
@@ -177,7 +177,7 @@ function LineChart({ spec }: { spec: ChartSpec }) {
         <circle key={i} cx={pt.x} cy={pt.y} r={3} fill="var(--ui-sky-700)" />
       ))}
       {spec.series.map((p, i) => (
-        <text key={`l${i}`} x={pts[i].x} y={H - PAD + 12} fontSize={9} textAnchor="middle">
+        <text key={`l${i}`} x={pts[i]?.x ?? 0} y={H - PAD + 12} fontSize={9} textAnchor="middle">
           {p.label}
         </text>
       ))}

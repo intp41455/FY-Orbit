@@ -22,7 +22,7 @@ import asyncio
 import json
 from typing import Any, AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from ...db.types import utcnow
@@ -49,8 +49,6 @@ class DecisionBody(BaseModel):
     expected_version: int | None = Field(default=None, ge=1)
 
 
-def _translate(exc: DomainError) -> HTTPException:
-    return HTTPException(status_code=exc.http_status, detail=exc.message)
 
 
 @router.post("/interrupts", status_code=201)
@@ -73,7 +71,7 @@ async def create_interrupt(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
     return view
 
 
@@ -98,7 +96,7 @@ async def get_interrupt(
     try:
         return svc.hitl.get(actor, interrupt_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
 
 
 @router.get("/executions/{execution_id}/interrupt")
@@ -111,7 +109,7 @@ async def execution_interrupt(
     try:
         row = svc.hitl.pending(actor, execution_id)
     except DomainError as exc:
-        raise _translate(exc) from exc
+        raise exc
     svc.session.commit()
     return {
         "execution_id": execution_id,
@@ -139,7 +137,7 @@ async def decide_interrupt(
         svc.session.commit()
     except DomainError as exc:
         svc.session.rollback()
-        raise _translate(exc) from exc
+        raise exc
 
     # SSE 广播：通知所有订阅者该中断已决策（前端据此从待决队列移除）。
     _broadcast_event("interrupt_decided", {"id": interrupt_id})

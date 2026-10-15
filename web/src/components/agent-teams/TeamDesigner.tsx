@@ -67,7 +67,8 @@ export function TeamDesigner() {
     try {
       const r = await teamsApi.list();
       setTeams(r.items);
-      if (r.items.length > 0) await openTeam(r.items[0].id);
+      const first = r.items[0];
+      if (first) await openTeam(first.id);
     } catch (e) {
       setError(errorMessage(e));
     }

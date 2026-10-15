@@ -148,7 +148,7 @@ describe('WorkbenchDispatchDialog 提交 payload', () => {
     await user.click(screen.getByTestId('wb-dispatch-submit'));
 
     await waitFor(() => expect(tasksApi.create).toHaveBeenCalledTimes(1));
-    const payload = vi.mocked(tasksApi.create).mock.calls[0][0];
+    const payload = vi.mocked(tasksApi.create).mock.calls[0]![0];
     expect(payload.mode).toBe('engineering');
     expect(payload.goal).toContain('把这个函数改成异步');
     expect(payload.goal).toContain('src/app.ts 第 12 行');

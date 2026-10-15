@@ -297,7 +297,10 @@ export function TerminalPane({ workspaceId, sessionScope, onSessionStopped, onSe
     // Tab 补全候选来自「本会话可见文本」中最像命令/路径的 token——
     // 不假装能读远端文件系统，补全失败时明说是本地候选。
     const words = new Set<string>();
-    for (const raw of history) words.add(raw.trim().split(/\s+/)[0]);
+    for (const raw of history) {
+      const head = raw.trim().split(/\s+/)[0] ?? '';
+      if (head) words.add(head); // 空行无首词不补全
+    }
     for (const ln of lines.slice(-120)) {
       for (const m of ln.matchAll(/[A-Za-z0-9_./\\-]{3,}/g)) words.add(m[0]);
     }
@@ -503,7 +506,7 @@ export function TerminalPane({ workspaceId, sessionScope, onSessionStopped, onSe
   function runSelectedLine() {
     const text = selectedText.trim();
     if (!text) return;
-    const first = text.split('\n')[0].trim();
+    const first = text.split('\n')[0]?.trim() ?? '';
     setInput(first);
     setMenu(null);
     window.setTimeout(() => inputRef.current?.focus(), 0);

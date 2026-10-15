@@ -104,7 +104,7 @@ describe('G4-f · 「生成 DSL」按钮打开一句话生成面板（不再是�
 
     // 走的是后端真实接口，且带上了用户原话
     await waitFor(() => expect(workflowGenApi.generate).toHaveBeenCalledTimes(1));
-    expect(vi.mocked(workflowGenApi.generate).mock.calls[0][0]).toBe('每天读文件并发邮件');
+    expect(vi.mocked(workflowGenApi.generate).mock.calls[0]![0]).toBe('每天读文件并发邮件');
 
     // 生成结果进了画布（画布节点 testid 与代码视图必须指向同一份）
     expect(await screen.findByTestId('dsl-node-in1')).toBeInTheDocument();

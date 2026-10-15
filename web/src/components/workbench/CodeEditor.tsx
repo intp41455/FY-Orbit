@@ -63,7 +63,7 @@ export function CodeEditor({
         if (lines.length === 0) return;
         const idx = Math.min(Math.max(1, Math.round(line)), lines.length) - 1;
         let offset = 0;
-        for (let i = 0; i < idx; i++) offset += lines[i].length + 1;
+        for (let i = 0; i < idx; i++) offset += (lines[i]?.length ?? 0) + 1;
         const lineLen = lines[idx]?.length ?? 0;
         ta.focus();
         // 优先选中行内的目标关键词；否则整行选中，视觉上即“该行被高亮”。

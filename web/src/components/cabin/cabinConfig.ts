@@ -531,7 +531,7 @@ export function pickDialogueLine(
 ): string {
   const pool = DIALOGUE_LINES[personality][speaker];
   const index = Math.min(pool.length - 1, Math.max(0, Math.floor(rng() * pool.length)));
-  return pool[index];
+  return pool[index] ?? ''; // 索引已钳制恒命中，?? 仅为类型收窄
 }
 
 /**

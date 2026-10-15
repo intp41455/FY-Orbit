@@ -35,8 +35,9 @@ export function frameToCells(
   const cells: PixelCell[] = [];
   for (let y = 0; y < rows.length; y += 1) {
     const row = rows[y];
+    if (!row) continue; // 空行跳过（静态矩阵恒非空，仅为类型收窄）
     for (let x = 0; x < row.length; x += 1) {
-      const ch = row[x];
+      const ch = row[x] ?? '';
       if (ch === '.' || ch === ' ') continue;
       const color = palette[ch];
       if (color === undefined) continue;
@@ -123,7 +124,7 @@ export function mulberry32(seed: number): () => number {
 export function pickPetLine(level: MoodLevel, seed: number): string {
   const pool = PET_LINES[level] ?? PET_LINES.ok;
   const idx = Math.floor(mulberry32(seed)() * pool.length);
-  return pool[Math.min(idx, pool.length - 1)];
+  return pool[Math.min(idx, pool.length - 1)] ?? ''; // 索引已钳制恒命中，?? 仅为类型收窄
 }
 
 /** 0xRRGGBB -> '#rrggbb'（canvas/fillRect 用）。 */

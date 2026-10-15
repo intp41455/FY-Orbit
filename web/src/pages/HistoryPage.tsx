@@ -152,6 +152,7 @@ export function HistoryPage() {
           const next = { ...prev };
           settled.forEach((r, i) => {
             const id = batch[i];
+            if (id === undefined) return; // 并发批恒对齐，仅为类型收窄
             if (r.status === 'fulfilled' && typeof r.value?.message_count === 'number') {
               next[id] = { status: 'done', value: r.value.message_count };
             } else {
