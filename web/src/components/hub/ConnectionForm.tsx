@@ -13,6 +13,7 @@ const KINDS: HubKind[] = [
   'http_webhook',
   'tool_plugin',
   'knowledge_source',
+  'market_source',
 ];
 
 export interface ConnectionFormSeed {
@@ -146,6 +147,12 @@ export function ConnectionForm({
 
       <fieldset>
         <legend>连接参数（明文可见）</legend>
+        {kind === 'market_source' && (
+          <p className="muted" data-testid="hub-market-source-hint">
+            市场远程源：在参数里加一行 <code>url</code>（源索引链接，http(s) 或 file:// 本地目录）。
+            私有源把 token 填进下方凭证（api_token）。包仍须过本地签名 + 扫描门禁才能安装。
+          </p>
+        )}
         {configRows.map((row, i) => (
           <div className="hub-form-row" key={`cfg-${i}`}>
             <input

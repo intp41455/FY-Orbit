@@ -189,13 +189,43 @@ class MarketplaceService:
         # sort_by == "created": 保持 _active_query 默认的 created_at 排序
 
         total = len(items)
+        # I-12：远程源导入但未过门禁的包（staged + source=remote:*）**可见但不可装**，
+        # 并给出阻塞原因。静默隐藏会让用户以为源是空的（与“降级必须可见”哲学相悖）；
+        # 本地自建包的既有行为（未过门禁不可见）保持不变。
+        # 注：分页 total 只计可装的上架包；blocked 单列，避免计数口径污染。
+        blocked = self._blocked_remote_cards(actor, query=needle)
         return {
             "items": items[offset:offset + limit],
             "total": total,
             "limit": limit,
             "offset": offset,
             "sort_by": sort_by,
+            "blocked": blocked,
         }
+
+    def _blocked_remote_cards(self, actor: Actor, *, query: str) -> list[dict[str, Any]]:
+        from .plugin_signing import evaluate_promotion_gate
+
+        rows = self.s.execute(
+            select(Skill).where(
+                Skill.state == "staged",
+                Skill.source.startswith("remote:"),
+            ).order_by(Skill.created_at.desc())
+        ).scalars().all()
+        out: list[dict[str, Any]] = []
+        for skill in rows:
+            if query and query not in skill.name.lower():
+                continue
+            decision = evaluate_promotion_gate(
+                profile=skill.gate_profile,
+                scan_passed=bool(skill.scan_passed),
+                signature_verified=bool(skill.signature_verified),
+            )
+            card = self._card(skill)
+            card["installable"] = False
+            card["blocked_reasons"] = decision["reasons"] or ["gate_not_passed"]
+            out.append(card)
+        return out
 
     def get_package(self, actor: Actor, skill_id: str) -> dict[str, Any]:
         """市场详情。未上架（state != 'active'）= 查无此包（NotFound，不伪装）。"""
@@ -252,6 +282,9 @@ class MarketplaceService:
         """安装一个市场内的包。
 
         * 仅主人可安装（与 promote 同一授权边界）。
+        * 上架门禁在安装时再验一次（I-12）：远程源导入的包即使 state 为 active，
+          只要签名/扫描未过，照样拒绝并给出原因。本地 promote 过的包天然通过，
+          行为不变。
         * ``plugin`` 画像的包（会物化文件执行）必须出示有效授权：
           ``grant_id`` 指向的授权必须**存在、active、未过期**（由
           ``GrantService.create`` 创建）。运行期对该包的数据访问继续由
@@ -260,8 +293,26 @@ class MarketplaceService:
         """
         actor.require_owner()
         skill = self.s.get(Skill, skill_id)
-        if skill is None or skill.state != "active":
+        if skill is None:
             raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
+        if skill.state != "active":
+            # 远程源导入但未上架的包：可见-but-阻塞，以门禁理由拒绝，
+            # 而不是“查无此包”（否则用户以为源是空的）。
+            if skill.state == "staged" and str(skill.source or "").startswith("remote:"):
+                from .plugin_signing import evaluate_promotion_gate
+
+                decision = evaluate_promotion_gate(
+                    profile=skill.gate_profile,
+                    scan_passed=bool(skill.scan_passed),
+                    signature_verified=bool(skill.signature_verified),
+                )
+                reasons = decision["reasons"] or ["not_promoted"]
+                raise ValidationFailed(
+                    "install_gate_blocked",
+                    "该包未通过上架门禁，暂不可安装：" + "、".join(reasons),
+                )
+            raise NotFound("package_not_listed", f"包不在市场中：{skill_id}")
+        self._require_gate(skill)
 
         grant_row: Grant | None = None
         if skill.gate_profile == "plugin":
@@ -295,6 +346,71 @@ class MarketplaceService:
         return card
 
     # ------------------------------------------------------------------
+    @staticmethod
+    def _require_gate(skill: Skill) -> None:
+        """安装时复验上架门禁（与 promote 同一策略对象）。
+
+        远程源导入的包可能 state 为 active 但签名/扫描未过（见 import_from_source
+        的可见-but-阻塞陈列）；这里拒绝并逐条给出原因，绝不静默放行。
+        """
+        from .plugin_signing import evaluate_promotion_gate
+
+        decision = evaluate_promotion_gate(
+            profile=skill.gate_profile,
+            scan_passed=bool(skill.scan_passed),
+            signature_verified=bool(skill.signature_verified),
+        )
+        if not decision["allowed"]:
+            raise ValidationFailed(
+                "install_gate_blocked",
+                "该包未通过上架门禁，暂不可安装：" + "、".join(decision["reasons"]),
+            )
+
+    def import_from_source(self, actor: Actor, conn_id: str) -> dict[str, Any]:
+        """从市场远程源导入包（I-12）：只做运输，信任判定交还门禁。
+
+        流程：读源索引 → 逐包拉 manifest → ``SkillService.stage``（服务端分类 +
+        真实扫描 + 签名校验，逐包诚实成败）→ 停在 staged，**不自动上架**。
+        上架仍走 promote（门禁原样生效）。返回导入/跳过明细。
+        """
+        from .hub.adapters import MarketSourceAdapter
+        from .hub.connections import HubService
+
+        actor.require_owner()
+        hub = HubService(self.s)
+        adapter = hub.market_source_adapter(actor, conn_id)
+        entries = adapter.list_packages()
+        imported: list[str] = []
+        skipped: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for entry in entries:
+            pid = entry["id"]
+            if pid in seen:
+                skipped.append({"id": pid, "reason": "源内重复 id，跳过"})
+                continue
+            seen.add(pid)
+            try:
+                manifest = adapter.fetch_package(entry["download_url"])
+                skill = self.skills.stage(
+                    actor,
+                    name=str(manifest.get("name") or entry["name"])[:80],
+                    semantic_version=str(manifest.get("semantic_version") or entry.get("version") or "0.0.0"),
+                    package=manifest.get("package") if isinstance(manifest.get("package"), dict) else manifest,
+                    source=f"remote:{conn_id}",
+                    license_=str(manifest.get("license") or entry.get("license") or ""),
+                    domain=str(manifest.get("domain") or "work"),
+                    signature=manifest.get("signature"),
+                    signature_algorithm=manifest.get("signature_algorithm"),
+                    signing_key_id=manifest.get("signing_key_id"),
+                )
+                imported.append(skill.id)
+            except Exception as exc:  # noqa: BLE001 — 逐包诚实记录，不整批失败
+                skipped.append({"id": pid, "reason": f"{type(exc).__name__}: {exc}"})
+        self.audit.append(actor, "marketplace.source_imported", conn_id, {
+            "imported": len(imported), "skipped": len(skipped),
+        })
+        return {"connection_id": conn_id, "imported": imported, "skipped": skipped}
+
     def counts_for_tests(self) -> int:
         """（测试辅助）active 包总数。"""
         return self.s.execute(

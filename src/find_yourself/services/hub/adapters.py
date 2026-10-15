@@ -44,6 +44,7 @@ from . import (
     KIND_ANTHROPIC,
     KIND_HTTP_WEBHOOK,
     KIND_KNOWLEDGE_SOURCE,
+    KIND_MARKET_SOURCE,
     KIND_MCP_SERVER,
     KIND_OPENAI_CHAT,
     KIND_TOOL_PLUGIN,
@@ -991,8 +992,150 @@ def _merge_capabilities(discovered: list[Capability], declared: list[Capability]
     return out
 
 
-def build_adapter(
-    kind: str,
+class MarketSourceAdapter:
+    """市场远程源适配器（I-12）：只做“运输通道”，不做信任判定。
+
+    源索引格式（JSON）：``{"packages": [{"id", "name", "version",
+    "description", "download_url", ...}]}``。URL 可以是 http(s)（走 SSRF
+    守卫 + 可选 Authorization 头）或 ``file://`` 本地目录（读 index.json，
+    供自建源与测试）。包的签名/扫描走既有 ``PROMOTION_GATE_POLICY``，
+    本适配器**永不**自行判定可装。
+    """
+
+    def __init__(self, config: dict[str, Any], *,
+                 credentials: dict[str, str] | None = None,
+                 transport: Any | None = None):
+        self.kind = str(config.get("kind") or KIND_MARKET_SOURCE)
+        self.config = dict(config)
+        self.credentials = dict(credentials or {})
+        self.transport = transport
+
+    def _url(self) -> str:
+        return str(self.config.get("url") or "").strip()
+
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {}
+        # connections.build_adapter 把解密后的凭证并进 config（见 adapter_config），
+        # 因此 token 三处都找：显式 credentials → 合并后 config → config.headers 模板。
+        token = (
+            self.credentials.get("api_token")
+            or self.credentials.get("authorization")
+            or self.config.get("api_token")
+            or self.config.get("authorization")
+            or ""
+        )
+        if token:
+            headers["Authorization"] = token if token.lower().startswith("bearer ") \
+                else f"Bearer {token}"
+        for k, v in (self.config.get("headers") or {}).items():
+            headers[str(k)] = str(v)
+        return headers
+
+    def fetch_index(self, *, timeout_seconds: float = 10.0) -> dict[str, Any]:
+        """拉取源索引（dict）。file:// 读本地，其余走 HTTP。"""
+        url = self._url()
+        if not url:
+            from ..errors import ValidationFailed as _VF
+            raise _VF("hub_market_source_url_required", "市场源未配置源链接")
+        data = self._get_json(url, timeout_seconds=timeout_seconds)
+        if not isinstance(data, dict):
+            from ..errors import ValidationFailed as _VF
+            raise _VF("hub_market_source_bad_index", "源索引不是 JSON 对象")
+        return data
+
+    def fetch_package(self, download_url: str, *,
+                      timeout_seconds: float = 20.0) -> dict[str, Any]:
+        """拉取单个包的 manifest（dict）。每条下载链接都要过 SSRF 守卫，
+        不能因为索引可信就放行包链接（索引内容是远程的、不可信的）。"""
+        data = self._get_json(download_url, timeout_seconds=timeout_seconds)
+        if not isinstance(data, dict):
+            from ..errors import ValidationFailed as _VF
+            raise _VF("hub_market_source_bad_package", "包 manifest 不是 JSON 对象")
+        return data
+
+    def _get_json(self, url: str, *, timeout_seconds: float) -> Any:
+        import json as _json
+
+        parsed = urlparse(url)
+        if parsed.scheme == "file":
+            from pathlib import Path as _Path
+
+            import re as _re
+            # Windows：file:///C:/x → path 为 /C:/x，需去首斜杠。
+            fs_path = parsed.path
+            if _re.match(r"^/[A-Za-z]:", fs_path):
+                fs_path = fs_path[1:]
+            target = _Path(fs_path)
+            if target.is_dir():
+                target = target / "index.json"
+            try:
+                return _json.loads(target.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                from ..errors import ValidationFailed as _VF
+                raise _VF("hub_market_source_unreadable",
+                          f"本地源不可读：{exc}") from None
+        # 远程链接逐条过 SSRF 守卫（含索引里带来的 download_url）。
+        safe_url = guard_endpoint(url)
+        import httpx
+
+        kwargs: dict[str, Any] = {"timeout": timeout_seconds}
+        if self.transport is not None:
+            kwargs["transport"] = self.transport
+        try:
+            with httpx.Client(**kwargs) as client:
+                resp = client.get(safe_url, headers=self._headers())
+                resp.raise_for_status()
+                return resp.json()
+        except Exception as exc:  # noqa: BLE001 — 转译为带码错误，不裸抛
+            from ..errors import ValidationFailed as _VF
+            raise _VF("hub_market_source_unreachable",
+                      f"源不可达：{type(exc).__name__}") from None
+
+    def list_packages(self, *, timeout_seconds: float = 10.0) -> list[dict[str, Any]]:
+        """索引归一化为包条目（缺字段的条目丢弃并计数，不伪造）。"""
+        index = self.fetch_index(timeout_seconds=timeout_seconds)
+        raw = index.get("packages")
+        if not isinstance(raw, list):
+            from ..errors import ValidationFailed as _VF
+            raise _VF("hub_market_source_bad_index", "源索引缺少 packages 数组")
+        out: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            pid = str(entry.get("id") or "").strip()
+            durl = str(entry.get("download_url") or "").strip()
+            if not pid or not durl:
+                continue
+            out.append({
+                "id": pid,
+                "name": str(entry.get("name") or pid),
+                "version": str(entry.get("version") or ""),
+                "description": str(entry.get("description") or ""),
+                "download_url": durl,
+                "license": str(entry.get("license") or ""),
+            })
+        return out
+
+    def health(self, *, timeout_seconds: float = 3.0) -> HealthReport:
+        started = time.perf_counter()
+        try:
+            packages = self.list_packages(timeout_seconds=timeout_seconds)
+        except Exception as exc:  # noqa: BLE001 — 健康检查只报告，不抛
+            return HealthReport(
+                ok=False, latency_ms=_elapsed_ms(started),
+                detail=f"源不可用：{exc}",
+                checked_at=_stamp(),
+                endpoint_ref=_endpoint_ref(self._url()),
+            )
+        return HealthReport(
+            ok=True, latency_ms=_elapsed_ms(started),
+            detail=f"源可达：{len(packages)} 个包",
+            checked_at=_stamp(),
+            endpoint_ref=_endpoint_ref(self._url()),
+        )
+
+
+def build_adapter(    kind: str,
     config: dict[str, Any],
     *,
     credentials: dict[str, str] | None = None,
@@ -1015,6 +1158,8 @@ def build_adapter(
         return WebhookAdapter(cfg, credentials=credentials, transport=transport, sleep=sleep)
     if kind == KIND_KNOWLEDGE_SOURCE:
         return KnowledgeSourceAdapter(cfg)
+    if kind == KIND_MARKET_SOURCE:
+        return MarketSourceAdapter(cfg, credentials=credentials, transport=transport)
     raise _VF("hub_unknown_kind", f"未知适配器类型 '{kind}'；支持："
                                   "openai_chat / anthropic / mcp_server / http_webhook / "
-                                  "knowledge_source / tool_plugin")
+                                  "knowledge_source / tool_plugin / market_source")

@@ -158,6 +158,25 @@ async def install_package(
     return card
 
 
+@router.post("/marketplace/sources/{conn_id}/import")
+async def import_marketplace_source(
+    conn_id: str,
+    actor: Actor = Depends(csrf_protected),
+    market: MarketplaceService = Depends(_marketplace),
+) -> dict:
+    """从市场远程源导入包（I-12）：只做运输，信任判定交还门禁。
+
+    导入的包停在 staged，经 promote（门禁）后才上架；列表页将其
+    可见-but-阻塞陈列。导入本身不放行任何包。
+    """
+    try:
+        result = market.import_from_source(actor, conn_id)
+    except DomainError as exc:
+        raise exc from None
+    market.s.commit()
+    return result
+
+
 @router.post("/marketplace/{skill_id}/rate")
 async def rate_marketplace_package(
     skill_id: str,

@@ -16,7 +16,8 @@ export type HubKind =
   | 'mcp_server'
   | 'http_webhook'
   | 'tool_plugin'
-  | 'knowledge_source';
+  | 'knowledge_source'
+  | 'market_source';
 
 export const HUB_KIND_LABEL: Record<HubKind, string> = {
   openai_chat: 'OpenAI 兼容对话',
@@ -25,6 +26,7 @@ export const HUB_KIND_LABEL: Record<HubKind, string> = {
   http_webhook: 'HTTP Webhook',
   tool_plugin: '工具插件',
   knowledge_source: '知识源',
+  market_source: '市场远程源',
 };
 
 export interface HubCredentialField {

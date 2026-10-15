@@ -52,6 +52,8 @@ DEFAULT_SECRET_FIELDS: dict[str, tuple[str, ...]] = {
     "http_webhook": ("api_token",),
     "knowledge_source": ("api_key", "app_key", "app_secret"),
     "tool_plugin": ("api_token",),
+    # 市场远程源：私有源可能要 token；是否必填由 credential_fields 决定。
+    "market_source": ("api_token", "authorization"),
 }
 
 _SLUG_RE = re.compile(r"[^a-z0-9_.-]+")
@@ -187,6 +189,19 @@ class HubService:
             sleep=sleep,
         )
 
+    def market_source_adapter(self, actor: Actor, conn_id: str, *,
+                              transport: Any = None):
+        """取 market_source 连接的拉取适配器（属主校验 + kind 校验）。"""
+        from .adapters import MarketSourceAdapter
+
+        conn = self._get(actor, conn_id)
+        if conn.kind != "market_source":
+            raise ValidationFailed(
+                "hub_not_market_source",
+                f"连接 '{conn.name}' 不是市场远程源（kind={conn.kind}）",
+            )
+        return MarketSourceAdapter(self.adapter_config(conn), transport=transport)
+
     @staticmethod
     def _remember_mcp(conn_id: str, kind: str, adapter: Any) -> None:
         """记住 mcp 客户端（模块级 dict + 锁，**不碰 Session**）。
@@ -260,6 +275,11 @@ class HubService:
                 f"凭证字段 {unknown} 不在该类型允许的字段内：{fields}",
             )
         self._validate_endpoint(kind, config)
+        if kind == "market_source" and not str(config.get("url") or "").strip():
+            raise ValidationFailed(
+                "hub_market_source_url_required",
+                "市场远程源必须填写源链接（URL / Git 仓库 / 本地目录 file://）",
+            )
 
         secret_config = self._encrypt_secrets(fields, credentials)
         state = "active"
@@ -377,6 +397,12 @@ class HubService:
         """
         if kind in {"http_webhook", "tool_plugin"} and config.get("url"):
             guard_endpoint(str(config["url"]))
+        if kind == "market_source" and config.get("url"):
+            url = str(config["url"])
+            # file:// 本地目录是自建源的合法形态（读本机磁盘，无 SSRF 面）；
+            # http(s) 照常过守卫。
+            if not url.startswith("file://"):
+                guard_endpoint(url)
 
     # -- tool_registry bridge ------------------------------------------------ #
     def _register_tool_plugin(self, conn: HubConnection) -> str | None:
