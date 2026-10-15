@@ -204,6 +204,22 @@ class ProviderMalformedResponse(ProviderError):
     kind = "malformed_response"
 
 
+class ProviderTruncatedResponse(ProviderError):
+    """HTTP 2xx that carried **no usable text at all**.
+
+    推理模型（deepseek-v4.1 / step-5 等）会把 ``max_tokens`` 预算先花在
+    ``reasoning_content`` 上；预算耗尽时 ``finish_reason=length`` 且
+    ``content`` 为空串。早期的 provider 只读 ``content``，于是把这种
+    「答都没答」当成功返回，上层拿到 ``ok=True, text=""`` 并把它拼进
+    多轮上下文 —— 一次静默失败会污染后续每一步。
+
+    ``retryable=False`` 是刻意的：同样的 ``max_tokens`` 重发一次只会得到
+    同样的空回复。要恢复必须**调大预算**，那是调用方的决定，不是重试能解决的。
+    """
+
+    kind = "truncated_response"
+
+
 def classify_status(status: int, message: str, retry_after: float | None = None) -> ProviderError:
     """Map an HTTP status onto the provider error whose retry policy matches."""
     safe = sanitize_message(message)

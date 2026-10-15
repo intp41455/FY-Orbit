@@ -4,7 +4,10 @@
 //  - 探活/调用失败由后端返回 200 + {ok:false, error/detail}，页面必须原样展示，
 //    绝不把失败渲染成「已连接」；
 //  - 凭证永远拿不到明文：后端 public_connection 只回掩码，本层不做任何拼接；
-//  - 预置里 implemented=false 的条目必须显示「内置骨架 · 未接入」，不能当可用项。
+//  - 预置里 implemented=false 的条目必须显示「内置骨架 · 未接入」，不能当可用项；
+//  - 编排的「降级但成功」（meta.degraded_reason）必须单独标出来 —— 推理模型
+//    被 max_tokens 截断时会降级返回思考过程，此时 ok=true 且有文本，肉眼完全
+//    看不出拿到的不是正式答案。不标出来就等于把静默失败讲成了成功。
 import { buildApiUrl, getCsrfToken } from './client';
 
 const BASE = '/api/hub';
@@ -150,6 +153,107 @@ export interface HubUpdatePayload {
   state?: string;
 }
 
+// --------------------------------------------------------------------------- //
+// 编排（对齐 services/hub/orchestrator.py 的 StepResult / OrchestrationResult）
+// --------------------------------------------------------------------------- //
+
+/** 编排形态。pipeline 是显式指定每步派给谁，走的是「不路由」的分支。 */
+export type HubOrchestrateMode = 'sequential' | 'parallel' | 'pipeline';
+
+export const HUB_ORCHESTRATE_MODE_LABEL: Record<HubOrchestrateMode, string> = {
+  sequential: '顺序接力',
+  parallel: '并行分工',
+  pipeline: '显式流水线',
+};
+
+export interface HubStepResult {
+  index: number;
+  step: string;
+  /** pipeline 走显式分支时可能只有 id 没有 name；空串就是空串，不猜。 */
+  connection_id: string;
+  connection_name: string;
+  capability: string;
+  ok: boolean;
+  output: unknown;
+  /** ok=false 时一定有值；成功时是空串而不是 null。 */
+  error: string;
+  latency_ms: number;
+  /**
+   * 上游调用元信息：provider_id / usage / degraded_reason / attempts。
+   * degraded_reason 非空 = 这一步拿到的是**降级产物**（如被 max_tokens
+   * 截断后返回的思考过程），不是模型的正式答案。页面必须显示。
+   */
+  meta: Record<string, unknown>;
+}
+
+export interface HubOrchestrationResult {
+  ok: boolean;
+  mode: string;
+  steps: HubStepResult[];
+  step_count: number;
+  succeeded_count: number;
+  failed_count: number;
+  final_output: unknown;
+  error: string;
+  duration_ms: number;
+  pending_interrupts: boolean;
+}
+
+/** 编排前置体检（GET /orchestrate/capabilities）。 */
+export interface HubOrchestratePreflight {
+  agent_count: number;
+  capability_count: number;
+  kinds: string[];
+  can_orchestrate: boolean;
+  max_workers: number;
+}
+
+/**
+ * 自动派单请求体。
+ *
+ * 注意 `steps` 与 `aspects` 是按 mode 二选一传的：`sequential` 用 steps
+ * （前一步输出拼进后一步上下文），`parallel` 用 aspects（各侧面互不知情）。
+ * 两边都传时后端只按 mode 取一边，所以这里不替调用方做选择。
+ */
+export interface HubOrchestratePayload {
+  task: string;
+  mode?: Exclude<HubOrchestrateMode, 'pipeline'>;
+  steps?: string[];
+  aspects?: string[];
+  kind?: string;
+  max_workers?: number;
+  timeout_seconds?: number;
+  summarize?: boolean;
+  summary_instruction?: string;
+  llm_rerank?: boolean;
+  llm_model?: string;
+}
+
+/** 显式流水线的一步。connection_id 必填，否则后端拿不到派工对象。 */
+export interface HubPipelineStage {
+  connection_id: string;
+  /** 只影响文案，可省；省了后端会按连接 id 反查，查不到就留空。 */
+  connection_name?: string;
+  capability?: string;
+  /** 只有「必须指名工具」的适配器（如 mcp_server）需要。 */
+  tool?: string;
+  step?: string;
+  instruction?: string;
+  /**
+   * 透传给适配器的额外参数，`max_tokens` / `model` 走这里。
+   * 这是让多 Agent 产出真东西的关键：/orchestrate 不透传 max_tokens，
+   * 推理型模型光思考就吃光默认预算，拿回来的全是思考过程。
+   */
+  params_extra?: Record<string, unknown>;
+}
+
+export interface HubPipelinePayload {
+  stages: HubPipelineStage[];
+  timeout_seconds?: number;
+  summarize?: boolean;
+  summary_instruction?: string;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   const text = await res.text();
   let parsed: unknown = null;
@@ -263,4 +367,25 @@ export const hubApi = {
   /** 路由试算是只读计算，用 GET 语义不合适（带 hint 体），后端收 POST。 */
   route: (payload: { hint: string; top_k?: number; kind?: string; include_unhealthy?: boolean }) =>
     send<{ hint: string; candidates: HubRouteCandidate[]; count: number }>('POST', `${BASE}/route`, payload),
+
+  // -- 编排 --------------------------------------------------------------- //
+  // 三条约定：
+  //  1. 编排失败（含某步失败）**也是 200**：HTTP 层成功，业务层失败，
+  //     和 invoke 一样如实返回给页面，不抛。
+  //  2. `mode` 不显式给时默认 sequential（与后端 pydantic 默认一致），
+  //     但页面必须显式选，不依赖默认值。
+  //  3. steps / aspects 按 mode 二选一 —— 后端只按 mode 取一边，
+  //     这里不做自动合并，避免用户填了 aspects 却按 steps 跑。
+
+  /** 前置体检：有没有可用 Agent。零 Agent 时页面应拦在跑之前。 */
+  orchestrateCapabilities: () =>
+    get<HubOrchestratePreflight>(`${BASE}/orchestrate/capabilities`),
+
+  /** 自动派单：sequential / parallel。 */
+  orchestrate: (payload: HubOrchestratePayload) =>
+    send<{ orchestration: HubOrchestrationResult }>('POST', `${BASE}/orchestrate`, payload),
+
+  /** 显式流水线：每步指名连接，可用 params_extra 单独配 max_tokens。 */
+  orchestratePipeline: (payload: HubPipelinePayload) =>
+    send<{ orchestration: HubOrchestrationResult }>('POST', `${BASE}/orchestrate/pipeline`, payload),
 };

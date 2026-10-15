@@ -113,3 +113,86 @@ describe('hubApi', () => {
     await expect(hubApi.listPresets()).rejects.toThrow('请求失败（HTTP 502）');
   });
 });
+
+describe('hubApi 编排', () => {
+  it('前置体检走 GET，且不带 CSRF 头（只读）', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ agent_count: 4, capability_count: 9, kinds: ['openai_chat'], can_orchestrate: true, max_workers: 4 }),
+    );
+    const res = await hubApi.orchestrateCapabilities();
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/hub/orchestrate/capabilities');
+    expect(init.method).toBeUndefined();
+    expect(init.headers?.['X-CSRF-Token']).toBeUndefined();
+    expect(res.can_orchestrate).toBe(true);
+  });
+
+  it('编排失败也是 200：顶层 ok=false 如实返回，不抛', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        orchestration: {
+          ok: false,
+          mode: 'parallel',
+          steps: [{ index: 0, step: 's0', ok: false, error: 'hub_no_agent', latency_ms: 3, meta: {} }],
+          step_count: 1,
+          succeeded_count: 0,
+          failed_count: 1,
+          final_output: null,
+          error: '',
+          duration_ms: 3,
+          pending_interrupts: false,
+        },
+      }),
+    );
+    const res = await hubApi.orchestrate({ task: 'x', mode: 'parallel', aspects: ['a'] });
+    expect(res.orchestration.ok).toBe(false);
+    expect(res.orchestration.steps[0].error).toBe('hub_no_agent');
+  });
+
+  it('pipeline 的 params_extra（含 max_tokens）原样送进 body', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ orchestration: { ok: true, steps: [] } }));
+    await hubApi.orchestratePipeline({
+      stages: [{ connection_id: 'c1', capability: '技术架构评估', params_extra: { max_tokens: 4000 } }],
+      timeout_seconds: 120,
+    });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/hub/orchestrate/pipeline');
+    expect(init.method).toBe('POST');
+    expect(init.headers['X-CSRF-Token']).toBe('tok-123');
+    const body = JSON.parse(init.body);
+    expect(body.stages[0].params_extra).toEqual({ max_tokens: 4000 });
+    expect(body.timeout_seconds).toBe(120);
+  });
+
+  it('meta 里的 degraded_reason 不在传输层被抹掉（截断信号必须能到页面）', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({
+        orchestration: {
+          ok: true,
+          mode: 'pipeline',
+          steps: [
+            {
+              index: 0,
+              step: '第 1 步',
+              connection_name: 'DSv4.1',
+              ok: true,
+              output: { text: '思考过程…' },
+              error: '',
+              latency_ms: 900,
+              meta: { degraded_reason: '正文缺失，已降级返回 reasoning_content：思考过程用光了 max_tokens' },
+            },
+          ],
+          step_count: 1,
+          succeeded_count: 1,
+          failed_count: 0,
+          duration_ms: 900,
+          pending_interrupts: false,
+        },
+      }),
+    );
+    const res = await hubApi.orchestratePipeline({ stages: [{ connection_id: 'c1' }] });
+    const step = res.orchestration.steps[0];
+    expect(step.ok).toBe(true);
+    expect(String(step.meta.degraded_reason)).toContain('reasoning_content');
+  });
+});

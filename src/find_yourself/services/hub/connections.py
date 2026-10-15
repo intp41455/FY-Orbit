@@ -171,7 +171,21 @@ class HubService:
         cfg = dict(conn.endpoint_config or {})
         cfg.update(self._decrypt_secrets(conn))
         cfg["kind"] = conn.kind
-        cfg["capabilities"] = list(conn.capabilities or [])
+        # 能力是**并集**，不是覆盖。
+        #
+        # 原来这里是 `cfg["capabilities"] = list(conn.capabilities or [])`，
+        # 于是 endpoint_config 里声明的 capabilities 被 DB 列整个顶掉 ——
+        # 也就是说「建连接时声明自定义能力」这条路径**永久无效**，而且
+        # 不报任何错：能力静默消失，路由再也匹配不上那条能力。
+        #
+        # 两个来源都要保留：DB 列（经 /capabilities 端点注册）是运行期
+        # 权威来源，endpoint_config 是建连接时的初始声明（DB 列为空时
+        # 它就是唯一来源）。同名按 DB 列覆盖（允许运行期改写别名）。
+        merged = _merge_capability_lists(
+            cfg.get("capabilities"),
+            conn.capabilities,
+        )
+        cfg["capabilities"] = merged
         return cfg
 
     def build_adapter(self, conn: HubConnection, *, transport: Any = None, sleep: Any = None):
@@ -589,6 +603,59 @@ class HubService:
                     "capability": cap,
                 })
         return out
+
+
+def _merge_capability_lists(
+    declared: Any,
+    registered: Any,
+) -> list[dict[str, Any]]:
+    """合并两个来源的能力声明，返回 ``list[dict]``。
+
+    ``declared``  = ``endpoint_config["capabilities"]``（建连接时声明）
+    ``registered`` = ``HubConnection.capabilities``（运行期经 /capabilities 注册）
+
+    合并规则（同名以 ``registered`` 为准，允许运行期改写别名）：
+
+    * 顺序 = 先 declared 后 registered，保证「建连接时声明的在前」这个
+      可预期的稳定顺序 —— 路由在打分打平时按候选顺序取第一个，顺序抖动
+      会让「同一份配置每次派给不同 Agent」。
+    * tags / aliases 做**并集**而不是覆盖：声明 ``tags=["llm"]``、
+      注册时补 ``aliases=("商业价值评估",)``，两个都要生效。
+    * 非法条目（不是 dict、或没有 name）直接跳过，不让一条脏数据
+      把整个连接的能力列表搞崩。
+    """
+    out: list[dict[str, Any]] = []
+    index: dict[str, int] = {}
+    for source in (declared, registered):
+        if not isinstance(source, (list, tuple)):
+            continue
+        for raw in source:
+            if isinstance(raw, Capability):
+                raw = raw.to_public()
+            if not isinstance(raw, dict):
+                continue
+            name = str(raw.get("name") or "").strip()
+            if not name:
+                continue
+            entry = {
+                "name": name,
+                "tags": [str(t) for t in (raw.get("tags") or []) if str(t).strip()],
+                "description": str(raw.get("description") or ""),
+                "aliases": [str(a) for a in (raw.get("aliases") or []) if str(a).strip()],
+            }
+            key = name.lower()
+            if key in index:
+                prev = out[index[key]]
+                merged_tags = list(dict.fromkeys([*prev["tags"], *entry["tags"]]))
+                merged_aliases = list(dict.fromkeys([*prev["aliases"], *entry["aliases"]]))
+                prev["tags"] = merged_tags
+                prev["aliases"] = merged_aliases
+                if entry["description"]:
+                    prev["description"] = entry["description"]
+                continue
+            index[key] = len(out)
+            out.append(entry)
+    return out
 
 
 __all__ = [

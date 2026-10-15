@@ -24,6 +24,7 @@ import { ConnectionForm, type ConnectionFormSeed, type ConnectionFormSubmit } fr
 import { PresetGallery } from '../components/hub/PresetGallery';
 import { ManifestImport } from '../components/hub/ManifestImport';
 import { CapabilityTable, RouteLab } from '../components/hub/CapabilityPanel';
+import { OrchestrationPanel } from '../components/hub/OrchestrationPanel';
 
 type Filter = 'all' | 'ai' | 'tool' | 'mcp' | 'data' | 'other';
 
@@ -409,6 +410,8 @@ export function HubPage() {
         searched={routeSearched}
         error={routeError}
       />
+
+      <OrchestrationPanel connections={connections} />
 
       <p className="muted hub-footnote">
         当前已接入类型：

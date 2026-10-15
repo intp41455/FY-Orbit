@@ -473,12 +473,44 @@ async def orchestrate_pipeline(
     """显式指定每步用哪个连接的编排（需要精确控制时用这个）。"""
     _owner(actor)
     orch = _orchestrator(actor, hub, svc, DEFAULT_MAX_WORKERS)
-    result = orch.run_pipeline(body.stages, timeout_seconds=body.timeout_seconds)
+    result = orch.run_pipeline(_with_connection_names(actor, hub, body.stages),
+                               timeout_seconds=body.timeout_seconds)
     if body.summarize:
         result = orch.summarize(result, instruction=body.summary_instruction,
                                 timeout_seconds=body.timeout_seconds)
     hub.s.commit()
     return {"orchestration": result.to_public()}
+
+
+def _with_connection_names(
+    actor: Actor, hub: HubService, stages: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """给每个 stage 补上 ``connection_name``（调用方不必自己查）。
+
+    为什么需要：``run_pipeline`` 走的是「显式指定连接」分支，不会经过路由，
+    于是 ``connection_name`` 一直是空串 —— 编排结果里只看得见
+    ``connection_id``，看不出「这一步到底派给了谁」。这违反了诚实原则：
+    结果里出现一个无法解释的 id，等于没交代。
+
+    查不到名字就**原样保留空串**，不编造 —— 显式指定的连接可能刚被删除。
+    """
+    wanted = [str(s.get("connection_id") or "") for s in stages]
+    wanted = [c for c in wanted if c]
+    if not wanted:
+        return stages
+    names: dict[str, str] = {}
+    for conn in hub.list_connections(actor):
+        cid = str(conn.get("id") or "")
+        if cid in wanted:
+            names[cid] = str(conn.get("name") or "")
+    out: list[dict[str, Any]] = []
+    for stage in stages:
+        cid = str(stage.get("connection_id") or "")
+        if cid and not stage.get("connection_name") and names.get(cid):
+            out.append({**stage, "connection_name": names[cid]})
+        else:
+            out.append(stage)
+    return out
 
 
 @router.get("/orchestrate/capabilities")

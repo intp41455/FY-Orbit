@@ -34,6 +34,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import re
+import random
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -324,6 +325,40 @@ def _elapsed_ms(started: float) -> int:
     return int(round((time.perf_counter() - started) * 1000))
 
 
+# --------------------------------------------------------------------------- #
+# 退避重试（与 runtime/gateway.py 的 ``_call_with_retry`` 同语义）
+# --------------------------------------------------------------------------- #
+#
+# 为什么 hub 需要自己一套：适配器直连 ``provider.complete``，绕开了 gateway，
+# 于是网关的指数退避在 hub 路径上从未生效。多 Agent 并行编排一次要同时打
+# 4 个上游，429/5xx 是常态而不是意外 —— 实测 step-5-preview-free 直接
+# ``rate_limited`` 打脸整条流水线。
+#
+# 参数与网关保持一致（≤2 次重试 / 基准 0.5s / 上限 8s），避免两条路径
+# 对「同一个上游」表现出不同的耐心。
+
+_HUB_MAX_RETRIES = 2
+_HUB_RETRY_BASE_DELAY = 0.5
+_HUB_RETRY_MAX_DELAY = 8.0
+
+
+def _backoff_delay(attempt: int, retry_after: float | None) -> float:
+    """退避时长：上游给了 ``Retry-After`` 就听它的，否则指数退避 + jitter。
+
+    jitter 是为了打散并发重试的同步性 —— 4 个 Agent 同时被 429 时，
+    固定退避会让它们在同一毫秒一起再撞一次。
+    """
+    if retry_after is not None:
+        return max(0.0, min(float(retry_after), _HUB_RETRY_MAX_DELAY))
+    delay = min(_HUB_RETRY_BASE_DELAY * (2 ** (attempt - 1)), _HUB_RETRY_MAX_DELAY)
+    return delay * (0.5 + random.random() / 2)
+
+
+def _sleep(seconds: float) -> None:
+    if seconds > 0:
+        time.sleep(seconds)
+
+
 def _endpoint_ref(url: str) -> str:
     """Host + path only: query strings and userinfo never reach the UI."""
     if not url:
@@ -407,6 +442,20 @@ class ChatModelAdapter:
                             aliases=_CHAT_ALIASES)]
         return _merge_capabilities(base, declared)
 
+    def _declares_capability(self, name: str) -> bool:
+        """这个适配器是否**声明过**名叫 ``name`` 的能力。
+
+        编排器把能力名当动作名传下来时（见 :meth:`invoke`），靠它区分
+        「这是路由标签，映射到 complete」和「调用方真的瞎编了一个动作」。
+
+        比较统一小写：能力名可能是中文（大小写无意义），也可能是 ``Chat``
+        这种英文写法，不该因为大小写就判成不支持。
+        """
+        target = (name or "").strip().lower()
+        if not target:
+            return False
+        return any(c.name.strip().lower() == target for c in self.capabilities())
+
     def invoke(self, call: InvokeCall) -> InvokeResult:
         from ...runtime.providers import ProviderError, build_provider
 
@@ -429,10 +478,23 @@ class ChatModelAdapter:
                 models = provider.probe_models(timeout_seconds=call.timeout_seconds)
                 return InvokeResult(ok=True, output={"models": models}, latency_ms=_elapsed_ms(started))
             if action != "complete":
-                raise ValidationFailed(
-                    "hub_unsupported_action",
-                    f"chat 适配器不支持 action='{action}'（支持 complete / models）",
-                )
+                # 路由选出的是**能力名**而不是动作名。编排器（orchestrator._run_step）
+                # 把 `capability` 原样当 action 传下来，于是任何自定义能力名
+                # （如「商业价值评估」）都会撞到这里报 hub_unsupported_action。
+                #
+                # 能力名与动作名本就是两个概念：能力是「这个 Agent 能干什么」的
+                # 路由标签，动作是「怎么调」的协议细节。调用方应该只声明能力，
+                # 由适配器自己决定用哪个动作 —— 这才是「统一接入层」该有的样子。
+                #
+                # 所以：只要这个名字是本适配器**已声明的能力**，就按 complete 执行；
+                # 只有既不是已知动作、也不是已声明能力的，才是真的不支持。
+                if self._declares_capability(action):
+                    action = "complete"
+                else:
+                    raise ValidationFailed(
+                        "hub_unsupported_action",
+                        f"chat 适配器不支持 action='{action}'（支持 complete / models）",
+                    )
             # 多轮优先：协同编排需要把上文传给 Agent，而单轮 prompt 只能表达
             # 一句话。两者都空才报错 —— normalize_messages 负责校验并给出清晰错误。
             raw_messages = call.params.get("messages")
@@ -441,13 +503,32 @@ class ChatModelAdapter:
                 conversation = normalize_messages(raw_messages, prompt)
             except ValueError as exc:
                 raise ValidationFailed("hub_missing_prompt", str(exc)) from exc
-            result = provider.complete(
-                model=str(call.params.get("model") or self.model()),
-                prompt=prompt,
-                max_tokens=int(call.params.get("max_tokens") or 1024),
-                timeout_seconds=call.timeout_seconds,
-                messages=conversation,
-            )
+            # 重试语义与 runtime/gateway.py 的 ``_call_with_retry`` 完全一致：
+            # 只重试 ProviderError 里显式标了 retryable 的（transport /
+            # 429 / 5xx），其余一律立刻上抛 —— 避免把一次可能已计费的调用
+            # 变成重复计费。
+            #
+            # 为什么这里必须自己重试：hub 适配器直连 provider.complete，
+            # **不经过 gateway**，所以网关那套退避+jitter+Retry-After
+            # 在 hub 路径上完全没生效。实测多 Agent 并行编排时，
+            # 上游 429 会直接把一步打失败（step-5-preview-free
+            # rate_limited / all upstream attempts failed）。
+            attempts = 0
+            while True:
+                attempts += 1
+                try:
+                    result = provider.complete(
+                        model=str(call.params.get("model") or self.model()),
+                        prompt=prompt,
+                        max_tokens=int(call.params.get("max_tokens") or 1024),
+                        timeout_seconds=call.timeout_seconds,
+                        messages=conversation,
+                    )
+                    break
+                except ProviderError as exc:
+                    if not exc.retryable or attempts > _HUB_MAX_RETRIES:
+                        raise
+                    _sleep(_backoff_delay(attempts, exc.retry_after))
         except ValidationFailed as exc:
             return InvokeResult(ok=False, error=f"{exc.code}: {exc.message}", latency_ms=_elapsed_ms(started))
         except ProviderError as exc:
@@ -461,7 +542,12 @@ class ChatModelAdapter:
             output={"text": result.text, "model": result.model or self.model()},
             latency_ms=_elapsed_ms(started),
             meta={"provider_id": result.provider_id, "usage": result.usage,
-                  "degraded_from": result.degraded_from},
+                  "degraded_from": result.degraded_from,
+                  # 必须一起透传：provider 算出的「这次答案是被截断的
+                  # 降级产物」就靠这个字段上传。漏掉它，调用方只能看到一段
+                  # 思考过程却以为拿到了正式答案。
+                  "degraded_reason": result.degraded_reason,
+                  "attempts": attempts},
         )
 
 

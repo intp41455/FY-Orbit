@@ -1192,6 +1192,181 @@
   color: var(--ui-st-failed);
 }
 
+/* --------------------------------------------------------------------------
+   多Agent 编排台
+   -------------------------------------------------------------------------- */
+.hub-orch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  margin-top: var(--ui-s-4);
+  padding: var(--ui-s-4);
+  border-radius: var(--ui-r-2);
+  background: var(--ui-glass-1);
+  border: 1px solid var(--ui-line-1);
+}
+.hub-orch-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ui-s-3);
+}
+.hub-orch-head h3 {
+  margin: 0;
+}
+.hub-orch-label {
+  font-size: var(--ui-fs-xs);
+  font-weight: 700;
+  color: var(--ui-ink-3);
+}
+.hub-orch textarea {
+  width: 100%;
+  min-height: var(--ui-hit);
+  padding: var(--ui-s-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-1);
+  background: var(--kn-a-white-60);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+  resize: vertical;
+}
+.hub-orch select,
+.hub-orch input {
+  min-height: var(--ui-hit);
+  padding: 0 var(--ui-s-2);
+  font: inherit;
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-1);
+  background: var(--kn-a-white-60);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+}
+.hub-orch-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+}
+.hub-orch-inline input[type='number'] {
+  width: 6rem;
+}
+.hub-orch-stages {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hub-orch-stages > li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-2);
+  border: 1px solid var(--ui-line-1);
+}
+.hub-orch-stages textarea {
+  min-height: 3rem;
+}
+.hub-orch-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-3);
+  padding-top: var(--ui-s-3);
+  border-top: 1px solid var(--ui-line-2);
+}
+.hub-orch-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ui-s-3);
+  font-size: var(--ui-fs-sm);
+  color: var(--ui-ink-2);
+}
+.hub-orch-warn {
+  color: var(--ui-st-warn, var(--ui-sky-700));
+  font-weight: 700;
+}
+.hub-orch-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ui-s-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.hub-orch-timeline > li {
+  padding: var(--ui-s-3);
+  border-radius: var(--ui-r-1);
+  background: var(--ui-glass-1);
+  /* 左侧色条即成败标记：比文字标签更容易在长列表里扫出来。 */
+  border: 1px solid var(--ui-line-1);
+  border-left: 3px solid var(--ui-line-2);
+}
+.hub-orch-timeline > li[data-tone='ok'] {
+  border-left-color: var(--ui-st-passed, var(--ui-teal-500, #2f9e8f));
+}
+.hub-orch-timeline > li[data-tone='fail'] {
+  border-left-color: var(--ui-st-failed);
+}
+.hub-orch-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--ui-s-2);
+  font-size: var(--ui-fs-sm);
+}
+.hub-orch-idx {
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-ink-3);
+  font-weight: 700;
+}
+.hub-orch-ok {
+  color: var(--ui-st-passed, var(--ui-teal-500, #2f9e8f));
+  font-weight: 700;
+}
+.hub-orch-fail {
+  color: var(--ui-st-failed);
+  font-weight: 700;
+}
+/* 降级产物：黄色实心提示。这条是本轮修复的核心价值 ——
+   推理模型被 max_tokens 截断时 ok=true 且有文本，不高亮就会被当成正式答案。 */
+.hub-orch-degraded {
+  margin-top: var(--ui-s-2);
+  padding: var(--ui-s-2);
+  font-size: var(--ui-fs-xs);
+  color: var(--ui-ink-1);
+  background: var(--kn-warn-tint, rgba(240, 180, 41, 0.14));
+  border: 1px solid var(--kn-warn-line, rgba(240, 180, 41, 0.42));
+  border-radius: var(--ui-r-1);
+}
+.hub-orch-timeline pre,
+.hub-orch-result pre {
+  margin: var(--ui-s-2) 0 0;
+  padding: var(--ui-s-2);
+  max-height: 22rem;
+  overflow: auto;
+  font-size: var(--ui-fs-xs);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ui-ink-1);
+  background: var(--kn-a-white-60);
+  border: 1px solid var(--ui-line-2);
+  border-radius: var(--ui-r-1);
+}
+.hub-orch-error-pre {
+  color: var(--ui-st-failed) !important;
+}
+.hub-orch-timeline summary {
+  cursor: pointer;
+  font-size: var(--ui-fs-xs);
+}
+
 /* ==========================================================================
    §6 响应式：可重排，不截断（基准原文）
    ========================================================================== */

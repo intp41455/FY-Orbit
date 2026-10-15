@@ -20,12 +20,21 @@ vi.mock('../api/hub', async () => {
       importManifest: vi.fn(),
       manifestExample: vi.fn(),
       route: vi.fn(),
+      orchestrateCapabilities: vi.fn(),
+      orchestrate: vi.fn(),
+      orchestratePipeline: vi.fn(),
     },
   };
 });
 
 import { hubApi } from '../api/hub';
-import type { HubCapabilityRow, HubConnection, HubPreset, HubRouteCandidate } from '../api/hub';
+import type {
+  HubCapabilityRow,
+  HubConnection,
+  HubOrchestrationResult,
+  HubPreset,
+  HubRouteCandidate,
+} from '../api/hub';
 import { HubPage } from './HubPage';
 
 const mocked = () => hubApi as unknown as Record<string, ReturnType<typeof vi.fn>>;
@@ -100,6 +109,57 @@ const CANDIDATE: HubRouteCandidate = {
   capability: { name: 'chat' },
 };
 
+/** 编排台的样例结果：1 步成功 + 1 步失败 + 一个降级信号，三种展示路径都覆盖到。 */
+const ORCHESTRATION: HubOrchestrationResult = {
+  ok: false,
+  mode: 'parallel',
+  steps: [
+    {
+      index: 0,
+      step: '技术可行性',
+      connection_id: 'c1',
+      connection_name: 'Ollama 本地',
+      capability: 'chat',
+      ok: true,
+      output: { text: '可行。' },
+      error: '',
+      latency_ms: 900,
+      meta: {},
+    },
+    {
+      index: 1,
+      step: '成本估算',
+      connection_id: 'c1',
+      connection_name: 'Ollama 本地',
+      capability: 'chat',
+      ok: true,
+      output: { text: '思考中…' },
+      error: '',
+      latency_ms: 1500,
+      meta: { degraded_reason: '正文缺失，已降级返回 reasoning_content：思考过程用光了 max_tokens' },
+    },
+    {
+      index: 2,
+      step: '体验评估',
+      connection_id: 'c1',
+      connection_name: 'Ollama 本地',
+      capability: 'chat',
+      ok: false,
+      output: null,
+      error: 'all upstream attempts failed',
+      latency_ms: 4200,
+      meta: { attempts: 3 },
+    },
+  ],
+  step_count: 3,
+  succeeded_count: 2,
+  failed_count: 1,
+  final_output: null,
+  error: '',
+  duration_ms: 4200,
+  pending_interrupts: false,
+};
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -122,6 +182,16 @@ beforeEach(() => {
     result: { ok: true, output: { text: '你好' }, error: '', latency_ms: 8, meta: {} },
   });
   mocked().route.mockResolvedValue({ hint: '聊天', candidates: [CANDIDATE], count: 1 });
+  // 编排台挂在同一页上，前置体检必须给个真实应答，否则它会一直显示体检失败。
+  mocked().orchestrateCapabilities.mockResolvedValue({
+    agent_count: 1,
+    capability_count: 2,
+    kinds: ['openai_chat'],
+    can_orchestrate: true,
+    max_workers: 4,
+  });
+  mocked().orchestrate.mockResolvedValue({ orchestration: ORCHESTRATION });
+  mocked().orchestratePipeline.mockResolvedValue({ orchestration: ORCHESTRATION });
 });
 
 describe('HubPage', () => {
@@ -302,5 +372,30 @@ describe('HubPage', () => {
     expect(screen.queryByText('sk-plain-value')).toBeNull();
     // 掩码只以 **** 形态出现
     expect(document.body.textContent).not.toContain('api_key 的明文');
+  });
+
+  it('编排台挂在中台页面上，并用当前连接当派工对象', async () => {
+    renderPage();
+    await screen.findByTestId('hub-card-c1');
+    expect(screen.getByTestId('hub-orch-panel')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('hub-orch-mode-pipeline'));
+    fireEvent.click(screen.getByTestId('hub-orch-stage-add'));
+    const select = (await screen.findByTestId('hub-orch-stage-conn-0')) as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.value)).toContain('c1');
+  });
+
+  it('编排结果里成功/失败/降级三种状态都如实呈现', async () => {
+    renderPage();
+    await screen.findByTestId('hub-orch-preflight');
+    fireEvent.change(screen.getByTestId('hub-orch-task'), { target: { value: '评估这个方案' } });
+    fireEvent.change(screen.getByTestId('hub-orch-bullets'), { target: { value: '技术可行性\n成本估算\n体验评估' } });
+    fireEvent.click(screen.getByTestId('hub-orch-run'));
+
+    const panel = await screen.findByTestId('hub-orch-result');
+    expect(panel.textContent).toContain('2/3 步成功');
+    expect(screen.getByTestId('hub-orch-step-2').textContent).toContain('all upstream attempts failed');
+    // 截断降级那一步 ok=true，必须额外有标记，否则会被当成正式答案
+    expect(screen.getByTestId('hub-orch-step-1').getAttribute('data-tone')).toBe('ok');
+    expect(screen.getByTestId('hub-orch-degraded-1').textContent).toContain('reasoning_content');
   });
 });

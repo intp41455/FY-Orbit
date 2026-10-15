@@ -17,6 +17,7 @@ from .base import (
     ProviderEndpoint,
     ProviderMalformedResponse,
     ProviderTransportError,
+    ProviderTruncatedResponse,
     classify_status,
     normalize_messages,
     sanitize_message,
@@ -104,10 +105,45 @@ class OpenAICompatibleProvider:
         data = self._post("/chat/completions", payload, timeout_seconds)
         try:
             choices = data["choices"]
-            text = choices[0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+            message = choices[0]["message"]
+            text = message.get("content") or ""
+            # 推理模型把预算花在 reasoning 上，content 可能是空串/None。
+            # 早期只读 content，于是 max_tokens 被思考吃光时**静默返回空文本**，
+            # 调用方拿到 ok=True + text="" —— 上层完全看不出这是一次失败。
+            # 实测：deepseek-v4.1-flash + 2000 max_tokens + 长任务
+            # → finish_reason=length, reasoning_tokens=2000, content 长度 0。
+            reasoning = message.get("reasoning_content") or ""
+            finish_reason = str(choices[0].get("finish_reason") or "")
+        except (KeyError, IndexError, TypeError, AttributeError) as exc:
             # Upstream answered 2xx; it may already have billed us. Do not retry.
             raise ProviderMalformedResponse("Response contained no choices[0].message.content") from exc
+
+        # 两段都没有可读文本 = 这次调用没产出任何东西。必须报错而不是
+        # 返回空串：空串会被当成「模型这么答的」拼进多轮上下文，污染后续每一步。
+        if not text.strip() and not reasoning.strip():
+            raise ProviderTruncatedResponse(
+                f"上游返回 2xx 但没有任何文本内容"
+                f"（finish_reason={finish_reason or 'unknown'}，"
+                f"prompt_tokens={_usage_int(data, 'prompt_tokens')}，"
+                f"completion_tokens={_usage_int(data, 'completion_tokens')}）"
+            )
+        truncated_note = ""
+        if not text.strip() and reasoning.strip():
+            # content 空但有 reasoning —— 必须**如实说明原因**，不能一律
+            # 说成「被 max_tokens 截断」。实测至少有两种成因：
+            #   finish_reason=length     → 思考把预算吃光，确实是截断
+            #   finish_reason=tool_calls → 模型想调工具，content 自然为空
+            # 两者给调用方的处置完全不同（调大预算 vs 给工具/换 prompt），
+            # 混为一谈会把人引到错误的排查方向上。
+            text = reasoning
+            if finish_reason == "length":
+                why = (f"思考过程用光了 max_tokens（completion_tokens="
+                       f"{_usage_int(data, 'completion_tokens')}）")
+            elif finish_reason == "tool_calls":
+                why = "上游返回了工具调用而没有正文（本次调用未提供工具）"
+            else:
+                why = f"上游未产出正文（finish_reason={finish_reason or 'unknown'}）"
+            truncated_note = f"正文缺失，已降级返回 reasoning_content：{why}"
 
         usage = data.get("usage") or {}
         try:
@@ -123,6 +159,10 @@ class OpenAICompatibleProvider:
             provider_request_id=str(data.get("id") or ""),
             provider_id=self.provider_id,
             model=model,
+            # 截断必须**可见**：上层要能区分「模型就这么答的」和
+            # 「预算不够、只拿到思考过程」。放进 degraded_reason 而不是
+            # usage —— 后者声明是 dict[str, int]，塞标记会破坏契约。
+            degraded_reason=truncated_note,
         )
 
     def probe_models(self, *, timeout_seconds: float = 5.0) -> list[str]:
@@ -136,6 +176,15 @@ class OpenAICompatibleProvider:
             if isinstance(row, dict) and row.get("id"):
                 out.append(str(row["id"]))
         return out
+
+
+def _usage_int(data: dict[str, Any], key: str) -> int:
+    """从 ``usage`` 里安全取整数——只用于错误信息，不参与计费判断。"""
+    usage = data.get("usage") or {}
+    try:
+        return int(usage.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def parse_retry_after(resp: httpx.Response) -> float | None:

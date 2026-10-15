@@ -55,6 +55,12 @@ class StepResult:
     output: Any = None
     error: str = ""
     latency_ms: int = 0
+    #: 上游调用元信息（provider_id / usage / degraded_reason / attempts ...）。
+    #: 加它的理由很具体：推理模型被 max_tokens 截断时会降级返回
+    #: reasoning_content，``ok=True`` 且 ``output.text`` 有内容 —— 光看
+    #: ok 和 text **完全看不出**这一步拿到的其实是思考过程而不是答案。
+    #: 没有这个字段，编排结果就会「看起来成功」而实际一条答案都没有。
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def to_public(self) -> dict[str, Any]:
         return {
@@ -67,6 +73,7 @@ class StepResult:
             "output": self.output,
             "error": self.error,
             "latency_ms": self.latency_ms,
+            "meta": dict(self.meta),
         }
 
 
@@ -449,7 +456,9 @@ class Orchestrator:
 
         return StepResult(index=index, step=step, connection_id=connection_id,
                           connection_name=name, capability=cap_name, ok=True,
-                          output=result.get("output"), latency_ms=elapsed)
+                          output=result.get("output"), latency_ms=elapsed,
+                          # 原样带上调用元信息，截断/降级信号才不会被这一层抹掉。
+                          meta=dict(result.get("meta") or {}))
 
     # ------------------------------------------------------------------ #
     # 形态
@@ -628,6 +637,7 @@ class Orchestrator:
             res = self._run_step(
                 i, str(stage.get("step") or f"stage{i + 1}"), instruction,
                 connection_id=str(stage.get("connection_id") or ""),
+                connection_name=str(stage.get("connection_name") or ""),
                 capability=str(stage.get("capability") or ""),
                 tool=str(stage.get("tool") or ""),
                 context=context or None, timeout_seconds=timeout_seconds,
