@@ -1,0 +1,921 @@
+{
+  "scope": "R2 receipt structure and bounded source checks only",
+  "product_e2e_verified": false,
+  "T4_round2": "not_located",
+  "runs": {
+    "T1": {
+      "run": "coordinator-t1-rev2-20261012-040453",
+      "handoff_exists": true,
+      "files": [
+        {
+          "path": "final\\errata-capability.jsonl",
+          "bytes": 4332,
+          "sha256": "441534d5819519edd699ff105d9f793c96893f9a8067d51eb9b80b34ed0e2651",
+          "rows": 6
+        },
+        {
+          "path": "final\\errata-conflicts.jsonl",
+          "bytes": 32972,
+          "sha256": "183f01e5d9ca2d91051d398633407b41dfcfbd8a23ac1e0214fbdbe85fc157ab",
+          "rows": 18
+        },
+        {
+          "path": "final\\errata-requirements.jsonl",
+          "bytes": 114860,
+          "sha256": "53794d12f2f2056727cd28e223746474107b04519b1f0a70ebc3c1818c6e2ebd",
+          "rows": 55
+        },
+        {
+          "path": "final\\errata-sources.jsonl",
+          "bytes": 141734,
+          "sha256": "be3c4059bb8c2fbdc0b69f7af6e40d9db795018dbc390aef0d958ec025a10dd9",
+          "rows": 239
+        },
+        {
+          "path": "final\\errata-summary.json",
+          "bytes": 640,
+          "sha256": "02490c7756f6d30e1a225ade02bf936d62eac3fac0a0448ddd4d516802edd369"
+        },
+        {
+          "path": "final\\errata-versions.jsonl",
+          "bytes": 449,
+          "sha256": "d2f105f3beec95a4d42e674aa154221cdc4e27aae0ec754492c04d4573cacbd4",
+          "rows": 1
+        },
+        {
+          "path": "final\\HANDOFF-r2.md",
+          "bytes": 6959,
+          "sha256": "99a7fba64ebcb7a2e40f35990850c5af9fb58fa07c1b81936da93ca77f34c1e4"
+        },
+        {
+          "path": "final\\new-requirements.jsonl",
+          "bytes": 698988,
+          "sha256": "28631734c0617fc59e379d92fd835e1bc196447341ac7c43fe978adc307c78b7",
+          "rows": 975
+        },
+        {
+          "path": "final\\new-sources.jsonl",
+          "bytes": 5201,
+          "sha256": "09a7faee3b2ce628aaa6675801f934c7d4d783d515bebe92ce8c62da09f98769",
+          "rows": 7
+        },
+        {
+          "path": "final\\orphan-read-evidence.jsonl",
+          "bytes": 58356,
+          "sha256": "1cf5e1923b3d8850ef3a662c70cb5df470aaa9562f64e29177c9b45ac9fe7f7a",
+          "rows": 6
+        },
+        {
+          "path": "final\\orphan-register.jsonl",
+          "bytes": 106999,
+          "sha256": "8aa6b1c0fd26628d5053b94166e94553820c7218771941af60cf960865b76384",
+          "rows": 98
+        },
+        {
+          "path": "final\\orphan-summary.md",
+          "bytes": 3048,
+          "sha256": "f305b1647d3cb573c022cbb88e013bfacd66819a9d4785ea0bde621e2e975002"
+        },
+        {
+          "path": "final\\QA-r2.md",
+          "bytes": 6022,
+          "sha256": "fd74fba676f243e6ebdb331dae69a2dd9df71b4a96215dc54df421d9cf425628"
+        },
+        {
+          "path": "final\\spec-family-diff.jsonl",
+          "bytes": 7823,
+          "sha256": "2bae3f6958b00734c3556774ac5581e6f8a84995d08ab65ebd881c17ec79ef05",
+          "rows": 10
+        },
+        {
+          "path": "final\\spec-family-diff.md",
+          "bytes": 4775,
+          "sha256": "50e3b7198df39b2d2b911f48dc7f8172062483acb918849e19924cbcc0c207c8"
+        },
+        {
+          "path": "final\\validation-r2.json",
+          "bytes": 2062,
+          "sha256": "84c784800aac66aeae0982fe0add1c3c6403137bb9ef42ba0ef5b4787aea6de9"
+        }
+      ],
+      "parse_errors": []
+    },
+    "T2": {
+      "run": "coordinator-t2-r2-20261012-0405",
+      "handoff_exists": true,
+      "files": [
+        {
+          "path": "final\\competitors-r2.jsonl",
+          "bytes": 137357,
+          "sha256": "22e13391a872ddedeff712bb1cefe510bc55fd68ac5317db0f72433b3e1aaf27",
+          "rows": 106
+        },
+        {
+          "path": "final\\coverage-r2.csv",
+          "bytes": 2119,
+          "sha256": "9a8e234875be9f811fe425548630043788702f19be6566d706643b140ecd7b8d"
+        },
+        {
+          "path": "final\\freeze_reverify.json",
+          "bytes": 316,
+          "sha256": "4b5166509e258ab0a5bc85774727c866b2e603e171c18f4fff381e922f8bd471"
+        },
+        {
+          "path": "final\\HANDOFF.md",
+          "bytes": 4993,
+          "sha256": "6db3bf4b5d3f767e43b5299c1716154999aab76c496c34adc8bdfb531c19a0ae"
+        },
+        {
+          "path": "final\\inventory-r2.csv",
+          "bytes": 11306,
+          "sha256": "5063ca47747dd0e58f2f11ec30e745029700d9d25a69cdd771800d94b01df169"
+        },
+        {
+          "path": "final\\lineage.json",
+          "bytes": 5044,
+          "sha256": "d62f695beca6e895992684a2d67be5d939222ed69adf19d28287703c3e51a102"
+        },
+        {
+          "path": "final\\QA.md",
+          "bytes": 6442,
+          "sha256": "7b8c03f44ae2a7b9f638d4dfeb7acdb9bbd3e0368f62ef0b396173b3f612c1e8"
+        },
+        {
+          "path": "final\\REVISIONS.md",
+          "bytes": 11862,
+          "sha256": "705fe9a7b778f902ca7209498937d42499035fdc5edb87c7e054cb05256164f7"
+        },
+        {
+          "path": "final\\sources-r2.jsonl",
+          "bytes": 22660,
+          "sha256": "1dcc6b5e9a3701b81e3c488098852679e507d9a1ae176aff170220c12104a6de",
+          "rows": 45
+        },
+        {
+          "path": "final\\validation.json",
+          "bytes": 588,
+          "sha256": "ea4654a663e94b20db55750d77787d401782c65e9d4b72d6d34c0d1b2418c143"
+        }
+      ],
+      "parse_errors": []
+    },
+    "T3": {
+      "run": "coordinator-t3-rev2-20261012-0400",
+      "handoff_exists": true,
+      "files": [
+        {
+          "path": "final\\change-list.jsonl",
+          "bytes": 3752,
+          "sha256": "6509a69f9cfdc4d6a4192480a451d3e3d776cbaa4be8865092773e0dac5828c0",
+          "rows": 10
+        },
+        {
+          "path": "final\\errata.jsonl",
+          "bytes": 7316,
+          "sha256": "d6535dc63ac952216a8397f21e34f413b809023059187da3a5ad23b31cd51c1c",
+          "rows": 19
+        },
+        {
+          "path": "final\\evidence\\base_run_freeze.json",
+          "bytes": 13402,
+          "sha256": "0f8ec8a9d9548e16c6ee831043911470b113da07e85bd4ec22728df6822d0175"
+        },
+        {
+          "path": "final\\evidence\\base_run_unmodified_verification.json",
+          "bytes": 263,
+          "sha256": "591babefd2313a75565dff91318015339347a41b2f2e60bc4293f9d33db11ce3"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\gh-api-branch-main.json",
+          "bytes": 4623,
+          "sha256": "e7412cce06312409ad6644c711738fe5c0a445a6f966b980899c3b95e58aa31b"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\gh-api-releases.json",
+          "bytes": 12972,
+          "sha256": "eebbf3521ff9dff6e7ced25c17757337a7f93235e96cc016fb6ad56ed8f77ba9"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\gh-api-repo.json",
+          "bytes": 5457,
+          "sha256": "a986690c740ce7709ca94ba5ccd5c3a7362cddbbaf7e0050b302197e27faf832"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\gh-repo-page.html",
+          "bytes": 427196,
+          "sha256": "d095d24952759ae0a146a0a8489e0cd7bf391b02925ed7ed725eeac7254975f0"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\pagesdev-landing.html",
+          "bytes": 43808,
+          "sha256": "4234ecbf18c35f27d65d886f653aeb5f16dd656f93a4852dc7b37d42a18b0786"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\pagesdev-root.html",
+          "bytes": 43808,
+          "sha256": "4234ecbf18c35f27d65d886f653aeb5f16dd656f93a4852dc7b37d42a18b0786"
+        },
+        {
+          "path": "final\\evidence\\web_snapshots\\trycloudflare-cta.FAILED.txt",
+          "bytes": 91,
+          "sha256": "6a7727a791ec27d8a14e4d4790ab8d9e21bf3a54b125d52d94ec0d177d99e3dc"
+        },
+        {
+          "path": "final\\HANDOFF.md",
+          "bytes": 6200,
+          "sha256": "7917c3734a569751e2e894a380c62055b3700a5d4b83a7c750a9c9f7102fdacc"
+        },
+        {
+          "path": "final\\QA.md",
+          "bytes": 4569,
+          "sha256": "0e802c3fde216c8287f34507afd0e10377d2e95b46be34c61ba18640a6bbff4e"
+        },
+        {
+          "path": "final\\rev2-report.md",
+          "bytes": 7762,
+          "sha256": "5a7071eaa02d46ebc1c55851becbf6fd5b01d397e9f9c3df1f2b7112c01c3d13"
+        },
+        {
+          "path": "final\\revised\\code-refs-summary.md",
+          "bytes": 7188,
+          "sha256": "d292613817bf7ecffa854802d8483a748350c23afb93c7f47af80a60947d0359"
+        },
+        {
+          "path": "final\\revised\\code-refs-verification.jsonl",
+          "bytes": 69075,
+          "sha256": "6c19286ac8eb22166bd53834320aca74133cce9b6b7a8e80ebc75b9a7114a465",
+          "rows": 85
+        },
+        {
+          "path": "final\\revised\\ent006-supplement.jsonl",
+          "bytes": 18810,
+          "sha256": "4a672ca7daeab97a0c1c0b8569aeed1c54edd01b297f76af5766a4e223115fe8",
+          "rows": 18
+        },
+        {
+          "path": "final\\revised\\semantic-support-review.jsonl",
+          "bytes": 55702,
+          "sha256": "726ba9f79b1b0b7ec6b3be07670d9f281042dc16ae3dc2854b856c78f9a39f42",
+          "rows": 35
+        },
+        {
+          "path": "final\\revised\\semantic-support-summary.md",
+          "bytes": 18369,
+          "sha256": "56a5828835ebb98e5da977e9272c6ec5c7badcf5582c1cbccc70d8ecb781625d"
+        },
+        {
+          "path": "final\\revised\\user-message-search-report.md",
+          "bytes": 14216,
+          "sha256": "9464836341ca4e7813ab9673747841d35484e829f061718d13c6cc6d297021e6"
+        },
+        {
+          "path": "final\\revised\\user-original-messages.jsonl",
+          "bytes": 40732,
+          "sha256": "d6983eec4ea2cb078130b41b0d74853646394c8f5c2f2b045ab7557c4d92ebcd",
+          "rows": 13
+        },
+        {
+          "path": "final\\revised\\web-evidence-summary.md",
+          "bytes": 11385,
+          "sha256": "408a97767d6f34714281100d00cfa5776de335dc3d244bee92e263d2574f9b8a"
+        },
+        {
+          "path": "final\\revised-sources.jsonl",
+          "bytes": 43078,
+          "sha256": "b14a8ce73b30422404adc7bf5cf84b95c3c37b155b8470692bb845f13eb08251",
+          "rows": 33
+        },
+        {
+          "path": "final\\user-messages-addendum.jsonl",
+          "bytes": 42214,
+          "sha256": "280ed25a5c07c6d067fa6106a43d473191ca7f1979c4210844b0d24d738831f5",
+          "rows": 13
+        },
+        {
+          "path": "final\\validation-rev2.json",
+          "bytes": 569,
+          "sha256": "7217231a38df61f01b4c577c2ac0dca4b40df0ce556a9aaa3022f063d70c4bb2"
+        },
+        {
+          "path": "final\\web-evidence.jsonl",
+          "bytes": 9356,
+          "sha256": "2983f8c8f3cf62dfae4fe3d3cf9f41ff73f641843962bc4957032aae829fd716",
+          "rows": 7
+        }
+      ],
+      "parse_errors": []
+    },
+    "T5": {
+      "run": "coordinator-t5-r2-20261012-0402",
+      "handoff_exists": true,
+      "files": [
+        {
+          "path": "final\\baseline-r2.json",
+          "bytes": 3869,
+          "sha256": "de423468fd199585266c2056c092d0cd11415389bc1cf1c435d54ac186d149af"
+        },
+        {
+          "path": "final\\HANDOFF.md",
+          "bytes": 6399,
+          "sha256": "ccc01510ccc468db8fb04106a25a58384271b5433add4d3fc1fdf10960742bcc"
+        },
+        {
+          "path": "final\\new-evidence\\cloud-facts-r2.json",
+          "bytes": 3473,
+          "sha256": "f9d2c9207878f15493ba6b7edb2ce9cff68f6fa9177b8d395c406871e16b7a0f"
+        },
+        {
+          "path": "final\\new-evidence\\docker-probe-r2.txt",
+          "bytes": 1218,
+          "sha256": "2d4d577f11c8332dfb3e0bb4b57a902e9c2763cc526e03243a33d3e0d70d2385"
+        },
+        {
+          "path": "final\\new-evidence\\r1-integrity-r2.json",
+          "bytes": 2673,
+          "sha256": "43c8dd2048fa06645e0874462ab30da81a93fb35ec3e4b20741844644d53d1af"
+        },
+        {
+          "path": "final\\QA.md",
+          "bytes": 4398,
+          "sha256": "de0629551bb98d32e4b4d3c0e9893746d8c008ad21e04b427d605afae7d12045"
+        },
+        {
+          "path": "final\\修订清单.md",
+          "bytes": 10452,
+          "sha256": "c594db5ab28fdf95a1ba56938cfefe0bf19dff8aff43c6b3c2ffd8ea3f2dcc6a"
+        },
+        {
+          "path": "final\\新证据.md",
+          "bytes": 3322,
+          "sha256": "91fafcfc1ba0f0154f01ea5e1d5877d1989b4e22c3bdb1b8531e476c26b66f87"
+        }
+      ],
+      "parse_errors": []
+    },
+    "T6": {
+      "run": "coordinator-t6-r2-20261012-040142",
+      "handoff_exists": true,
+      "files": [
+        {
+          "path": "final\\blocked-28.csv",
+          "bytes": 8259,
+          "sha256": "3d16543a2fb8e1c675f93ae01d7245b351f97b96ee1085bd2c6dd9a06cc4e82f"
+        },
+        {
+          "path": "final\\conflicts-r2.jsonl",
+          "bytes": 26222,
+          "sha256": "351fbdae302ffe5b8840b6a867e7dda7c46c681a947bc3edbf74e10b6c3d1549",
+          "rows": 6
+        },
+        {
+          "path": "final\\coverage-r2.csv",
+          "bytes": 58053,
+          "sha256": "64e8361cd94178ddf5913b3409f6d1daec014257dd06ee09d7c3892a23e7929f"
+        },
+        {
+          "path": "final\\credential-history-r2d.md",
+          "bytes": 6722,
+          "sha256": "bbc61fa26b6391e4ee12072ecada587c05251f8d3804818e5df3b3f3f7d00365"
+        },
+        {
+          "path": "final\\credential-reconciliation.md",
+          "bytes": 5322,
+          "sha256": "55b137a182e37a069b99baa91bcc0f5a8af17a63e9b34193d846380b264e58a7"
+        },
+        {
+          "path": "final\\HANDOFF.md",
+          "bytes": 11293,
+          "sha256": "b8cfe7688c4c5d092ac157dea0800039265ef11101a8d6ce0aa0f1c5b48759f1"
+        },
+        {
+          "path": "final\\integration-register-r2.csv",
+          "bytes": 41028,
+          "sha256": "4099bc9a4677b578004c14369d4882fc15e58eef81c9adfae8b597a5f35d7f00"
+        },
+        {
+          "path": "final\\inventory-r2.csv",
+          "bytes": 127364,
+          "sha256": "b80adfe7a6d4186cfe940885a15707b314e8b9a3bca04fcb92ea264001880900"
+        },
+        {
+          "path": "final\\lineage.json",
+          "bytes": 4261,
+          "sha256": "7ceee68ee65622bf1df8552ed6f24b40dd20ca63e3938f7386ec05858b0ad380"
+        },
+        {
+          "path": "final\\non-main-commits.jsonl",
+          "bytes": 5344,
+          "sha256": "f5ec36f9cd0675ebe1f88483b89f4f8a2fe453cb5883653c4c6eda9966d450f2",
+          "rows": 5
+        },
+        {
+          "path": "final\\QA-r2.md",
+          "bytes": 11933,
+          "sha256": "20b1be62527ecee12ffb552b35a83d6da1286e35e0817d0ed83e45bda18835f2"
+        },
+        {
+          "path": "final\\r2-errata.csv",
+          "bytes": 679,
+          "sha256": "6d92bac873966ecd54e13f5006e39aa078908135e1d1a428958a6cca25e83a8a"
+        },
+        {
+          "path": "final\\readme-claims-r2.jsonl",
+          "bytes": 16943,
+          "sha256": "d01e92cf341c891fe575b3cca950323f1dced4ab3ed55e97fa4bc0d049eecbc1",
+          "rows": 29
+        },
+        {
+          "path": "final\\revision-manifest.md",
+          "bytes": 9556,
+          "sha256": "de1529a3201fe635070599a4d6c8bb04015c8e8d5b41a744db30212bc22eaff0"
+        },
+        {
+          "path": "final\\shards-r2\\R2-A__blocked-files-A.jsonl",
+          "bytes": 15305,
+          "sha256": "c2ea7b640b590bf0b91cc1702b4a6f816bfd97a8397e0392ca2e016e47c7ed16",
+          "rows": 6
+        },
+        {
+          "path": "final\\shards-r2\\R2-A__notes.md",
+          "bytes": 9179,
+          "sha256": "c01be323fc8d79a98ab3befc80e539a637d3cd67ed3c7c77d9ba5c1f34190f49"
+        },
+        {
+          "path": "final\\shards-r2\\R2-B__blocked-files-B.jsonl",
+          "bytes": 17516,
+          "sha256": "9a9be8006c1c14c55d38222e36966a40ffe2afcb04c3a43928f6b711dfe5fd69",
+          "rows": 9
+        },
+        {
+          "path": "final\\shards-r2\\R2-B__integration-candidates.jsonl",
+          "bytes": 4637,
+          "sha256": "7c1ab73da87aae06806dcc52fad8958e604b213d5735a5ef005e797bcac2f351",
+          "rows": 9
+        },
+        {
+          "path": "final\\shards-r2\\R2-B__notes.md",
+          "bytes": 12081,
+          "sha256": "d8ac443bfda0bfcb5c171948c7ab036cdf59be6cddf05dba6fac823cfe0999ac"
+        },
+        {
+          "path": "final\\shards-r2\\R2-C__blocked-files-C.jsonl",
+          "bytes": 14228,
+          "sha256": "52350cda03765a5abfb4945139ba7aeb95a8959238a9606372b3d89f8a1b2eeb",
+          "rows": 12
+        },
+        {
+          "path": "final\\shards-r2\\R2-C__notes.md",
+          "bytes": 6577,
+          "sha256": "aef77f5b8df46698f0047402dcefcefbf18d9be5e51356bf65cbd4caec60f980"
+        },
+        {
+          "path": "final\\shards-r2\\R2-C__readme-claims.jsonl",
+          "bytes": 13086,
+          "sha256": "ad6c236ce302f6632ccbe2acf0becb434473a7594689525d437bf4a1561c940a",
+          "rows": 29
+        },
+        {
+          "path": "final\\shards-r2\\R2-D__credential-history.md",
+          "bytes": 85,
+          "sha256": "df0da8fb9083237e95537c2a37ab946f65ddc38563d7107b6af5f80948709934"
+        },
+        {
+          "path": "final\\shards-r2\\R2-D__non-main-commits.jsonl",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "rows": 0
+        },
+        {
+          "path": "final\\shards-r2\\R2-D__non-main-commits.md",
+          "bytes": 82,
+          "sha256": "8d47ea10671f62af9943c0a5d3983b2e96059ab9d4e095027bb196be96e31f65"
+        },
+        {
+          "path": "final\\shards-r2\\R2-D__notes.md",
+          "bytes": 61,
+          "sha256": "a7ec2a086cf8b6beaebf842abb24202c2be986d103637054906f9e67b018ca19"
+        },
+        {
+          "path": "final\\shards-r2\\R2-E__conflict-support.jsonl",
+          "bytes": 18535,
+          "sha256": "d4f4aa0cfb705f18523c11bf92eff5aff1f36a6d4c37410cc3b626be9b48eed5",
+          "rows": 6
+        },
+        {
+          "path": "final\\shards-r2\\R2-E__notes.md",
+          "bytes": 8730,
+          "sha256": "d4dd9007bd0391288f930457bac2bbfae7d3f0b69fb5445de57e18f705d11f01"
+        },
+        {
+          "path": "final\\shards-r2\\R2-G__business-application.jsonl",
+          "bytes": 6278,
+          "sha256": "f231ebc0d6229bc3b2f76cdad3fb46274016e7628c68e893801345934a6e2346",
+          "rows": 4
+        },
+        {
+          "path": "final\\shards-r2\\R2-G__business-application.md",
+          "bytes": 8289,
+          "sha256": "28573c663e22b816e004888a13b29516d5c84d12820141fcf5849e8584aeb4ac"
+        },
+        {
+          "path": "final\\shards-r2\\R2-G__notes.md",
+          "bytes": 3327,
+          "sha256": "c0c096ffd1afad1a23d771e2ec919da962ea073157ab67aafb9eef486e2a140a"
+        },
+        {
+          "path": "final\\sources-r2.jsonl",
+          "bytes": 42750,
+          "sha256": "51f8c99d540d7c3a55661cbdbb6cdf8daa778697939a6cd4d43ea9da00963f0e",
+          "rows": 144
+        },
+        {
+          "path": "final\\test-receipt.json",
+          "bytes": 3325,
+          "sha256": "831edc5d8d5b0fa8783b4528d467bbbf4633d77d21a0cfbec70841086fe32ec4"
+        },
+        {
+          "path": "final\\validate-view\\baseline.json",
+          "bytes": 5324,
+          "sha256": "309095e5507bc02ab1488e77d5500ec27c2909cfeaf99b3a8fa0b61cc269a730"
+        },
+        {
+          "path": "final\\validate-view\\conflicts.jsonl",
+          "bytes": 26387,
+          "sha256": "0a71adbddbde81820194858d0312ac481cb75a27c2c8fd03a8c8f49baac23abf",
+          "rows": 6
+        },
+        {
+          "path": "final\\validate-view\\coverage.csv",
+          "bytes": 58053,
+          "sha256": "64e8361cd94178ddf5913b3409f6d1daec014257dd06ee09d7c3892a23e7929f"
+        },
+        {
+          "path": "final\\validate-view\\HANDOFF.md",
+          "bytes": 11293,
+          "sha256": "b8cfe7688c4c5d092ac157dea0800039265ef11101a8d6ce0aa0f1c5b48759f1"
+        },
+        {
+          "path": "final\\validate-view\\inventory.csv",
+          "bytes": 127364,
+          "sha256": "b80adfe7a6d4186cfe940885a15707b314e8b9a3bca04fcb92ea264001880900"
+        },
+        {
+          "path": "final\\validate-view\\QA.md",
+          "bytes": 12049,
+          "sha256": "78252045c2b8c4b7f7627726333f2cc9deec3194cdec5bdad1a77c55434253f1"
+        },
+        {
+          "path": "final\\validate-view\\sources.jsonl",
+          "bytes": 67005,
+          "sha256": "28410800771773de089e7a8db2ac3518e9d14f0b4f9fe7634af2f5dae3aa3edc",
+          "rows": 204
+        },
+        {
+          "path": "final\\validation-04-r2.json",
+          "bytes": 658,
+          "sha256": "3d5fe3f6a1b2be96c95dd2e5b3fe190137fc31b2c3107a28c994da3f134c47c1"
+        },
+        {
+          "path": "final\\validation-r2.json",
+          "bytes": 5965,
+          "sha256": "dbfa117666738eab9cf0638abab2aba208e7cb17bd3e4d4e3959d4e378a0974c"
+        }
+      ],
+      "parse_errors": []
+    }
+  },
+  "T1_normalization_sample": [
+    {
+      "file": "04_个人与对象多维画像功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/04_个人与对象多维画像功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "04_个人与对象多维画像功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/04_个人与对象多维画像功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "04_个人与对象多维画像功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/04_个人与对象多维画像功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "05_多Agent协作可视化画布功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/05_多Agent协作可视化画布功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "05_多Agent协作可视化画布功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/05_多Agent协作可视化画布功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "05_多Agent协作可视化画布功能规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/05_多Agent协作可视化画布功能规格.md",
+      "status": "match"
+    },
+    {
+      "file": "14_排盘引擎与双路知识检索接入清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/14_排盘引擎与双路知识检索接入清单.md",
+      "status": "match"
+    },
+    {
+      "file": "14_排盘引擎与双路知识检索接入清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/14_排盘引擎与双路知识检索接入清单.md",
+      "status": "match"
+    },
+    {
+      "file": "14_排盘引擎与双路知识检索接入清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/14_排盘引擎与双路知识检索接入清单.md",
+      "status": "match"
+    },
+    {
+      "file": "15_技能发现安全审查与自我迭代Harness清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/15_技能发现安全审查与自我迭代Harness清单.md",
+      "status": "match"
+    },
+    {
+      "file": "15_技能发现安全审查与自我迭代Harness清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/15_技能发现安全审查与自我迭代Harness清单.md",
+      "status": "match"
+    },
+    {
+      "file": "15_技能发现安全审查与自我迭代Harness清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/15_技能发现安全审查与自我迭代Harness清单.md",
+      "status": "match"
+    },
+    {
+      "file": "16_社区Harness候选接入与普通模型对照验收.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/16_社区Harness候选接入与普通模型对照验收.md",
+      "status": "match"
+    },
+    {
+      "file": "16_社区Harness候选接入与普通模型对照验收.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/16_社区Harness候选接入与普通模型对照验收.md",
+      "status": "match"
+    },
+    {
+      "file": "16_社区Harness候选接入与普通模型对照验收.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/16_社区Harness候选接入与普通模型对照验收.md",
+      "status": "match"
+    },
+    {
+      "file": "17_社区Harness实际安装续作清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/17_社区Harness实际安装续作清单.md",
+      "status": "match"
+    },
+    {
+      "file": "17_社区Harness实际安装续作清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/17_社区Harness实际安装续作清单.md",
+      "status": "match"
+    },
+    {
+      "file": "17_社区Harness实际安装续作清单.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/17_社区Harness实际安装续作清单.md",
+      "status": "match"
+    },
+    {
+      "file": "18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/18_工程代码工作台与主协调Agent全流程实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/19_单Agent内部团队与逐节点模型配置实施规格.md",
+      "status": "match"
+    },
+    {
+      "file": "上市资格审查报告-2026-10-03.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/.handoff/pkg/specs/上市资格审查报告-2026-10-03.md",
+      "status": "match"
+    },
+    {
+      "file": "上市资格审查报告-2026-10-03.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/g2-particles/docs/上市资格审查报告-2026-10-03.md",
+      "status": "match"
+    },
+    {
+      "file": "上市资格审查报告-2026-10-03.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/docs/上市资格审查报告-2026-10-03.md",
+      "status": "match"
+    },
+    {
+      "file": "P12-交付报告-2026-10-05.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/find-yourself/docs/handoff-tasks/P12-交付报告-2026-10-05.md",
+      "status": "match"
+    },
+    {
+      "file": "P12-交付报告-2026-10-05.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-b1-ima/docs/handoff-tasks/P12-交付报告-2026-10-05.md",
+      "status": "match"
+    },
+    {
+      "file": "P12-交付报告-2026-10-05.md",
+      "path": "C:/Users/intpj/Documents/Codex/2026-09-29/agent/outputs/fy-claw/docs/handoff-tasks/P12-交付报告-2026-10-05.md",
+      "status": "match"
+    }
+  ],
+  "T2_source_sha": [
+    {
+      "source_id": "SRC-fbfc011d78c2cac6-R2A-01",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-9606f0badeb4d4ff-R2A-02",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-0a3bf32c3163e714-R2A-03",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-29bb19ab905aa7e7-R2A-04",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-5dc8db9ff271a735-R2A-05",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-287b130140a65b7c-R2A-06",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-6159b86a9ee2a864-R2A-07",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-afec20b02e339b56-R2A-08",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-afec20b02e339b56-R2A-09",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-99eb12f2ab3c4866-R2A-10",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-bc17812cc5b5cd64-R2A-11",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-96470c8df9e5055e-R2A-12",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-53f3a5c071a25d4b-R2A-13",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-afe1aa779712fdad-R2A-14",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-61bf05504ed0366b-R2A-15",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-0b8a29aaf871f281-R2A-16",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-0cb18987c05c9541-R2A-17",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-0023d9b7d7d730dc-R2A-18",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d2ac7f3bb7ba8adc-R2A-19",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-8101b1f7b8151210-R2A-20",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-388de3892714d195-R2A-21",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-8838bc3fa841d087-R2A-22",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-4803bc68f6524f2b-R2A-23",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-c1f3110657d5771a-R2A-24",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-14d4f949e98772fc-R2A-25",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-177b569cecc81ff6-R2A-26",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-b1248c763d17432e-R2A-27",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-7090b5961df9de80-R2A-28",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-9ec7113e055d7860-R2A-29",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-af73323ed5086b97-R2A-30",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d80d9f01901877ac-R2A-31",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-a6573c29a4aa6931-R2A-32",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-dde0e6ee29c26dcb-R2A-33",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-21ca16e4106dd335-R2A-34",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d5558cd419c8d46b-R2A-35",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-4f50e254a719a6b1-R2A-36",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-4f50e254a719a6b1-R2A-37",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d74ef4481bcb4fd2-R2B-01",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-3f933b4058ea9ea2-R2B-02",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-20fc899c266ca45c-R2B-03",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-6ff1529a1cd42df1-R2B-04",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-feec4d09043e222d-R2B-05",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d5558cd419c8d46b-R2B-06",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d5558cd419c8d46b-R2B-07",
+      "status": "match"
+    },
+    {
+      "source_id": "SRC-d5558cd419c8d46b-R2B-08",
+      "status": "match"
+    }
+  ]
+}

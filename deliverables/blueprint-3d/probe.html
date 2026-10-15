@@ -1,0 +1,16 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+<div id="out">loading</div>
+<script src="vendor.js"></script>
+<script>
+var lines=[];
+lines.push('typeof THREE = '+typeof THREE);
+try{
+  lines.push('THREE.Scene = '+(typeof THREE.Scene));
+  lines.push('THREE.WebGLRenderer = '+(typeof THREE.WebGLRenderer));
+  lines.push('THREE.BoxGeometry = '+(typeof THREE.BoxGeometry));
+  lines.push('OrbitControls = '+(typeof OrbitControls));
+  var s=new THREE.Scene(); lines.push('new Scene OK children='+s.children.length);
+  lines.push('REVISION='+THREE.REVISION);
+}catch(e){lines.push('ERR: '+e.message);}
+document.getElementById('out').textContent=lines.join(' || ');
+</script></body></html>

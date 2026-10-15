@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {"title": "FY-Orbit 企业能力工厂 · 目标蓝图（非现状验收）", "locale": "zh-CN", "quality_profile": "showcase", "viewBox": [1300, 530]},
+  "components": [
+    {"id":"entry","type":"frontend","label":"统一企业工作台","sublabel":"Web / 桌面 / API · 角色入口","pos":[510,30],"size":[280,70]},
+    {"id":"gate","type":"security","label":"身份与业务治理","sublabel":"权限 · 审批 · 预算 · 数据边界","pos":[510,125],"size":[280,70]},
+    {"id":"runtime","type":"backend","label":"场景编排与智能体执行","sublabel":"能力包 / 拓扑IR / Agent / 沙箱","pos":[510,220],"size":[280,70]},
+    {"id":"accept","type":"backend","label":"业务验收与安全写回","sublabel":"证据 / 人工确认 / 幂等 / 补偿","pos":[510,315],"size":[280,70]},
+    {"id":"deliver","type":"frontend","label":"可追溯的真实业务交付","sublabel":"产物 / 工单 / 报表 / 状态 / 成本","pos":[510,410],"size":[280,70]},
+    {"id":"knowledge","type":"database","label":"企业知识与分层记忆","sublabel":"版本 / 权限RAG / 来源引用","pos":[50,220],"size":[280,70]},
+    {"id":"adapters","type":"external","label":"模型与企业系统适配器","sublabel":"API / ERP MES PLM / 本地连接器","pos":[970,220],"size":[280,70]},
+    {"id":"state","type":"database","label":"耐久任务与证据资产","sublabel":"检查点 / 文件 / 审计 / 备份","pos":[50,315],"size":[280,70]},
+    {"id":"evolution","type":"backend","label":"受控经验迭代工厂","sublabel":"评测 / 版本批准 / 灰度与回滚","pos":[970,410],"size":[280,70]}
+  ],
+  "connections": [
+    {"from":"entry","to":"gate","label":"身份与任务请求","labelAt":[650,112]},
+    {"from":"gate","to":"runtime","label":"授权与预算契约","variant":"security","labelAt":[650,207]},
+    {"from":"knowledge","to":"runtime","label":"授权证据上下文"},
+    {"from":"runtime","to":"adapters","label":"受限工具调用"},
+    {"from":"runtime","to":"accept","label":"结果与执行回执","labelAt":[650,302]},
+    {"from":"accept","to":"state","label":"持久化验收证据"},
+    {"from":"accept","to":"deliver","label":"通过验收才交付","labelAt":[650,397]},
+    {"from":"deliver","to":"evolution","label":"反馈与真实结果","variant":"dashed"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"普适与个性化","items":["统一契约基座；行业与企业配置分层","支持范围内复用，不承诺任何任务"]},
+    {"dot":"rose","title":"工厂与企业安全边界","items":["危险写操作审批，执行域隔离","不替代设备实时控制和安全联锁"]},
+    {"dot":"emerald","title":"从低成本到规模化","items":["先单机验证；按负载拆分执行与索引","生产等级须用实际负载和恢复演练验收"]}
+  ]
+}

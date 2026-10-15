@@ -107,3 +107,11 @@ FY-Orbit-Windows-v1.0.0.zip
 /.coverage.*
 /htmlcov/
 /junitxml/
+
+# ---------------------------------------------------------------------------
+# 任务包 ZIP：内容 = 同目录下的 .md，逐字重复，不入库（沿用本仓「逐文件精确列出」的写法，不用通配）
+/deliverables/FY-Orbit-V70-清单收口与同步评估任务包-20261012.zip
+/deliverables/FY-Orbit-首批修复任务包-20261012.zip
+/deliverables/agent-task-orders/FY-Orbit-Agent任务包-2026-10-11-v1.1.zip
+/deliverables/agent-task-orders/FY-Orbit-Agent任务包-2026-10-11-v1.2.zip
+/deliverables/agent-task-orders/FY-Orbit-Agent任务包-2026-10-11-v1.3.zip

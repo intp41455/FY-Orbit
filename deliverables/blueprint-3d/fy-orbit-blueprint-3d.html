@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FY-Orbit 星轨 · 全景架构蓝图 3D</title>
+<style>
+  :root{
+    --bg:#07090f; --panel:rgba(16,20,32,.86); --line:rgba(255,255,255,.11);
+    --tx:#e8ecf5; --tx2:#96a0b8; --tx3:#5f6a82;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --core:#38bdf8; --vio:#c084fc;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--tx);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  canvas{display:block}
+  #stage{position:fixed;inset:0}
+
+  .panel{background:var(--panel);backdrop-filter:blur(14px);
+    border:1px solid var(--line);border-radius:12px}
+
+  /* 顶栏 */
+  #top{position:fixed;top:14px;left:14px;right:14px;height:54px;display:flex;
+    align-items:center;gap:14px;padding:0 16px;z-index:10}
+  #top h1{font-size:15px;font-weight:500;letter-spacing:.3px;white-space:nowrap}
+  #top .ver{font-size:11px;color:var(--tx3);font-family:ui-monospace,monospace;
+    padding:2px 7px;border:1px solid var(--line);border-radius:5px}
+  #top .sp{flex:1}
+  #top .stat{font-size:11px;color:var(--tx2);display:flex;gap:5px;align-items:center}
+  .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+
+  /* 左侧图层树 */
+  #left{position:fixed;top:80px;left:14px;bottom:14px;width:262px;z-index:10;
+    display:flex;flex-direction:column;overflow:hidden}
+  #left .hd{padding:12px 14px 9px;font-size:12px;color:var(--tx2);
+    border-bottom:1px solid var(--line);display:flex;align-items:center;gap:7px}
+  #tree{flex:1;overflow-y:auto;padding:7px}
+  #tree::-webkit-scrollbar{width:5px}
+  #tree::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:3px}
+  .lyr{border-radius:8px;margin-bottom:4px;overflow:hidden;border:1px solid transparent}
+  .lyr.on{border-color:rgba(56,189,248,.45);background:rgba(56,189,248,.07)}
+  .lyr .row{display:flex;align-items:center;gap:8px;padding:7px 9px;cursor:pointer;
+    font-size:12px;transition:background .12s}
+  .lyr .row:hover{background:rgba(255,255,255,.05)}
+  .lyr .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .lyr .ct{font-size:10px;color:var(--tx3);font-family:ui-monospace,monospace}
+  .lyr .kids{display:none;padding:1px 0 5px 15px}
+  .lyr.on .kids{display:block}
+  .kid{display:flex;align-items:center;gap:6px;padding:4px 7px;font-size:11px;
+    color:var(--tx2);cursor:pointer;border-radius:5px}
+  .kid:hover{background:rgba(255,255,255,.06);color:var(--tx)}
+  .kid.sel{background:rgba(56,189,248,.17);color:var(--tx)}
+  /* 编号与 3D 场景里节点头顶的数字牌一一对应 */
+  .kid .ix{width:15px;height:15px;line-height:15px;text-align:center;flex:none;
+    font-size:9.5px;font-weight:700;border-radius:4px;
+    background:rgba(255,255,255,.09);color:var(--tx2);font-family:ui-monospace,monospace}
+  .kid.sel .ix{background:rgba(56,189,248,.32);color:#fff}
+  .badge{margin-left:auto;font-size:9px;padding:1px 5px;border-radius:4px;
+    font-weight:500;letter-spacing:.2px}
+  .b-ok{background:rgba(52,211,153,.16);color:var(--ok)}
+  .b-warn{background:rgba(251,191,36,.16);color:var(--warn)}
+  .b-bad{background:rgba(248,113,113,.16);color:var(--bad)}
+
+  /* 右侧详情 */
+  #right{position:fixed;top:80px;right:14px;bottom:14px;width:352px;z-index:10;
+    display:flex;flex-direction:column;overflow:hidden}
+  #detail{flex:1;overflow-y:auto;padding:15px}
+  #detail::-webkit-scrollbar{width:5px}
+  #detail::-webkit-scrollbar-thumb{background:rgba(255,255,255,.16);border-radius:3px}
+  #detail h2{font-size:15px;font-weight:500;margin-bottom:3px}
+  #detail .sub{font-size:11px;color:var(--tx3);margin-bottom:13px;
+    font-family:ui-monospace,monospace}
+  #detail .kv{display:flex;gap:8px;padding:5px 0;font-size:12px;
+    border-bottom:1px solid rgba(255,255,255,.05)}
+  #detail .kv .k{color:var(--tx3);width:74px;flex-shrink:0}
+  #detail .kv .v{flex:1;color:var(--tx2);word-break:break-word}
+  #detail p{font-size:12px;color:var(--tx2);line-height:1.65;margin:11px 0}
+  #detail pre{background:rgba(0,0,0,.42);border:1px solid var(--line);
+    border-radius:7px;padding:9px 10px;font-size:10.5px;color:#9fb3d9;
+    overflow-x:auto;margin:8px 0;line-height:1.5;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .sect{font-size:11px;color:var(--tx3);margin:15px 0 5px;letter-spacing:.4px;
+    text-transform:uppercase}
+  .ev{display:block;font-size:10.5px;color:#7c9fd4;font-family:ui-monospace,monospace;
+    padding:3px 7px;border-left:2px solid rgba(124,159,212,.35);margin:3px 0;
+    cursor:pointer;word-break:break-all}
+  .ev:hover{color:#b8d0f5;border-left-color:var(--core)}
+  .empty{padding:26px 12px;text-align:center;color:var(--tx3);font-size:12px;line-height:1.7}
+
+  /* 底部控制 */
+  #bot{position:fixed;bottom:14px;left:290px;z-index:10;padding:8px 12px;
+    display:flex;gap:7px;align-items:center}
+  .btn{font-size:11px;padding:5px 11px;border-radius:7px;border:1px solid var(--line);
+    background:rgba(255,255,255,.05);color:var(--tx2);cursor:pointer;transition:.13s;
+    white-space:nowrap}
+  .btn:hover{background:rgba(255,255,255,.11);color:var(--tx)}
+  .btn.on{background:rgba(56,189,248,.19);border-color:rgba(56,189,248,.5);color:#9fd8ff}
+  .sep{width:1px;height:17px;background:var(--line)}
+
+  #legend{position:fixed;bottom:14px;right:14px;z-index:10;padding:9px 12px;
+    display:flex;gap:11px;font-size:10.5px;color:var(--tx2);align-items:center}
+
+  #hint{position:fixed;top:80px;left:290px;z-index:9;font-size:11px;color:var(--tx3);
+    padding:6px 11px;pointer-events:none;transition:opacity .5s}
+
+  /* 节点在屏幕上只有约 50px 宽，任何常驻中文标签都不可能读清。
+     tooltip 必须走 HTML 屏幕空间（不受 3D 缩放影响），并给出完整证据。 */
+  #tip{position:fixed;pointer-events:none;padding:9px 12px;font-size:12px;line-height:1.6;
+    background:rgba(8,11,19,.97);border:1px solid var(--line);border-radius:8px;
+    display:none;z-index:50;max-width:330px;box-shadow:0 8px 26px rgba(0,0,0,.6)}
+  #tip .tn{font-weight:700;font-size:13px;color:#eef2fa;margin-bottom:3px}
+  #tip .tm{color:#96a0b8;font-size:11px;font-family:ui-monospace,monospace}
+  #tip .te{margin-top:5px;padding-top:5px;border-top:1px solid #232a3a;
+    color:#8fd4a0;font-size:10.5px;font-family:ui-monospace,monospace;white-space:pre-line}
+  #tip .tw{margin-top:5px;font-size:10.5px;color:#fbbf24}
+
+  @media (max-width:1180px){
+    #left,#right{display:none}
+    #bot{left:14px}
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<div id="top" class="panel">
+  <h1>FY-Orbit 星轨 · 全景架构蓝图</h1>
+  <span class="ver" id="ver">v70</span>
+  <span class="sp"></span>
+  <span class="stat"><i class="dot" style="background:var(--ok)"></i>真实实现 <b id="sOk">0</b></span>
+  <span class="stat"><i class="dot" style="background:var(--warn)"></i>部分实现 <b id="sWarn">0</b></span>
+  <span class="stat"><i class="dot" style="background:var(--bad)"></i>空壳/断链 <b id="sBad">0</b></span>
+  <span class="stat" style="padding-left:11px;border-left:1px solid var(--line)">
+    <b id="sNode">0</b> 节点</span>
+</div>
+
+<div id="left" class="panel">
+  <div class="hd">◈ 架构分层 <span style="margin-left:auto;font-size:10px">点击展开</span></div>
+  <div id="tree"></div>
+</div>
+
+<div id="right" class="panel">
+  <div class="hd">◈ 节点详情</div>
+  <div id="detail"><div class="empty">点击任意节点或左侧列表<br>查看实现状态与代码证据</div></div>
+</div>
+
+<div id="hint" class="panel">拖拽旋转 · 滚轮缩放 · 右键平移 · 点击节点看证据</div>
+
+<div id="bot" class="panel">
+  <button class="btn on" id="bAll">全部</button>
+  <button class="btn" id="bEx">展开分层</button>
+  <button class="btn" id="bReal">仅真实</button>
+  <button class="btn" id="bGap">仅断链</button>
+  <div class="sep"></div>
+  <button class="btn" id="bReset">复位</button>
+  <button class="btn" id="bSpin">自转</button>
+</div>
+
+<div id="legend" class="panel">
+  <span><i class="dot" style="background:var(--ok)"></i> 真实</span>
+  <span><i class="dot" style="background:var(--warn)"></i> 部分</span>
+  <span><i class="dot" style="background:var(--bad)"></i> 空壳</span>
+</div>
+
+<div id="tip"></div>
+
+<script src="vendor.js"></script>
+<script>
+/* ==========================================================================
+   FY-Orbit 全景架构蓝图 —— 3D 分层星舰模型
+   数据来源：2026-10-12 对仓库源码的实测核实（332 py 文件 / 65,549 行 services）
+   所有"真实/部分/空壳"判定均带file:line 证据，不按目录名推断。
+   ========================================================================== */
+
+const DATA = [
+/* ---------- L1 前端展示层 ---------- */
+{id:'fe', name:'前端展示层', en:'Web Client', cat:'fe', st:'real',
+ meta:{技术:'React 19.3 + Vite 8 + TS 5.9', 页面:'29 个页面', API:'45 个客户端',
+       三维:'Three.js 0.180（仅 1 处）', 状态管理:'仅 1 个 Context', 目录:'web/src'},
+ desc:'单页应用，29 个页面路由 + 45 个 API 客户端（含 36 个测试文件）。重要澄清：Three.js 全项目只被一个文件用到（KnowledgeGraph3D，410 行原生 WebGL，无 @react-three/fiber 封装）；PixiJS 只服务 Cabin 像素游戏（cabinScene/cabinTilemapRenderer），与编排画布无关；全局没有 zustand/redux，只有一个 AuthContext。',
+ nodes:[
+  {id:'fe-orbit', name:'CanvasPage · 拓扑画布', st:'real',
+   meta:{渲染:'HTML div + 内联 SVG（非 Pixi/非 WebGL）', 布局:'useCanvasLayout 自研 941 行', 交互:'点击选中 / 拖拽移动 / 框选'},
+   desc:'节点拓扑画布，flowType 分支（sequential/parallel/hierarchical/loop/approval）驱动不同布局，边标签只有 condition 一个。拖拽走 onPointerMove + 命中测试，节点 draggable 与配置字段 isDraggable 一致——是真能拖的，不是摆设。注意：这里没有用 PixiJS，也没有用 Three.js。',
+   ev:['web/src/pages/CanvasPage.tsx:2428-2732 画布渲染','web/src/components/canvas/useCanvasLayout.ts:941 行','web/src/components/canvas/CanvasNode.tsx','web/src/components/canvas/types.ts:45 flowType 枚举']},
+  {id:'fe-orbit2', name:'DslCanvasPage · DSL 画布', st:'real',
+   meta:{渲染:'HTML div + SVG + foreignObject', 同源:'画布 ⇄ DSL 文本共享同一 state'},
+   desc:'DSL 流程可视化编辑页。画布图与 DSL 文本双向同源于同一个 useState，这一条是真的同源。但「五视图同源」（代码/画布/参数/DSL/模板）不成立——只有画布与 DSL 两视图共享 state，参数面板、代码视图、模板页各自独立。',
+   ev:['web/src/pages/DslCanvasPage.tsx:60-62 共享 state','web/src/components/canvas/DslGraphView.tsx','web/src/components/canvas/DslCodeView.tsx','其余视图未共享 state']},
+  {id:'fe-hub', name:'HubPage · 编排面板', st:'real', wip:true,
+   meta:{技术:'React', 文件:'components/hub/OrchestrationPanel.tsx', 版本:'未提交（工作区）'},
+   desc:'多Agent 顺序接力/并行分工/显式流水线三模式编排面板。11 例测试覆盖，其中专门覆盖「降级产物高亮」与「部分失败不能显示为全部成功」两个诚实性守卫。注意版本状态：这块是尚未进版本库的工作区代码，随时可能改或回滚——架构图不能把它当成已交付能力。',
+   ev:['web/src/components/hub/OrchestrationPanel.tsx (419行 · ?? 未跟踪)','OrchestrationPanel.test.tsx (276行 · ?? 未跟踪)','web/src/api/hub.ts +127行 (M 未提交)','web/src/pages/HubPage.tsx +3行 (M 未提交)','最近提交 80af527 与 hub 无关']},
+  {id:'fe-kn', name:'KnowledgeGraph3D · 唯一3D', st:'real',
+   meta:{技术:'原生 Three.js 0.180 WebGL', 行数:'410 行', 封装:'无 r3f，纯useEffect'},
+   desc:'全项目唯一一处真实 Three.js WebGL 场景：知识图谱的星系式力导向 3D 渲染。410 行原生 WebGLRenderer，含星尘粒子背景、六色聚类、LineSegments 连线、手写轨道控制器。这是项目已有的 3D 技术底子——本次蓝图沿用同一路线，但把它提升为全局架构视图。',
+   ev:['web/src/components/knowledgeui/KnowledgeGraph3D.tsx:79 WebGLRenderer',':110-117 星尘 Points',':193 LineSegments 连线',':281 requestAnimationFrame 主循环','无 @react-three/fiber']},
+  {id:'fe-sync', name:'状态同步前端', st:'warn',
+   meta:{后端:'sync.py 完整', 前端:'sync.ts 9 方法存在', 问题:'SSE 三元组已定义但零消费者'},
+   desc:'修正一处此前的错误判断：sync.ts 确实存在，含 9 个方法，componentEpoch / confirmEpoch / hitlEpoch / snapshotAt / putComponent / cursor / getOps / ackOps / stream 全覆盖。后端 sync.py 也完整。真正的断链更精确：SSE 三元组（syncEvents / dslAutoSaveEvents / hitlEvents）已定义但没有组件订阅，dsl_autosave.ts 的 13 个方法全仓零调用。',
+   ev:['web/src/api/sync.ts 9 方法（存在）','api/routes/sync.py 后端完整','web/src/api/sse.ts 三元组已定义 · 零消费者','web/src/api/dsl_autosave.ts 13 方法 · 全仓零调用']},
+  {id:'fe-st', name:'状态管理', st:'warn',
+   meta:{全局store:'无zustand / 无 redux', Context:'仅 1 个 AuthContext', 局部:'大量 useState'},
+   desc:'没有全局状态库，全项目只有一个 AuthContext（仅 44 行，管登录态）。其余跨组件共享全靠 props 逐层传递与局部 useState。这是「五视图同源」做不到的结构性原因——没有共享 store，同源只能靠组件内共享一个 useState。',
+   ev:['web/src/auth/AuthContext.tsx 仅 44 行','无 zustand / redux / jotai 依赖','web/src/hooks/ 全为局部 hook']}
+ ]},
+
+
+/* ---------- L2 API 接入层 ---------- */
+{id:'api', name:'API 接入层', en:'FastAPI Routes', cat:'api', st:'real',
+ meta:{框架:'FastAPI 0.115+', 路由:'65 个路由文件', 行数:'14,383 行', 目录:'src/find_yourself/api'},
+ desc:'65 个路由文件、14,383 行。按职责分组如下。这是整个项目对外的唯一门面，所有编排、RAG、连接、同步能力都从这里暴露。',
+ nodes:[
+  {id:'api-orch', name:'编排类路由', st:'real',
+   meta:{文件:'dsl_canvas / dsl_lifecycle / dsl_debug / workflow_gen', 数量:'6 个'},
+   desc:'DSL 画布的编译、生命周期、调试、代码导出、工作流生成。compile_dsl 用 Kahn 拓扑排序做依赖解析并检测环。',
+   ev:['api/routes/dsl_canvas.py','api/routes/dsl_lifecycle.py','api/routes/dsl_debug.py','api/routes/dsl_code_export.py','api/routes/workflow_gen.py']},
+  {id:'api-hub', name:'统一接入 hub', st:'real',
+   meta:{文件:'hub.py + services/hub/', 能力:'6 种适配器kind'},
+   desc:'连接中心 REST 入口。6 种适配器 kind：openai_chat / anthropic / mcp_server / http_webhook / knowledge_source / tool_plugin。三个编排端点：/orchestrate、/orchestrate/pipeline、/orchestrate/capabilities。',
+   ev:['api/routes/hub.py','api/routes/hub.py:115 OrchestrateRequest',':139 PipelineRequest']},
+  {id:'api-rag', name:'RAG 知识类路由', st:'real',
+   meta:{文件:'knowledge / rag_presets / knowledge_ima', 数量:'3 个'},
+   desc:'知识库摄取、检索、RAG 预设、知识库 IMA 通道。',
+   ev:['api/routes/knowledge.py','api/routes/rag_presets.py','api/routes/knowledge_ima.py']},
+  {id:'api-a2a', name:'A2A 协议端点', st:'warn',
+   meta:{文件:'api/routes/a2a.py',端点:'GET /.well-known/agent-card.json + POST /',实现:'in-process 非独立服务'},
+   desc:'A2A 实现完整：Agent Card 带协议版本/能力/认证方案，JSON-RPC 2.0 端点分派 message/send、message/stream、tasks/get、tasks/cancel。执行体 LocalAgentsHarness 是真的（run_subagent_task 真跑并返回 ExecutionTrace，有产物 sha256 + 计时 + 成本）。三处需诚实标注：①:115 Agent Card 的 skills=[] 是硬编码空列表，不会从真实能力注册表生成，对外发现能力因此是空的；②:79-81 task 状态查内存 _TASKS 字典，进程重启即丢，不是持久化存储；③:227 声称 message/stream「SSE 流式」但未实现，与返回 :202 Accepted 的行为矛盾。另外 :60 明确 loopback 开发模式无鉴权，公网暴露前必须补。',
+   ev:['api/routes/a2a.py GET /.well-known/agent-card.json + POST /',' :115 skills=[] 硬编码空列表',' :79-81 任务状态存内存 _TASKS，重启丢',' :227 声称 SSE 流式但未实现（返回 202）',' :60 loopback 开发模式无鉴权，公网暴露需补']},
+  {id:'api-sync', name:'同步/状态路由', st:'warn',
+   meta:{文件:'sync / session_state / streaming', 状态:'后端完整'},
+   desc:'sync、session_state、streaming 三组路由构成状态同步面。后端能力齐备，但前端零消费（见前端层断链）。',
+   ev:['api/routes/sync.py','api/routes/session_state.py','api/routes/streaming.py']}
+ ]},
+
+/* ---------- L3 服务层（业务核心） ---------- */
+{id:'svc', name:'服务层', en:'Domain Services', cat:'svc', st:'real',
+ meta:{文件:'172 个', 行数:'65,549 行（占全仓 65%）', 模块:'90+ 个'},
+ desc:'全仓最厚的一层，172 文件 65,549 行，占全部代码的 65%。90+ 个模块里既有真正承载业务的（RAG 检索、DSL 编译、编排调度），也有自称「唯一出口」但零调用的。下面按真实度分三类列出。',
+ nodes:[
+  {id:'svc-orch', name:'dsl_canvas · DSL 画布引擎', st:'real',
+   meta:{行数:'本仓最扎实的编排实现', 节点类型:'16 种', 编译:'Kahn 拓扑排序 + 环检测'},
+   desc:'16 种节点类型（input/transform/output + llm/knowledge_retrieval/question_classifier/parameter_extractor/iteration/loop/variable_aggregator/template/http_request/code/tool/human_input/trigger）。compile_dsl 用 Kahn 算法做拓扑排序并检测环；支持子流程递归（深度上限 3）、循环（默认 10 次 / 上限 1000 次）、边级条件。',
+   ev:['services/dsl_canvas.py:66 NODE_TYPES（16 种）',':1645-1679 compile_dsl Kahn 拓扑+环检测',':783-803 _exec_node_loop',':748-763 _run_subflow_once 递归',':117 SUBFLOW_MAX_DEPTH=3',':122-123 LOOP 上限 10/1000','api 路由层对应 dsl_canvas.py:1520 类型校验']},
+  {id:'svc-rag', name:'knowledge/search · RAG 检索', st:'real',
+   meta:{混合检索:'真 RRF', 参数:'DEFAULT_RRF_K=60', 后端:'5 种向量库'},
+   desc:'真正实现了 RRF（Reciprocal Rank Fusion）混合检索，不是简单拼接：fused(d) = Σ_path w_path / (k + rank_path(d))，k=60。5 类向量后端：sqlite_vec / lancedb / chroma / faiss / qdrant。owner 物理隔离设计扎实——sqlite_vec 用 owner_id 做 vec0 PARTITION KEY（物理分区剪枝），FAISS 一文件一索引，Chroma 一 collection。',
+   ev:['services/knowledge/search.py:656-678 rrf_fuse 真公式',':572 DEFAULT_RRF_K = 60','services/knowledge/vectorstores/registry.py:113-117 五后端注册','sqlite_vec owner_id 为 vec0 PARTITION KEY']},
+  {id:'svc-rag2', name:'RAG 真实链路与缺口', st:'warn',
+   meta:{嵌入:'摄入不生成·检索期懒建', 向量:'默认512维 hash 词形', 重排:'rrf_fusion_rerank 默认 noop', BM25:'无', 混合:'实为 fusion 非 RRF'},
+   desc:'比「默认向量弱」更精确的实况：①ingest 完全不做 embedding（ingest.py:207 仅 join 页面文本，:65/:184/:194/:197 都只写 chunks），嵌入在检索期按需懒建并回填（search.py:407-411），所以「刚摄取搜不到」是时序问题不是丢数据；②mode=lexical 是终态——search.py:419 首次命中后:427 直接 return，永不转向语义；③所谓 RRF 混合实为 fusion（search.py:461-474 仅 top-20 并集按 rrf_fuse 重排），非多路召回；④reranker 默认 noop（knowledge/rag_presets.py:35-45 DEFAULT_RERANKER = noop_rerank，rerank_llm 才真调 LLM）；⑤全仓无 BM25/统计检索；⑥PDF 页码在 ingest.py:207 join 时已丢。',
+   ev:['ingest.py:207 "\\n\\n".join 丢页码','ingest 不生成 embedding（:65/:184/:194/:197 只写 chunks）','search.py:407-411 检索期懒建嵌入+回填','search.py:419-427 mode=lexical 终态不转向','search.py:461-474 fusion：仅 top-20 并集，非多路召回','knowledge/rag_presets.py:35-45 DEFAULT_RERANKER=noop_rerank','rerank_llm 才真调 LLM','全仓无 BM25']},
+  {id:'svc-orch2', name:'hub/orchestrator · 多 Agent 编排', st:'real',
+   meta:{形态:'sequential / parallel / pipeline', 透明:'meta.degraded_reason'},
+   desc:'三形态编排引擎。StepResult 带 meta 字段专门承载「降级但成功」信号——推理模型被 max_tokens 截断时会返回思考过程，此时 ok=true且有文本，肉眼完全看不出拿到的不是正式答案。这个设计是本仓少见的、把失败显式化的正面案例。',
+   ev:['services/hub/orchestrator.py StepResult.meta','OrchestrationResult.to_public() 暴露 degraded','已由前端 OrchestrationPanel 专门高亮']},
+  {id:'svc-hitl', name:'hitl · 人在环', st:'warn',
+   meta:{问题:'resolver 为 None 时 confirm/approval 必挂起'},
+   desc:'HITL 挂起/恢复语义完整，但 DSL 层若不注入 resolver，confirm / approval 类节点必然永久挂起——不是 bug，是接线缺失。',
+   ev:['services/hitl.py','services/hitl_vote.py','dsl_canvas human_input 节点挂 DslSuspended']},
+  {id:'svc-cap', name:'capability · 能力网关', st:'gap',
+   meta:{自称:'「能力裁决的唯一出口」', 实情:'decide()/enforce() 零调用', 绕过:'chat 走 provider 直连', 等级:'L0-L3 + 审批链设计完整'},
+   desc:'包__init__.py:1-3 自称「统一能力网关（Capability Broker）……本包是能力裁决的唯一出口」，但 broker.py 的 decide() 与 enforce() 在全仓生产代码零调用，grep 只命中定义与自身单测。更要紧的是存在两条真实绕过路径：①chat_orchestration 直连 ProviderPort（:346），MCP 工具调用更是完全不过网关（:733/741）；②dsl_canvas 的 code/http/llm/tool 节点走 _exec_http/_exec_code/_exec_llm/_exec_tool/_exec_kg_search，也不触网关。「唯一出口」与实际拓扑矛盾。另外 :147 enforce() 抛未实现异常，意味着这条路径一旦真被调到会直接崩——它没被调不是偶然。',
+   ev:['services/capability/__init__.py:1-3 自称唯一出口','broker.py decide()/enforce() 全仓零调用（仅定义+单测）','绕过1：chat_orchestration:346 直连 ProviderPort',':733/:741 MCP 工具调用完全不过网关','绕过2：dsl_canvas _exec_http/_exec_code/_exec_llm/_exec_tool 不触网关','capability/broker.py:147 enforce() 抛 NotImplementedError','levels.py/gates.py/profiles.py 的 L0-L3 + 审批链设计完整']},
+  {id:'svc-pg', name:'pg_ports · 可移植端口', st:'gap',
+   meta:{声称:'跨库可移植', 实情:'只有 Postgres 一个实现'},
+   desc:'号称提供跨库可移植端口抽象，实际只有 PostgresCorePorts 一个实现，而默认部署用的是 SQLite。Temporal worker 第 88-91 行硬锁 postgresql 前缀，SQLite 部署下整层编排不可用——而 docker-compose.yml 配的恰恰是 SQLite。',
+   ev:['services/pg_ports.py:57 仅 PostgresCorePorts','workflows/worker.py:88-91 硬锁 postgresql','docker-compose.yml 配 SQLite（矛盾）']},
+  {id:'svc-sched', name:'scheduler · 统一调度中心', st:'warn',
+   meta:{核心:'通用调度器已实现', 生产worker:'3 个', 本可用:'6 个', 缺口:'memory.decay / artifact.gc 未注册'},
+   desc:'services/scheduler/core.py:55-81 的 Scheduler/Worker/WorkerRun 抽象是真实现，乐观锁 claim_run(:131)、FOR UPDATE SKIP LOCKED(:265) 防并发重复执行、指数退避 retry、崩溃后回收 reclaim(:171) 都在。生产默认只注册 3 个 worker：agent-dispatch / approval-timeout / housekeeping。代码里另写了 workflow-dispatch / memory-decay / artifact-gc 三个但均未注册（:61-62 定义、:95-130 有 handler 却无注册语句）——其中 memory-decay 正是上面那条「记忆永不淘汰」的根因。cron.py:112-227 也真支持 cron/once/interval 三种触发器。',
+   ev:['services/scheduler/core.py:55-81 Scheduler/Worker 真抽象',':131 乐观锁 claim_run',':265 FOR UPDATE SKIP LOCKED',':171 崩溃回收 reclaim',' :61-62 定义了 6 个 worker，:95-130 有 handler','生产只注册 3：agent-dispatch/approval-timeout/housekeeping','memory-decay 与 artifact-gc 未注册','services/scheduler/cron.py:112-227 cron/once/interval']},
+ ]},
+
+/* ---------- L4 运行时层（含空壳） ---------- */
+{id:'rt', name:'运行时层', en:'Runtime / Kernel', cat:'rt', st:'warn',
+ meta:{文件:'23 个', 行数:'6,194 行', 目录:'src/find_yourself/runtime'},
+ desc:'运行时层是问题最集中的一层：调度、沙箱、图执行、Provider 网关都在这里，但graph.py 与 local_agents.py 这两个「对外宣称能干活」的执行体其实是空壳，而且都还在记账扣费。这一层的空壳是整条协同链的终点断点。',
+ nodes:[
+  {id:'rt-gw', name:'gateway.py · 模型网关', st:'real',
+   meta:{职责:'统一 Provider 调用', 关联:'DSL 的 llm 节点走这里'},
+   desc:'统一模型调用网关，DSL 引擎的 llm 节点与编排器都经由它出网。',
+   ev:['runtime/gateway.py']},
+  {id:'rt-prov', name:'providers · Provider 实现', st:'warn',
+   meta:{问题:'ModelProvider 重复定义'},
+   desc:'ModelProvider 在 providers/base.py:260 与 gateway.py:181 两处重复定义，且后者丢失了 messages 参数——同名接口两份定义，是典型的会引发调用错位的隐患。',
+   ev:['runtime/providers/base.py:260 ModelProvider','runtime/gateway.py:181 重复定义且丢 messages']},
+  {id:'rt-tmp', name:'temporal.py + workflows', st:'warn',
+   meta:{本体:'真432 行 @workflow.defn', 生产状态:'默认 disabled', 原因:'temporal_address 未配置'},
+   desc:'Temporal 编排本体是真实且相当扎实的：workflow.py:60 @workflow.defn(name="fy-task-workflow", sandboxed=True)，432 行确定性编排，3 个 signal（cancel/approval/provide_input）+ 1 个 query，stage 循环 + 4 类 activity 分支。安全设计尤其硬：:320-331 审批信号绝不信任，必须回 verify_approval_permission activity 复验 DB；:333-342 outbox 单次消费防重放；:348 不可逆副作用 maximum_attempts=1 不盲重试。**但当前部署下它是关闭的** —— config.py:20 temporal_address 缺省空字符串，.env 里根本没有 FY_TEMPORAL_ADDRESS 这个 key，于是 runtime/temporal.py:42 直接 self.enabled=False，tasks.py:114 显式返回 degraded 标记并注释「当 Temporal 未接线，该任务永远不会开始」。',
+   ev:['workflows/workflow.py:60 @workflow.defn sandboxed=True','workflows/workflow.py:432 行完整编排',':320-331 审批信号回验 DB（不信任）',':333-342 outbox 单次消费防重放',':348 不可逆副作用不盲重试','config.py:20 temporal_address=""','.env 无 FY_TEMPORAL_ADDRESS','runtime/temporal.py:42 enabled=False','tasks.py:114 返回 degraded 标记']},
+  {id:'rt-kernel', name:'kernel.py · SingleLoopKernel', st:'real',
+   meta:{定位:'唯一执行主干', 接线:'POST /api/runtime/run', 组件:'evaluation 四策略共用'},
+   desc:'全项目唯一真正被接线的执行主干（runtime/kernel.py:139 graph.stream 驱动，已挂到 POST /api/runtime/run）。关键事实：runtime/evaluation.py:287-289 名为 "workflow" 的评测策略，实际调用的就是 SingleLoopKernel，根本没走 Temporal——所以「Temporal 已实现」不等于「工作流在跑」。kernel.py:5-7 的 docstring 自己承认过历史问题（src内只有 evaluation.py 引用它，而 evaluation 自身无人调用）。',
+   ev:['runtime/kernel.py:139 graph.stream 驱动','runtime/kernel.py:64 compile_task_graph()','POST /api/runtime/run 已接线','runtime/evaluation.py:287-289 "workflow"策略实调 SingleLoopKernel']},
+  {id:'rt-lg', name:'graph.py · 决策层真 / 执行层空', st:'warn',
+   meta:{决策层:'真实', 执行层:'4 个路由节点 f-string', 扣费:'$0.001 ~ $0.005 硬编码', gateway引用:'全文零次'},
+   desc:'必须分两层看，笼统说成「空壳」或「已实现」都不准确。**决策层是真的**：ROUTE_CRITERIA 有序路由表（:162-189，4 条准则自上而下首个命中，且在模型调用之前求值）；_guard_tool_budget（:88-121）要求 tool_price_status=="known" 才放行，明确拒绝「价格未知按零费用放行」并真调 ctx.budget.reserve() 原子预留；_guard_delegation_acyclic（:138-156）真调 AgentTeamService._assert_no_cycle() 复用而非重实现；fail-closed（:106-107 缺 budget service 直接拒路由）；检查点失败原样抛出不静默降级。**执行层是假的**：node_single_agent(:381-404)/node_research(:407-435)/node_delegate(:463-493) 产出全是 f-string 拼串；node_tool_step(:438-460) 自己写着 status:"not_executed" 与 "Tool execution is not wired into this node yet"。决定性证据——全文零 import gateway/ModelGateway。真逻辑只有 node_validate / node_requirements / node_finish 三个非路由节点。',
+   ev:['runtime/graph.py:162-189 ROUTE_CRITERIA 有序路由表',' :88-121 _guard_tool_budget 拒绝价格未知放行',' :138-156 _guard_delegation_acyclic 真调 _assert_no_cycle',' :106-107 fail-closed 缺 service 直接拒',' :381-404 f-string 拼接',':407-435 "unverified: ..."',':438-460 status:"not_executed" 自认未接线',' :463-493 f"Expert consultation response for..."','全文 grep gateway|ModelGateway → 零命中','硬编码 spent = 0.001/0.002/0.005/0.003']},
+  {id:'rt-la', name:'local_agents.py · 本地子智能体', st:'gap',
+   meta:{问题:'只写txt 不调模型', 记账:'默认 $0.10', success:'恒为 True', gateway:'构造器收下但全文不用'},
+   desc:'比 graph.py 更严重，因为它正是 A2A 入站派发的真实终点。run_subagent_task(:90) 把 goal、depth、citations 拼成一个字符串写进 txt 文件，不调任何模型，然后 trace.spent_usd = allocated_budget_usd（默认 0.10）记账、trace.success = True。决定性证据：:61-64 构造器把 gateway 与 budget 存成 self.gateway/self.budget，但这两个字段在 115 行之后全文再无任何引用——依赖注入了却从不使用，是「本该调模型」的意图残留。安全侧做得不错（:66-76 路径穿越用 resolve+relative_to 双重防护，真 PermissionDenied），沙箱 :22-36 默认关且标注生产禁开。A2A 协议层再齐全，终点是空转。',
+   ev:['runtime/local_agents.py:90 run_subagent_task',' :116-121 只 write_artifact_file 写 txt',' :61-64 构造器收 gateway/budget，:115 后全文零引用','trace.spent_usd 默认 0.10 · trace.success 硬编码 True',' :66-76 路径穿越双重防护（真安全）',' :22-36 allow_host_shell 默认 False 且标注生产禁开']},
+  {id:'rt-sb', name:'sandbox.py · 沙箱', st:'gap',
+   meta:{自认:'DECLARATION ONLY — not enforced'},
+   desc:'沙箱模块第 168 行自己就写明了 "DECLARATION ONLY — not enforced"（仅声明，未强制执行）。模块自认这一点是诚实的，但调用方若以为沙箱生效就会误判安全边界。',
+   ev:['runtime/sandbox.py:168 "DECLARATION ONLY — not enforced"','runtime/sandbox_container.py']},
+  {id:'rt-mem', name:'三层记忆', st:'warn',
+   meta:{策略:'完备且真接了网关', 淘汰:'decay() 已实现但 worker 未注册', 规模:'129次调用/37文件'},
+   desc:'memory.py(672行) / memory_tiers.py(234行) / short_term_memory.py(208行) 三件套构成短期/中期/长期记忆，tier 晋升与降级策略完备，且 memory.py:151+ 真接入了默认 llm_tiers provider（不是纯策略壳）。decay() 是真实现（memory_tiers.py:89-118 MemoryDecayPolicy，字面量配置收窄），也有 memory.decay worker（services/scheduler/core.py:190-197，每 300s 跑一次）——但那个 worker 类从未在 _WORKER_TYPES 注册，生产环境永远不跑，记忆只涨不淘汰。这是全项目最可惜的一处：一半做完，另一半忘了接。',
+   ev:['services/memory.py:672行真接默认 llm_tiers provider','services/memory_tiers.py:89-118 MemoryDecayPolicy 真实现','services/scheduler/core.py:190-197 memory.decay worker 每 300s',' _WORKER_TYPES 未注册 → 生产永不执行','128 个 memory.py 调用点 / 37 文件']},
+ ]},
+
+/* ---------- L5 数据层 ---------- */
+{id:'db', name:'数据层', en:'Persistence', cat:'db', st:'real',
+ meta:{文件:'28 个', 行数:'3,900 行', 默认:'SQLite', 可选:'PostgreSQL'},
+ desc:'数据层是全项目最「老实」的一层：文件数少、体量小、职责单一，没有发现空壳或文档漂移。',
+ nodes:[
+  {id:'db-main', name:'ORM 模型与schema', st:'real',
+   meta:{ORM:'SQLAlchemy 2.0',模型:'87 个 ORM 模型',迁移:'46 个迁移版本',默认:'SQLite（WAL+FK on）'},
+   desc:'87 个 ORM 模型 / 46 个 Alembic 迁移版本 / 28 文件 3,900 行。类型注解与实际建表逐表核对一致，没有把 dict[str,Any] 谎称成表结构的地方——数据层是全项目最扎实的一层。注意 sqlite_vec 分区表只建在 SQLite 上，PostgreSQL 部署无对应迁移。',
+   ev:['src/find_yourself/db/ 87 个 ORM 模型 / 46 迁移','create_all 与 46 个迁移并存','SQLite 启用 WAL + foreign_keys=on','sqlite_vec 分区表仅 SQLite，Postgres 无迁移']},
+  {id:'db-cp', name:'checkpoint_sqlite.py', st:'warn',
+   meta:{实现:'真SqliteCheckpointer', 位置:'runtime/（非 db/）',问题:'无调方'},
+   desc:'真 SqliteCheckpointer 实现（runtime/checkpoint_sqlite.py:29，非 db/ 目录），为图执行与状态恢复提供检查点持久化。但全仓只有测试引用 checkpointer，编译期无调用方，属于「实现了但没接线」。',
+   ev:['runtime/checkpoint_sqlite.py:29 真 SqliteCheckpointer','仅 tests 引用，生产无调用方']}
+ ]},
+
+/* ---------- L6 接入适配层 ---------- */
+{id:'ad', name:'接入适配层', en:'Adapters', cat:'ad', st:'real',
+ meta:{文件:'14 个', 行数:'5,468 行', kind:'6 种'},
+ desc:'负责把外部世界接进来：模型 Provider、MCP Server、HTTP Webhook、知识源、工件。6 种 kind 全部有真实实现类，是本项目完成度最高的一层。',
+ nodes:[
+  {id:'ad-mcp', name:'McpServerAdapter', st:'real',
+   meta:{传输:'stdio 子进程 + http/sse/ws', 发现:'真tools/list', 执行:'真 tools/call', 信任:'三级分级'},
+   desc:'本项目最完整的一块基础设施。真 subprocess.Popen 起 stdio 子进程（McpClient.from_subprocess，adapters/mcp.py:877），真tools/list 工具发现，真 tools/call 执行，支持 http/sse/ws 远程传输，带 trusted/remote/untrusted 三级信任分级。这块可以直接承载「Codex 任总管接入其他 Agent」的桥接。',
+   ev:['services/hub/adapters.py:559 McpServerAdapter','adapters/mcp.py:877 from_subprocess 真Popen',':680-685 refresh 动态刷新',':752-765 invoke 真 call_tool','tools 注册为 hub.<server>.<tool> 命名空间']},
+  {id:'ad-chat', name:'ChatModelAdapter', st:'real',
+   meta:{kind:'openai_chat / anthropic', 重试:'attempts 上报'},
+   desc:'两种对话模型适配器共用一个实现类（KIND_OPENAI_CHAT / KIND_ANTHROPIC 走同一分支）。透传 usage、attempts、degraded_from、degraded_reason——把「降级但成功」如实上传给调用方。',
+   ev:['services/hub/adapters.py:376 ChatModelAdapter',':540-550 透传 usage/attempts/degraded_reason']},
+  {id:'ad-hook', name:'WebhookAdapter', st:'real',
+   meta:{承载:'http_webhook + tool_plugin', 模板:'{credential.x} / {param.x}'},
+   desc:'通用 HTTP 调用：method / headers / body 模板 / 重试 / extract。tool_plugin 走同一实现。headers 支持凭证占位符模板，与 MCP 适配器共用同一套模板语法，保证用户在两类连接里写法一致。',
+   ev:['services/hub/adapters.py:789 WebhookAdapter','adapters.py:1100 tool_plugin 走此分支',':626-637 render_headers 模板渲染']},
+  {id:'ad-kn', name:'KnowledgeSourceAdapter', st:'real',
+   meta:{位置:'adapters.py:937'},
+   desc:'知识源适配器，把外部知识源接入 hub 统一注册。',
+   ev:['services/hub/adapters.py:937 KnowledgeSourceAdapter']},
+  {id:'ad-sk', name:'skills + plugin_signing', st:'warn',
+   meta:{签名:'Ed25519 真加密学 · fail-closed', 校验:'7/7 完整', 加载:'全缺'},
+   desc:'安全设计是全项目最扎实的一处：Ed25519 真加密签名，签名前拒绝加载、坏签名 fail-closed、卸载清密钥、trust 不可覆盖（plugin_signing.py），manifest.py:74-95 有 7 项完整校验（sign/loader/author/version/entry/schema/integrity）。三档信任分级（unverified_tier1/verified_tier2/privileged_tier3）设计完整。真实规模远超「3 文件」：.codex/skills 下 150 个目录 301 个 SKILL.md，packages/ 25 个 JSON（1,273,850 字节）。但 load_all / _load_package / SkillManifest.load 全部只被 tests 调用，生产零加载。',
+   ev:['services/plugin_signing.py Ed25519 · 签名前拒绝 · fail-closed','services/skill.py:419-428 load_all 仅 tests 调用','manifest.py:74-95 七项校验','manifest.load / _load_package 零生产调用','.codex/skills 150 目录 301 个 SKILL.md','packages/ 25 个 JSON（1.27 MB）','security.py:158-174 trust 三档不可覆盖','llm_tiers.py:38-64 pure_llm_tier0 签名门禁真实接线']}
+ ]},
+
+/* ---------- L7 顶层散装模块（不属于任何子包，却有真实职责） ---------- */
+{id:'top', name:'顶层模块', en:'Root Modules', cat:'top', st:'warn',
+ meta:{文件:'约 20 个散装 .py', 特点:'无目录归属·易被漏看'},
+ desc:'这些模块直接躺在 find_yourself/ 根下，不属于任何子包。规模不大但职责关键，尤其是合同与治理三件套——它们是「谁在什么条件下可以做什么」的书面契约，恰好与前面 capability 网关的零调用形成对照：契约写得认真，接线没做。',
+ nodes:[
+  {id:'top-gov', name:'合同与治理三件套', st:'warn',
+   meta:{文件:'contract.py / governance.py / policy_pack.py', 路由:'/api/contract 等'},
+   desc:'contract.py 定义 ExecutionContract/ContractRoute，governance.py 有GovernanceLevel 与 approval_matrix，policy_pack.py 是策略包。配套/api/contract、/api/governance、/api/policy-pack 路由。真实实现了审批矩阵，但与 capability网关一样未成为强制执行点。',
+   ev:['src/find_yourself/contract.py ExecutionContract / ContractRoute','governance.py GovernanceLevel / approval_matrix','policy_pack.py 策略包','api/routes/contract.py · governance.py · policy_pack.py']},
+  {id:'top-prompt', name:'prompts + 提示词包', st:'warn',
+   meta:{服务:'services/prompt.py · services/agent.py', 路由:'/api/prompts', 包:'prompts_packages/'},
+   desc:'services/prompt.py:21-154 六大注册表（personalities/prompts/tools/knowledge/learning）+ 版本化选择 + 变量渲染，真实现。.codex/prompts 18 个注册项、prompts_packages/ 大型 JSON 资产包体量可观（102 文件，其中一个 414KB）。但前端无对应页面消费。',
+   ev:['services/prompt.py:21-154 六大注册表 + 版本化 + 变量渲染','api/routes/prompts.py',' .codex/prompts 18 项','prompts_packages/ 102 文件']}
+ ]}
+];
+
+/* ---------- 纵切应用域（横切多层，不是"第7 层"） ----------
+   这三条是垂直切过整个分层栈的独立产品线，不是叠在上面的新一层。
+   Cabin（像素游戏）体量惊人：21 组件 6,903 行 + 36 页面 7,681 行，
+   与Agent 编排共用后端但前端几乎不共享代码。 */
+const DOMAINS=[
+{id:'d-cabin', tag:'C', name:'Cabin 像素世界', en:'Cabin Game', st:'real',
+ meta:{前端:'21 组件 6,903 行', 页面:'36 文件 7,681 行', Hook:'89 个',渲染:'PixiJS 8（项目内唯一真实用途）'},
+ desc:'完整的像素风生存经营游戏子系统，是全项目体量最大的单一前端模块，代码量超过所有 Agent 编排页面之和。含场景/图集/地形/寻路/室内/头像/迷你武将等全套渲染与逻辑，89 个自定义 hook。PixiJS 在本项目里唯一的真实用途就是它——与拓扑画布、编排画布都无关。',
+ nodes:[
+  {id:'d-cabin-fe', name:'渲染与玩法前端', st:'real',
+   meta:{组件:'components/cabin/ 21 个', 行数:'6,903 行', Hook:'useCabin*.ts 89 个'},
+   desc:'cabinScene / cabinTilemapRenderer / cabinAtlasLoader / cabinWindingPaths（路径查找）/ cabinModularAvatar（模块化头像）/ cabinTinySwordsArt 等，配套 10 个测试文件。',
+   ev:['web/src/components/cabin/cabinScene.ts','cabinTilemapRenderer.ts','cabinWindingPaths.ts','cabinModularAvatar.ts','10 个 .test.ts 夹具']},
+  {id:'d-cabin-be', name:'游戏后端服务', st:'real',
+   meta:{路由:'cabin / cabin_gameplay / cabin_life', 服务:'cabin_gameplay / cabin_interior / cabin_life'},
+   desc:'对应的三个后端路由与三个服务模块，实现持久化存档与游戏逻辑。',
+   ev:['api/routes/cabin.py','api/routes/cabin_gameplay.py','api/routes/cabin_life.py','services/cabin_gameplay.py','services/cabin_life/']}
+ ]},
+{id:'d-know', tag:'K', name:'知识与RAG 域', en:'Knowledge', st:'warn',
+ meta:{路由:'knowledge / rag_presets / knowledge_ima / charts', 前端:'components/knowledgeui/'},
+ desc:'横切 api/services/runtime/db 四层的知识域。检索层是真实的（真 RRF + 5 类向量后端 + owner 物理隔离），但默认走hash 词形向量，且溯源链有两处硬伤——详见服务层标注。',
+ nodes:[
+  {id:'d-know-3d', name:'知识图谱 3D', st:'real',
+   meta:{文件:'KnowledgeGraph3D.tsx',技术:'原生 WebGL + 力导向'},
+   desc:'项目唯一的 3D 场景，本次蓝图的渲染技术即源于此。',
+   ev:['web/src/components/knowledgeui/KnowledgeGraph3D.tsx:410行']}
+ ]},
+{id:'d-agent', tag:'A', name:'Agent 域', en:'Agent Domains', st:'warn',
+ meta:{路由:'17 个 SSE 路由', 类别:'chat / dispatch / teams / clawtask / delegation'},
+ desc:'chat_orchestration / agent_dispatch / agent_teams / claw / clawtask / delegation / delegation 等构成的多Agent 协作域，17 个 SSE 路由。领域逻辑集中在 services/agent_dispatch.py、agent_teams.py、claw/、clawtask/。',
+ nodes:[
+  {id:'d-agent-core', name:'调度与团队编排', st:'warn',
+   meta:{服务:'agent_dispatch / agent_teams / delegation', 断点:'终点 local_agents 为空壳'},
+   desc:'协议层齐全（dispatch / teams / delegation / A2A / 协作 / 会话记忆），但派单终点 runtime/local_agents.py 是空壳。',
+   ev:['services/agent_dispatch.py','services/agent_teams.py','services/delegation.py','services/claw/','services/clawtask/']}
+ ]}
+];
+
+/* ==========================================================================
+   3D 渲染
+   ========================================================================== */
+const ST_COLOR={real:0x34d399,warn:0xfbbf24,gap:0xf87171};
+const ST_CSS={real:'#34d399',warn:'#fbbf24',gap:'#f87171'};
+const ST_TXT={real:'真实实现',warn:'部分实现',gap:'空壳 / 断链'};
+
+let allNodes=[];
+DATA.forEach(l=>l.nodes.forEach(n=>{n.layer=l.id;allNodes.push(n)}));
+DOMAINS.forEach(d=>d.nodes.forEach(n=>{n.layer=d.id;allNodes.push(n)}));
+
+/* ---- 渲染器 ---- */
+const stage=document.getElementById('stage');
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x07090f,0.0042);
+
+const camera=new THREE.PerspectiveCamera(42,innerWidth/innerHeight,1,4000);
+// 整栈包围盒约 x∈[-58,79]、y∈[-54,54]；可用画布宽 1290 / 高 980（两侧面板各占 170 / 300）。
+// fov 42° 要装下 137×108 ⇒ 距离需 ~165。取 173 留一点余量，
+// 方位 3/4 偏右（dx:dz ≈ 100:118），仰角 ~27°，兼顾层板进深与层名牌。
+camera.position.set(114,78,118);
+
+const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+stage.appendChild(renderer.domElement);
+
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.dampingFactor=.075;
+controls.minDistance=42;controls.maxDistance=620;
+controls.target.set(10,0,0);
+
+/* ---- 灯光 ---- */
+scene.add(new THREE.AmbientLight(0x8fa8d8,.62));
+const k1=new THREE.DirectionalLight(0xffffff,.92);k1.position.set(70,110,80);scene.add(k1);
+const k2=new THREE.DirectionalLight(0x38bdf8,.5);k2.position.set(-90,40,-60);scene.add(k2);
+const k3=new THREE.DirectionalLight(0xc084fc,.34);k3.position.set(20,-90,-70);scene.add(k3);
+
+/* ---- 背景星尘 ---- */
+(function(){
+  const N=2600,p=new Float32Array(N*3);
+  for(let i=0;i<N;i++){
+    const r=280+Math.random()*720,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+    p[i*3]=r*Math.sin(ph)*Math.cos(th);
+    p[i*3+1]=r*Math.cos(ph)*.62;
+    p[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(p,3));
+  const m=new THREE.PointsMaterial({color:0x4a6a9e,size:1.5,sizeAttenuation:true,
+    transparent:true,opacity:.5,depthWrite:false});
+  scene.add(new THREE.Points(g,m));
+})();
+
+/* ---- 几何工具 ---- */
+const boxGeo=new THREE.BoxGeometry(1,1,1);
+function mat(st,opacity=1,emissive=0){
+  return new THREE.MeshStandardMaterial({
+    color:ST_COLOR[st],transparent:opacity<1,opacity,
+    roughness:.36,metalness:.28,
+    emissive:ST_COLOR[st],emissiveIntensity:emissive
+  });
+}
+function edgeBox(w,h,d,color,op=.5){
+  const g=new THREE.EdgesGeometry(new THREE.BoxGeometry(w,h,d));
+  return new THREE.LineSegments(g,new THREE.LineBasicMaterial({
+    color,transparent:true,opacity:op}));
+}
+
+/* ---- 节点对象表 ---- */
+// 证据文本里含 < > & (如 dict[str,Any]、泛型签名)，直接塞 innerHTML 会破坏 DOM。
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const pickables=[],animNodes=[],plateGroups={};
+
+const LY=[]; // 每层的 Y 坐标
+// 层距 17：节点名牌顶部约到 y+10，下一层顶面约在 y+15.8，留 5.8 单位净空。
+// 之前用 25 是为了「拉开层次」，但整栈因此高达 175 而层板宽仅 55，
+// 纵横比 1:3.2 → 相机被迫拉到 232 距离，名牌缩到 18px 高不可读。
+// 压到 17 后整栈 102 高 / 152 宽，相机距离降到 ~122，名牌像素高度翻倍。
+const LAYER_GAP=17;
+DATA.forEach((l,i)=>{ LY[i]=(DATA.length-1-i-(DATA.length-1)/2)*LAYER_GAP; });
+const LYOF={};DATA.forEach((l,i)=>LYOF[l.id]=LY[i]);
+
+/* ---- 层板构建（分层栈与纵切域共用） ---- */
+function buildPlate(l,y,opt){
+  opt=opt||{};
+  const cnt=l.nodes.length;
+  // 列宽固定 → 所有层板同宽同深，纵向叠起来才像一叠「板」而不是一堆散沙。
+  // 9 节点层按 5 列排成 2 行，是这个密度下最宽又最扁的比例。
+  const cols=Math.min(opt.cols||5,Math.max(2,cnt));
+  const rows=Math.ceil(cnt/cols);
+  const GW=opt.gw||15.0, GD=opt.gd||13.0;
+  const W=cols*GW+3.2, D=Math.max(rows,2)*GD+3.2;
+
+  const grp=new THREE.Group();grp.position.y=y;
+  if(opt.x)grp.position.x=opt.x;
+  scene.add(grp);
+
+  // 层板底
+  const plate=new THREE.Mesh(new THREE.BoxGeometry(W,.42,D),mat(l.st,.2,.16));
+  plate.position.y=-1.4;grp.add(plate);
+  const eg=edgeBox(W,.42,D,ST_COLOR[l.st],.42);eg.position.y=-1.4;grp.add(eg);
+
+  /* 层名牌。Sprite 是billboard，屏幕尺寸与深度无关，
+     所以只需按世界单位给定宽度即可，字号由画布内比例决定。 */
+  const cn=document.createElement('canvas');cn.width=440;cn.height=112;
+  const cx=cn.getContext('2d');
+  cx.fillStyle='rgba(9,12,20,.92)';
+  cx.beginPath();cx.roundRect(0,0,440,112,14);cx.fill();
+  cx.strokeStyle=ST_CSS[l.st];cx.lineWidth=3;cx.stroke();
+  cx.fillStyle=ST_CSS[l.st];cx.fillRect(0,0,8,112);
+  cx.fillStyle='#e8ecf5';cx.font='700 40px system-ui,Microsoft YaHei';
+  cx.fillText(l.name,22,50);
+  cx.fillStyle='#9aa5bd';cx.font='22px ui-monospace,monospace';
+  cx.fillText(l.en,22,86);
+  cx.fillStyle=ST_CSS[l.st];cx.font='700 24px system-ui';
+  cx.textAlign='right';cx.fillText(ST_TXT[l.st],418,86);cx.textAlign='left';
+  const tex=new THREE.CanvasTexture(cn);tex.anisotropy=8;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+  sp.scale.set(26,6.62,1);
+  sp.position.set(-W/2-14,1.0,0);
+  sp.renderOrder=999;
+  // 纵切域各自不挂层名牌：三个牌向左伸出26 单位会盖住主栈的节点编号。
+  // 改由簇级总标题统一标注（见下方 DOMAINS 处理）。
+  if(!opt.noName)grp.add(sp);
+
+  // 节点
+  const total=cnt,perRow=cols;
+  l.nodes.forEach((nd,ni)=>{
+    const r=Math.floor(ni/perRow),c=ni%perRow;
+    const itemsThisRow=Math.min(perRow,total-ni);
+    const x=(c-(itemsThisRow-1)/2)*GW;
+    const z=(r-(rows-1)/2)*GD;
+
+    const g=new THREE.Group();
+    g.position.set(x,2.9,z);
+    grp.add(g);
+
+    const H=3.5,D2=8.0,W2=12.4;
+    const b=new THREE.Mesh(boxGeo,mat(nd.st,.93,.3));
+    b.scale.set(W2,H,D2);g.add(b);
+    const e=edgeBox(W2,H,D2,ST_COLOR[nd.st],.62);g.add(e);
+
+    // WIP（未入库）标识：虚线外框 + 顶部角标。
+    // 实心画法会让人以为这是已交付能力，实际上它只在工作区，随时可能回滚。
+    if(nd.wip){
+      const wg=new THREE.EdgesGeometry(new THREE.BoxGeometry(W2+1.5,H+1.5,D2+1.5));
+      const wl=new THREE.LineSegments(wg,new THREE.LineDashedMaterial({
+        color:0xfbbf24,transparent:true,opacity:.85,dashSize:1.1,gapSize:.75}));
+      wl.computeLineDistances();g.add(wl);
+      const wn=document.createElement('canvas');wn.width=140;wn.height=56;
+      const wx=wn.getContext('2d');
+      wx.fillStyle='#fbbf24';wx.beginPath();wx.roundRect(2,2,136,52,10);wx.fill();
+      wx.fillStyle='#1a1205';wx.font='800 38px system-ui,Microsoft YaHei';
+      wx.textAlign='center';wx.fillText('未入库',70,46);
+      const wt=new THREE.CanvasTexture(wn);
+      const ws=new THREE.Sprite(new THREE.SpriteMaterial({map:wt,transparent:true,depthTest:false}));
+      ws.scale.set(6.2,2.48,1);
+      ws.position.set(W2/2-1.4,H/2+1.6,3.4);ws.renderOrder=1000;
+      g.add(ws);
+    }
+
+    // 顶面高亮条
+    const cap=new THREE.Mesh(boxGeo,new THREE.MeshStandardMaterial({
+      color:ST_COLOR[nd.st],emissive:ST_COLOR[nd.st],
+      emissiveIntensity:.85,roughness:.3}));
+    cap.scale.set(W2*.82,.2,D2*.72);cap.position.y=H/2+.11;g.add(cap);
+
+    // 状态灯
+    const led=new THREE.Mesh(new THREE.SphereGeometry(.52,14,14),
+      new THREE.MeshBasicMaterial({color:ST_COLOR[nd.st]}));
+    led.position.set(-W2/2+1.15,H/2+.42,0);g.add(led);
+
+    /* 节点标牌。
+       节点屏幕尺寸约 50×35px —— 这个尺寸下任何常驻中文都不可能读清
+       （3D 场景约 3.4px/世界单位，11.4 宽的牌子只有 ~39px）。
+       所以常驻只放「层内编号」（1~2 个字符，38px 字号必然清晰），
+       完整名称 / 参数 / 代码证据交给悬停 tooltip 与点击详情面板。*/
+    const lw=128,lh=68;
+    const ln=document.createElement('canvas');ln.width=lw;ln.height=lh;
+    const lx=ln.getContext('2d');
+    lx.fillStyle='rgba(8,11,19,.94)';
+    lx.beginPath();lx.roundRect(0,0,lw,lh,9);lx.fill();
+    lx.strokeStyle=ST_CSS[nd.st];lx.lineWidth=3;lx.stroke();
+    // 纵切域用C/K/A 前缀区分，否则 Cabin-1 与 L3-1 都是「1」，编号失去唯一性。
+    lx.fillStyle='#eef2fa';
+    lx.font=(opt.tag?'800 30px':'800 40px')+' system-ui,Microsoft YaHei';
+    lx.textAlign='center';lx.textBaseline='middle';
+    lx.fillText(opt.tag?opt.tag+(ni+1):String(ni+1),lw/2,lh/2+2);
+    lx.textAlign='left';lx.textBaseline='alphabetic';
+
+    const t2=new THREE.CanvasTexture(ln);t2.anisotropy=8;
+    const s2=new THREE.Sprite(new THREE.SpriteMaterial({
+      map:t2,transparent:true,depthTest:false}));
+    s2.scale.set(5.0,2.66,1);
+    s2.position.set(0,H/2+2.2,0);s2.renderOrder=998;
+    g.add(s2);
+
+    const hit=new THREE.Mesh(boxGeo,new THREE.MeshBasicMaterial({visible:false}));
+    hit.scale.set(W2,H+9,D2);g.add(hit);
+    hit.userData={nd,base:g.position.y};
+    pickables.push(hit);
+
+    const rec={obj:g,hit,led,cap,nd,ph:Math.random()*6.28};
+    animNodes.push(rec);
+    nd._t=rec;
+  });
+
+  plateGroups[l.id]={grp,y,W,D};
+  return plateGroups[l.id];
+}
+
+/* 分层栈 */
+DATA.forEach((l,li)=>buildPlate(l,LY[li],{}));
+
+/* 纵切应用域：横切多层，单独成簇放在右侧，不占层号。
+   节点少（2/2/1），用更窄的格宽，避免右侧空出一大块板。 */
+const DOM_X=58;
+DOMAINS.forEach((d,i)=>{
+  const y=(DOMAINS.length-1-i-(DOMAINS.length-1)/2)*18;
+  buildPlate(d,y,{x:DOM_X,cols:2,gw:13.5,gd:12,tag:d.tag,noName:true});
+  LYOF[d.id]=y;
+});
+/* 「横切多层」用竖直光束表达，而不是横向连线 ——
+   横向连线会被主栈层板遮掉一半，且视觉上暗示"只连某几层"，与事实不符。
+   这三条是各自独立的纵切产品线，同时横切多层，因此画成贯穿层栈的竖光柱。 */
+(function(){
+  const top=LY[0],bot=LY[LY.length-1];
+  const pts=[];
+  DOMAINS.forEach((d,i)=>{
+    const y=(DOMAINS.length-1-i-(DOMAINS.length-1)/2)*18;
+    const g=new THREE.BufferGeometry();
+    const x=DOM_X-14;
+    // 从本域层板向上/向下延伸到栈顶与栈底，途经所有分层
+    pts.length=0;
+    pts.push(x,y-6,0, x,top+7,0, x,y+6,0, x,bot-7,0);
+    g.setAttribute('position',new THREE.Float32BufferAttribute(pts.slice(),3));
+    const ln=new THREE.LineSegments(g,new THREE.LineDashedMaterial({
+      color:0xc084fc,transparent:true,opacity:.34,dashSize:1.8,gapSize:1.4}));
+    ln.computeLineDistances();   // 虚线必须先算累积距离，否则整条线显示为实线
+    scene.add(ln);
+  });
+})();
+
+/* ---- 层间连接光束 ---- */
+(function(){
+  const pts=[];
+  for(let i=0;i<DATA.length-1;i++){
+    const yA=LY[i],yB=LY[i+1];
+    const cA=plateGroups[DATA[i].id].W*.42;
+    const cB=plateGroups[DATA[i+1].id].W*.42;
+    pts.push(-cA,yA-1.6,0, -cB,yB+1.6,0);
+    pts.push(cA,yA-1.6,0, cB,yB+1.6,0);
+    pts.push(0,yA-1.6,0, 0,yB+1.6,0);
+  }
+  const g=new THREE.BufferGeometry();
+  g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));
+  scene.add(new THREE.LineSegments(g,new THREE.LineBasicMaterial({
+    color:0x38bdf8,transparent:true,opacity:.17})));
+})();
+
+/* ---- 层标签环绕 ---- */
+DATA.forEach((l,i)=>{
+  const g=plateGroups[l.id];
+  const cn=document.createElement('canvas');cn.width=200;cn.height=84;
+  const cx=cn.getContext('2d');
+  cx.font='800 62px system-ui,Microsoft YaHei';
+  cx.fillStyle=ST_CSS[l.st];cx.textAlign='center';
+  cx.fillText(`L${i+1}`,100,64);
+  const tex=new THREE.CanvasTexture(cn);tex.anisotropy=8;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:tex,transparent:true,depthTest:false,opacity:.9}));
+  sp.scale.set(5.6,2.35,1);
+  sp.position.set(g.W/2+4.2,g.y,0);sp.renderOrder=997;
+  scene.add(sp);
+});
+
+/* 纵切域簇标题：不编层号，因为它们不是"第 N 层"。
+   三个域各自不挂层名牌（会盖住主栈），所以这个标题下方直接列出
+   C/K/A 三个域的中文名，保证不悬停也能读出右侧那簇是什么。 */
+(function(){
+  const names=['Cabin 像素世界','知识与RAG 域','Agent 域'];
+  const cn=document.createElement('canvas');cn.width=460;cn.height=190;
+  const cx=cn.getContext('2d');
+  cx.fillStyle='rgba(12,9,20,.94)';
+  cx.beginPath();cx.roundRect(0,0,460,190,13);cx.fill();
+  cx.strokeStyle='#c084fc';cx.lineWidth=3;cx.stroke();
+  cx.fillStyle='#c084fc';cx.fillRect(0,0,8,190);
+  cx.fillStyle='#e8ecf5';cx.font='700 38px system-ui,Microsoft YaHei';
+  cx.fillText('纵切应用域',22,46);
+  cx.fillStyle='#a08cc4';cx.font='20px ui-monospace,monospace';
+  cx.fillText('Vertical Domains · 横切多层',22,76);
+  cx.strokeStyle='#3b2f52';cx.lineWidth=1.5;
+  cx.beginPath();cx.moveTo(22,90);cx.lineTo(438,90);cx.stroke();
+  cx.font='24px system-ui,Microsoft YaHei';
+  names.forEach((t,i)=>{
+    const y=120+i*27;
+    cx.fillStyle='#c084fc';cx.font='700 24px ui-monospace,monospace';
+    cx.fillText(['C','K','A'][i],22,y);
+    cx.fillStyle='#cdc4dd';cx.font='24px system-ui,Microsoft YaHei';
+    cx.fillText(t,50,y);
+  });
+  const tex=new THREE.CanvasTexture(cn);tex.anisotropy=8;
+  const sp=new THREE.Sprite(new THREE.SpriteMaterial({
+    map:tex,transparent:true,depthTest:false}));
+  sp.scale.set(34.5,14.25,1);
+  sp.position.set(DOM_X,44,0);sp.renderOrder=999;
+  scene.add(sp);
+})();
+
+/* ==========================================================================
+   侧栏 UI
+   ========================================================================== */
+const tree=document.getElementById('tree');
+let selNode=null;
+
+function statusBadge(st){
+  const m={real:['b-ok','真实'],warn:['b-warn','部分'],gap:['b-bad','断链']};
+  return `<span class="badge ${m[st][0]}">${m[st][1]}</span>`;
+}
+
+function addTreeItem(l,label){
+  const d=document.createElement('div');
+  d.className='lyr';d.dataset.lid=l.id;
+  d.innerHTML=`<div class="row">
+      <i class="dot" style="background:${ST_CSS[l.st]}"></i>
+      <span class="nm">${label}</span>
+      <span class="ct">${l.nodes.length}</span>
+    </div><div class="kids">
+    ${l.nodes.map((n,i)=>`<div class="kid" data-nid="${n.id}">
+        <b class="ix">${l.tag?l.tag+(i+1):(i+1)}</b>
+        <i class="dot" style="background:${ST_CSS[n.st]}"></i>
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.name)}</span>
+        ${n.wip?'<span class="badge b-warn">WIP</span>':''}
+        ${statusBadge(n.st)}</div>`).join('')}
+    </div>`;
+  d.querySelector('.row').onclick=e=>{
+    e.stopPropagation();
+    const was=d.classList.contains('on');
+    document.querySelectorAll('.lyr').forEach(x=>x.classList.remove('on'));
+    if(!was) d.classList.add('on');
+  };
+  tree.appendChild(d);
+}
+
+DATA.forEach((l,li)=>addTreeItem(l,`L${li+1} ${l.name}`));
+
+const domHd=document.createElement('div');
+domHd.style.cssText='font-size:10.5px;color:#c084fc;padding:9px 9px 4px;letter-spacing:.3px';
+domHd.textContent='纵切应用域 · 横切多层';
+tree.appendChild(domHd);
+DOMAINS.forEach(d=>addTreeItem(d,d.name));
+
+tree.addEventListener('click',e=>{
+  const k=e.target.closest('.kid');if(!k)return;
+  document.querySelectorAll('.kid').forEach(x=>x.classList.remove('sel'));
+  k.classList.add('sel');
+  const nd=allNodes.find(n=>n.id===k.dataset.nid);
+  select(nd,true);
+});
+
+/* ---- 详情渲染 ---- */
+const detail=document.getElementById('detail');
+function select(nd,fly){
+  selNode=nd;
+  if(!nd){detail.innerHTML='<div class="empty">点击任意节点或左侧列表<br>查看实现状态与代码证据</div>';return;}
+  const l=[...DATA,...DOMAINS].find(x=>x.id===nd.layer);
+  const isDom=!!DOMAINS.find(x=>x.id===nd.layer);
+  const li=DATA.indexOf(l);
+  const locTxt=isDom?`${l.name} · 纵切域`:`${l.name} · L${li+1}`;
+  detail.innerHTML=`
+    <h2>${nd.name}</h2>
+    <div class="sub">${locTxt}</div>
+    <div style="margin-bottom:11px">${statusBadge(nd.st)}
+      <span style="font-size:11px;color:var(--tx3);margin-left:7px">${ST_TXT[nd.st]}</span>
+      ${nd.wip?'<span class="badge b-warn" style="margin-left:7px">未入库</span>':''}</div>
+    ${nd.wip?'<div class="sect" style="color:#fbbf24">版本状态</div>'+
+      '<p style="color:#fbbf24">此模块尚未进入版本库，仅存在于工作区。最新提交 80af527 与 hub 编排无关，随时可能回滚或重写——不要把它当作已交付能力。</p>':''}
+    ${Object.entries(nd.meta||{}).map(([k,v])=>
+      `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join('')}
+    <p>${nd.desc}</p>
+    <div class="sect">代码证据</div>
+    ${(nd.ev||[]).map(e=>`<code class="ev">${e}</code>`).join('')}
+  `;
+  if(fly)flyTo(nd);
+}
+
+function flyTo(nd){
+  const r=nd._t.obj.getWorldPosition(new THREE.Vector3());
+  const tgt=r.clone();tgt.y-=1.5;
+  flyAnim={s:camera.position.clone(),e:tgt.clone(),ts:controls.target.clone(),tt:tgt,
+           t0:performance.now(),dur:820};
+}
+
+/* ---- 悬停提示 ---- */
+const tip=document.getElementById('tip');
+const ray=new THREE.Raycaster();
+const mouse=new THREE.Vector2();
+let hovered=null;
+
+renderer.domElement.addEventListener('pointermove',e=>{
+  mouse.x=(e.clientX/innerWidth)*2-1;
+  mouse.y=-(e.clientY/innerHeight)*2+1;
+  tip.style.left=e.clientX+13+'px';
+  tip.style.top=e.clientY+13+'px';
+});
+renderer.domElement.addEventListener('pointerdown',e=>{
+  if(e.button!==0)return;
+  ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObjects(pickables,false)[0];
+  if(hit){
+    const nd=hit.object.userData.nd;
+    document.querySelectorAll('.kid').forEach(x=>x.classList.remove('sel'));
+    const k=document.querySelector(`.kid[data-nid="${nd.id}"]`);
+    if(k){k.classList.add('sel');
+      k.closest('.lyr').classList.add('on');}
+    select(nd,false);
+  }
+});
+
+/* ==========================================================================
+   控件
+   ========================================================================== */
+let flyAnim=null;
+document.getElementById('bReset').onclick=()=>{
+  camera.position.set(114,78,118);
+  controls.target.set(10,0,0);
+  controls.update();
+};
+let spin=false;
+document.getElementById('bSpin').onclick=e=>{
+  spin=!spin;e.target.classList.toggle('on',spin);
+};
+
+let filterMode='all';
+function applyFilter(){
+  document.querySelectorAll('[data-btn]').forEach(b=>b.classList.remove('on'));
+  const map={all:'bAll',ex:'bEx',real:'bReal',gap:'bGap'};
+  document.getElementById(map[filterMode]).classList.add('on');
+
+  const show={all:()=>true,ex:()=>true,real:n=>n.st==='real',gap:n=>n.st!=='real'}[filterMode];
+  animNodes.forEach(r=>{
+    r.on=show(r.nd);
+    r.obj.visible=true;
+    r.hit.visible=r.on;
+  });
+  if(filterMode==='gap'){
+    // 断链模式下把真实节点压暗
+    animNodes.forEach(r=>{
+      r.obj.traverse(o=>{
+        if(o.material&&o.material.color&&o.material.emissive!==undefined){
+          if(r.nd.st==='real'){o.material.transparent=true;o.material.opacity=.16;}
+          else{o.material.transparent=true;o.material.opacity=.95;}
+        }
+      });
+    });
+  }else{
+    animNodes.forEach(r=>{
+      r.obj.traverse(o=>{
+        if(o.material&&o.material.emissive!==undefined&&o.material.transparent){
+          o.material.opacity=(o.material.type==='SpriteMaterial')?.95:.93;
+        }
+      });
+    });
+  }
+}
+['bAll','bEx','bReal','bGap'].forEach(id=>{
+  document.getElementById(id).onclick=()=>{
+    filterMode=id.replace('b','').toLowerCase()==='ex'?'ex':id.replace('b','').toLowerCase();
+    applyFilter();
+    if(filterMode==='ex')explode();
+    else collapse();
+  };
+});
+function explode(){collapseT=1;}
+function collapse(){collapseT=0;}
+let collapseT=0;
+
+/* ---- 统计 ---- */
+(function(){
+  let r=0,w=0,g=0;
+  allNodes.forEach(n=>{n.st==='real'?r++:n.st==='warn'?w++:g++});
+  document.getElementById('sOk').textContent=r;
+  document.getElementById('sWarn').textContent=w;
+  document.getElementById('sBad').textContent=g;
+  document.getElementById('sNode').textContent=allNodes.length;
+  document.getElementById('ver').textContent=
+    '332 py · services 65,549 行 · '+DATA.length+' 层';
+})();
+
+/* ==========================================================================
+   主循环
+   ========================================================================== */
+function resize(){
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+}
+addEventListener('resize',resize);
+
+const clock=new THREE.Clock();
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=clock.getDelta(),t=clock.elapsedTime;
+
+  if(spin){const a=.0016;const x=camera.position.x-controls.target.x;
+    const z=camera.position.z-controls.target.z;
+    camera.position.x=controls.target.x+x*Math.cos(a)-z*Math.sin(a);
+    camera.position.z=controls.target.z+x*Math.sin(a)+z*Math.cos(a);}
+
+  // 飞行
+  if(flyAnim){
+    const k=Math.min(1,(performance.now()-flyAnim.t0)/flyAnim.dur);
+    const e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+    camera.position.lerpVectors(flyAnim.s,flyAnim.e,e);
+    controls.target.lerpVectors(flyAnim.ts,flyAnim.tt,e);
+    if(k>=1)flyAnim=null;
+  }
+
+  // 呼吸 + 悬停高亮
+  animNodes.forEach(r=>{
+    const on=r.on!==false;
+    const sel=selNode&&selNode.id===r.nd.id;
+    const hov=hovered&&hovered.object.userData.nd.id===r.nd.id;
+    const lift=(sel?1.5:hov?.62:0);
+    const by=r.hit.userData.base;
+    r.obj.position.y+=(by+lift+Math.sin(t*.85+r.ph)*.24-r.obj.position.y)*Math.min(1,dt*7);
+    const ts=sel?1.5:hov?1.22:1;
+    r.obj.scale.x+=(ts-r.obj.scale.x)*Math.min(1,dt*8);
+    r.obj.scale.y+=(ts-r.obj.scale.y)*Math.min(1,dt*8);
+    r.obj.scale.z+=(ts-r.obj.scale.z)*Math.min(1,dt*8);
+    const pulse=sel?.95+Math.sin(t*4)*.5:(hov?.8:0);
+    r.led.material.color.setHex(ST_COLOR[r.nd.st]);
+    r.cap.material.emissiveIntensity=.4+pulse+(on?.35:0);
+    r.obj.visible=on;
+  });
+
+  // 展开/收拢
+  if(collapseT!==null){
+    DATA.forEach((l,i)=>{
+      const g=plateGroups[l.id].grp;
+      const tv=collapseT===1?1.9:1;
+      g.position.y+=(LY[i]*tv-g.position.y)*Math.min(1,dt*4.5);
+      const sc=.42+.58*collapseT;
+      g.scale.x+=(sc-g.scale.x)*Math.min(1,dt*4);
+      g.scale.z+=(sc-g.scale.z)*Math.min(1,dt*4);
+    });
+    if(Math.abs(plateGroups[DATA[0].id].grp.position.y-LY[0]*1.9)<.4)collapseT=null;
+  }
+
+  controls.update();
+  renderer.render(scene,camera);
+}
+tick();
+
+/* 悬停射线（每帧一次，节流） */
+setInterval(()=>{
+  ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObjects(pickables.filter(p=>p.visible),false)[0];
+  hovered=hit||null;
+  if(hovered){
+    const nd=hovered.object.userData.nd;
+    tip.style.display='block';
+    // tooltip 走 HTML 屏幕空间：3D 场景缩放不影响它，所以能给出
+    // 完整名称 + 关键参数 + 前两条代码证据，而不是把字挤进 50px 的方块里。
+    const metaTxt=nd.meta?Object.entries(nd.meta).slice(0,3)
+      .map(([k,v])=>k+' '+v).join(' · '):'';
+    tip.innerHTML=
+      `<div class="tn"><i class="dot" style="background:${ST_CSS[nd.st]};margin-right:6px"></i>`+
+      `${esc(nd.name)} <span style="color:${ST_CSS[nd.st]};font-size:11px">${ST_TXT[nd.st]}</span></div>`+
+      (metaTxt?`<div class="tm">${esc(metaTxt)}</div>`:'')+
+      (nd.ev&&nd.ev.length?`<div class="te">${esc(nd.ev.slice(0,2).join('\n'))}</div>`:'')+
+      (nd.wip?'<div class="tw">⚠ 工作区未入库代码，随时可能回滚</div>':'');
+    renderer.domElement.style.cursor='pointer';
+  }else{
+    tip.style.display='none';
+    renderer.domElement.style.cursor='grab';
+  }
+},70);
+
+setTimeout(()=>{const h=document.getElementById('hint');h.style.opacity='0'},7200);
+applyFilter();
+</script>
+</body>
+</html>
