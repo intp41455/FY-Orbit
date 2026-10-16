@@ -20,11 +20,13 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import JSONResponse
 
 from ...config import Settings
-from ...net import is_loopback
+from ...net import is_local_peer
 from ...services.actor import Actor
 from ...services.errors import PermissionDenied, ValidationFailed
 from ..deps import SESSION_COOKIE, Services, csrf_protected, get_actor, get_services, get_settings
@@ -52,6 +54,12 @@ def _require_local_guest(request: Request, settings: Settings) -> None:
     production deployment must never hand out accounts anonymously, and the
     loopback check because a browser page on another host must not be able to
     drive this endpoint through the user's own machine.
+
+    Docker port-mapping rewrites the client address to the bridge gateway
+    (e.g. ``172.17.0.1``), so strict loopback would lock every Docker
+    deployment out of the product. ``FY_LOCAL_PEER_CIDRS`` (comma-separated
+    CIDRs) explicitly widens the accepted local peers; unset => exact
+    legacy behaviour (loopback only, never silently wider).
     """
     if settings.environment not in ("local", "test"):
         raise PermissionDenied(
@@ -60,7 +68,8 @@ def _require_local_guest(request: Request, settings: Settings) -> None:
             403,
         )
     remote = _client_ip(request)
-    if not is_loopback(remote):
+    extra = os.environ.get("FY_LOCAL_PEER_CIDRS", "")
+    if not is_local_peer(remote, extra):
         raise PermissionDenied(
             "guest_loopback_only",
             "Guest sessions may only be created from 127.0.0.1",
