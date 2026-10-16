@@ -11,16 +11,16 @@
 
 | 产物 | 适合谁 | 说明 |
 |---|---|---|
-| `FY-Orbit-Setup-v1.3.2.exe` | 大多数人 | 安装向导，可创建桌面快捷方式，走开始菜单启动 |
-| `FY-Orbit-Windows-v1.3.2.zip` | 不想装东西 | 绿色包，解压即用。**同页附 `.sha256`**，校验值一起下 |
+| `FY-Orbit-Setup-v1.3.3.exe` | 大多数人 | 安装向导，可创建桌面快捷方式，走开始菜单启动 |
+| `FY-Orbit-Windows-v1.3.3.zip` | 不想装东西 | 绿色包，解压即用。**同页附 `.sha256`**，校验值一起下 |
 
 ### 2. 校验完整性（可选但建议）
 
 绿色包解压后，同目录的 `.sha256` 是该 zip 的校验值：
 
 ```powershell
-Get-FileHash .\FY-Orbit-Windows-v1.3.2.zip -Algorithm SHA256
-# 与 FY-Orbit-Windows-v1.3.2.zip.sha256 里的值比对
+Get-FileHash .\FY-Orbit-Windows-v1.3.3.zip -Algorithm SHA256
+# 与 FY-Orbit-Windows-v1.3.3.zip.sha256 里的值比对
 ```
 
 对不上就别运行 —— 供应链攻击的最低成本防线。
