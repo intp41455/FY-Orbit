@@ -104,8 +104,16 @@ class StreamingService:
     """Builds SSE event frames for the streaming chat endpoint."""
 
     def __init__(self, settings, budget=None, gateway: ModelGateway | None = None):
+        # BYOK 叠加必须在构造网关**之前**：用户在「设置 → 模型」里填的
+        # provider/base_url/key/model 只落在 secret_store，不叠加的话网关拿到
+        # 的是空 settings → provider=None → resolve_mode() 落 stub，于是
+        # 「明明配了模型却永远出确定性 stub」。
+        from .model_credentials import resolve_model_settings
+
         self.settings = settings
-        self.gateway = gateway if gateway is not None else ModelGateway(settings, budget)
+        if gateway is None:
+            gateway = ModelGateway(resolve_model_settings(settings), budget)
+        self.gateway = gateway
 
     def resolve_mode(self) -> str:
         """Pick the data mode up front so misconfiguration surfaces as a

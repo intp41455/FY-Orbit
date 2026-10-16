@@ -156,3 +156,69 @@ def test_module_exports_helpers():
     assert callable(_resolve_model_name)
     assert callable(_ensure_chat_task)
     assert hasattr(s, "StreamChatRequest")
+
+
+# -- 缺陷 3：BYOK 叠加遗漏 → 明明配了模型却永远出 stub --------------------
+
+
+class _StubSettings:
+    """空宿主 settings：凭据只可能来自 BYOK 叠加。"""
+
+    model_name = ""
+    model_api_key = ""
+    model_base_url = ""
+    model_provider = ""
+    model_fallbacks: list = []
+
+    def model_copy(self, update: dict) -> "_StubSettings":
+        new = _StubSettings()
+        for k, v in update.items():
+            setattr(new, k, v)
+        return new
+
+
+class _FakeProvider:
+    provider_id = "openai_compat"
+
+
+def test_streaming_service_applies_byok_overlay(monkeypatch):
+    """核心回归：构造 StreamingService 时必须叠加 BYOK，否则 provider=None → stub。
+
+    用户在设置页填的模型凭据只落在 secret_store。若用未叠加的 settings 构造
+    网关，provider 恒为 None，Chat 永远出确定性 stub——「配了模型却不能用」。
+    """
+    from find_yourself.services import model_credentials as mc
+    from find_yourself.services.streaming import StreamingService
+
+    monkeypatch.setattr(
+        mc, "resolve_model_settings",
+        lambda st: st.model_copy({
+            "model_api_key": "sk-test-key-1234567890",
+            "model_base_url": "https://example.invalid/v1",
+            "model_name": "byok-model-9",
+        }),
+    )
+    svc = StreamingService(_StubSettings())
+    # gateway 用叠加后的 settings 建成 → 有 provider → 不会落 stub
+    assert svc.gateway.provider is not None
+    assert svc.resolve_mode() == "gateway"
+    assert svc.gateway.primary_provider_id == "openai_compat"
+
+
+def test_injected_gateway_is_respected():
+    """显式注入的 gateway 不被叠加逻辑覆盖（宿主/测试自接线优先）。"""
+    from find_yourself.runtime.gateway import ModelGateway
+    from find_yourself.services.streaming import StreamingService
+
+    class _FakeGateway(ModelGateway):
+        def __init__(self):
+            self.settings = None
+            self.provider = _FakeProvider()
+            self.routes = []
+            self.primary_provider_id = "openai_compat"
+            self.price_overrides = {}
+
+    injected = _FakeGateway()
+    svc = StreamingService(_StubSettings(), gateway=injected)
+    assert svc.gateway is injected
+    assert svc.resolve_mode() == "gateway"
