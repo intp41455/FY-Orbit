@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .errors import Conflict, NotFound, ValidationFailed
+from .tool_gate import install_default_gate
 
 TOOL_NAME_RE = re.compile(r"^[a-z][a-z0-9_.-]{1,63}$")
 _PERSIST_ENV = "FY_TOOL_REGISTRY_DIR"
@@ -154,8 +155,10 @@ class ToolRegistryService:
         self._tools: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
         self._mcp_clients: dict[str, Any] = {}
-        # T-GATE: admission gate, None by default (no policy => every call
-        # proceeds exactly as before; hosts wire one via services.tool_gate).
+        # T-GATE: admission gate. A stand-alone instance stays None (no policy
+        # => every call proceeds exactly as before, which is what the unit
+        # tests of this class rely on); the process-wide singleton below is
+        # wired to the env-derived gate.
         self.tool_gate: Any | None = None
         self._load()
 
@@ -395,3 +398,12 @@ class ToolRegistryService:
 
 # Process-wide singleton (metadata restored from JSON on first import/use).
 tool_registry = ToolRegistryService()
+
+# T-GATE default assembly. Done here rather than in a route so the policy
+# covers *every* run path through this singleton — HTTP /api/tools/*, agent
+# dispatch, chat orchestration, dynamic MCP and the DSL runner — not just the
+# one that happens to build a Services object. With no policy configured the
+# gate allows everything, so this is inert until an operator sets
+# FY_TOOL_GATE_DENY / FY_TOOL_GATE_ASK; a malformed pattern raises here, i.e.
+# a broken policy fails loudly at import instead of degrading to fail-open.
+install_default_gate(tool_registry)

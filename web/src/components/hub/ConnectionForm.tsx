@@ -14,6 +14,7 @@ const KINDS: HubKind[] = [
   'tool_plugin',
   'knowledge_source',
   'market_source',
+  'a2a_agent',
 ];
 
 export interface ConnectionFormSeed {
@@ -153,6 +154,17 @@ export function ConnectionForm({
             地址是 Git 仓库时再加一行 <code>source_type</code> = <code>git</code>（留空即 http 索引源）；
             可选 <code>git_ref</code>（分支/tag）、<code>git_manifest</code>（仓库内清单相对路径）。
             私有源把 token 填进下方凭证（api_token）。包仍须过本地签名 + 扫描门禁才能安装。
+          </p>
+        )}
+        {kind === 'a2a_agent' && (
+          <p className="muted" data-testid="hub-a2a-agent-hint">
+            外部 A2A Agent：在参数里加一行 <code>base_url</code>（对端 Agent 基址，如{' '}
+            <code>https://agent.example.com</code>；后端会自动拼{' '}
+            <code>/.well-known/agent.json</code> 与 <code>/a2a/v1/jsonrpc</code>，不要填完整路径）。
+            可选 <code>expected_name</code>（钉住对端 Agent Card 的 name，防止地址被换成另一个 Agent）。
+            探活会真拉 Agent Card 再实测一次 <code>message/send</code>；要端要鉴权就把 token 填进下方凭证（
+            <code>api_token</code>，内部转成 Authorization: Bearer）。
+            默认禁内网/本机地址；确为本机自建 Agent 时设 <code>FY_HUB_ALLOW_PRIVATE=1</code>。
           </p>
         )}
         {configRows.map((row, i) => (

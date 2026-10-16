@@ -56,6 +56,12 @@ DEFAULT_SECRET_FIELDS: dict[str, tuple[str, ...]] = {
     "tool_plugin": ("api_token",),
     # 市场远程源：私有源可能要 token；是否必填由 credential_fields 决定。
     "market_source": ("api_token", "authorization"),
+    # 外部 A2A Agent（G7）：沿用 market_source 的凭证键约定，不为新 kind 新造一套
+    # ——``A2AAgentAdapter._auth_token`` 把 api_token / authorization 映射成
+    # ``A2AClient`` 的 auth_token。A2A 端点普遍要 Bearer（Agent Card 里的
+    # securitySchemes），但**允许不填**（内网/自建 Agent 常见无鉴权）；
+    # 是否必填交给 credential_fields.required，而不是在这里一刀切。
+    "a2a_agent": ("api_token", "authorization"),
 }
 
 _SLUG_RE = re.compile(r"[^a-z0-9_.-]+")
@@ -290,6 +296,15 @@ class HubService:
                 "hub_market_source_url_required",
                 "市场远程源必须填写源链接（URL / Git 仓库 / 本地目录 file://）",
             )
+        if kind == "a2a_agent" and not str(
+                config.get("base_url") or config.get("url") or "").strip():
+            # 缺地址 = BLOCKED_EXTERNAL：没有对端就绝不可能派发，必须当场拦下，
+            # 而不是建一条"看起来可用"的连接等探活时才报。
+            raise ValidationFailed(
+                "hub_a2a_endpoint_required",
+                "外部 A2A Agent 必须填写对端地址（连接参数里加一行 base_url，"
+                "例如 https://agent.example.com）",
+            )
 
         secret_config = self._encrypt_secrets(fields, credentials)
         state = "active"
@@ -417,6 +432,21 @@ class HubService:
                 guard_git_url(url)
             elif not url.startswith("file://"):
                 guard_endpoint(url)
+        if kind == "a2a_agent":
+            # 与 http_webhook / market_source-http **同一套** SSRF 口径，不新写一份：
+            # A2A 对端是会收到我们消息的任意远端 HTTP 端点，信任面与「万能 HTTP
+            # 调用」同形，因此按 outbound-HTTP 规则默认禁内网/本机。
+            # 本机/内网自建 A2A 对端用 FY_HUB_ALLOW_PRIVATE=1 放行（同其它 kind）。
+            #
+            # base_url/url 的归一走 adapters.resolve_a2a_base_url 同一个函数——
+            # 适配器读地址也用它，两处不会各认一半的键。
+            # 地址缺失不在这里报错（create_connection 用更具体的
+            # hub_a2a_endpoint_required 单独提示，那条信息更有用）。
+            raw = config.get("base_url") or config.get("url")
+            if raw:
+                from .adapters import resolve_a2a_base_url
+
+                guard_endpoint(resolve_a2a_base_url(config))
 
     # -- tool_registry bridge ------------------------------------------------ #
     def _register_tool_plugin(self, conn: HubConnection) -> str | None:

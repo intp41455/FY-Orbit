@@ -44,6 +44,7 @@ from ..services.proposal import ProposalService
 from ..services.skill import SkillService
 from ..services.sync import SyncService
 from ..services.terminal import TerminalService
+from ..services.tool_gate import install_default_gate
 from ..services.workspace import WorkspaceService
 
 SESSION_COOKIE = "fy_session"
@@ -100,6 +101,10 @@ get_session = get_db
 
 
 def get_services(db: Session = Depends(get_db), settings: Settings = Depends(get_settings)) -> Services:
+    # T-GATE：默认服务装配处重申准入闸门。tool_registry 单例在 import 时已装上
+    # 环境变量派生的闸门；这里幂等地再断言一次，防止某个宿主换掉闸门后请求路径
+    # 悄悄失去准入控制。已有闸门（含宿主自带的 HITL ask_hook）不会被覆盖。
+    install_default_gate()
     audit = AuditService(db)
     grants = GrantService(db, audit)
     budget_svc = BudgetService(db, audit)

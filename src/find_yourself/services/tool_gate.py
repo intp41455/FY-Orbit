@@ -15,6 +15,11 @@ Policy sources (both active at once, ``deny`` wins over ``ask``):
   tool names or ``prefix.*`` wildcards (e.g. ``shell.*,http.raw``).
 * config: a dict ``{"deny": [...], "ask": [...]}`` handed to ``ToolGate()``.
 
+Default wiring: :func:`install_default_gate` is the single place where the
+env-derived gate is attached to the process-wide ``tool_registry`` singleton,
+so the policy is in force on *every* run path (HTTP route, agent dispatch, chat
+orchestration, dynamic MCP) and setting the env vars is all an operator does.
+
 Design rules honoured from the repo philosophy:
 
 * degrade, don't crash — an unreadable env value degrades to "no rules from
@@ -172,11 +177,20 @@ def gate_from_env(environ: dict[str, str] | None = None) -> ToolGate:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
 
-    return ToolGate(
-        deny_rules=tuple(_split(DENY_ENV)),
-        ask_rules=tuple(_split(ASK_ENV)),
-        from_env=True,
-    )
+    try:
+        return ToolGate(
+            deny_rules=tuple(_split(DENY_ENV)),
+            ask_rules=tuple(_split(ASK_ENV)),
+            from_env=True,
+        )
+    except ValueError as exc:
+        # Fail fast, and say *where* the bad policy came from: a malformed
+        # pattern is a misconfiguration, not a transient error, and a boot that
+        # silently degrades to "no rules" is exactly the fail-open we forbid.
+        raise ValueError(
+            f"invalid tool gate policy from environment "
+            f"({DENY_ENV}={env.get(DENY_ENV)!r}, {ASK_ENV}={env.get(ASK_ENV)!r}): {exc}"
+        ) from exc
 
 
 def install_into(registry: Any, gate: ToolGate | None = None) -> ToolGate:
@@ -188,3 +202,25 @@ def install_into(registry: Any, gate: ToolGate | None = None) -> ToolGate:
         gate = gate_from_env()
     registry.tool_gate = gate
     return gate
+
+
+def install_default_gate(registry: Any | None = None, *, replace: bool = False) -> ToolGate:
+    """Give ``registry`` the env-derived gate; return the gate actually in force.
+
+    * ``registry=None`` resolves the process-wide ``tool_registry`` singleton
+      (imported lazily so this module stays free of a ``tool_registry`` import
+      cycle). This is the default-assembly entry point used by
+      ``tool_registry`` itself and by ``api.deps.get_services``.
+    * ``replace=False`` (default) makes the call **idempotent**: a gate that is
+      already installed is kept, so a host that wired its own gate (typically
+      with a HITL ``ask_hook``) is never silently downgraded to the env default
+      on a later request. Pass ``replace=True`` to force the env policy back.
+    * A malformed pattern raises :class:`ValueError` *before* anything is
+      assigned, so a rejected policy leaves the registry exactly as it was.
+    """
+    if registry is None:
+        from .tool_registry import tool_registry as registry
+    existing = getattr(registry, "tool_gate", None)
+    if existing is not None and not replace:
+        return existing
+    return install_into(registry, gate_from_env())

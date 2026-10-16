@@ -9,7 +9,7 @@ import { buildApiUrl, getCsrfToken } from './client';
 
 const BASE = '/api/hub';
 
-/** 后端 KIND_* 常量（services/hub/__init__.py）。 */
+/** 后端 KIND_* 常量（db/hub_constants.py，经 services/hub 重导出）。 */
 export type HubKind =
   | 'openai_chat'
   | 'anthropic'
@@ -17,7 +17,8 @@ export type HubKind =
   | 'http_webhook'
   | 'tool_plugin'
   | 'knowledge_source'
-  | 'market_source';
+  | 'market_source'
+  | 'a2a_agent';
 
 export const HUB_KIND_LABEL: Record<HubKind, string> = {
   openai_chat: 'OpenAI 兼容对话',
@@ -27,6 +28,7 @@ export const HUB_KIND_LABEL: Record<HubKind, string> = {
   tool_plugin: '工具插件',
   knowledge_source: '知识源',
   market_source: '市场远程源',
+  a2a_agent: '外部 A2A Agent',
 };
 
 export interface HubCredentialField {

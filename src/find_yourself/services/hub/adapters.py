@@ -47,6 +47,7 @@ from urllib.parse import urlparse
 from ..errors import ValidationFailed
 from . import (
     DEFAULT_MARKET_SOURCE_TYPE,
+    KIND_A2A_AGENT,
     KIND_ANTHROPIC,
     KIND_HTTP_WEBHOOK,
     KIND_KNOWLEDGE_SOURCE,
@@ -1506,6 +1507,397 @@ class MarketSourceAdapter:
         )
 
 
+# --------------------------------------------------------------------------- #
+# 6) a2a_agent · 外部 A2A Agent（G7 出站配置面）
+# --------------------------------------------------------------------------- #
+#
+# 闭环：登记（connections.create_connection → HUB_KINDS/CHECK/SSRF 守卫）
+#       → 探活（health：真拉 Agent Card + 真打一次 message/send 参数校验）
+#       → 派发（invoke：复用 adapters.a2a.A2AClient）
+#
+# 探活「不造假绿」的具体含义（本节是本次施工的重点，逐条写清判据）：
+#   1. **必须**真发 HTTP GET 拿 ``/.well-known/agent.json``，并让 A2AClient 按
+#      官方必填字段校验（name/version/protocolVersion/capabilities/skills）；
+#      拿不到 → ok=False，绝不用配置里的 URL 冒充"可达"。
+#   2. 卡片声明的 JSON-RPC ``url`` 若与登记地址不同主机 → ok=False
+#      （卡片是远程不可信输入，让它把流量指到别处不行）。
+#   3. ``message/send`` 的能力**实测**：发一条 ``{"role":"user","parts":[]}``
+#      的**空消息**。合规 A2A 服务端（本仓库 A2ADispatcher 就是）会在**执行前**
+#      参数校验处回 ``-32602 Invalid params``，这既证明 JSON-RPC 端点活着，
+#      又证明该方法被真的实现了，且**不产生任何副作用**。
+#      -32601 方法未找到 / 其他错误码 / 超时 / 认证失败 → 各自 ok=False，
+#      带**可区分**的错误码，绝不合并成一句"连不上"。
+#   4. 能力清单来自卡片 ``skills``（真发现），不用配置里用户手写的声明冒充。
+#
+# 残余风险（诚实记录，不藏）：第 3 步依赖对端"先校验参数再执行"。一个不规范的
+# 服务端可能真的为这条空消息建一个空 Task——代价是远端多一条垃圾 Task（用户
+# 显式登记的地址，且有 taskId 可查）。配置 ``probe_message_send=false`` 可关掉
+# 这步，代价是退回"只验卡片、验不了派发能力"——这是**用户可见的显式取舍**，
+# 不是静默降级。
+A2A_AGENT_ENDPOINT_KEY = "hub:a2a"
+
+
+def resolve_a2a_base_url(config: dict[str, Any]) -> str:
+    """读出 a2a_agent 的对端基址（**唯一**解析入口）。
+
+    规范键是 ``base_url``（A2AClient 在其后拼 ``/.well-known/agent.json`` 与
+    ``/a2a/v1/jsonrpc``，所以必须是「基址」而不是完整 JSON-RPC 路径）。
+    ``url`` 只作为**别名**接受：Hub 里 webhook / market_source 用的都是 ``url``，
+    用户复制粘贴过来很自然；但别名必须经这一个函数归一，否则两处各读一次
+    迟早漂移成两种行为。
+    """
+    cfg = config or {}
+    base = str(cfg.get("base_url") or cfg.get("url") or "").strip()
+    if not base:
+        raise ValidationFailed(
+            "hub_a2a_endpoint_required",
+            "外部 A2A Agent 未配置对端地址（连接参数里加一行 base_url，"
+            "例如 https://agent.example.com）",
+        )
+    return base.rstrip("/")
+
+
+def _a2a_message(text: str) -> dict[str, Any]:
+    """构造一条 A2A 文本消息（官方 ``role`` + ``parts[].kind/text`` 形态）。"""
+    return {"role": "user", "parts": [{"kind": "text", "text": text}]}
+
+
+def _a2a_probe_message() -> dict[str, Any]:
+    """探活用的**空消息**：有合法 role 但 parts 为空。
+
+    刻意保留 role 而整体留空 parts：合规服务端会进入 message 专属校验并回
+    ``-32602``，比"连 message 都没有"更能证明请求确实路由到了 message/send。
+    """
+    return {"role": "user", "parts": []}
+
+
+class A2AAgentAdapter:
+    """外部 A2A Agent：真 Agent Card 发现 + 真 JSON-RPC 派发。
+
+    传输可注入：``transport`` 传 ``httpx.MockTransport`` 时单测**不打真网**
+    （与 WebhookAdapter / MarketSourceAdapter 同一套可注入约定）。
+    """
+
+    #: invoke 支持的 action → 远端 JSON-RPC 方法。别名让调用方不必先知道
+    #: kind 才能猜对方法名（与 openai_chat / mcp_server 的 action 别名对称）。
+    _ACTIONS = {
+        "invoke": "message/send", "send": "message/send", "message": "message/send",
+        "call": "message/send", "message/send": "message/send",
+        "task": "tasks/get", "get_task": "tasks/get", "tasks/get": "tasks/get",
+        "cancel": "tasks/cancel", "cancel_task": "tasks/cancel",
+        "tasks/cancel": "tasks/cancel",
+    }
+
+    def __init__(self, config: dict[str, Any], *,
+                 credentials: dict[str, str] | None = None,
+                 transport: Any | None = None,
+                 http_client: Any | None = None):
+        self.kind = KIND_A2A_AGENT
+        self.config = dict(config)
+        self.credentials = dict(credentials or {})
+        self.transport = transport
+        #: 测试可整体替换客户端；生产走 httpx（transport 可注入）。
+        self._http_client = http_client
+        self._card: dict[str, Any] | None = None
+
+    # -- internals ----------------------------------------------------------- #
+    def _auth_token(self) -> str:
+        """Hub 凭证键 → A2AClient 的 ``auth_token``。
+
+        **不新造字段名**：沿用 Hub 既有的 ``api_token`` / ``authorization``
+        约定（见 ``connections.DEFAULT_SECRET_FIELDS``），在这里显式映射到
+        ``A2AClient`` 的 ``auth_token`` 形参。两套命名都保持原样，映射只有这一处。
+        """
+        return str(
+            self.credentials.get("api_token")
+            or self.credentials.get("authorization")
+            or self.config.get("api_token")
+            or self.config.get("authorization")
+            or ""
+        )
+
+    def _expected_name(self) -> str:
+        return str(self.config.get("expected_name") or "").strip()
+
+    def _probe_enabled(self) -> bool:
+        """``probe_message_send`` 默认开；显式填 0/false/no/off 才关。"""
+        raw = self.config.get("probe_message_send")
+        if raw is None or raw == "":
+            return True
+        return str(raw).strip().lower() not in {"0", "false", "no", "off"}
+
+    def _client(self, timeout: float | None = None):
+        """构造 A2AClient；信任注册表**只登记这一个**已守卫过的端点。
+
+        这样做的用意：SSRF 判定只有 :func:`guard_endpoint` 一处实现（登记时与
+        调用时都过它），本适配器**不再另写一份**内网判定；而
+        ``TrustedEndpointRegistry.validate_target`` 仍然真实执行——一旦调用方
+        换了注册表，``UntrustedEndpointError`` 会照常抛，不会被绕过。
+        """
+        from ...adapters.a2a import A2AClient, TrustedEndpointRegistry
+
+        base_url = guard_endpoint(resolve_a2a_base_url(self.config))
+        registry = TrustedEndpointRegistry()
+        ep = registry.register(
+            A2A_AGENT_ENDPOINT_KEY,
+            base_url,
+            self._expected_name() or None,
+            self._auth_token() or None,
+        )
+        client = self._http_client
+        if client is None and self.transport is not None:
+            import httpx
+
+            client = httpx.Client(transport=self.transport,
+                                  timeout=timeout if timeout is not None else 10.0)
+        return A2AClient(registry=registry, http_client=client), ep
+
+    def _fetch_card(self, timeout: float | None = None) -> tuple[Any, str, dict[str, Any]]:
+        """真拉 Agent Card。返回 ``(client, target, card)``。"""
+        client, ep = self._client(timeout=timeout)
+        card = client.get_agent_card(ep.base_url)
+        if not isinstance(card, dict):
+            raise ValidationFailed(
+                "hub_a2a_bad_card", "Agent Card 不是 JSON 对象"
+            )
+        self._card = card
+        return client, ep.base_url, card
+
+    @staticmethod
+    def _card_endpoint_host(card: dict[str, Any]) -> str:
+        raw = str(card.get("url") or "").strip()
+        if not raw:
+            return ""
+        host = urlparse(raw).hostname or ""
+        return host.lower()
+
+    def _probe_message_send(self, client: Any, target: str, *,
+                            timeout: float | None) -> tuple[bool, str]:
+        """实测 message/send 是否被实现。返回 ``(是否可用, 原因)``。"""
+        from ...adapters.a2a import (
+            ERR_INVALID_PARAMS,
+            ERR_METHOD_NOT_FOUND,
+            A2ARpcError,
+        )
+
+        try:
+            task = client.send_message(target, _a2a_probe_message(), timeout=timeout or 10.0)
+        except A2ARpcError as exc:
+            if exc.code == ERR_INVALID_PARAMS:
+                # 参数校验发生在执行之前 → 方法被实现、端点活着、无副作用。
+                return True, "message/send 已实现（空消息在参数校验处被拒 -32602）"
+            if exc.code == ERR_METHOD_NOT_FOUND:
+                return False, (
+                    "hub_a2a_method_unsupported: 对端 JSON-RPC 端点未实现 "
+                    "message/send（-32601）；Agent Card 存在不等于能接任务"
+                )
+            return False, (
+                f"hub_a2a_upstream_refused: message/send 返回 JSON-RPC 错误 "
+                f"{exc.code}（{exc.message}）"
+            )
+        # 对端真的为这条空消息建了 Task：方法可用，但要如实说明产生了副作用。
+        task_id = ""
+        if isinstance(task, dict):
+            task_id = str(task.get("id") or "")
+        return True, (
+            "message/send 可用（对端接受了空消息并创建了 Task"
+            + (f" {task_id}" if task_id else "")
+            + "；该探活方式对不规范对端可能留下一条空 Task）"
+        )
+
+    # -- HubAdapter ---------------------------------------------------------- #
+    def health(self, *, timeout_seconds: float = 3.0) -> HealthReport:
+        started = time.perf_counter()
+        try:
+            client, target, card = self._fetch_card(timeout=timeout_seconds)
+        except ValidationFailed as exc:
+            return HealthReport(ok=False, latency_ms=_elapsed_ms(started),
+                                detail=f"{exc.code}: {exc.message}", checked_at=_stamp())
+        except Exception as exc:  # noqa: BLE001 — 健康检查只报告，不抛
+            code = self._error_code(exc)
+            return HealthReport(ok=False, latency_ms=_elapsed_ms(started),
+                                detail=f"{code}: {exc}", checked_at=_stamp(),
+                                endpoint_ref=_endpoint_ref(target_or_blank(self)))
+
+        # 卡片是远程不可信输入：它声明的 JSON-RPC 端点若换主机就拒绝。
+        card_host = self._card_endpoint_host(card)
+        base_host = (urlparse(target).hostname or "").lower()
+        if card_host and base_host and card_host != base_host:
+            return HealthReport(
+                ok=False, latency_ms=_elapsed_ms(started),
+                detail=(f"hub_a2a_endpoint_mismatch: Agent Card 声明的 JSON-RPC 端点"
+                        f"主机是 {card_host}，与登记地址 {base_host} 不一致；"
+                        f"拒绝把任务发往卡片指定的主机"),
+                checked_at=_stamp(), endpoint_ref=_endpoint_ref(target))
+
+        if not self._probe_enabled():
+            ok = True
+            detail = (f"A2A Agent 可达：Agent Card 声明 "
+                      f"{len(self._skills(card))} 项技能"
+                      "（已按配置关闭 message/send 实测，本次未验证派发能力）")
+            caps: list[Capability] = self.capabilities()
+        else:
+            ok, detail = self._probe_message_send(client, target, timeout=timeout_seconds)
+            if not ok:
+                return HealthReport(ok=False, latency_ms=_elapsed_ms(started),
+                                    detail=detail, checked_at=_stamp(),
+                                    endpoint_ref=_endpoint_ref(target))
+            skills = self._skills(card)
+            detail = (f"{detail}；Agent Card 声明 {len(skills)} 项技能"
+                      f"（协议 {card.get('protocolVersion')}）")
+            caps = self.capabilities()
+        return HealthReport(
+            ok=ok, latency_ms=_elapsed_ms(started), detail=detail,
+            checked_at=_stamp(), endpoint_ref=_endpoint_ref(target), capabilities=caps,
+        )
+
+    @staticmethod
+    def _error_code(exc: Exception) -> str:
+        """把 A2A 客户端异常映射成**可区分**的 Hub 错误码。
+
+        信任 / 超时 / 未配置必须能分开——它们在 UI 上是完全不同的处置动作
+        （换地址 / 加凭证 / 填地址），合成一句"调用失败"等于把排障成本推给用户。
+        """
+        from ...adapters.a2a import A2ARpcError, A2ATimeoutError, UntrustedEndpointError
+
+        if isinstance(exc, UntrustedEndpointError):
+            return "hub_a2a_untrusted_endpoint"
+        if isinstance(exc, A2ATimeoutError):
+            return "hub_a2a_timeout"
+        if isinstance(exc, A2ARpcError):
+            return f"hub_a2a_rpc_error({exc.code})"
+        if isinstance(exc, ValidationFailed):
+            return exc.code
+        return "hub_a2a_client_error"
+
+    def _skills(self, card: dict[str, Any]) -> list[dict[str, Any]]:
+        raw = card.get("skills")
+        return [s for s in raw if isinstance(s, dict)] if isinstance(raw, list) else []
+
+    def capabilities(self) -> list[Capability]:
+        """能力来自**已取到的真实卡片**；没取到就只给用户显式声明的，不编。
+
+        网络调用不在这里发生——``health()`` 取到卡片后由 ``HealthReport`` 带回，
+        路由试算等只读路径因此不会因为列能力而触发对外请求。
+        """
+        discovered: list[Capability] = []
+        if self._card is not None:
+            discovered = [
+                Capability(
+                    name=f"a2a.skill:{str(s.get('id') or s.get('name') or '').strip()}",
+                    tags=("a2a", "agent") + tuple(
+                        str(t) for t in (s.get("tags") or []) if str(t).strip()
+                    ),
+                    description=str(s.get("description") or ""),
+                )
+                for s in self._skills(self._card)
+                if str(s.get("id") or s.get("name") or "").strip()
+            ]
+        base = [Capability(
+            name="a2a.send", tags=("a2a", "agent", "task"),
+            description="把一条消息派发给外部 A2A Agent（message/send）",
+            aliases=("派发任务", "交给外部 Agent", "外部智能体"),
+        )]
+        declared = [Capability.from_public(c) for c in (self.config.get("capabilities") or [])]
+        return _merge_capabilities(base + discovered, declared)
+
+    def invoke(self, call: InvokeCall) -> InvokeResult:
+        from ...adapters.a2a import A2AClientError, A2ARpcError, A2ATimeoutError, UntrustedEndpointError
+
+        started = time.perf_counter()
+        action = (call.action or "invoke").strip().lower()
+        method = self._ACTIONS.get(action)
+        if method is None:
+            return InvokeResult(
+                ok=False, latency_ms=_elapsed_ms(started),
+                error=(f"hub_unsupported_action: a2a_agent 适配器不支持 "
+                       f"action='{action}'（支持 invoke/send、task/get_task、cancel）"),
+            )
+        try:
+            client, ep = self._client(timeout=call.timeout_seconds)
+        except ValidationFailed as exc:
+            return InvokeResult(ok=False, error=f"{exc.code}: {exc.message}",
+                                latency_ms=_elapsed_ms(started))
+        target = ep.base_url
+        timeout = call.timeout_seconds or 15.0
+        try:
+            if method == "message/send":
+                message = self._outgoing_message(call.params)
+                if message is None:
+                    raise ValidationFailed(
+                        "hub_a2a_missing_prompt",
+                        "派发需要文本内容：params 传 prompt / text / goal，"
+                        "或直接传完整 message",
+                    )
+                result = client.send_message(
+                    target, message,
+                    task_id=str(call.params.get("task_id") or "") or None,
+                    timeout=timeout,
+                )
+            else:
+                task_id = str(call.params.get("task_id") or call.params.get("id") or "").strip()
+                if not task_id:
+                    raise ValidationFailed(
+                        "hub_a2a_task_id_required",
+                        f"{method} 需要 task_id 参数（先派发一次拿 Task id）",
+                    )
+                result = (client.get_task(target, task_id, timeout=timeout)
+                          if method == "tasks/get"
+                          else client.cancel_task(target, task_id, timeout=timeout))
+        except UntrustedEndpointError as exc:
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"hub_a2a_untrusted_endpoint: {exc}")
+        except A2ATimeoutError as exc:
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"hub_a2a_timeout: {exc}")
+        except A2ARpcError as exc:
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"hub_a2a_rpc_error: [{exc.code}] {exc.message}",
+                                meta={"rpc_code": exc.code, "method": method})
+        except A2AClientError as exc:
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"hub_a2a_client_error: {exc}",
+                                meta={"method": method})
+        except ValidationFailed as exc:
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"{exc.code}: {exc.message}")
+        except Exception as exc:  # noqa: BLE001 — 不把栈泄给调用方
+            return InvokeResult(ok=False, latency_ms=_elapsed_ms(started),
+                                error=f"hub_a2a_client_error: {type(exc).__name__}: {exc}")
+        task_id = str(result.get("id") or "") if isinstance(result, dict) else ""
+        return InvokeResult(
+            ok=True, output=result, latency_ms=_elapsed_ms(started),
+            meta={"method": method, "target": target, "task_id": task_id},
+        )
+
+    @staticmethod
+    def _outgoing_message(params: dict[str, Any]) -> dict[str, Any] | None:
+        """从 invoke 参数取待发消息。**不接受空文本**——空消息发出去没有意义，
+        会被对端当成一次空派发（那正是探活刻意造的东西，不能混进真实调用）。"""
+        raw = params.get("message")
+        if isinstance(raw, dict) and raw:
+            return raw
+        text = str(params.get("prompt") or params.get("text")
+                   or params.get("goal") or "").strip()
+        return _a2a_message(text) if text else None
+
+    def close(self) -> None:
+        client = self._http_client
+        if client is not None and hasattr(client, "close"):
+            try:
+                client.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def target_or_blank(adapter: "A2AAgentAdapter") -> str:
+    """给 health 的异常分支一个不抛异常的 endpoint_ref（探活本身要只报告、不抛）。"""
+    try:
+        return resolve_a2a_base_url(adapter.config)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def build_adapter(    kind: str,
     config: dict[str, Any],
     *,
@@ -1531,6 +1923,8 @@ def build_adapter(    kind: str,
         return KnowledgeSourceAdapter(cfg)
     if kind == KIND_MARKET_SOURCE:
         return MarketSourceAdapter(cfg, credentials=credentials, transport=transport)
+    if kind == KIND_A2A_AGENT:
+        return A2AAgentAdapter(cfg, credentials=credentials, transport=transport)
     raise _VF("hub_unknown_kind", f"未知适配器类型 '{kind}'；支持："
                                   "openai_chat / anthropic / mcp_server / http_webhook / "
-                                  "knowledge_source / tool_plugin / market_source")
+                                  "knowledge_source / tool_plugin / market_source / a2a_agent")

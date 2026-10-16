@@ -336,3 +336,120 @@ def test_filter_by_kind(owner):
     only = c.get("/api/hub/connections", params={"kind": "openai_chat"}).json()
     assert only["count"] == 1
     assert only["connections"][0]["kind"] == "openai_chat"
+
+
+# --------------------------------------------------------------------------- #
+# G7 出站配置面：a2a_agent 走真实 HTTP 面（登记 → 探活 → 派发）
+# --------------------------------------------------------------------------- #
+
+def _a2a_payload(**over):
+    payload = {
+        "name": "远程规划 Agent",
+        "kind": "a2a_agent",
+        "icon": "\U0001f91d",
+        "description": "外部 A2A Agent",
+        "config": {"base_url": "https://agent.example.com"},
+        "credentials": {},
+        "secret_fields": [],
+        "capabilities": [],
+    }
+    payload.update(over)
+    return payload
+
+
+def test_a2a_agent_registers_through_api(owner, session_maker):
+    c, csrf = owner
+    r = c.post("/api/hub/connections", json=_a2a_payload(), headers=csrf)
+    assert r.status_code == 200, r.text
+    conn = r.json()["connection"]
+    assert conn["kind"] == "a2a_agent"
+    assert conn["group"] == "tool"
+    # 能按 kind 读回（不是只在响应里好看）
+    listed = c.get("/api/hub/connections", params={"kind": "a2a_agent"}).json()
+    assert listed["count"] == 1
+    # 而且真的落库了：直接查 ORM 行，DB CHECK 放行 a2a_agent
+    with session_maker() as s:
+        row = s.get(HubConnection, conn["id"])
+        assert row is not None and row.kind == "a2a_agent"
+
+
+def test_a2a_agent_without_base_url_is_rejected(owner):
+    c, csrf = owner
+    r = c.post("/api/hub/connections",
+               json=_a2a_payload(config={}), headers=csrf)
+    assert r.status_code == VALIDATION_STATUS, r.text
+    assert r.json()["error"]["code"] == "hub_a2a_endpoint_required"
+
+
+def test_a2a_agent_private_endpoint_is_ssrf_blocked_at_registration(owner):
+    c, csrf = owner
+    r = c.post("/api/hub/connections",
+               json=_a2a_payload(config={"base_url": "http://127.0.0.1:8080"}),
+               headers=csrf)
+    assert r.status_code == VALIDATION_STATUS, r.text
+    assert r.json()["error"]["code"] == "hub_ssrf_blocked"
+
+
+def test_a2a_agent_probe_failure_is_reported_not_faked_green(owner):
+    """探活真打网络：``.invalid`` 是 RFC 2606 保留 TLD，永不解析，因此这是
+    「真的发了一次请求并真的失败」——既不碰外网服务，也不靠 mock 冒充通过。"""
+    c, csrf = owner
+    created = c.post("/api/hub/connections",
+                     json=_a2a_payload(config={"base_url": "https://a2a-probe.invalid"}),
+                     headers=csrf).json()["connection"]
+    r = c.post(f"/api/hub/connections/{created['id']}/health-check",
+               headers=csrf, params={"timeout_seconds": 2})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["report"]["ok"] is False
+    assert body["report"]["detail"], "失败必须给出真实原因，不能是空串"
+    assert body["connection"]["health"]["ok"] is False
+    assert body["connection"]["state"] == "error"
+
+
+def test_a2a_agent_credentials_never_leak(owner):
+    c, csrf = owner
+    created = c.post("/api/hub/connections", json=_a2a_payload(
+        credentials={"api_token": "a2a-super-secret-value"},
+        secret_fields=["api_token"],
+    ), headers=csrf).json()["connection"]
+    assert "a2a-super-secret-value" not in json.dumps(created, ensure_ascii=False)
+    again = c.get(f"/api/hub/connections/{created['id']}").json()["connection"]
+    assert "a2a-super-secret-value" not in json.dumps(again, ensure_ascii=False)
+    # 掩码形态（public_connection 的既有约定）
+    assert "****" in again["config"].get("api_token", "")
+
+
+def test_a2a_agent_dispatch_without_text_is_refused_honestly(owner):
+    """空派发必须被明确拒绝（200 + ok:false），不能悄悄"成功"。"""
+    c, csrf = owner
+    created = c.post("/api/hub/connections", json=_a2a_payload(), headers=csrf).json()["connection"]
+    r = c.post(f"/api/hub/connections/{created['id']}/invoke",
+               headers=csrf, json={"action": "send", "params": {}})
+    assert r.status_code == 200, r.text
+    result = r.json()["result"]
+    assert result["ok"] is False
+    assert "hub_a2a_missing_prompt" in result["error"]
+
+
+def test_a2a_agent_cross_owner_is_forbidden(client, app):
+    """把连接 owner 换成别人后，原 owner 探活/派发都 403 —— 与其它 kind 同一条边界。"""
+    csrf = login_owner(client)
+    created = client.post("/api/hub/connections", json=_a2a_payload(),
+                          headers=csrf).json()["connection"]
+    conn_id = created["id"]
+    maker = app.state.session_maker
+    with maker() as s:
+        row = s.get(HubConnection, conn_id)
+        original = row.owner_id
+        row.owner_id = "someone-else"
+        s.commit()
+    try:
+        r = client.post(f"/api/hub/connections/{conn_id}/health-check",
+                        headers=csrf, params={"timeout_seconds": 2})
+        assert r.status_code == 403, r.text
+        assert r.json()["error"]["code"] == "hub_connection_forbidden"
+        assert "远程规划 Agent" not in r.text  # 不泄露对方任何字段
+    finally:
+        with maker() as s:
+            s.get(HubConnection, conn_id).owner_id = original

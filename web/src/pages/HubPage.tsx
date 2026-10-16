@@ -24,6 +24,13 @@ import { ConnectionForm, type ConnectionFormSeed, type ConnectionFormSubmit } fr
 import { PresetGallery } from '../components/hub/PresetGallery';
 import { ManifestImport } from '../components/hub/ManifestImport';
 import { CapabilityTable, RouteLab } from '../components/hub/CapabilityPanel';
+import {
+  A2AAgentPanel,
+  a2aDispatchError,
+  describeA2ADispatch,
+  dispatchA2A,
+  probeA2A,
+} from '../components/hub/A2AAgentPanel';
 
 type Filter = 'all' | 'ai' | 'tool' | 'mcp' | 'data' | 'other';
 
@@ -190,7 +197,10 @@ export function HubPage() {
       setNotice('');
       setInvokeResult(null);
       try {
-        const res = await hubApi.invoke(conn.id, { action: 'invoke', params: {} });
+        // a2a_agent 的 invoke 需要文本：不给就是一次空派发，后端会诚实拒掉
+        // （hub_a2a_missing_prompt）。这里给一条真实探针，让「调用测试」真的测到东西。
+        const params = conn.kind === 'a2a_agent' ? { prompt: 'ping（来自中台的连通性测试）' } : {};
+        const res = await hubApi.invoke(conn.id, { action: 'invoke', params });
         setInvokeResult({ conn: conn.name, result: res.result });
         setNotice(
           res.result.ok
@@ -199,6 +209,39 @@ export function HubPage() {
         );
       } catch (e) {
         setNotice(`调用请求失败：${errorMessage(e)}`);
+      }
+    });
+  };
+
+  // A2A 探活：比通用探活多一次 JSON-RPC 往返，给更宽的预算（后端仍是真调用）。
+  const onA2AProbe = (conn: HubConnection) => {
+    void withBusy(async () => {
+      setNotice('');
+      try {
+        const res = await probeA2A(conn.id);
+        setNotice(describeA2ADispatch(conn, res.report));
+      } catch (e) {
+        setNotice(`A2A 探活请求失败：${errorMessage(e)}`);
+      }
+    });
+  };
+
+  const onA2ADispatch = (conn: HubConnection, text: string) => {
+    void withBusy(async () => {
+      setNotice('');
+      setInvokeResult(null);
+      try {
+        const res = await dispatchA2A(conn.id, text);
+        setInvokeResult({ conn: conn.name, result: res.result });
+        setNotice(
+          res.result.ok
+            ? `「${conn.name}」已派发（${res.result.latency_ms}ms）：${JSON.stringify(
+                (res.result.meta as { task_id?: string } | undefined)?.task_id ?? '对端未给 Task id',
+              )}`
+            : `「${conn.name}」派发未成功：${res.result.error || '后端未给出原因'}`,
+        );
+      } catch (e) {
+        setNotice(a2aDispatchError(e));
       }
     });
   };
@@ -277,7 +320,7 @@ export function HubPage() {
       <div className="page-head">
         <h2>超级中台</h2>
         <span className="muted">
-          统一适配层 · 六类对象 · 凭证加密存储 · 能力路由（确定性规则，非模型决策）
+          统一适配层 · 八类对象 · 凭证加密存储 · 能力路由（确定性规则，非模型决策）
         </span>
       </div>
 
@@ -392,6 +435,13 @@ export function HubPage() {
           <pre>{JSON.stringify(invokeResult.result.output, null, 2)}</pre>
         </section>
       )}
+
+      <A2AAgentPanel
+        connections={connections.filter((c) => c.kind === 'a2a_agent')}
+        busy={busy}
+        onProbe={onA2AProbe}
+        onDispatch={onA2ADispatch}
+      />
 
       <PresetGallery presets={presets} busy={busy} onUse={onUsePreset} />
 
