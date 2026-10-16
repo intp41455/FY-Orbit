@@ -11,6 +11,7 @@ import json
 
 import pytest
 
+from find_yourself.services.errors import ValidationFailed
 from find_yourself.services.tool_gate import (
     ASK_ENV,
     DENY_ENV,
@@ -20,7 +21,6 @@ from find_yourself.services.tool_gate import (
     install_into,
 )
 from find_yourself.services.tool_registry import ToolRegistryService
-from find_yourself.services.errors import ValidationFailed
 
 
 @pytest.fixture()
