@@ -154,6 +154,9 @@ class ToolRegistryService:
         self._tools: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
         self._mcp_clients: dict[str, Any] = {}
+        # T-GATE: admission gate, None by default (no policy => every call
+        # proceeds exactly as before; hosts wire one via services.tool_gate).
+        self.tool_gate: Any | None = None
         self._load()
 
     # -- persistence ----------------------------------------------------------
@@ -303,8 +306,36 @@ class ToolRegistryService:
         return log[-max(1, min(limit, _LOG_CAP)):]
 
     def invoke(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        """Validate arguments against the tool schema, then really execute it."""
+        """Validate arguments against the tool schema, then really execute it.
+
+        T-GATE: when a gate is installed, it runs **first** — a ``deny``
+        decision raises ``ValidationFailed("tool_gate_denied", ...)`` before
+        any schema check or execution, and the decision is recorded in the
+        call log either way.
+        """
         meta = self.get_tool(name)
+
+        gate_record: dict[str, Any] | None = None
+        if self.tool_gate is not None:
+            decision = self.tool_gate.check(name, arguments)
+            gate_record = {
+                "action": decision.action,
+                "reason": decision.reason,
+                "matched_rule": decision.matched_rule,
+                "source": decision.source,
+            }
+            if decision.action == "deny":
+                with self._lock:
+                    self._append_log({
+                        "call_id": f"call-{uuid.uuid4().hex[:12]}",
+                        "tool": name,
+                        "arguments": arguments,
+                        "executed": False,
+                        "gate": gate_record,
+                        "executed_at": _now(),
+                    })
+                raise ValidationFailed("tool_gate_denied", decision.reason)
+
         if not isinstance(arguments, dict):
             raise ValidationFailed("schema_validation", "Arguments must be an object")
 
@@ -355,6 +386,8 @@ class ToolRegistryService:
             "executed": True,
             "executed_at": started,
         }
+        if gate_record is not None:
+            receipt["gate"] = gate_record
         with self._lock:
             self._append_log(receipt)
         return receipt
