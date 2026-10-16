@@ -1,4 +1,7 @@
+import os
+import secrets
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from pydantic import model_validator
@@ -103,6 +106,7 @@ class Settings(BaseSettings):
             raise ValueError("Invalid FY_ENVIRONMENT")
         if len(self.session_secret) < 32:
             raise ValueError("FY_SESSION_SECRET must contain at least 32 characters")
+
         if self.environment == "production":
             if not all([self.oidc_issuer, self.oidc_client_id, self.oidc_owner_sub]):
                 raise ValueError("Production requires OIDC and an exact owner subject")
@@ -117,7 +121,40 @@ class Settings(BaseSettings):
 
 @lru_cache
 def _get_settings() -> Settings:
+    # 裸 `uvicorn find_yourself...` 启动（不经 sidecar）时这里补上密钥自举，
+    # 否则 Settings 校验会因缺 FY_SESSION_SECRET 硬失败。生产环境不走这条路径。
+    try:
+        bootstrap_local_secrets(environment=os.environ.get("FY_ENVIRONMENT", "local"))
+    except Exception:
+        pass  # 自举失败不静默 —— Settings 校验会给出可读错误
     return Settings()
+
+
+def bootstrap_local_secrets(*, environment: str = "local") -> bool:
+    """本地/测试环境缺密钥时写入 .env。**生产环境绝不自动生成密钥**。
+
+    写入位置按优先级：``%APPDATA%\\FindYourself\\.env`` → 当前工作目录 ``.env``。
+    已存在的文件永不覆盖。返回是否真的创建了新文件。
+    """
+    if environment == "production":
+        return False
+    if os.environ.get("FY_SESSION_SECRET") and os.environ.get("FY_LOCAL_TOKEN"):
+        return False
+    root = Path(os.environ.get("APPDATA") or "")
+    env_path = (root / "FindYourself" / ".env") if root else Path(".env")
+    if env_path.exists():
+        return False
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_urlsafe(48)
+    token = secrets.token_urlsafe(32)
+    env_path.write_text(
+        f"FY_SESSION_SECRET={secret}\nFY_LOCAL_TOKEN={token}\n",
+        encoding="utf-8",
+    )
+    os.environ["FY_SESSION_SECRET"] = secret
+    os.environ["FY_LOCAL_TOKEN"] = token
+    return True
+    return False
 
 
 def settings(refresh: bool = False) -> Settings:

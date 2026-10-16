@@ -203,6 +203,8 @@ python run.py --port 8000
 
 ---
 
+## 🚀 第一次用？先看 [快速开始（下载即用）](docs/quickstart.md)
+
 ## 📖 核心服务端点与接口文档
 
 服务启动后，可在浏览器直接访问以下核心端点：
@@ -211,7 +213,7 @@ python run.py --port 8000
 | :--- | :--- |
 | `http://127.0.0.1:8000/` | Web 主工作台、画布工作流与系统首页 |
 | `http://127.0.0.1:8000/landing.html` | 官方深色质感宣传落地页 |
-| `http://127.0.0.1:8000/docs` | OpenAPI / Swagger 交互式接口文档（**452 个接口路径 / 513 个接口操作**，`_count_api.py` 经 `app.openapi()` 本地实测） |
+| `http://127.0.0.1:8000/docs` | OpenAPI / Swagger 交互式接口文档（**458 个接口路径 / 521 个接口操作**，`_count_api.py` 经 `app.openapi()` 本地实测） |
 | `http://127.0.0.1:8000/redoc` | ReDoc 规格说明文档 |
 
 ---
