@@ -29,6 +29,7 @@ from typing import Any
 from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .errors import DomainError, ValidationFailed
+from .model_credentials import resolve_model_settings
 
 # --- Rate limiting (process-local; multi-process deployments need a shared
 # store — recorded as a known limitation, see docs/接线报告). ------------------
@@ -138,11 +139,13 @@ class ButlerService:
                 "Set FY_MODEL_API_KEY and FY_MODEL_BASE_URL (OpenAI-compatible endpoint, "
                 "e.g. DeepSeek or a local Ollama) to enable real lines."
             )
-        self._model_gateway = ModelGateway(self._settings, self._budget)
+        # BYOK 叠加（D06）：与 companion 同款——设置页存的模型凭证要叠加上
+        # 才有网关端点 + 正确的模型名，漏一处就是「已配置却不可用」。
+        self._model_gateway = ModelGateway(resolve_model_settings(self._settings), self._budget)
         return self._model_gateway
 
     def _model_name(self) -> str:
-        return getattr(self._settings, "model_name", None) or "gpt-4o-mini"
+        return getattr(resolve_model_settings(self._settings), "model_name", None) or "gpt-4o-mini"
 
     def model_configured(self) -> bool:
         """True only when a real provider is reachable (drives GET /status)."""

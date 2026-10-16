@@ -32,9 +32,9 @@ from ..db.types import utcnow
 from ..runtime.gateway import ModelGateway, ModelNotConfigured
 from .actor import Actor
 from .audit import AuditService
+from .compaction import compact_history
 from .errors import DomainError
 from .model_credentials import resolve_model_settings
-from .compaction import compact_history
 from .proposal import ProposalService
 
 logger = logging.getLogger(__name__)
@@ -93,7 +93,10 @@ class CompanionService:
         return self._model_gateway
 
     def _model_name(self) -> str:
-        return getattr(self._settings, "model_name", None) or "gpt-4o-mini"
+        # BYOK 叠加（D06）：凭证存的是 base_url+key+model，模型名也必须从
+        # 叠加后的 settings 读——否则网关指向 agnes 端点、请求却打
+        # gpt-4o-mini，上游必然 model_not_found（用户实测踩坑）。
+        return getattr(resolve_model_settings(self._settings), "model_name", None) or "gpt-4o-mini"
 
     def _conversation_history(self, conversation: Conversation, limit: int = 12) -> list[Message]:
         rows = self.s.execute(

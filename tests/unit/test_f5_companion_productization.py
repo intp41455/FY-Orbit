@@ -323,3 +323,37 @@ def test_skill_evaluation_promotion_and_rollback_lifecycle(session, owner):
     # Disabled skill cannot be invoked; active rolled back skill can be invoked
     assert skills.can_invoke(s2.id) is False
     assert skills.can_invoke(s1.id) is True
+
+
+# --- D06 BYOK 叠加回归：模型名必须走叠加后的 settings --------------------------
+
+def test_companion_model_name_reads_byok_overlay(monkeypatch):
+    """Regression: BYOK saved model must reach the request, not gpt-4o-mini.
+
+    未修复时 _model_name() 读原始 env settings → 网关指向用户端点却请求
+    gpt-4o-mini → 上游 model_not_found（「已配置却不可用」）。
+    """
+    from find_yourself.services.companion import CompanionService
+    from find_yourself.services.model_credentials import MODEL_CREDENTIALS_SCOPE
+    from find_yourself.services.knowledge.sources.store import secret_store
+    from find_yourself.config import Settings
+
+    overlay = {"provider": "openai_compat", "base_url": "https://example.invalid/v1",
+               "api_key": "k" * 40, "model": "my-model-9"}
+    # 纯内存隔离：secret_store 是磁盘持久化单例，测试绝不落盘污染他人。
+    monkeypatch.setattr(secret_store, "get", lambda scope: dict(overlay) if scope == MODEL_CREDENTIALS_SCOPE else {})
+
+    svc = CompanionService.__new__(CompanionService)
+    svc._settings = Settings(environment="local", session_secret="s" * 40)
+    assert svc._model_name() == "my-model-9"
+
+
+def test_companion_model_name_falls_back_without_byok(monkeypatch):
+    from find_yourself.services.companion import CompanionService
+    from find_yourself.services.knowledge.sources.store import secret_store
+    from find_yourself.config import Settings
+
+    monkeypatch.setattr(secret_store, "get", lambda scope: {})
+    svc = CompanionService.__new__(CompanionService)
+    svc._settings = Settings(environment="local", session_secret="s" * 40)
+    assert svc._model_name() == "gpt-4o-mini"
