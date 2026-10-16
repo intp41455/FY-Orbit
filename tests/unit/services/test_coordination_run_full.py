@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import threading
+
 import pytest
 
 from find_yourself.services.coordination import CoordinationValidationError, validate_spec
@@ -31,14 +33,24 @@ def _spec(**over) -> dict:
 
 def test_map_distributes_items_round_robin_and_gathers_in_order() -> None:
     seen: list[tuple[str, int]] = []
+    lock = threading.Lock()
 
     def handler(member: str, item):
-        seen.append((member, item))
+        with lock:
+            seen.append((member, item))
         return f"{member}:{item}"
 
     out = run_spec(_spec(), handler, initial=[1, 2, 3, 4])
-    # 轮转：boss→1, a→2, b→3, boss→4；汇聚按输入序。
-    assert seen == [("boss", 1), ("a", 2), ("b", 3), ("boss", 4)]
+    # 轮转分配是确定的：boss→1, a→2, b→3, boss→4。
+    # 但 map 是真并发（线程池），handler 的**开始/完成顺序天然不确定**，
+    # 所以这里只能断言「每一对恰好发生一次」，不能断言 observed 序列的顺序 ——
+    # 否则这条测试就是靠机器负载碰运气变绿的假门禁（CI 上翻过一次车）。
+    assert sorted(seen) == sorted([("boss", 1), ("a", 2), ("b", 3), ("boss", 4)])
+    assert len(seen) == 4, "每个 item 必须恰好被派发一次，不许重复也不许丢"
+    # 汇聚按输入序是契约的一部分，这部分是真保证。
+    assert [(r["member"], r["item"]) for r in out["results"]] == [
+        ("boss", 1), ("a", 2), ("b", 3), ("boss", 4),
+    ]
     assert [r["output"] for r in out["results"]] == ["boss:1", "a:2", "b:3", "boss:4"]
     assert out["final"] == ["boss:1", "a:2", "b:3", "boss:4"]
 

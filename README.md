@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.3.1/FY-Orbit-Setup-v1.3.1.exe">
-    <img src="https://img.shields.io/badge/Release-Windows%20v1.3.1-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
+  <a href="https://github.com/intp41455/FY-Orbit/releases/download/v1.3.2/FY-Orbit-Setup-v1.3.2.exe">
+    <img src="https://img.shields.io/badge/Release-Windows%20v1.3.2-0078D4?logo=windows&logoColor=white" alt="Download Windows Release" />
   </a>
   <img src="https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue?logo=python&logoColor=white" alt="Python Version" />
   <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
@@ -172,14 +172,14 @@ For commercial licensing, contact: `intp41455@gmail.com`
 ### 方式一：Windows 安装器（推荐）
 
 1. 从 GitHub Release 下载安装器：
-   👉 **[下载 FY-Orbit-Setup-v1.3.1.exe](https://github.com/intp41455/FY-Orbit/releases/download/v1.3.1/FY-Orbit-Setup-v1.3.1.exe)**
+   👉 **[下载 FY-Orbit-Setup-v1.3.2.exe](https://github.com/intp41455/FY-Orbit/releases/download/v1.3.2/FY-Orbit-Setup-v1.3.2.exe)**
 2. 双击安装（未做代码签名，SmartScreen 可能提示「未知发布者」——请先在发布页核对 `SHA256` 校验值再放行）；
 3. 安装后从开始菜单 / 桌面快捷方式启动。首次启动自动生成 `FY_SESSION_SECRET` 与 `FY_LOCAL_TOKEN` 并建库，**不需要手改任何配置文件，不需要预装 Python / Node.js**。
 
 ### 方式二：绿色免安装独立发行包
 
 1. 下载官方 Windows 绿色独立发行包：
-   👉 **[下载 FY-Orbit-Windows-v1.3.1.zip](https://github.com/intp41455/FY-Orbit/releases/download/v1.3.1/FY-Orbit-Windows-v1.3.1.zip)**（同页附 `.sha256` 校验值）
+   👉 **[下载 FY-Orbit-Windows-v1.3.2.zip](https://github.com/intp41455/FY-Orbit/releases/download/v1.3.2/FY-Orbit-Windows-v1.3.2.zip)**（同页附 `.sha256` 校验值）
 2. 解压到任意文件夹；
 3. 双击运行 `FY-Orbit.bat`（或 `Install.bat`）：启动器会先校验发行包完整性（SHA-256），通过后拉起本地后端服务，并在系统默认浏览器 / Edge App 独立窗口（无地址栏、无标签页）中打开工作台——零配置开箱即跑。
 
