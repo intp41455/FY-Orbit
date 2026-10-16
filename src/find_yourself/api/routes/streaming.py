@@ -29,6 +29,10 @@ _SSE_HEADERS = {
 
 
 class StreamChatRequest(BaseModel):
+    #: 缺省 ``"default"`` 是「用宿主/BYOK 解析出的那一个」的占位，不是模型名。
+    #: 网关的 ``resolve_pricing`` 只认真实模型名，把字面量送进去必然
+    #: ``price_unknown``（FROZEN_CONTRACT §7 拒绝按 0 计费）；路由层统一
+    #: 经 :func:`_resolve_model_name` 解成真实名后再下发（见该函数注释）。
     model: str = "default"
     prompt: str
     task_id: str | None = None
@@ -43,6 +47,70 @@ class StreamChatRequest(BaseModel):
     #: 提问 ↔ trace 双向索引：同一次提问的所有 SSE 帧与审计帧共用该 id。
     #: 缺省时服务端生成，响应里的 ``message_id`` 即为权威值。
     message_id: str | None = None
+
+
+#: 占位模型名：解析失败时原样带走，让上层的 MODEL_NOT_CONFIGURED 如实出现，
+#: 而不是把占位符当模型名去查价。
+_PLACEHOLDER_MODELS = frozenset({"", "default", "auto"})
+
+
+def _resolve_model_name(requested: str, settings: Settings) -> str:
+    """把请求里的占位模型名解成**真实**模型名。
+
+    链路：显式请求名原样保留 → 占位/缺省时取 BYOK 叠加后的
+    ``resolve_model_settings(settings).model_name`` → 仍解不出返回原值。
+
+    为什么必须有这一步：``ModelGateway.resolve_pricing`` 的查找顺序是
+    「静态目录 → FY_MODEL_PRICE_OVERRIDES → 本地 provider 显式零价」，
+    查不到就抛 ``PriceUnknown``（FROZEN_CONTRACT §7 不许把未知远程价当 0）。
+    前端 Chat 页不带 ``model`` 时，字面 ``"default"`` 三个源都命中不了，
+    于是每次提问必然 ``price_unknown`` — 演示现场直接翻车。
+    """
+    name = (requested or "").strip()
+    if name and name.lower() not in _PLACEHOLDER_MODELS:
+        return name
+    try:
+        from ...services.model_credentials import resolve_model_settings
+
+        resolved = getattr(resolve_model_settings(settings), "model_name", None)
+        if resolved and str(resolved).strip():
+            return str(resolved).strip()
+    except Exception:  # noqa: BLE001 — 解析失败不编造，原样返回让上层如实报错
+        pass
+    return name
+
+
+def _ensure_chat_task(session, actor: Actor, task_id: str) -> None:
+    """幂等自建 Chat 调试的预算归集任务行（P0-7 同范式，workflow_gen 对照）。
+
+    ``ModelGateway.complete`` 调 ``budget.reserve(task_id=...)``，而
+    ``BudgetService.reserve`` 只认已存在的 Task 行（按主键取不到就抛
+    ``NotFound("task_not_found")``）。Chat 页历史上用 ``chat-debug`` /
+    ``adhoc`` 这类合成 id，从来没有对应 Task 行，于是预算预留必然失败 →
+    整条 SSE 流以 ``task_not_found`` 收场。
+
+    这里同 owner 复用同一行（id 即 task_id），goal 写明用途，
+    **绝不伪装成用户业务任务**；调用方传的 task_id 有真实业务任务时
+    命中已有行、原样返回。
+    """
+    if session is None or not task_id:
+        return
+    from datetime import datetime, timedelta, timezone
+
+    from ...db.models import Task
+
+    if session.get(Task, task_id) is not None:
+        return
+    session.add(Task(
+        id=task_id,
+        owner_id=actor.owner_id or "anonymous",
+        goal="Chat 调试的模型费用归集（系统自建，非用户业务任务）",
+        domain="personal",
+        status="queued",
+        deadline=datetime.now(timezone.utc) + timedelta(days=365),
+        idempotency_key=f"chat-task-{task_id}",
+    ))
+    session.flush()
 
 
 def _stamped(gen: AsyncIterator[str], message_id: str,
@@ -67,13 +135,18 @@ async def stream_chat(body: StreamChatRequest,
     # One id per question, shared by every SSE frame and the audit frame below.
     # A client-supplied id is honoured so a retry/reconnect keeps the mapping.
     message_id = body.message_id or uuid.uuid4().hex
+    # 占位模型名 → 真实模型名；chat-debug/adhoc 的归集 Task 行先幂等建好。
+    # 两者都是 gateway.complete 的前置条件，缺一个整条 SSE 流就报错收场。
+    model = _resolve_model_name(body.model, settings)
+    task_id = body.task_id or "chat-debug"
+    _ensure_chat_task(svc.session, actor, task_id)
 
     def _persist(inner: AsyncIterator[str]) -> AsyncIterator[str]:
         # T6-D：每帧先写 stream_segments（seq 递增）再吐出；异常（断流/断网/
         # 限流）→ 六类分类 → 中断台账 + 自动暂存已产出片段 + 审计挂帧。
         return persist_stream(
             inner, session=svc.session, audit=svc.audit, actor=actor,
-            message_id=message_id, task_id=body.task_id or "chat-debug",
+            message_id=message_id, task_id=task_id,
         )
 
     # P1-19 orchestrated path: template render + tool manifest + tool-call
@@ -86,7 +159,7 @@ async def stream_chat(body: StreamChatRequest,
                 body.template_name,
                 body.variables,
                 version=body.template_version,
-                task_id=body.task_id,
+                task_id=task_id,
                 scope="chat-debug",
             )
             svc.session.commit()
@@ -107,8 +180,8 @@ async def stream_chat(body: StreamChatRequest,
             actor,
             prompt=system_prefix,
             user_message=body.prompt,
-            model=body.model,
-            task_id=body.task_id or "chat-debug",
+            model=model,
+            task_id=task_id,
             tools=tools,
             template_meta=template_meta,
             max_tokens=body.max_tokens,
@@ -123,8 +196,8 @@ async def stream_chat(body: StreamChatRequest,
     gen = service.stream_chat(
         actor,
         prompt=body.prompt,
-        model=body.model,
-        task_id=body.task_id or "adhoc",
+        model=model,
+        task_id=task_id,
         max_tokens=body.max_tokens,
     )
     _audit_question(svc, actor, body, message_id, mode="streaming")
