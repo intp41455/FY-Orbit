@@ -28,6 +28,7 @@ from langgraph.graph import END, START, StateGraph
 
 from ..contracts import Conflict, NotFound, ValidationFailed
 from ..identity import Actor
+from .conflict_guard import PHASE_PRE_ACTION, action_signal
 
 # ---------------------------------------------------------------------------
 # ADR-07: explicit, ORDERED route-criteria table.
@@ -336,6 +337,77 @@ class TaskGraphState(TypedDict, total=False):
     output: dict[str, Any]
     status: str
     error: str | None
+    # --- 冲突闸门（B7）：调用方声明的执行事实，必须进 TypedDict 才会到达节点 ---
+    agent: str
+    agent_role: str
+    target: str
+    action: str
+    claims: list[dict[str, Any]]
+    input_refs: list[str]
+    degradations: list[dict[str, Any]]
+
+
+#: 每个执行节点自己声明的「动作 + 角色」——C2（无归属）/ C6（越权）的机检输入。
+#: 动作与角色是节点的事实，不接受调用方伪造，因此放在这里而不是 state 里。
+NODE_ACTIONS: dict[str, tuple[str, str]] = {
+    ROUTE_SINGLE_AGENT: ("empathetic_reflection", "ListenerAgent"),
+    ROUTE_RESEARCH: ("source_research", "ResearchAgent"),
+    ROUTE_TOOL_STEP: ("data_analysis_tool", "ToolAgent"),
+    ROUTE_DELEGATE: ("expert_delegation", "SpecialistAgent"),
+}
+
+
+def _conflict_gate(
+    state: TaskGraphState, node_route: str, guard: Any | None
+) -> tuple[str, list[dict[str, Any]]]:
+    """执行动作**之前**的冲突闸门（B7）。
+
+    阻断级 → 由 :class:`ConflictGuard` 抛 ``ConflictDetected``，本函数不返回：
+    图在此终止，网关一次都不会被调用（动作与花费都不发生）。
+    可降级级 → 返回可见记录，由节点写进 ``output["degradations"]``。
+    """
+    action, role = NODE_ACTIONS.get(node_route, (node_route, ""))
+    if guard is None:
+        return role, []
+    records = guard.enforce(
+        action_signal(state, action=action, role=role),
+        phase=PHASE_PRE_ACTION,
+        task_id=str(state.get("task_id") or ""),
+        owner_id="",
+        effect="action_downgraded",
+    )
+    return role, [r.to_public() for r in records]
+
+
+def _guard_result(
+    state: TaskGraphState, guard: Any | None, role: str, text: str
+) -> tuple[str, list[dict[str, Any]]]:
+    """模型文本落地后的 C4 人设脱敏（真实改写原文，不是打标记）。"""
+    if guard is None or not text:
+        return text, []
+    sink: list[Any] = []
+    out = guard.redact_persona(sink, text, role=role)
+    return out, [r.to_public() for r in sink]
+
+
+def _stamp_degradations(
+    state: TaskGraphState, update: dict[str, Any], records: list[dict[str, Any]]
+) -> None:
+    """把降级记录**追加**进节点产出（无降级时**不**改动输出形状）。
+
+    追加而非覆盖：``degradations`` 是同一条通道（last-write-wins），任务级
+    （pre_execution）与节点级（pre/post_action）的记录必须合并，否则后写的
+    节点会把先写的任务级降级痕迹抹掉——那正是「别静默」要防的事。
+    """
+    if not records:
+        return
+    previous = list(state.get("degradations") or [])
+    merged = (previous + records)[:20]
+    update["degradations"] = merged
+    update["output"] = {
+        **update.get("output", {}),
+        "degradations": merged,
+    }
 
 
 def node_requirements(state: TaskGraphState) -> dict:
@@ -478,13 +550,16 @@ def _spend_update(state: TaskGraphState, settled: Decimal) -> dict[str, Any]:
     }
 
 
-def node_single_agent(state: TaskGraphState, *, gateway: Any = None) -> dict:
+def node_single_agent(
+    state: TaskGraphState, *, gateway: Any = None, conflict_guard: Any = None
+) -> dict:
     """Route 1: Pure empathetic listening, backed by a real model call.
 
     Does not force psychometric assessment, diagnoses, or summarize away user
     emotion. Without a serving model the node fails honestly — no canned
     reflection and no fabricated spend.
     """
+    role, gate_records = _conflict_gate(state, ROUTE_SINGLE_AGENT, conflict_guard)
     goal = state.get("goal", "")
     prompt = (
         "You are an empathetic listener. Reflect the user's feeling without "
@@ -495,10 +570,11 @@ def node_single_agent(state: TaskGraphState, *, gateway: Any = None) -> dict:
     if result is None:
         return _model_failure("listening", error or "model_not_configured")
 
+    reflection, redacted = _guard_result(state, conflict_guard, role, result.text)
     update = _spend_update(state, result.settled_amount)
     update["output"] = {
         "mode": "listening",
-        "reflection": result.text,
+        "reflection": reflection,
         "forced_assessment": False,
         "model_backed": True,
         "provider_request_id": result.provider_request_id,
@@ -507,16 +583,20 @@ def node_single_agent(state: TaskGraphState, *, gateway: Any = None) -> dict:
     update["evidence_refs"] = state.get("evidence_refs", []) + [
         f"ev:model:{result.provider_request_id}"
     ]
+    _stamp_degradations(state, update, gate_records + redacted)
     return update
 
 
-def node_research(state: TaskGraphState, *, gateway: Any = None) -> dict:
+def node_research(
+    state: TaskGraphState, *, gateway: Any = None, conflict_guard: Any = None
+) -> dict:
     """Route 2: Provenance-preserving source research, backed by a real model call.
 
     Citations come only from the *granted* source ids; with none granted the
     output is explicitly marked unverified. Findings are the model's real text,
     never a fabricated summary; without a serving model the node fails honestly.
     """
+    role, gate_records = _conflict_gate(state, ROUTE_RESEARCH, conflict_guard)
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
     citations = [f"src:{sid}" for sid in granted]
@@ -530,10 +610,11 @@ def node_research(state: TaskGraphState, *, gateway: Any = None) -> dict:
     if result is None:
         return _model_failure("research", error or "model_not_configured")
 
+    findings, redacted = _guard_result(state, conflict_guard, role, result.text)
     update = _spend_update(state, result.settled_amount)
     update["output"] = {
         "mode": "research",
-        "findings": result.text,
+        "findings": findings,
         "citations": citations,
         "verified": bool(citations),
         "model_backed": True,
@@ -541,10 +622,13 @@ def node_research(state: TaskGraphState, *, gateway: Any = None) -> dict:
         "usage": dict(result.usage),
     }
     update["evidence_refs"] = state.get("evidence_refs", []) + citations
+    _stamp_degradations(state, update, gate_records + redacted)
     return update
 
 
-def node_tool_step(state: TaskGraphState, *, gateway: Any = None) -> dict:
+def node_tool_step(
+    state: TaskGraphState, *, gateway: Any = None, conflict_guard: Any = None
+) -> dict:
     """Route 3: Guarded tool-execution slot, backed by a real model call.
 
     No tool is actually wired into this node, so the execution result is
@@ -552,6 +636,7 @@ def node_tool_step(state: TaskGraphState, *, gateway: Any = None) -> dict:
     and its real settled cost is booked. No execution receipt is ever
     fabricated; without a serving model the node fails honestly.
     """
+    role, gate_records = _conflict_gate(state, ROUTE_TOOL_STEP, conflict_guard)
     goal = state.get("goal", "")
     tool_name = "data_analysis_tool"
     prompt = (
@@ -563,29 +648,34 @@ def node_tool_step(state: TaskGraphState, *, gateway: Any = None) -> dict:
     if result is None:
         return _model_failure("tool", error or "model_not_configured")
 
+    planned, redacted = _guard_result(state, conflict_guard, role, result.text)
     update = _spend_update(state, result.settled_amount)
     update["output"] = {
         "mode": "tool",
         "tool_used": tool_name,
         "status": "not_executed",
         "result": None,
-        "planned_step": result.text,
+        "planned_step": planned,
         "detail": "Tool execution is not wired into this node; only a model-backed plan is returned.",
         "model_backed": True,
         "provider_request_id": result.provider_request_id,
         "usage": dict(result.usage),
     }
     update["evidence_refs"] = state.get("evidence_refs", [])
+    _stamp_degradations(state, update, gate_records + redacted)
     return update
 
 
-def node_delegate(state: TaskGraphState, *, gateway: Any = None) -> dict:
+def node_delegate(
+    state: TaskGraphState, *, gateway: Any = None, conflict_guard: Any = None
+) -> dict:
     """Route 4: Expert delegation with scoped context, backed by a real model call.
 
     MANDATORY RULE: the expert subagent receives only the scoped query and
     explicit citations, NOT the full raw historical transcript. The answer is the
     model's real text; without a serving model the node fails honestly.
     """
+    role, gate_records = _conflict_gate(state, ROUTE_DELEGATE, conflict_guard)
     goal = state.get("goal", "")
     granted = state.get("granted_source_ids", [])
     # Expert only receives an isolated query + citation references; raw history
@@ -604,12 +694,13 @@ def node_delegate(state: TaskGraphState, *, gateway: Any = None) -> dict:
     if result is None:
         return _model_failure("delegation", error or "model_not_configured")
 
+    answer, redacted = _guard_result(state, conflict_guard, role, result.text)
     update = _spend_update(state, result.settled_amount)
     update["output"] = {
         "mode": "delegation",
         "expert_role": "SpecialistAgent",
         "scoped_context": scoped_context,
-        "expert_answer": result.text,
+        "expert_answer": answer,
         "model_backed": True,
         "provider_request_id": result.provider_request_id,
         "usage": dict(result.usage),
@@ -617,6 +708,7 @@ def node_delegate(state: TaskGraphState, *, gateway: Any = None) -> dict:
     update["evidence_refs"] = state.get("evidence_refs", []) + [
         f"ev:model:{result.provider_request_id}"
     ]
+    _stamp_degradations(state, update, gate_records + redacted)
     return update
 
 
@@ -680,7 +772,8 @@ def node_finish(state: TaskGraphState) -> dict:
 
 
 def build_task_graph(
-    checkpointer: Any | None = None, gateway: Any | None = None
+    checkpointer: Any | None = None, gateway: Any | None = None,
+    conflict_guard: Any | None = None,
 ) -> StateGraph:
     """Builds the phase-internal LangGraph StateGraph.
 
@@ -690,6 +783,10 @@ def build_task_graph(
     rather than fabricate output or spend. It is bound into each execution node
     via :func:`functools.partial`, so the public node signature
     ``node(state) -> dict`` is unchanged for every existing caller.
+
+    ``conflict_guard`` (optional) is the B7 冲突闸门；绑定进四个执行节点，
+    因此阻断级冲突会在**网关被调用之前**拒绝动作。``None`` = 不装闸门
+    （仅供纯函数级单测直接调用节点时使用；内核一定会装）。
     """
     if gateway is None:
         gateway = _default_gateway()
@@ -697,10 +794,14 @@ def build_task_graph(
 
     graph.add_node("requirements", node_requirements)
     graph.add_node("planning", node_planning)
-    graph.add_node("single_agent", functools.partial(node_single_agent, gateway=gateway))
-    graph.add_node("research", functools.partial(node_research, gateway=gateway))
-    graph.add_node("tool_step", functools.partial(node_tool_step, gateway=gateway))
-    graph.add_node("delegate", functools.partial(node_delegate, gateway=gateway))
+    graph.add_node("single_agent", functools.partial(
+        node_single_agent, gateway=gateway, conflict_guard=conflict_guard))
+    graph.add_node("research", functools.partial(
+        node_research, gateway=gateway, conflict_guard=conflict_guard))
+    graph.add_node("tool_step", functools.partial(
+        node_tool_step, gateway=gateway, conflict_guard=conflict_guard))
+    graph.add_node("delegate", functools.partial(
+        node_delegate, gateway=gateway, conflict_guard=conflict_guard))
     graph.add_node("validate", node_validate)
     graph.add_node("finish", node_finish)
 
@@ -757,7 +858,8 @@ def _default_checkpointer() -> Any:
     return SqliteCheckpointer(path)
 
 
-def compile_task_graph(checkpointer: Any | None = None, gateway: Any | None = None):
+def compile_task_graph(checkpointer: Any | None = None, gateway: Any | None = None,
+                       conflict_guard: Any | None = None):
     cp = checkpointer if checkpointer is not None else _default_checkpointer()
-    graph = build_task_graph(gateway=gateway)
+    graph = build_task_graph(gateway=gateway, conflict_guard=conflict_guard)
     return graph.compile(checkpointer=cp)

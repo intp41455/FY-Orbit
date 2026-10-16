@@ -3,11 +3,17 @@
 A dynamic tool registry, separate from the static ``skills.harness`` gateway:
 
 * ``register``: log a tool with name / description / parameter JSON Schema /
-  execution entry. Entries are either ``builtin`` (an executor shipped with the
+  execution entry. Entries are ``builtin`` (an executor shipped with the
   registry, e.g. ``echo`` / ``add``), ``http`` (a callback URL executed by
-  POSTing the validated arguments) or ``mcp`` (a remote tool on a configured
+  POSTing the validated arguments), ``mcp`` (a remote tool on a configured
   MCP server, executed through ``adapters.mcp.McpClient.call_tool``; the live
-  client is attached with ``attach_mcp_client`` and not persisted).
+  client is attached with ``attach_mcp_client`` and not persisted) or ``cli``
+  (a **registered** local command run through
+  ``adapters.cli_runner.CliRunnerAdapter``; the live adapter is attached with
+  ``attach_cli_runner`` and not persisted). ``cli`` is a *tool runner*, not a
+  new Hub connection kind: the allow-list of runnable commands lives in the
+  adapter's registration, which is the only place that answers "who may run
+  what" — a kind enum cannot.
 * ``discover``: list every registered tool so a model or agent can find tools.
 * ``invoke``: validate arguments against the declared JSON Schema, execute the
   real entry point and return a structured receipt; every call is appended to a
@@ -155,6 +161,7 @@ class ToolRegistryService:
         self._tools: dict[str, dict[str, Any]] = {}
         self._handlers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = {}
         self._mcp_clients: dict[str, Any] = {}
+        self._cli_runners: dict[str, Any] = {}
         # T-GATE: admission gate. A stand-alone instance stays None (no policy
         # => every call proceeds exactly as before, which is what the unit
         # tests of this class rely on); the process-wide singleton below is
@@ -246,8 +253,21 @@ class ToolRegistryService:
                     "invalid_entry_mcp",
                     "mcp entry requires non-empty 'server' and 'remote_tool'",
                 )
+        elif etype == "cli":
+            # Only a *name* may cross this boundary — never an argv. Which
+            # commands exist, and what argv each one builds, is decided at
+            # registration time inside CliRunnerAdapter; the registry only
+            # routes the validated arguments to it.
+            runner = entry.get("runner")
+            if not (isinstance(runner, str) and runner.strip()):
+                raise ValidationFailed(
+                    "invalid_entry_cli",
+                    "cli entry requires a non-empty 'runner' (a registered command name)",
+                )
         else:
-            raise ValidationFailed("invalid_entry_type", "Entry type must be 'builtin', 'http' or 'mcp'")
+            raise ValidationFailed(
+                "invalid_entry_type", "Entry type must be 'builtin', 'http', 'mcp' or 'cli'"
+            )
 
         with self._lock:
             existing = self._tools.get(name)
@@ -256,7 +276,8 @@ class ToolRegistryService:
                 "description": description.strip(),
                 "parameters": parameters,
                 "entry": {"type": etype,
-                          **({k: entry[k] for k in ("executor", "url", "server", "remote_tool")
+                          **({k: entry[k] for k in ("executor", "url", "server",
+                                                     "remote_tool", "runner")
                               if k in entry})},
                 "registered_at": existing["registered_at"] if existing else _now(),
                 "updated_at": _now(),
@@ -287,6 +308,23 @@ class ToolRegistryService:
     def mcp_client(self, server_key: str) -> Any:
         """Return the live client attached for ``server_key`` (None if absent)."""
         return self._mcp_clients.get(server_key)
+
+    def attach_cli_runner(self, command: str, adapter: Any) -> None:
+        """Wire a live :class:`adapters.cli_runner.CliRunnerAdapter` for ``command``.
+
+        Same contract as :meth:`attach_mcp_client`: the tool metadata survives
+        restarts via the JSON file, the in-process adapter does not — re-run
+        ``CliRunnerAdapter.register_tools`` (which only re-attaches) at startup.
+        """
+        if not isinstance(command, str) or not command.strip():
+            raise ValidationFailed("invalid_cli_command", "CLI command name must be a non-empty string")
+        if not callable(getattr(adapter, "run", None)):
+            raise ValidationFailed("invalid_cli_adapter", "CLI adapter must expose a callable 'run'")
+        self._cli_runners[command] = adapter
+
+    def cli_runner(self, command: str) -> Any:
+        """Return the live adapter attached for ``command`` (None if absent)."""
+        return self._cli_runners.get(command)
 
     def list_tools(self) -> list[dict[str, Any]]:
         return [dict(self._tools[n]) for n in sorted(self._tools)]
@@ -365,6 +403,26 @@ class ToolRegistryService:
                         "re-run MCP assembly (e.g. after a restart)",
                     )
                 result = client.call_tool(entry["remote_tool"], arguments)
+            elif entry["type"] == "cli":
+                adapter = self._cli_runners.get(entry.get("runner", ""))
+                if adapter is None:
+                    raise ValidationFailed(
+                        "cli_runner_not_attached",
+                        f"CLI command '{entry.get('runner')}' has no live adapter; "
+                        "re-run CliRunnerAdapter.register_tools (e.g. after a restart)",
+                    )
+                outcome = adapter.run(entry["runner"], arguments)
+                # 诚实失败：非 0 退出码 / 超时 / 输出超限一律不让它变成一张
+                # "executed: True" 的成功回执。用 ValidationFailed 而不是
+                # Conflict，是为了让 CLI 侧的分级 error_code 原样穿过下面
+                # `except ValidationFailed: raise` —— 调用方据此区分超时与超限。
+                if not getattr(outcome, "ok", False):
+                    raise ValidationFailed(
+                        getattr(outcome, "error_code", "") or "cli_runner_failed",
+                        f"CLI '{entry.get('runner')}' failed: "
+                        f"{getattr(outcome, 'error', 'unknown error')}",
+                    )
+                result = outcome.to_public() if hasattr(outcome, "to_public") else outcome
             else:
                 import httpx
 

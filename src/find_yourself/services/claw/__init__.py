@@ -9,12 +9,19 @@
 """
 
 from .conflicts import (  # noqa: F401
+    CONFLICT_BLOCK,
+    CONFLICT_BLOCK_CODE,
     CONFLICT_CLASSES,
+    CONFLICT_DEGRADE,
+    CONFLICT_SEVERITY,
     ESCALATION_LEVELS,
+    ConflictDetected,
     ConflictDetector,
     ConflictService,
+    ConflictVerdict,
     DetectionHit,
     DetectionSignal,
+    severity_of,
 )
 from .facts import FactBaselineService, upsert_fact  # noqa: F401
 from .gates import (  # noqa: F401

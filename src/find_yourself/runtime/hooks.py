@@ -2,7 +2,7 @@
 
 AC（gap-list）：Hook 总线（循环外）+ 事件清单 + 可确定性阻断。
 
-* **事件清单**：``HOOK_EVENTS`` 25 个生命周期事件，权威真源；每个事件标注
+* **事件清单**：``HOOK_EVENTS`` 27 个生命周期事件，权威真源；每个事件标注
   ``wired``（内核/服务已真实 emit）或 ``reserved``（清单先行，emit 挂点随后续
   切片接线）——**绝不虚报已接线**。
 * **确定性阻断**：emit 同步、按 priority 升序逐个调用；hook 返回 ``False`` /
@@ -38,6 +38,9 @@ HOOK_EVENTS: tuple[str, ...] = (
     "task.blocked",           # wired: 任一前置阻断生效
     "task.completed",         # wired: 图执行完成且 status=completed
     "task.failed",            # wired: 图执行异常/校验失败
+    # —— 冲突闸门（可阻断；B7 冲突检测挂主链）——
+    "conflict.detected",      # wired: 六类冲突命中「可降级」级，任务体/产出已改写
+    "conflict.blocked",       # wired: 命中「阻断」级，动作被拒（随后抛 ConflictDetected）
     # —— 预留（清单先行，emit 挂点随后续切片接线）——
     "tool.pre", "tool.post",
     "budget.reserved", "budget.settled",
@@ -54,6 +57,7 @@ WIRED_EVENTS: frozenset[str] = frozenset({
     "task.received", "task.validated", "route.selected", "route.blocked",
     "route.changed", "node.completed", "node.failed",
     "task.blocked", "task.completed", "task.failed",
+    "conflict.detected", "conflict.blocked",
 })
 
 HookFn = Callable[[dict[str, Any]], Any]

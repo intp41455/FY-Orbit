@@ -22,6 +22,20 @@
 
 每次检测命中落 ``claw_conflicts`` + 审计帧 ``claw.conflict.*``；L3 及以上
 同时标记 ``status="escalated"`` 等待人工（HITL 接线由调用方完成）。
+
+严重级别与「能不能拦住」（审计条目 B7）
+----------------------------------------
+:class:`ConflictDetector` 早期只回答「命中了没有」，无法直接挂进执行主干——
+主干需要的是**裁决**（拦下 / 放行但降级）。本模块补上这一层：
+
+* :data:`CONFLICT_SEVERITY` 把六类冲突分成两级，语义与 ``gates.py`` 的三层
+  把关裁决一致（自我矛盾/禁行 → revise 可自修；事实基线冲突 → reject 不可用）：
+    - **block**（拒绝执行）：``jurisdiction`` / ``data_inconsistency`` / ``role_overreach``
+    - **degrade**（执行但降级并留痕）：``self_contradiction`` / ``persona`` / ``boundary``
+* :class:`ConflictVerdict` + :meth:`ConflictDetector.evaluate` 把命中裁决成判定；
+* :class:`ConflictDetected` 是**挂主链用**的阻断异常（``contracts.Conflict`` 子类，
+  错误码 ``conflict_detected``），由调用方在动作执行前 raise——检测本身保持纯函数、
+  不抛异常，判定与阻断分离（检测器不依赖执行上下文）。
 """
 
 from __future__ import annotations
@@ -33,6 +47,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ...contracts import Conflict
 from ...db.claw_models import ClawConflictRecord
 from ..actor import Actor
 from ..audit import AuditService
@@ -55,6 +70,59 @@ ESCALATION_LEVELS: tuple[str, ...] = (
     "L3 人工裁决",
     "L4 全局指令修正",
 )
+
+# ---------------------------------------------------------------------------
+# 严重级别：挂执行主干所需的两级裁决（B7）
+# ---------------------------------------------------------------------------
+
+#: 阻断级：动作**不得**执行（跨 agent 争抢同一对象 / 违反事实基线 / 越权工具）
+CONFLICT_BLOCK = "block"
+#: 可降级：动作可以执行，但必须被改写/标记并留下可见记录
+CONFLICT_DEGRADE = "degrade"
+
+#: 六类冲突 → 严重级别。语义与 ``gates.py`` 三层把关一致：自我矛盾与禁行属
+#: 「自己能改」（revise），事实基线冲突属「内容不可用」（reject）。
+CONFLICT_SEVERITY: dict[str, str] = {
+    "jurisdiction": CONFLICT_BLOCK,
+    "data_inconsistency": CONFLICT_BLOCK,
+    "role_overreach": CONFLICT_BLOCK,
+    "self_contradiction": CONFLICT_DEGRADE,
+    "persona": CONFLICT_DEGRADE,
+    "boundary": CONFLICT_DEGRADE,
+}
+
+#: 阻断级冲突的错误码（与 ``Conflict`` 的默认 ``conflict`` 区分得开）
+CONFLICT_BLOCK_CODE = "conflict_detected"
+
+
+def severity_of(conflict_class: str) -> str:
+    """查表取严重级别；**未知类别按降级处理**（新增冲突类不许意外阻断主干）。"""
+    return CONFLICT_SEVERITY.get(conflict_class, CONFLICT_DEGRADE)
+
+
+class ConflictDetected(Conflict):
+    """阻断级冲突：拒绝执行（HTTP 409，错误码 ``conflict_detected``）。
+
+    是 :class:`find_yourself.contracts.Conflict`（进而 ``DomainError``）的子类，
+    因此上层统一错误信封 ``{"error": {"code", "message", "details"}}`` 会正常接管；
+    ``hits`` 只进审计/日志，不塞进响应体。
+    """
+
+    default_code = CONFLICT_BLOCK_CODE
+
+    def __init__(self, message: str, *, hits: Any = ()) -> None:
+        super().__init__(CONFLICT_BLOCK_CODE, message, 409)
+        self.hits = list(hits)
+
+    @property
+    def details(self) -> dict[str, Any]:
+        """机器可读的命中摘要（审计帧/错误信封 details 用；不含私密正文）。"""
+        return {
+            "conflict_class": getattr(self.hits[0], "conflict_class", "") if self.hits else "",
+            "rules": [getattr(h, "rule", "") for h in self.hits][:8],
+            "classes": sorted({getattr(h, "conflict_class", "") for h in self.hits}),
+            "count": len(self.hits),
+        }
 
 
 @dataclass(frozen=True)
@@ -81,6 +149,47 @@ class DetectionHit:
     conflict_class: str
     rule: str
     message: str
+    #: 留空表示按 :data:`CONFLICT_SEVERITY` 查表（``__post_init__`` 补齐），
+    #: 显式给出可覆盖默认分级。
+    severity: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.severity:
+            object.__setattr__(self, "severity", severity_of(self.conflict_class))
+
+    def to_public(self) -> dict[str, Any]:
+        """可见记录用的最小表示（不含任务正文，可直接进 API 响应/审计）。"""
+        return {
+            "conflict_class": self.conflict_class,
+            "rule": self.rule,
+            "severity": self.severity,
+            "message": self.message[:200],
+        }
+
+
+@dataclass(frozen=True)
+class ConflictVerdict:
+    """:meth:`ConflictDetector.evaluate` 的裁决结果：命中的两级切分。"""
+
+    hits: tuple[DetectionHit, ...] = ()
+
+    @property
+    def blocking(self) -> list[DetectionHit]:
+        return [h for h in self.hits if h.severity == CONFLICT_BLOCK]
+
+    @property
+    def degrading(self) -> list[DetectionHit]:
+        return [h for h in self.hits if h.severity != CONFLICT_BLOCK]
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.blocking)
+
+    def as_public(self) -> dict[str, Any]:
+        return {
+            "blocked": self.blocked,
+            "hits": [h.to_public() for h in self.hits],
+        }
 
 
 def _claims_of(signal: DetectionSignal) -> list[dict[str, Any]]:
@@ -164,6 +273,15 @@ class ConflictDetector:
                 f"角色 {signal.agent_role!r} 执行能力清单外的动作: "
                 f"{signal.action[:60]!r}"))
         return hits
+
+    def evaluate(self, signal: DetectionSignal) -> ConflictVerdict:
+        """跑规则并把命中**裁决成两级判定**（挂执行主干用）。
+
+        与 :meth:`detect` 的区别只有一层：``detect`` 回答「命中什么」，
+        ``evaluate`` 回答「拦不拦」。检测本身保持纯函数、不抛异常——
+        什么时候 raise、怎么降级由调用方（runtime 主干）按执行上下文决定。
+        """
+        return ConflictVerdict(tuple(self.detect(signal)))
 
 
 class ConflictService:
