@@ -23,6 +23,17 @@ KIND_TOOL_PLUGIN = "tool_plugin"
 #: 只做“运输通道”——包仍须过本地签名+扫描门禁才能上架。
 KIND_MARKET_SOURCE = "market_source"
 
+#: market_source 的**来源形态**（显式字段 ``endpoint_config.source_type``），不是第 8 个 kind。
+#:
+#: 取舍（为什么不新开 ``git_source`` kind）：kind 回答“这个连接是什么对象”，
+#: source_type 回答“用哪条通道把包搬过来”。同一个市场源走 git clone 还是走
+#: HTTP GET，对上层（市场陈列 / 签名+扫描门禁 / 安装授权）完全同构；单开 kind 会
+#: 让用户在 Hub 里看到两种同物异名的市场源，还要连带改 DB CHECK 约束、kind 分组、
+#: 密钥字段表，以及导入路由的 kind 校验——换来的只是「多一个可枚举值」。
+#: 显式字段把差异压在适配器内部：旧连接没有该字段 → 落回 http，行为逐字不变。
+MARKET_SOURCE_TYPES: tuple[str, ...] = ("http", "git")
+DEFAULT_MARKET_SOURCE_TYPE = "http"
+
 #: kind 白名单——DB CHECK 约束、API 校验、manifest 校验共用这一份。
 HUB_KINDS: tuple[str, ...] = (
     KIND_OPENAI_CHAT,

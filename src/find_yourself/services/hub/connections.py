@@ -35,6 +35,8 @@ from .adapters import (
     InvokeResult,
     build_adapter,
     guard_endpoint,
+    guard_git_url,
+    resolve_source_type,
 )
 from .crypto import decrypt_secret, encrypt_secret, mask_secret
 from .manifest import import_manifest
@@ -190,8 +192,13 @@ class HubService:
         )
 
     def market_source_adapter(self, actor: Actor, conn_id: str, *,
-                              transport: Any = None):
-        """取 market_source 连接的拉取适配器（属主校验 + kind 校验）。"""
+                              transport: Any = None,
+                              runner: Any = None, workdir: str | None = None):
+        """取 market_source 连接的拉取适配器（属主校验 + kind 校验）。
+
+        ``runner`` / ``workdir`` 只为 Git 形态存在：clone 用的命令执行器与临时目录
+        父目录可注入，单测因此不必真调 git（生产路由不传，走真实 git）。
+        """
         from .adapters import MarketSourceAdapter
 
         conn = self._get(actor, conn_id)
@@ -200,7 +207,10 @@ class HubService:
                 "hub_not_market_source",
                 f"连接 '{conn.name}' 不是市场远程源（kind={conn.kind}）",
             )
-        return MarketSourceAdapter(self.adapter_config(conn), transport=transport)
+        return MarketSourceAdapter(
+            self.adapter_config(conn), transport=transport,
+            runner=runner, workdir=workdir,
+        )
 
     @staticmethod
     def _remember_mcp(conn_id: str, kind: str, adapter: Any) -> None:
@@ -400,8 +410,12 @@ class HubService:
         if kind == "market_source" and config.get("url"):
             url = str(config["url"])
             # file:// 本地目录是自建源的合法形态（读本机磁盘，无 SSRF 面）；
-            # http(s) 照常过守卫。
-            if not url.startswith("file://"):
+            # http(s) 照常过守卫。Git 形态换自己的地址白名单（ssh/scp 写法
+            # 会被 HTTP 守卫误判），判定口径仍与 is_private_host 一致。
+            # 形态取值与适配器共用 resolve_source_type —— 两处各判一次必然漂移。
+            if resolve_source_type(config) == "git":
+                guard_git_url(url)
+            elif not url.startswith("file://"):
                 guard_endpoint(url)
 
     # -- tool_registry bridge ------------------------------------------------ #

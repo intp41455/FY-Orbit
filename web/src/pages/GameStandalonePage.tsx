@@ -34,7 +34,7 @@ export function GameStandalonePage() {
       label="独立全屏 · 我的小屋"
       onRequestMode={() => navigate('/cabin')}
     >
-      <CabinPage />
+      <CabinPage shellMode="none" />
     </CabinShell>
   );
 }

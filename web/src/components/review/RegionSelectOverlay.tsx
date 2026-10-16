@@ -105,7 +105,9 @@ export function RegionSelectOverlay({
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       style={{
-        position: 'fixed', inset: 0, zIndex: 2147482900,
+        /* 遮罩层：取 --ui-z-overlay（低于面板的 --ui-z-drawer），面板因此仍可见可点。
+           原先写死 2147482900，与面板的 2147483000 只差 100，纯粹是巧合而非契约。 */
+        position: 'fixed', inset: 0, zIndex: 'var(--ui-z-overlay, 50)',
         cursor: 'crosshair',
         background: 'rgba(2, 132, 199, 0.06)',
       }}

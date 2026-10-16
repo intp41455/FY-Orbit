@@ -15,6 +15,7 @@ Verifies:
 from __future__ import annotations
 
 import os
+import secrets
 import socket
 import subprocess
 import sys
@@ -26,6 +27,19 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_SCRIPT = REPO_ROOT / "desktop" / "app" / "run_desktop.py"
+
+
+def child_env() -> dict[str, str]:
+    """桌面运行器必需 ``FY_LOCAL_TOKEN``，缺则**故意**拒绝启动（不落不安全默认值）。
+
+    产品链自己会准备它（``desktop/app/start.ps1`` 与 ``desktop/sidecar/
+    sidecar_main.py`` 都会生成），但测试是直接起子进程的，不经过那两层，
+    于是本机/CI 环境里没有这个变量就会以 code 2 提前退出。测试必须复刻产品
+    的准备步骤，否则测的就不是产品行为而是环境运气。
+    """
+    env = dict(os.environ)
+    env.setdefault("FY_LOCAL_TOKEN", secrets.token_urlsafe(32))
+    return env
 
 
 def find_test_port() -> int:
@@ -65,6 +79,7 @@ def test_desktop_surrogate_window_close_triggers_clean_shutdown(tmp_path: Path) 
     proc = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
+        env=child_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -124,6 +139,7 @@ def test_desktop_no_window_terminate_frees_port(tmp_path: Path) -> None:
     proc = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
+        env=child_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -202,6 +218,7 @@ def test_actual_edge_window_launch_and_close_lifecycle(tmp_path: Path) -> None:
     proc = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
+        env=child_env(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

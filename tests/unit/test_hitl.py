@@ -290,7 +290,8 @@ def test_second_decision_conflicts(client: TestClient, headers: dict[str, str]):
     assert _decide(client, headers, interrupt_id, decision="approve").status_code == 200
     again = _decide(client, headers, interrupt_id, decision="cancel")
     assert again.status_code == 409, again.text
-    assert "already" in again.json()["detail"].lower()
+    # 错误体是冻结信封（api/errors.py），不是 FastAPI 默认的 {"detail": ...}。
+    assert "already" in again.json()["error"]["message"].lower()
 
 
 def test_second_decision_does_not_overwrite_first(client: TestClient, headers: dict[str, str]):
@@ -521,7 +522,7 @@ def test_expected_version_mismatch_is_409_over_http(client: TestClient, headers:
     interrupt_id = _pause(client, headers).json()["id"]
     r = _decide(client, headers, interrupt_id, expected_version=99)
     assert r.status_code == 409, r.text
-    assert "version" in r.json()["detail"].lower()
+    assert "version" in r.json()["error"]["message"].lower()
 
 
 # ----------------------------------------------------------------------

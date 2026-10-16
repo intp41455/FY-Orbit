@@ -32,15 +32,21 @@ InvokeResult；**绝不返回构造出来的假条目**。
 from __future__ import annotations
 
 import ipaddress
+import json
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from pathlib import Path
+from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
 
 from ..errors import ValidationFailed
 from . import (
+    DEFAULT_MARKET_SOURCE_TYPE,
     KIND_ANTHROPIC,
     KIND_HTTP_WEBHOOK,
     KIND_KNOWLEDGE_SOURCE,
@@ -48,6 +54,7 @@ from . import (
     KIND_MCP_SERVER,
     KIND_OPENAI_CHAT,
     KIND_TOOL_PLUGIN,
+    MARKET_SOURCE_TYPES,
 )
 
 # --------------------------------------------------------------------------- #
@@ -992,6 +999,195 @@ def _merge_capabilities(discovered: list[Capability], declared: list[Capability]
     return out
 
 
+# --------------------------------------------------------------------------- #
+# 5) market_source · Git 形态（source_type="git"）
+# --------------------------------------------------------------------------- #
+#
+# 手册承诺远程来源支持 URL / Git / 本地目录，此前只有 http(s) 与 file://，
+# Git 仓库 URL 会走进 ``_get_json`` 拿 JSON 而必然失败。这里补的是**运输**，
+# 信任判定仍在 PROMOTION_GATE_POLICY（见 MarketSourceAdapter 文档串）。
+
+#: git 执行器签名：``(argv, timeout) -> (returncode, stdout, stderr)``。
+#: 可注入是为了测试不真调 git（单测用假件铺文件），生产走 :func:`_run_git`。
+GitRunner = Callable[[list[str], float], tuple[int, str, str]]
+
+#: 浅克隆深度：市场源只要清单，不要历史。
+GIT_DEFAULT_DEPTH = 1
+#: 单次 clone 超时（秒）。
+GIT_DEFAULT_TIMEOUT = 60.0
+#: 探活（health_check）下 Git 源的专用预算：clone 真跑一遍，3s 的 HTTP 预算没有意义。
+GIT_HEALTH_TIMEOUT = 15.0
+#: clone 落地后允许的工作区体积上限（不含 .git）与文件数上限。
+#: 浅克隆挡不住「一个巨大 blob / 几十万小文件」，那会把本机磁盘打满。
+GIT_DEFAULT_MAX_BYTES = 32 * 1024 * 1024
+GIT_DEFAULT_MAX_FILES = 2000
+#: 仓库内清单文件候选名（按序探测；``config.git_manifest`` 可显式指定）。
+GIT_MANIFEST_CANDIDATES = ("fy-market.json", "market.json", "index.json")
+#: 分支/tag 白名单：``git check-ref-format`` 的保守子集（拒绝 ``..``、空格、``-`` 开头）。
+_GIT_REF_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,127}$")
+#: scp 式地址（``git@host:org/repo.git``）的主机名提取。
+_GIT_SCP_RE = re.compile(r"^[^@/\s]+@([^:/\s]+):")
+#: Windows 盘符路径（``C:\repos\src``）——本机路径，与 file:// 同一信任面。
+_GIT_WIN_PATH_RE = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def _run_git(argv: list[str], timeout: float) -> tuple[int, str, str]:
+    """默认 git 执行器：``subprocess.run(list)``，**永不使用 shell**。
+
+    与 :mod:`find_yourself.services.git_repo_service` 同一条边界。额外关闭一切
+    交互式提示，否则导入会卡在凭据输入上（服务进程里没人能敲键盘）。
+    超时与「本机没装 git」在这里就转成带码错误，不裸抛 subprocess 异常。
+    """
+    env = dict(os.environ)
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "", "GIT_LFS_SKIP_SMUDGE": "1"})
+    try:
+        proc = subprocess.run(
+            argv, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=timeout, check=False, env=env,
+        )
+    except FileNotFoundError:
+        raise ValidationFailed(
+            "hub_market_source_git_unavailable",
+            "本机没有可用的 git 命令，无法导入 Git 来源（请安装 Git 或改用 HTTP/file 源）",
+        ) from None
+    except subprocess.TimeoutExpired:
+        raise ValidationFailed(
+            "hub_market_source_git_timeout",
+            f"git 命令超时（>{int(timeout)}s）",
+        ) from None
+    return proc.returncode, proc.stdout or "", proc.stderr or ""
+
+
+def _git_host(url: str) -> str:
+    """取 git 地址的主机名：标准 URL 走 urlparse，scp 式地址走正则。"""
+    parsed = urlparse(url)
+    if parsed.hostname:
+        return parsed.hostname
+    matched = _GIT_SCP_RE.match(url)
+    return matched.group(1) if matched else ""
+
+
+def _normalize_git_url(url: str) -> str:
+    """scp 式地址（``git@host:org/repo.git``）归一成 ``ssh://host/org/repo.git``。
+
+    归一后过同一套协议白名单即可——无需在本模块另写一份 scp 解析规则。
+    """
+    matched = _GIT_SCP_RE.match(url)
+    if not matched:
+        return url
+    return f"ssh://{matched.group(1)}/{url.split(':', 1)[1].lstrip('/')}"
+
+
+def guard_git_url(url: str) -> str:
+    """校验 Git 仓库地址并做 SSRF 守卫，返回原串。
+
+    抽成模块函数是因为有两个调用方：登记连接时（``connections._validate_endpoint``，
+    让用户在表单阶段就看到原因）与真正 clone 前（适配器）——同一套规则只写一次。
+
+    SSRF 这里不复用 :func:`guard_endpoint`：那个只认 http(s)，而 ``ssh://`` /
+    ``git://`` / ``git@host:path`` 是 git 的正常写法。因此改为「先按 scheme 白名单
+    收窄协议，再按主机名判内网」，判定口径与 ``is_private_host`` 保持一致。
+    """
+    text = str(url or "").strip()
+    if not text:
+        raise ValidationFailed("hub_market_source_url_required", "Git 来源未配置仓库地址")
+    # 复用 GitRepoService 的地址白名单（协议 + 拒绝 `-` 开头的参数注入形态），
+    # 不在本模块另立一套 scheme 规则——两处漂移就会变成两种信任面。
+    from ..git_repo_service import GitRepoService
+
+    try:
+        GitRepoService._validate_url(_normalize_git_url(text))
+    except ValidationFailed as exc:
+        raise ValidationFailed(
+            "hub_market_source_git_bad_url", f"Git 地址不合法：{exc.message}"
+        ) from None
+    # file:// 与本机路径读的是本机磁盘，没有 SSRF 面（同 _validate_endpoint 的既有判断）。
+    if text.startswith("file://") or _GIT_WIN_PATH_RE.match(text):
+        return text
+    host = _git_host(text)
+    if not host:
+        raise ValidationFailed("hub_market_source_git_bad_url", "Git 地址缺少主机名")
+    if not allow_private_endpoints() and is_private_host(host):
+        raise ValidationFailed(
+            "hub_ssrf_blocked",
+            "出于 SSRF 防护，默认禁止访问内网/本机地址；"
+            "确为本机仓库时设置 FY_HUB_ALLOW_PRIVATE=1 后重试",
+        )
+    return text
+
+
+def _resolve_in_repo(root: Path, raw: str) -> Path:
+    """把清单声明的相对路径解析到仓库内，并**逐层校验不越界**。
+
+    仓库内容是远程不可信输入：``..``、绝对路径、Windows 盘符都要在读文件**之前**
+    拒绝；解析（``resolve()``）之后再判一次归属，顺带把「符号链接指向仓库外」也挡住
+    ——规范化只防字符串里的 ``../``，防不住 ``packages/x.json -> C:/secrets``。
+    """
+    rel = str(raw or "").strip().replace("\\", "/")
+    parts = [p for p in rel.split("/") if p not in ("", ".")]
+    if not parts or any(p == ".." for p in parts) or ":" in rel or rel.startswith("/"):
+        raise ValidationFailed(
+            "hub_market_source_git_path_escape",
+            f"清单声明的路径越界或非法：{raw!r}（只允许仓库内相对路径）",
+        )
+    base = root.resolve()
+    target = (root / Path(*parts)).resolve()
+    if target != base and base not in target.parents:
+        raise ValidationFailed(
+            "hub_market_source_git_path_escape",
+            f"清单声明的路径越界或非法：{raw!r}（只允许仓库内相对路径）",
+        )
+    return target
+
+
+def _enforce_repo_limits(root: Path, config: dict[str, Any]) -> None:
+    """clone 之后按体积/文件数兜一道闸，超限即拒绝导入（不留半截仓库）。"""
+    max_bytes = _positive_int(config.get("git_max_bytes"), GIT_DEFAULT_MAX_BYTES)
+    max_files = _positive_int(config.get("git_max_files"), GIT_DEFAULT_MAX_FILES)
+    total = 0
+    files = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        # .git 是 clone 的开销不是包内容，且要避免 walk 进去（浅克隆也是几 MB）。
+        dirnames[:] = [d for d in dirnames if d != ".git"]
+        for name in filenames:
+            path = Path(dirpath) / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            files += 1
+            try:
+                total += path.stat().st_size
+            except OSError:
+                continue
+            if total > max_bytes or files > max_files:
+                raise ValidationFailed(
+                    "hub_market_source_git_repo_too_large",
+                    f"仓库体积或文件数超限（>{max_bytes} 字节 / >{max_files} 文件）"
+                    "：市场源只应是清单仓库，请缩小仓库或调大 git_max_bytes",
+                )
+
+
+def _positive_int(raw: Any, default: int) -> int:
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
+def resolve_source_type(config: dict[str, Any]) -> str:
+    """读出 market_source 的来源形态；未知值当场报错，不静默落回 http。"""
+    raw = str((config or {}).get("source_type") or "").strip().lower()
+    if not raw:
+        return DEFAULT_MARKET_SOURCE_TYPE
+    if raw not in MARKET_SOURCE_TYPES:
+        raise ValidationFailed(
+            "hub_market_source_bad_type",
+            f"未知来源形态 '{raw}'；可用：{' / '.join(MARKET_SOURCE_TYPES)}"
+            "（或留空 = HTTP 索引源）",
+        )
+    return raw
+
+
 class MarketSourceAdapter:
     """市场远程源适配器（I-12）：只做“运输通道”，不做信任判定。
 
@@ -1000,18 +1196,36 @@ class MarketSourceAdapter:
     守卫 + 可选 Authorization 头）或 ``file://`` 本地目录（读 index.json，
     供自建源与测试）。包的签名/扫描走既有 ``PROMOTION_GATE_POLICY``，
     本适配器**永不**自行判定可装。
+
+    ``source_type="git"``（见 :data:`MARKET_SOURCE_TYPES`）：地址是 Git 仓库，
+    改走 ``git clone`` 到临时目录后读同一份清单格式（每条目的
+    ``manifest_path`` 是仓库内相对路径）。clone 出的临时目录由 :meth:`close`
+    清理，调用方必须在用完后调用。Git 与 HTTP/file 对上层完全同构——导入、
+    陈列、安装门禁都复用 ``MarketplaceService`` 的既有逻辑。
     """
 
     def __init__(self, config: dict[str, Any], *,
                  credentials: dict[str, str] | None = None,
-                 transport: Any | None = None):
+                 transport: Any | None = None,
+                 runner: GitRunner | None = None,
+                 workdir: str | None = None):
         self.kind = str(config.get("kind") or KIND_MARKET_SOURCE)
         self.config = dict(config)
         self.credentials = dict(credentials or {})
         self.transport = transport
+        self._git_runner: GitRunner | None = runner
+        self._workdir = workdir
+        self._repo_root: Path | None = None
 
     def _url(self) -> str:
         return str(self.config.get("url") or "").strip()
+
+    def source_type(self) -> str:
+        """来源形态：``http``（默认，含 file://）或 ``git``。留空 = http（老连接）。"""
+        return resolve_source_type(self.config)
+
+    def is_git(self) -> bool:
+        return self.source_type() == "git"
 
     def _headers(self) -> dict[str, str]:
         headers: dict[str, str] = {}
@@ -1092,6 +1306,8 @@ class MarketSourceAdapter:
 
     def list_packages(self, *, timeout_seconds: float = 10.0) -> list[dict[str, Any]]:
         """索引归一化为包条目（缺字段的条目丢弃并计数，不伪造）。"""
+        if self.is_git():
+            return self._list_git_packages(timeout_seconds=self._git_import_timeout(timeout_seconds))
         index = self.fetch_index(timeout_seconds=timeout_seconds)
         raw = index.get("packages")
         if not isinstance(raw, list):
@@ -1115,10 +1331,166 @@ class MarketSourceAdapter:
             })
         return out
 
+    def load_package_manifest(self, entry: dict[str, Any], *,
+                              timeout_seconds: float = 20.0) -> dict[str, Any]:
+        """按索引条目取包 manifest。
+
+        HTTP/file 源走 ``download_url``；Git 源的包就在仓库里（``manifest_path``
+        相对路径），不再单独下载——两种来源共用同一个入口，调用方无需分支。
+        """
+        if self.is_git():
+            root = self._repo_root or self._clone(timeout_seconds=timeout_seconds)
+            target = _resolve_in_repo(root, str(entry.get("manifest_path") or ""))
+            data = self._read_repo_json(target)
+            if not isinstance(data, dict):
+                raise ValidationFailed("hub_market_source_bad_package", "包 manifest 不是 JSON 对象")
+            return data
+        return self.fetch_package(str(entry.get("download_url") or ""),
+                                  timeout_seconds=timeout_seconds)
+
+    # -- git ------------------------------------------------------------- #
+    def _list_git_packages(self, *, timeout_seconds: float) -> list[dict[str, Any]]:
+        root = self._clone(timeout_seconds=timeout_seconds)
+        index_rel, index = self._read_repo_index(root)
+        raw = index.get("packages")
+        if not isinstance(raw, list):
+            # 单包仓库：清单文件本身就是包 manifest（没有 packages 数组时唯一合理的形态）
+            name = str(index.get("name") or "").strip()
+            if name:
+                return [{
+                    "id": name,
+                    "name": name,
+                    "version": str(index.get("semantic_version") or index.get("version") or ""),
+                    "description": str(index.get("description") or ""),
+                    # Git 源的包不落在 URL 上；download_url 置空只为保持条目形状一致。
+                    "download_url": "",
+                    "manifest_path": index_rel,
+                    "license": str(index.get("license") or ""),
+                }]
+            raise ValidationFailed(
+                "hub_market_source_git_bad_index",
+                "Git 源清单既没有 packages 数组，也不是单包 manifest（缺 name）",
+            )
+        out: list[dict[str, Any]] = []
+        for entry in raw:
+            if not isinstance(entry, dict):
+                continue
+            pid = str(entry.get("id") or "").strip()
+            # Git 源没有 download_url，取包靠仓库内相对路径；缺路径的条目丢弃（同 HTTP 源缺链接丢弃）。
+            rel = str(entry.get("manifest_path") or entry.get("path") or "").strip()
+            if not pid or not rel:
+                continue
+            out.append({
+                "id": pid,
+                "name": str(entry.get("name") or pid),
+                "version": str(entry.get("version") or ""),
+                "description": str(entry.get("description") or ""),
+                "download_url": "",
+                "manifest_path": rel,
+                "license": str(entry.get("license") or ""),
+            })
+        return out
+
+    def _clone(self, *, timeout_seconds: float) -> Path:
+        """clone 到临时目录并返回仓库根；同一次导入内复用，:meth:`close` 负责清理。"""
+        if self._repo_root is not None:
+            return self._repo_root
+        url = guard_git_url(self._url())
+        workdir = Path(self._workdir) if self._workdir else Path(tempfile.gettempdir())
+        workdir.mkdir(parents=True, exist_ok=True)
+        dest = Path(tempfile.mkdtemp(prefix="fy-market-git-", dir=str(workdir)))
+        argv = [
+            "git", "-c", "core.hooksPath=", "-c", "credential.helper=",
+            "clone", "--quiet", "--no-tags", "--single-branch",
+            "--depth", str(_positive_int(self.config.get("git_depth"), GIT_DEFAULT_DEPTH)),
+        ]
+        ref = str(self.config.get("git_ref") or "").strip()
+        if ref:
+            if not _GIT_REF_RE.match(ref):
+                raise ValidationFailed(
+                    "hub_market_source_git_bad_ref", f"非法分支/标签名 '{ref}'"
+                )
+            argv += ["--branch", ref]
+        # `--` 之后才是位置参数：仓库地址绝不会被当成 git 选项（参数注入）。
+        argv += ["--", url, str(dest)]
+        code, _out, err = (self._git_runner or _run_git)(argv, self._timeout(timeout_seconds))
+        if code != 0:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise ValidationFailed(
+                "hub_market_source_git_clone_failed",
+                f"git clone 失败（退出码 {code}）：{err.strip()[:200] or '无输出'}",
+            )
+        try:
+            _enforce_repo_limits(dest, self.config)
+        except ValidationFailed:
+            shutil.rmtree(dest, ignore_errors=True)
+            raise
+        self._repo_root = dest
+        return dest
+
+    def _timeout(self, fallback: float) -> float:
+        """clone 超时：显式 ``config.git_timeout_seconds`` 优先，否则用给定默认。"""
+        try:
+            raw = float(self.config.get("git_timeout_seconds") or fallback)
+        except (TypeError, ValueError):
+            raw = fallback
+        return max(1.0, min(raw, 600.0))
+
+    def _git_import_timeout(self, requested: float) -> float:
+        """导入路径的 clone 预算下限 :data:`GIT_DEFAULT_TIMEOUT`。
+
+        调用方传来的 10s/20s 是「拉一个 JSON 索引 / 一个包」的量级，clone 整个仓库
+        不是一个量级——照搬会让大仓库在稳定网络下也必然超时。
+        """
+        return self._timeout(max(requested, GIT_DEFAULT_TIMEOUT))
+
+    def _read_repo_index(self, root: Path) -> tuple[str, dict[str, Any]]:
+        configured = str(self.config.get("git_manifest") or "").strip()
+        candidates = ([configured] if configured else []) + [
+            c for c in GIT_MANIFEST_CANDIDATES if c != configured
+        ]
+        for rel in candidates:
+            target = _resolve_in_repo(root, rel)
+            if target.is_file():
+                data = self._read_repo_json(target)
+                if not isinstance(data, dict):
+                    raise ValidationFailed(
+                        "hub_market_source_git_bad_index", "Git 源清单不是 JSON 对象"
+                    )
+                return rel, data
+        raise ValidationFailed(
+            "hub_market_source_git_manifest_missing",
+            f"仓库里找不到清单文件（已试：{', '.join(candidates)}）"
+            "——可用 config.git_manifest 指定仓库内的清单相对路径",
+        )
+
+    @staticmethod
+    def _read_repo_json(target: Path) -> Any:
+        try:
+            return json.loads(target.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValidationFailed(
+                "hub_market_source_git_bad_json",
+                f"仓库内 JSON 不可读：{target.name}（{type(exc).__name__}）",
+            ) from None
+
+    def close(self) -> None:
+        """清掉 clone 出的临时仓库（导入结束必须调用，否则磁盘留垃圾）。"""
+        root, self._repo_root = self._repo_root, None
+        if root is not None:
+            shutil.rmtree(root, ignore_errors=True)
+
     def health(self, *, timeout_seconds: float = 3.0) -> HealthReport:
         started = time.perf_counter()
         try:
-            packages = self.list_packages(timeout_seconds=timeout_seconds)
+            if self.is_git():
+                # Git 源判活必须真 clone 一遍，所以给它自己的小预算：既不用 HTTP 的
+                # 3s（clone 根本跑不完，会把可用源误报成不可用），也不给导入那套 60s
+                # （一个慢仓库能把 health-check-all 整批拖死）。
+                packages = self._list_git_packages(
+                    timeout_seconds=self._timeout(max(timeout_seconds, GIT_HEALTH_TIMEOUT)))
+            else:
+                packages = self.list_packages(timeout_seconds=timeout_seconds)
         except Exception as exc:  # noqa: BLE001 — 健康检查只报告，不抛
             return HealthReport(
                 ok=False, latency_ms=_elapsed_ms(started),

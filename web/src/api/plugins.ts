@@ -44,6 +44,9 @@ export interface PluginCard {
   scan: PluginScanSummary;
   rating?: RatingSummary;
   my_rating?: UserRating | null;
+  /** 仅 blocked 陈列返回：false = 可见但当前不可安装（原因见 blocked_reasons）。 */
+  installable?: boolean;
+  blocked_reasons?: string[];
 }
 
 export interface PluginListResponse {
@@ -52,6 +55,15 @@ export interface PluginListResponse {
   limit: number;
   offset: number;
   sort_by?: string;
+  /** 远程源已导入但未过门禁的包：可见、不可安装，附服务端给出的阻塞原因。 */
+  blocked?: PluginCard[];
+}
+
+/** 远程源导入结果：逐包成败如实返回（imported / skipped 不吞错）。 */
+export interface SourceImportResult {
+  connection_id: string;
+  imported: string[];
+  skipped: { id: string; reason: string }[];
 }
 
 export interface PluginListParams {
@@ -153,6 +165,15 @@ export const pluginsApi = {
   getRatings: (skillId: string, limit = 20, offset = 0) =>
     request<{ summary: RatingSummary; items: UserRating[]; total: number }>(
       `/api/plugins/marketplace/${encodeURIComponent(skillId)}/ratings?limit=${limit}&offset=${offset}`,
+    ),
+  /**
+   * 从市场远程源导入包（I-12）：只做运输——导入后停在 staged，
+   * 没过签名/扫描门禁的包在列表里以「可见但不可安装」陈列。
+   */
+  importSource: (connId: string) =>
+    request<SourceImportResult>(
+      `/api/plugins/marketplace/sources/${encodeURIComponent(connId)}/import`,
+      { method: 'POST' },
     ),
 
   // --- 模板分层与市场 ---

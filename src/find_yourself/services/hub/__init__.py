@@ -17,6 +17,7 @@ mcp_server         MCP 生态工具 / 技能（全行业开放标准）         
 http_webhook       万能 HTTP 调用（企业系统 / 无 API 的软件）          工具
 knowledge_source   知识源（ima / 百度网盘 / 任意文档源，桥接 W3）      知识源
 tool_plugin        用户自定义工具（manifest 声明式，零代码）           工具
+market_source      市场远程源（HTTP 索引 / Git 仓库 / 本地目录）       工具
 =================  ==============================================  ==========
 
 诚实原则：本包不提供任何「假成功」。探测不到的连接就是 ``ok=False``，
@@ -31,6 +32,7 @@ from __future__ import annotations
 # 不 import 任何子模块」的防环设计不受影响（db 是 L1 底座，非子模块）。
 from ...db.hub_constants import (  # noqa: F401 (re-export)
     CONNECTION_STATES,
+    DEFAULT_MARKET_SOURCE_TYPE,
     GROUP_AI,
     GROUP_KNOWLEDGE,
     GROUP_LABELS,
@@ -44,10 +46,12 @@ from ...db.hub_constants import (  # noqa: F401 (re-export)
     KIND_MCP_SERVER,
     KIND_OPENAI_CHAT,
     KIND_TOOL_PLUGIN,
+    MARKET_SOURCE_TYPES,
 )
 
 __all__ = [
     "CONNECTION_STATES",
+    "DEFAULT_MARKET_SOURCE_TYPE",
     "GROUP_AI",
     "GROUP_KNOWLEDGE",
     "GROUP_LABELS",
@@ -61,4 +65,5 @@ __all__ = [
     "KIND_MCP_SERVER",
     "KIND_OPENAI_CHAT",
     "KIND_TOOL_PLUGIN",
+    "MARKET_SOURCE_TYPES",
 ]

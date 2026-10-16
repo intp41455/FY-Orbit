@@ -20,6 +20,7 @@ import {
 } from '../../api/plugins';
 import { LineIcon, type LineIconName } from '../../components/ui/LineIcon';
 import { KnowledgeNiIcon } from '../../components/knowledgeui/KnowledgeNiIcon';
+import { RemoteSourceImport } from '../../components/plugins/RemoteSourceImport';
 import '../../styles/pages/knowledge.css';
 import { BaseBound } from '../../components/ui/SaveStatusIndicator';
 
@@ -48,6 +49,14 @@ const RISK_META: Record<
 const RISK_REASON_LABELS: Record<string, string> = {
   materializes_files: '会在磁盘物化并执行文件',
   unsigned: '未签名（来源不可验证）',
+};
+
+/** blocked 陈列的阻塞原因 = 服务端门禁给出的 code；未知 code 原样透出（不假装懂）。 */
+const BLOCKED_REASON_LABELS: Record<string, string> = {
+  scan_not_passed: '静态扫描未通过',
+  signature_not_verified: '签名校验未通过',
+  gate_not_passed: '未通过上架门禁',
+  not_promoted: '尚未上架',
 };
 
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -116,6 +125,19 @@ function GrantList({ pkg }: { pkg: PluginCard }) {
   );
 }
 
+/** blocked 陈列：远程源已导入但未过门禁的包。可见但不可装，原因必须写出来。 */
+function BlockedReasonList({ reasons }: { reasons: string[] }) {
+  return (
+    <ul className="fy-plugin-caps" data-testid="plugin-blocked-reasons" style={{ margin: '4px 0 0' }}>
+      {reasons.map((r) => (
+        <li key={r}>
+          暂不可安装：{BLOCKED_REASON_LABELS[r] ?? (r.startsWith('unknown_gate_profile:') ? `未知门禁画像（${r}）` : r)}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** 星级显示徽标 */
 function StarRatingBadge({ rating }: { rating?: { average_rating: number; rating_count: number; score: number } }) {
   if (!rating) return null;
@@ -136,6 +158,7 @@ type MarketTab = 'plugins' | 'templates_novice' | 'templates_advanced' | 'templa
 export function PluginMarketPage() {
   const [activeTab, setActiveTab] = useState<MarketTab>('plugins');
   const [items, setItems] = useState<PluginCard[]>([]);
+  const [blocked, setBlocked] = useState<PluginCard[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [query, setQuery] = useState('');
@@ -182,6 +205,8 @@ export function PluginMarketPage() {
         setItems(res.items);
         setTotal(res.total);
         setOffset(res.offset);
+        // 远程源导入但未过门禁的包：服务端单列在 blocked，页面必须陈列（不可静默隐藏）。
+        setBlocked(res.blocked ?? []);
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -413,6 +438,8 @@ export function PluginMarketPage() {
               </button>
             </form>
 
+            <RemoteSourceImport onImported={() => void load()} />
+
             {error && (
               <div className="error-text" role="alert">
                 <LineIcon name="alert" size={16} /> {error}
@@ -495,6 +522,44 @@ export function PluginMarketPage() {
                 <LineIcon name="chevronRight" size={16} />
               </button>
             </div>
+
+            {/* ---------- 远程源已导入 · 可见但暂不可安装（I-12） ---------- */}
+            {blocked.length > 0 && (
+              <div
+                data-testid="plugin-blocked-section"
+                style={{ marginTop: 'var(--ui-s-3)', padding: 'var(--ui-s-3)', background: 'var(--ui-glass-1)', borderRadius: 'var(--ui-r-md)' }}
+              >
+                <strong>远程源已导入 · 待上架（{blocked.length} 个）</strong>
+                <p className="muted small" style={{ margin: '4px 0 0' }}>
+                  这些包来自市场远程源，已下载但还没过本机门禁，因此不可安装。补齐签名或修复扫描问题后再上架。
+                </p>
+                <ul className="fy-plugin-list" data-testid="plugin-blocked-list">
+                  {blocked.map((pkg) => (
+                    <li key={pkg.skill_id} className="fy-plugin-item" data-testid="plugin-blocked-item">
+                      <div className="row spread" style={{ alignItems: 'flex-start' }}>
+                        <strong>
+                          <LineIcon name="plugins" size={16} /> {pkg.name}{' '}
+                          <span className="muted">v{pkg.version}</span>
+                        </strong>
+                        <span style={{ display: 'flex', gap: 'var(--ui-s-1)', alignItems: 'center' }}>
+                          <RiskBadge level={pkg.risk_level} />
+                          <span className="ui-badge ui-badge--waiting" data-testid="plugin-blocked-badge">
+                            <StatusGlyph name="clock" size={14} />
+                            暂不可安装
+                          </span>
+                        </span>
+                      </div>
+                      <div className="muted small" style={{ margin: '4px 0' }}>
+                        来源 {pkg.source} · {pkg.domain} · {pkg.license} ·{' '}
+                        {pkg.signature_verified ? '已验签' : '未验签'}
+                      </div>
+                      <ScanSummary pkg={pkg} />
+                      <BlockedReasonList reasons={pkg.blocked_reasons ?? []} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
 

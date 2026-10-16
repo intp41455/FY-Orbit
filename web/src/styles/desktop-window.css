@@ -29,10 +29,57 @@
  * 现状：实测 .sidebar scrollWidth 299 > clientWidth 287，owner id 等长串
  *       标识把内容撑出 12px，出现横向裁切/拥挤。
  * 处理：允许长串折行，并收掉横向溢出（纵向滚动保持不变）。
+ *
+ * 为什么必须限定 min-width: 861px：
+ *   ≤860px 时 tokens.css 把侧栏改造成「顶部抽屉」——.nav 转横向、.nav a
+ *   white-space: nowrap、15 个导航项排成一条不可断的横排，**靠
+ *   .sidebar { overflow-x: auto } 横向滚动来收**（tokens.css L737-784）。
+ *   本文件在 tokens.css 之后加载（main.tsx:6），此前这条无条件的
+ *   overflow-x: hidden 直接把它盖掉：滚动条不出现，超出部分被静默裁掉。
+ *   实测 130% 等效视口（CSS 814px）下侧栏 clientWidth 1009 而内容
+ *   scrollWidth 2097 —— 约 645px 的导航无声消失，用户既看不到也滚不到。
+ *   断点以 CSS px 表达，浏览器 130% 缩放把视口压到物理宽度的 1/1.3，
+ *   于是物理宽度 ≤1118px 的窗口（如 1024×768 笔记本）在 100% 下进不了这一档、
+ *   在 130% 下却进来了——这就是「只有 130% 才炸」的由来。
+ *   所以横向裁剪只对「竖排侧栏」成立；顶部抽屉那一档交还给 tokens.css 的滚动。
  * -------------------------------------------------------------------- */
-.sidebar {
-  overflow-x: hidden;
-  overflow-wrap: anywhere;
+@media (min-width: 861px) {
+  .sidebar {
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* ----------------------------------------------------------------------
+ * 2b. 外壳 flex/grid 子项补 min-width: 0
+ * 现状：G4 段只给 .main 的后代补了 min-width: 0（styles.css L3412-3418），
+ *       .sidebar / .app 这一侧漏了。flex 子项的 min-width 默认为 auto，
+ *       意味着「不许小于自己的 min-content 宽」：长导航文案、nowrap 的
+ *       字号提示、32 位 owner 哈希都让子项拒绝收缩，直接把栅格轨道顶穿。
+ * 处理：按同一口径补齐，让轨道宽度成为真正的上限，溢出交回各层滚动容器。
+ *
+ * 为什么同样限定 min-width: 861px：
+ *   ≤860px 时 .nav 是**横向滚动条**里的不可断条目（white-space: nowrap）。
+ *   在滚动容器里给条目 min-width: 0 等于让它们缩到比文字还窄，nowrap 的
+ *   文字会溢出各自盒子并压到相邻条目上——把「裁掉」换成了「叠字」，更糟。
+ *   滚动容器的正确解法是让条目保持固有宽度、由容器滚，而不是压缩条目。
+ * -------------------------------------------------------------------- */
+.app > * { min-width: 0; }
+
+@media (min-width: 861px) {
+  .sidebar,
+  .sidebar > *,
+  .sidebar .nav a,
+  .sidebar .nav a > span,
+  .sidebar .space-switch,
+  .sidebar .sidebar-foot,
+  .sidebar .font-scale-indicator {
+    min-width: 0;
+  }
+
+  /* 字号控件是侧栏里唯一带 nowrap 的行（.font-scale-hint）。窄侧栏下提示语
+     会把整行顶出轨道；允许换行即可，提示本身不删。 */
+  .sidebar .font-scale-indicator { flex-wrap: wrap; }
 }
 
 

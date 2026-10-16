@@ -258,20 +258,32 @@ export function ReviewMode() {
       clearHover();
     };
 
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setActive(false);
-    };
-
     document.addEventListener('mouseover', onOver, true);
     document.addEventListener('click', onClick, true);
-    document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('mouseover', onOver, true);
       document.removeEventListener('click', onClick, true);
-      document.removeEventListener('keydown', onKey);
       clearHover();
     };
   }, [active, mode, submitDomNote, clearHover]);
+
+  /**
+   * Esc 退出评审 —— 覆盖全部模式。
+   *
+   * 原先 Esc 监听挂在上面那个 effect 里，而那个 effect 在 `mode !== 'select'`
+   * 时直接 return：于是圈选/批注模式下按 Esc 只会掉回点选，评审面板仍然整条
+   * 盖在工作台上，可面板上的提示却写着「Esc 退出」。承诺与行为不一致，用户被
+   * 困在浮层里。退出与否取决于「评审是否开启」，不取决于「当前是哪种模式」，
+   * 所以这个监听只能由 active 决定。
+   */
+  useEffect(() => {
+    if (!active) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setActive(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [active]);
 
   // -- 服务端意见操作 -------------------------------------------------------
 
@@ -338,7 +350,13 @@ export function ReviewMode() {
   return (
     <>
       {/* 发行包默认隐藏：这是开发/验收期的批注工具，不是最终用户功能。
-          生产构建（绿色包内的 web/dist）不渲染；开发态与单测仍可用。 */}
+          生产构建（绿色包内的 web/dist）不渲染；开发态与单测仍可用。
+
+          z-index 取设计系统层级的 --ui-z-nav 而非魔法大数：评审工具是「与导航
+          同级的常驻控件」，必须落在 tokens.css 定好的层位上。曾经这里写死
+          2147483000（≈2^31），语义上等于「永远压过一切」，于是
+          desktop-window.css 只能靠把桌宠上移 54px 来给它让位——层叠被绕开而不是
+          被修好，桌宠从此悬在离底 78px 的怪位置。 */}
       {!active && !import.meta.env.PROD && (
         <button
           type="button"
@@ -346,7 +364,7 @@ export function ReviewMode() {
           data-testid="review-toggle"
           onClick={() => setActive(true)}
           style={{
-            position: 'fixed', right: 18, bottom: 18, zIndex: 2147483000,
+            position: 'fixed', right: 18, bottom: 18, zIndex: 'var(--ui-z-nav, 40)',
             padding: '10px 14px', borderRadius: '999px', border: '1px solid var(--glass-border)',
             background: 'var(--glass-strong)', color: 'var(--sky-deep)',
             boxShadow: 'var(--shadow)', cursor: 'pointer', fontSize: 13, fontWeight: 600,
@@ -369,7 +387,13 @@ export function ReviewMode() {
           {...{ [REVIEW_UI_ATTR]: '' }}
           data-testid="review-panel"
           style={{
-            position: 'fixed', top: 0, right: 0, height: '100vh', width: 360, zIndex: 2147483000,
+            /* 抽屉级浮层：取 --ui-z-drawer，而不是 2147483000。
+               评审面板会吞掉面板外的一切点击（见上面的捕获阶段 click 处理），
+               一旦它高过真正的弹窗/提示条层级，别的浮层就再也压不住它，
+               用户既点不动下面的工作台、也关不掉别的对话框。写在层位上，
+               它就只是「众多浮层之一」，可推理。 */
+            position: 'fixed', top: 0, right: 0, height: '100vh', width: 360,
+            zIndex: 'var(--ui-z-drawer, 60)',
             background: 'var(--glass-elevated)', borderLeft: '1px solid var(--line)',
             boxShadow: 'var(--shadow)', display: 'flex', flexDirection: 'column',
             fontFamily: 'inherit',
@@ -381,6 +405,21 @@ export function ReviewMode() {
               <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
                 {mode === 'select' ? '点击 / 圈选 / 批注（Esc 退出）' : '按住拖拽以完成'}
               </span>
+              {/* 常驻关闭入口：面板会吃掉面板外的全部点击，光靠 Esc 不算可用出口。 */}
+              <button
+                data-testid="review-close"
+                type="button"
+                onClick={() => setActive(false)}
+                aria-label="关闭评审面板"
+                title="关闭评审面板（Esc）"
+                style={{
+                  marginLeft: 'auto', padding: 4, borderRadius: 8, border: '1px solid var(--line)',
+                  background: 'var(--glass-base)', color: 'var(--text-muted)',
+                  cursor: 'pointer', fontSize: 12, lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
             </div>
 
             <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>

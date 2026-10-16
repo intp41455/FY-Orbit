@@ -366,45 +366,58 @@ class MarketplaceService:
                 "该包未通过上架门禁，暂不可安装：" + "、".join(decision["reasons"]),
             )
 
-    def import_from_source(self, actor: Actor, conn_id: str) -> dict[str, Any]:
+    def import_from_source(self, actor: Actor, conn_id: str, *, runner: Any = None,
+                           workdir: str | None = None) -> dict[str, Any]:
         """从市场远程源导入包（I-12）：只做运输，信任判定交还门禁。
 
-        流程：读源索引 → 逐包拉 manifest → ``SkillService.stage``（服务端分类 +
-        真实扫描 + 签名校验，逐包诚实成败）→ 停在 staged，**不自动上架**。
-        上架仍走 promote（门禁原样生效）。返回导入/跳过明细。
+        流程：读源索引（http(s)/file:// 或 Git 仓库）→ 逐包取 manifest →
+        ``SkillService.stage``（服务端分类 + 真实扫描 + 签名校验，逐包诚实成败）
+        → 停在 staged，**不自动上架**。上架仍走 promote（门禁原样生效）。
+        返回导入/跳过明细。
+
+        ``runner`` / ``workdir`` 仅供 Git 形态注入克隆执行器与临时目录（单测不真调
+        git）；生产路由不传，走真实 git。Git 克隆出来的临时仓库在 finally 里清理。
         """
         from .hub.connections import HubService
 
         actor.require_owner()
         hub = HubService(self.s)
-        adapter = hub.market_source_adapter(actor, conn_id)
-        entries = adapter.list_packages()
+        adapter = hub.market_source_adapter(actor, conn_id, runner=runner, workdir=workdir)
         imported: list[str] = []
         skipped: list[dict[str, str]] = []
         seen: set[str] = set()
-        for entry in entries:
-            pid = entry["id"]
-            if pid in seen:
-                skipped.append({"id": pid, "reason": "源内重复 id，跳过"})
-                continue
-            seen.add(pid)
-            try:
-                manifest = adapter.fetch_package(entry["download_url"])
-                skill = self.skills.stage(
-                    actor,
-                    name=str(manifest.get("name") or entry["name"])[:80],
-                    semantic_version=str(manifest.get("semantic_version") or entry.get("version") or "0.0.0"),
-                    package=manifest.get("package") if isinstance(manifest.get("package"), dict) else manifest,
-                    source=f"remote:{conn_id}",
-                    license_=str(manifest.get("license") or entry.get("license") or ""),
-                    domain=str(manifest.get("domain") or "work"),
-                    signature=manifest.get("signature"),
-                    signature_algorithm=manifest.get("signature_algorithm"),
-                    signing_key_id=manifest.get("signing_key_id"),
-                )
-                imported.append(skill.id)
-            except Exception as exc:  # noqa: BLE001 — 逐包诚实记录，不整批失败
-                skipped.append({"id": pid, "reason": f"{type(exc).__name__}: {exc}"})
+        try:
+            entries = adapter.list_packages()
+            for entry in entries:
+                pid = entry["id"]
+                if pid in seen:
+                    skipped.append({"id": pid, "reason": "源内重复 id，跳过"})
+                    continue
+                seen.add(pid)
+                try:
+                    manifest = adapter.load_package_manifest(entry)
+                    skill = self.skills.stage(
+                        actor,
+                        name=str(manifest.get("name") or entry["name"])[:80],
+                        semantic_version=str(manifest.get("semantic_version") or entry.get("version") or "0.0.0"),
+                        package=manifest.get("package") if isinstance(manifest.get("package"), dict) else manifest,
+                        source=f"remote:{conn_id}",
+                        license_=str(manifest.get("license") or entry.get("license") or ""),
+                        domain=str(manifest.get("domain") or "work"),
+                        signature=manifest.get("signature"),
+                        signature_algorithm=manifest.get("signature_algorithm"),
+                        signing_key_id=manifest.get("signing_key_id"),
+                    )
+                    imported.append(skill.id)
+                except Exception as exc:  # noqa: BLE001 — 逐包诚实记录，不整批失败
+                    # 带上 DomainError 的 code：跳过原因要能直接对上错误码，
+                    # 否则前端只拿到一句中文散文，用户无法判断是签名问题还是路径越界。
+                    code = str(getattr(exc, "code", "") or "")
+                    skipped.append({"id": pid, "reason": f"{code}: {exc}" if code else str(exc)})
+        finally:
+            # Git 源的 clone 落在临时目录里（HTTP/file 源 close 是空操作），
+            # 不清就会在磁盘上留一堆仓库副本。
+            adapter.close()
         self.audit.append(actor, "marketplace.source_imported", conn_id, {
             "imported": len(imported), "skipped": len(skipped),
         })

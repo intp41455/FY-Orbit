@@ -1293,7 +1293,8 @@ def test_http_skipping_verification_is_422(client: TestClient, headers: dict, wo
         json={"action": "release"}, headers=headers,
     )
     assert r.status_code == 422, r.text
-    assert "not legal from state 'draft'" in r.json()["detail"]
+    # 冻结错误信封（api/errors.py），不是 FastAPI 默认的 {"detail": ...}。
+    assert "not legal from state 'draft'" in r.json()["error"]["message"]
     # 状态未变
     r = client.get(f"/api/artifact-gates/versions/{v['id']}", headers=headers)
     assert r.json()["state"] == "draft"

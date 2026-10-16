@@ -6,6 +6,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 
 vi.mock('../api/review', () => ({
   openReviewSession: vi.fn(),
@@ -147,6 +148,50 @@ describe('ReviewMode · 批注落库（A-点哪评哪-07）', () => {
     const [, payload] = vi.mocked(addReviewNote).mock.calls[0]!;
     expect(payload.mode).toBe('freehand');
     expect(payload.strokes?.length).toBe(1);
+  });
+});
+
+describe('ReviewMode · 层级与可达性（旧设计器遮挡回归）', () => {
+  /**
+   * 这三条锁的是「评审浮层盖住新工作台、用户出不来」这个真实故障：
+   * 面板是 fixed + 100vh + 360px 的整条侧栏，且在 capture 阶段吞掉面板外
+   * 所有点击，所以一旦关不掉，下面的工作台就完全不可操作。
+   */
+  async function openPanel() {
+    render(<ReviewMode />);
+    fireEvent.click(screen.getByTestId('review-toggle'));
+    await waitFor(() => screen.getByTestId('review-panel'));
+  }
+
+  it('面板 z-index 落在设计系统层位上，而不是压过一切的魔法大数', async () => {
+    await openPanel();
+    const panel = screen.getByTestId('review-panel');
+    const z = (panel as HTMLElement).style.zIndex;
+    expect(z, '必须用 --ui-z-drawer 这类令牌，而不是 2147483000').toContain('--ui-z-drawer');
+    expect(z).not.toMatch(/214748\d+/);
+  });
+
+  it('提供常驻关闭按钮，且点它能卸掉整块浮层', async () => {
+    await openPanel();
+    fireEvent.click(screen.getByTestId('review-close'));
+    await waitFor(() => expect(screen.queryByTestId('review-panel')).toBeNull());
+    expect(screen.queryByTestId('region-select-overlay')).toBeNull();
+  });
+
+  it.each(['mode-region', 'mode-annotate'])('%s 模式下 Esc 直接退出评审（原先只掉回点选）', async (chip) => {
+    await openPanel();
+    fireEvent.click(screen.getByTestId(chip));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('region-select-overlay') ?? screen.queryByTestId('annotation-canvas'),
+      ).toBeTruthy(),
+    );
+
+    await userEvent.keyboard('{Escape}');
+
+    await waitFor(() => expect(screen.queryByTestId('review-panel')).toBeNull());
+    expect(screen.queryByTestId('region-select-overlay')).toBeNull();
+    expect(screen.queryByTestId('annotation-canvas')).toBeNull();
   });
 });
 

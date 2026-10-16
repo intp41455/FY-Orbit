@@ -139,7 +139,9 @@ export function AnnotationCanvas({ onSubmit, onCancel }: AnnotationCanvasProps) 
       onMouseMove={onMouseMove}
       onMouseUp={onMouseUp}
       style={{
-        position: 'fixed', inset: 0, zIndex: 2147482900,
+        /* 同 RegionSelectOverlay：遮罩层取 --ui-z-overlay，低于评审面板的
+           --ui-z-drawer，面板因此始终浮在批注层之上、可继续操作。 */
+        position: 'fixed', inset: 0, zIndex: 'var(--ui-z-overlay, 50)',
         cursor: 'crosshair', background: 'rgba(15, 23, 42, 0.04)',
       }}
     >

@@ -150,6 +150,8 @@ export function ConnectionForm({
         {kind === 'market_source' && (
           <p className="muted" data-testid="hub-market-source-hint">
             市场远程源：在参数里加一行 <code>url</code>（源索引链接，http(s) 或 file:// 本地目录）。
+            地址是 Git 仓库时再加一行 <code>source_type</code> = <code>git</code>（留空即 http 索引源）；
+            可选 <code>git_ref</code>（分支/tag）、<code>git_manifest</code>（仓库内清单相对路径）。
             私有源把 token 填进下方凭证（api_token）。包仍须过本地签名 + 扫描门禁才能安装。
           </p>
         )}

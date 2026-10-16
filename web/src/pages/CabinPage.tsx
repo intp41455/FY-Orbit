@@ -77,6 +77,8 @@ import {
   executeSleep,
 } from '../components/cabin/interior/cabinHouseSystem';
 // 包 D 视觉层：玻璃 HUD 覆盖层 + 像素/玻璃边界样式。
+import { CabinShell } from '../components/cabin/CabinShell';
+import type { CabinShellMode } from '../components/cabin/cabinViewport';
 import '../styles/pages/cabin.css';
 import {
   CabinHudOverlay,
@@ -129,7 +131,7 @@ function findFreeSpot(
  * 台词通道：挂载时探测 /api/butler/status，已配置模型时走管家 Agent（标注「模型生成」），
  * 未配置/失败时诚实回退本地台词池（标注「预生成台词池」），见 cabinDialogueProvider.ts。
  */
-export function CabinPage() {
+export function CabinPage({ shellMode = 'embedded' }: { shellMode?: CabinShellMode | 'none' } = {}) {
   const navigate = useNavigate();
   const [config, update] = useCabinConfig();
   const [speech, setSpeech] = useState<CabinSpeechRequest | null>(null);
@@ -656,8 +658,10 @@ export function CabinPage() {
   const hudNpcs: CabinNpcRow[] = useMemo(() => npcRowsFromSnapshot(lifeSnapshot), [lifeSnapshot]);
 
 
-  return (
-    <BaseBound surface="cabin" state="idle">
+  // /cabin 必须自带内嵌外壳：否则 .cabin-root 的 fixed + inset:0 会盖住侧栏与
+  // 工作台外壳，I3 文档里那条「内嵌工作台」形态在结构上就等于不存在。
+  // shellMode='none' 供已经自带外壳的调用方（/game 独立全屏）复用同一份核心。
+  const stage = (
       <div className="cabin-root" data-testid="cabin-root">
         {view === 'outdoor' ? (
           <CabinStage
@@ -1106,6 +1110,13 @@ export function CabinPage() {
           }
         />
       </div>
+  );
+
+  return (
+    <BaseBound surface="cabin" state="idle">
+      {shellMode === 'none' ? stage : (
+        <CabinShell mode={shellMode} label="内嵌工作台 · 我的小屋">{stage}</CabinShell>
+      )}
     </BaseBound>
   );
 }

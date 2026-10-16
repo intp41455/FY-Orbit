@@ -287,6 +287,7 @@ def http_client(engine, owner):
     from sqlalchemy.orm import sessionmaker
 
     from find_yourself.api.deps import csrf_protected, get_actor, get_services, get_settings
+    from find_yourself.api.errors import register_exception_handlers
     from find_yourself.api.routes import dsl_lifecycle
     from find_yourself.config import Settings
 
@@ -294,6 +295,9 @@ def http_client(engine, owner):
 
     app = FastAPI()
     app.include_router(dsl_lifecycle.router)
+    # 必须注册生产同一套错误信封处理器：否则 Conflict/DomainError 会裸奔出
+    # TestClient，"HTTP 面是否真的回 409" 这条断言就永远验不到东西。
+    register_exception_handlers(app)
     app.dependency_overrides[get_actor] = lambda: owner
     app.dependency_overrides[csrf_protected] = lambda: owner
     app.dependency_overrides[get_settings] = lambda: Settings(

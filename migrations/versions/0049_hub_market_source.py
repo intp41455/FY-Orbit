@@ -74,6 +74,9 @@ def _table(kind_values: tuple[str, ...]) -> sa.Table:
                            name="hub_preference_range"),
         sa.CheckConstraint("version >= 1", name="hub_connection_version_positive"),
         sa.UniqueConstraint("owner_id", "name", name="uq_hub_connection_owner_name"),
+        # 复合索引必须逐字重声明：batch copy-and-move 以本表结构为准重建，
+        # 漏写它 = 降级后索引静默消失，0024 的 downgrade 随即 no such index。
+        sa.Index("ix_hub_connection_owner_kind", "owner_id", "kind"),
     )
 
 
