@@ -17,8 +17,14 @@ touch "$SECRETS_FILE"
 chmod 600 "$SECRETS_FILE" 2>/dev/null || true
 
 # -- 载入上次生成的密钥（若存在） -------------------------------------
+# 必须 export：`.` 只定义 shell 变量，不传给 exec 出去的 uvicorn 子进程；
+# 少了 export 就是"首次启动正常、重启必崩"（Settings 拿到空密钥）。
 # shellcheck disable=SC1090
-[ -f "$SECRETS_FILE" ] && . "$SECRETS_FILE"
+if [ -f "$SECRETS_FILE" ]; then
+    set -a
+    . "$SECRETS_FILE"
+    set +a
+fi
 
 gen() { python -c "import secrets; print(secrets.token_urlsafe(48))"; }
 

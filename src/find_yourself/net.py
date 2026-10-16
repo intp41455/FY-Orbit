@@ -25,3 +25,37 @@ def is_loopback(host: str | None) -> bool:
         return ipaddress.ip_address(h).is_loopback
     except ValueError:
         return False
+
+
+def is_local_peer(host: str | None, extra_cidrs: str) -> bool:
+    """Loopback, or an explicitly trusted local-range peer (e.g. Docker NAT).
+
+    Docker port-mapping rewrites the client address: a browser hitting
+    ``localhost:18000`` on the host arrives at the container as the bridge
+    gateway (``172.17.0.1``), never as ``127.0.0.1`` — so a pure loopback
+    check locks every Docker deployment out of guest minting. Callers that
+    face this situation configure ``extra_cidrs`` (comma-separated CIDRs,
+    from e.g. ``FY_LOCAL_PEER_CIDRS``); empty config keeps the strict
+    loopback-only behaviour byte-for-byte. Trust is explicit, never silent.
+    """
+    if not host:
+        return False
+    h = host.strip().lower()
+    if h.startswith("::ffff:"):
+        h = h[len("::ffff:"):]
+    try:
+        ip = ipaddress.ip_address(h)
+    except ValueError:
+        return False
+    if ip.is_loopback:
+        return True
+    for cidr in extra_cidrs.split(","):
+        cidr = cidr.strip()
+        if not cidr:
+            continue
+        try:
+            if ip in ipaddress.ip_network(cidr, strict=False):
+                return True
+        except ValueError:
+            continue  # malformed CIDR: skip, never crash the request path
+    return False

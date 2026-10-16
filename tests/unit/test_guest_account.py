@@ -547,3 +547,47 @@ def test_purge_expired_guests_keeps_data_rows(session):
     assert session.get(User, empty.id) is None
     assert session.get(User, with_data.id) is not None
     assert session.get(User, fresh.id) is not None
+
+
+# --- Docker NAT fix: explicit trusted local CIDRs (FY_LOCAL_PEER_CIDRS) --------
+
+def test_guest_refused_for_docker_nat_without_config(app):
+    """Regression guard: bridge-gateway peer + no config => still 403."""
+    from tests.unit.test_guest_account import _peer  # reuses scope override
+
+    with TestClient(_peer(app, "172.17.0.1")) as c:
+        r = c.post("/auth/guest")
+        assert r.status_code == 403
+        assert r.json()["error"]["code"] == "guest_loopback_only"
+
+
+def test_guest_allowed_for_docker_nat_with_explicit_cidr(app, monkeypatch):
+    monkeypatch.setenv("FY_LOCAL_PEER_CIDRS", "172.16.0.0/12")
+    from tests.unit.test_guest_account import _peer
+
+    with TestClient(_peer(app, "172.17.0.1")) as c:
+        r = c.post("/auth/guest")
+        assert r.status_code == 200
+        assert "session" in r.cookies or r.json().get("owner_id")
+
+
+def test_guest_still_refused_outside_configured_cidr(app, monkeypatch):
+    monkeypatch.setenv("FY_LOCAL_PEER_CIDRS", "10.8.0.0/24")
+    from tests.unit.test_guest_account import _peer
+
+    with TestClient(_peer(app, "172.17.0.1")) as c:
+        assert c.post("/auth/guest").status_code == 403
+
+
+def test_is_local_peer_shapes():
+    from find_yourself.net import is_local_peer
+
+    assert is_local_peer("127.0.0.1", "") is True
+    assert is_local_peer("::ffff:127.0.0.1", "") is True
+    assert is_local_peer("172.17.0.1", "") is False            # unset => strict
+    assert is_local_peer("172.17.0.1", "172.16.0.0/12") is True
+    assert is_local_peer("172.18.0.5", "172.16.0.0/12") is True
+    assert is_local_peer("8.8.8.8", "172.16.0.0/12") is False   # never wider than configured
+    assert is_local_peer("bogus", "172.16.0.0/12") is False
+    assert is_local_peer("", "172.16.0.0/12") is False
+    assert is_local_peer("172.17.0.1", "not-a-cidr,172.16.0.0/12") is True  # bad entry skipped

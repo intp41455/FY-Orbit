@@ -42,6 +42,10 @@ services:
       - FY_STATIC_DIR=/app/web/dist
       - FY_OFFLINE_MODE=1
       - FY_LOCAL_ONLY=1
+      # Docker 端口映射会把客户端地址改写为网桥网关（如 172.17.0.1），
+      # 纯 loopback 判定会把所有 Docker 部署挡在游客会话之外。
+      # 显式信任本机 Docker 网桥段；外网流量不可能带这些源地址进容器。
+      - FY_LOCAL_PEER_CIDRS=172.16.0.0/12
     volumes:
       - fy_data:/app/.runtime
     healthcheck:
