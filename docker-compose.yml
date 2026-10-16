@@ -1,5 +1,3 @@
-version: '3.8'
-
 # 诚实说明：本 Compose 配的是「单机可用的本地部署形态」，而不是生产形态。
 #
 # 此前这里写 FY_ENVIRONMENT=production，但 FY_ENVIRONMENT=production 要求
@@ -18,6 +16,10 @@ version: '3.8'
 #   * PostgreSQL + Temporal + S3/兼容对象存储
 #   * OIDC issuer/client/owner_sub
 # 然后设置 FY_ENVIRONMENT=production 并逐项满足上述校验。
+#
+# 密钥说明：FY_SESSION_SECRET / FY_LOCAL_TOKEN 不再强制手工提供——
+# 入口脚本（docker-entrypoint.sh）首启自动生成并持久化到 fy_data 卷；
+# 在下方 environment 或 .env 里显式提供的值会被尊重，绝不覆盖。
 
 services:
   fy-orbit:
@@ -33,8 +35,9 @@ services:
       # 单机形态：local + SQLite + HTTP + 本地 token，是代码真能启动的组合
       - FY_ENVIRONMENT=local
       - FY_DATABASE_URL=sqlite:////app/.runtime/find-yourself.db
-      - FY_SESSION_SECRET=${FY_SESSION_SECRET:?必须通过环境变量提供 >=32 字符的随机串}
-      - FY_LOCAL_TOKEN=${FY_LOCAL_TOKEN:?请显式设置本地访问令牌}
+      # 两个密钥留空 = 入口脚本首启自动生成（持久化在 fy_data 卷）
+      - FY_SESSION_SECRET=${FY_SESSION_SECRET:-}
+      - FY_LOCAL_TOKEN=${FY_LOCAL_TOKEN:-}
       - FY_PUBLIC_URL=http://localhost:8000
       - FY_STATIC_DIR=/app/web/dist
       - FY_OFFLINE_MODE=1

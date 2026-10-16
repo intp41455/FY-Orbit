@@ -1,0 +1,38 @@
+# =====================================================================
+# 构建上下文瘦身：以下内容永不进入构建（加速 + 防泄漏）
+# 注意：web/dist 不排除打包阶段的输入，但它在 web/ 下由 webbuilder
+#      阶段自己构建；宿主上残留的 web/dist 不应被 COPY 进 Python 层。
+# =====================================================================
+.git
+.gitignore
+.venv
+venv
+env
+node_modules
+web/node_modules
+web/dist
+web/coverage
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+.coverage
+htmlcov
+dist
+release
+build
+_runtime
+.runtime
+evidence
+process-traces
+_归档_2026-10-15
+deliverables
+qa-findyourself
+*.log
+*.db
+*.sqlite*
+.DS_Store
+Thumbs.db
+.claude
+.workbuddy
+.planning
