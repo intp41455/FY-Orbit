@@ -180,3 +180,110 @@ def test_custom_summarizer_is_plugged_in():
     out = svc.compact(msgs, budget_tokens=250)
     assert out["triggered"] is True
     assert out["folded"]["content"].startswith("CUSTOM:")
+
+
+# --- slice 2: LlmSummarizer / force_fold / compact_history -----------------------
+
+from find_yourself.services.compaction import LlmSummarizer, compact_history
+
+
+def test_llm_summarizer_happy_path():
+    svc = CompactionService(summarizer=LlmSummarizer(lambda req: "LLM摘要内容"))
+    msgs = [t for n in range(5) for t in turn(n)]
+    out = svc.compact(msgs, budget_tokens=280)
+    assert out["triggered"] is True
+    assert out["folded"]["content"] == "LLM摘要内容"
+    assert "u0" in out["folded"]["source_ids"]
+
+
+def test_llm_summarizer_degrades_on_exception():
+    def boom(_req):
+        raise RuntimeError("provider down")
+
+    s = LlmSummarizer(boom)
+    msgs = [t for n in range(3) for t in turn(n)]
+    out = CompactionService(summarizer=s).compact(msgs, budget_tokens=280)
+    assert "已折叠" in out["folded"]["content"]  # deterministic fallback
+    assert "RuntimeError" in s.last_error
+
+
+def test_llm_summarizer_degrades_on_garbage_output():
+    s = LlmSummarizer(lambda _req: 42)
+    out = LlmSummarizer(lambda _req: 42).summarize([[as_message(turn(1)[0])]])
+    assert "已折叠" in out
+
+
+def test_llm_summarizer_no_fn():
+    s = LlmSummarizer(None)
+    assert "已折叠" in s.summarize([])
+
+
+def test_force_fold_produces_usable_oversized_context():
+    # floor (head 1000 chars + newest turn) far exceeds the tiny budget,
+    # yet force_fold must still return head + newest + fold block, flagged.
+    msgs = [m("s", "system", "S" * 1000)] + [t for n in range(3) for t in turn(n)]
+    out = CompactionService().compact(msgs, budget_tokens=50, overflow_policy="force_fold")
+    assert out["overflow"] is True
+    assert "仍超预算" in out["overflow_reason"]
+    ids = [x["id"] for x in out["messages"]]
+    assert ids[0] == "fold-block"
+    assert "s" in ids and "u2" in ids and "a2" in ids  # head + newest kept
+
+
+def test_force_fold_single_turn_still_honest():
+    msgs = [m("s", "system", "S" * 1000)] + turn(1)
+    out = CompactionService().compact(msgs, budget_tokens=50, overflow_policy="force_fold")
+    assert out["overflow"] is True and out["triggered"] is False
+    assert [x["id"] for x in out["messages"]] == ["s", "u1", "a1"]
+
+
+def test_compact_history_off_budget_is_byte_identical():
+    msgs = [m("h1", "user", "你好"), m("h2", "assistant", ""), m("h3", "user", "在吗")]
+    naive = "\n".join(f"{m['role']}: {m['content']}" for m in msgs if m["content"])
+    text, meta = compact_history(msgs, budget_tokens=100000)
+    assert text == naive
+    assert meta["triggered"] is False and meta["overflow"] is False
+
+
+def test_compact_history_folds_when_over():
+    msgs = [t for n in range(5) for t in turn(n)]
+    text, meta = compact_history(msgs, budget_tokens=280)
+    assert meta["triggered"] is True
+    assert "已折叠" in text.split("\n")[0]
+
+
+def test_compact_history_force_fold_on_overflow():
+    msgs = [m("s", "system", "S" * 1000)] + [t for n in range(3) for t in turn(n)]
+    text, meta = compact_history(msgs, budget_tokens=50, overflow_policy="force_fold")
+    assert meta["overflow"] is True
+    assert "已折叠" in text  # usable output despite blown budget
+
+
+def test_compact_history_pins_survive():
+    msgs = [t for n in range(5) for t in turn(n)]
+    text, meta = compact_history(msgs, budget_tokens=450, pinned_ids=["u0"])
+    assert ("user: " + "u" * 400) in text  # pinned content survives verbatim
+    assert "u0" in meta["pinned_kept"]
+    assert "u0" not in meta["folded"]["source_ids"]  # and isn't claimed as folded
+
+
+def test_bad_overflow_policy_raises():
+    with pytest.raises(ValueError):
+        CompactionService().compact([turn(1)[0]], budget_tokens=100, overflow_policy="yolo")
+
+
+def test_companion_history_block_env_switch(monkeypatch):
+    """The companion sample wiring: off => byte-identical, on => compacted."""
+    from find_yourself.services.companion import CompanionService
+
+    history = [as_message(m) for m in [t for n in range(5) for t in turn(n)]]
+
+    monkeypatch.delenv("FY_CONTEXT_COMPACTION_BUDGET", raising=False)
+    raw, meta = CompanionService._history_block(history)  # type: ignore[attr-defined]
+    assert meta is None
+    assert raw.startswith("user: " + "u" * 400)
+
+    monkeypatch.setenv("FY_CONTEXT_COMPACTION_BUDGET", "280")
+    text, meta2 = CompanionService._history_block(history)  # type: ignore[attr-defined]
+    assert meta2 is not None and meta2["triggered"] is True
+    assert "已折叠" in text

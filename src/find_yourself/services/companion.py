@@ -11,6 +11,8 @@ Implements productized requirements for personal companion interactions:
 
 from __future__ import annotations
 
+import logging
+import os
 from typing import Any
 
 from sqlalchemy import select
@@ -32,7 +34,10 @@ from .actor import Actor
 from .audit import AuditService
 from .errors import DomainError
 from .model_credentials import resolve_model_settings
+from .compaction import compact_history
 from .proposal import ProposalService
+
+logger = logging.getLogger(__name__)
 
 CRISIS_KEYWORDS = [
     "自杀", "不想活了", "自残", "轻生", "结束生命", "割腕",
@@ -137,12 +142,42 @@ class CompanionService:
 
     def _compose_prompt(self, conversation: Conversation, user_message: str) -> str:
         history = self._conversation_history(conversation)
-        turns = "\n".join(f"{m.role}: {m.content}" for m in history if m.content)
+        turns, compaction_meta = self._history_block(history)
+        if compaction_meta is not None:
+            # T-COMPACT audit trail: every fold / overflow is observable.
+            logger.info(
+                "companion history compacted: conv=%s triggered=%s overflow=%s "
+                "kept=%s folded_sources=%s estimate=%s budget=%s",
+                conversation.id, compaction_meta["triggered"], compaction_meta["overflow"],
+                len([m for m in compaction_meta["messages"] if m.get("content")]),
+                len(compaction_meta["folded"]["source_ids"]) if compaction_meta["folded"] else 0,
+                compaction_meta["token_estimate"], compaction_meta["budget_tokens"],
+            )
         return (
             f"[对话约束]\n{self._mode_constraints(conversation, user_message)}\n\n"
             f"[近期对话]\n{turns}\n\n"
             f"[用户最新消息]\nuser: {user_message}"
         )
+
+    @staticmethod
+    def _history_block(history: list[Message]) -> tuple[str, dict[str, Any] | None]:
+        """Render the 近期对话 block; optionally compacted (T-COMPACT slice 2).
+
+        Disabled unless ``FY_CONTEXT_COMPACTION_BUDGET`` is set to a positive
+        token number — default behaviour is byte-identical to the original
+        join. With the budget set, older turns fold (pinned-aware) and any
+        overflow is force-folded with honest logging rather than silent
+        truncation.
+        """
+        raw = "\n".join(f"{m.role}: {m.content}" for m in history if m.content)
+        try:
+            budget = int(os.environ.get("FY_CONTEXT_COMPACTION_BUDGET", "0") or 0)
+        except ValueError:
+            budget = 0  # garbage env: degrade to disabled, never crash chat
+        if budget <= 0:
+            return raw, None
+        text, meta = compact_history(history, budget_tokens=budget, overflow_policy="force_fold")
+        return text, meta
 
     def _ensure_budget_task(self, actor: Actor, conversation: Conversation) -> str:
         """Materialise a real tasks row so budget reservations have an anchor.
