@@ -333,10 +333,10 @@ def test_companion_model_name_reads_byok_overlay(monkeypatch):
     未修复时 _model_name() 读原始 env settings → 网关指向用户端点却请求
     gpt-4o-mini → 上游 model_not_found（「已配置却不可用」）。
     """
-    from find_yourself.services.companion import CompanionService
-    from find_yourself.services.model_credentials import MODEL_CREDENTIALS_SCOPE
-    from find_yourself.services.knowledge.sources.store import secret_store
     from find_yourself.config import Settings
+    from find_yourself.services.companion import CompanionService
+    from find_yourself.services.knowledge.sources.store import secret_store
+    from find_yourself.services.model_credentials import MODEL_CREDENTIALS_SCOPE
 
     overlay = {"provider": "openai_compat", "base_url": "https://example.invalid/v1",
                "api_key": "k" * 40, "model": "my-model-9"}
@@ -349,9 +349,9 @@ def test_companion_model_name_reads_byok_overlay(monkeypatch):
 
 
 def test_companion_model_name_falls_back_without_byok(monkeypatch):
+    from find_yourself.config import Settings
     from find_yourself.services.companion import CompanionService
     from find_yourself.services.knowledge.sources.store import secret_store
-    from find_yourself.config import Settings
 
     monkeypatch.setattr(secret_store, "get", lambda scope: {})
     svc = CompanionService.__new__(CompanionService)
